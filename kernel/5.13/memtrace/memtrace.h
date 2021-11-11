@@ -1,0 +1,1 @@
+asmlinkage long sys_mtrace(unsigned long op, unsigned long addr);

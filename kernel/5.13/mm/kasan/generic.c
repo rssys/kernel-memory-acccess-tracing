@@ -31,6 +31,8 @@
 #include <linux/vmalloc.h>
 #include <linux/bug.h>
 
+#include <linux/memtrace.h>
+
 #include "kasan.h"
 #include "../slab.h"
 
@@ -276,6 +278,121 @@ EXPORT_SYMBOL(__asan_storeN_noabort);
 /* to shut up compiler complaints */
 void __asan_handle_no_return(void) {}
 EXPORT_SYMBOL(__asan_handle_no_return);
+
+#define DEFINE_ASAN_MEMTRACE_LOAD_STORE(size)					\
+	void __asan_memtrace_load##size(unsigned long addr)			\
+	{								\
+		memtrace(size, true, _RET_IP_);                 \
+	}								\
+	EXPORT_SYMBOL(__asan_memtrace_load##size);				\
+	__alias(__asan_memtrace_load##size)					\
+	void __asan_memtrace_load##size##_noabort(unsigned long);		\
+	EXPORT_SYMBOL(__asan_memtrace_load##size##_noabort); \
+	void __asan_memtrace_store##size(unsigned long addr)			\
+	{								\
+		memtrace(size, false, _RET_IP_);                \
+	}								\
+	EXPORT_SYMBOL(__asan_memtrace_store##size);				\
+	__alias(__asan_memtrace_store##size)	\
+	void __asan_memtrace_store##size##_noabort(unsigned long);		\
+	EXPORT_SYMBOL(__asan_memtrace_store##size##_noabort)
+
+
+DEFINE_ASAN_MEMTRACE_LOAD_STORE(1);
+DEFINE_ASAN_MEMTRACE_LOAD_STORE(2);
+DEFINE_ASAN_MEMTRACE_LOAD_STORE(4);
+DEFINE_ASAN_MEMTRACE_LOAD_STORE(8);
+DEFINE_ASAN_MEMTRACE_LOAD_STORE(16);
+
+#define DEFINE_MEMTRACE_LOAD_STORE_IP(size)             \
+	void __ip_memtrace_load##size(unsigned long addr, unsigned long ip)			\
+	{								\
+		memtrace(size, true, ip);                 \
+	}								\
+	void __ip_memtrace_store##size(unsigned long addr, unsigned long ip)			\
+	{								\
+		memtrace(size, false, ip);                 \
+	}								\
+
+DEFINE_MEMTRACE_LOAD_STORE_IP(1)
+DEFINE_MEMTRACE_LOAD_STORE_IP(2)
+DEFINE_MEMTRACE_LOAD_STORE_IP(4)
+DEFINE_MEMTRACE_LOAD_STORE_IP(8)
+DEFINE_MEMTRACE_LOAD_STORE_IP(16)
+
+
+void __asan_memtrace_loadN(unsigned long addr, size_t size)
+{
+	size_t cnt = 0;
+	while(cnt < size) {
+		size_t n = 0;
+		switch (size % 16) {
+			case 16:
+				__ip_memtrace_load16(addr, _RET_IP_);
+				n = 16;
+				break;
+			case 8:
+				__ip_memtrace_load8(addr, _RET_IP_);
+				n = 8;
+				break;
+			case 4:
+				__ip_memtrace_load4(addr, _RET_IP_);
+				n = 4;
+				break;
+			case 2:
+				__ip_memtrace_load2(addr, _RET_IP_);
+				n = 2;
+				break;
+			default:
+				__ip_memtrace_load1(addr, _RET_IP_);
+				n = 1;
+				break;
+		}
+		cnt += n;
+	}
+}
+EXPORT_SYMBOL(__asan_memtrace_loadN);
+__alias(__asan_memtrace_loadN)
+void __asan_memtrace_loadN_noabort(unsigned long, size_t);
+EXPORT_SYMBOL(__asan_memtrace_loadN_noabort);
+
+// if we don't add these noabort, then it will not be instrumented... what???
+
+void __asan_memtrace_storeN(unsigned long addr, size_t size)
+{
+	size_t cnt = 0;
+	while(cnt < size) {
+		size_t n = 0;
+		switch (size % 16) {
+			case 16:
+				__ip_memtrace_store16(addr, _RET_IP_);
+				n = 16;
+				break;
+			case 8:
+				__ip_memtrace_store8(addr, _RET_IP_);
+				n = 8;
+				break;
+			case 4:
+				__ip_memtrace_store4(addr, _RET_IP_);
+				n = 4;
+				break;
+			case 2:
+				__ip_memtrace_store2(addr, _RET_IP_);
+				n = 2;
+				break;
+			default:
+				__ip_memtrace_store1(addr, _RET_IP_);
+				n = 1;
+				break;
+		}
+		cnt += n;
+	}
+}
+EXPORT_SYMBOL(__asan_memtrace_storeN);
+__alias(__asan_memtrace_storeN)
+void __asan_memtrace_storeN_noabort(unsigned long, size_t);
+EXPORT_SYMBOL(__asan_memtrace_storeN_noabort);
+
 
 /* Emitted by compiler to poison alloca()ed objects. */
 void __asan_alloca_poison(unsigned long addr, size_t size)
