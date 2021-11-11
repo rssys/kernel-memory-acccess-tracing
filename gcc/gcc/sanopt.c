@@ -1345,6 +1345,7 @@ pass_sanopt::execute (function *fun)
 		case IFN_HWASAN_CHECK:
 		  no_next = hwasan_expand_check_ifn (&gsi, use_calls);
 		  break;
+    case IFN_ASAN_MEMTRACE:
 		case IFN_ASAN_CHECK:
 		  no_next = asan_expand_check_ifn (&gsi, use_calls);
 		  break;

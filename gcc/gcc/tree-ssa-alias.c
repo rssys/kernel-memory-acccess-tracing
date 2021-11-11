@@ -2987,6 +2987,7 @@ call_may_clobber_ref_p_1 (gcall *call, ao_ref *ref, bool tbaa_p)
       case IFN_UBSAN_OBJECT_SIZE:
       case IFN_UBSAN_PTR:
       case IFN_ASAN_CHECK:
+      case IFN_ASAN_MEMTRACE:
 	return false;
       default:
 	break;

@@ -120,7 +120,8 @@ enum asan_check_flags
   ASAN_CHECK_STORE = 1 << 0,
   ASAN_CHECK_SCALAR_ACCESS = 1 << 1,
   ASAN_CHECK_NON_ZERO_LEN = 1 << 2,
-  ASAN_CHECK_LAST = 1 << 3
+  ASAN_CHECK_MEMTRACE = 1 << 3,
+  ASAN_CHECK_LAST = 1 << 4,
 };
 
 /* Flags for Asan check builtins.  */
