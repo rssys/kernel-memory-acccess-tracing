@@ -1,8 +1,6 @@
 // { dg-do compile { target { i?86-*-* x86_64-*-* }  && { ! *-*-solaris* } } }
 // { dg-options "-Ofast -funroll-loops -fopenmp -march=knl" }
-// Disabling epilogues until we find a better way to deal with scans.
-// { dg-additional-options "--param vect-epilogues-nomask=0" }
-
+// { dg-final { scan-assembler-not "vmovaps" } }
 
 #include <math.h>
 
@@ -70,5 +68,3 @@ void foo (Sdata *in, int idx, float *out)
   _mm_free(y3);
   _mm_free(y4);
 }
-
-// { dg-final { scan-assembler-not "vmovaps\[^\n\r]*zmm\[0-9]+,\[^\n\r]*zmm\[0-9]+" } }

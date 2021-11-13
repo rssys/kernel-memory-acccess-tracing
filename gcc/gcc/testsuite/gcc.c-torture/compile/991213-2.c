@@ -1,5 +1,3 @@
-/* { dg-require-effective-target indirect_calls } */
-
 typedef long		__kernel_time_t;
 typedef __kernel_time_t		time_t;
 time2(

@@ -1,12 +1,4 @@
-// https://issues.dlang.org/show_bug.cgi?id=7851
-/*
-TEST_OUTPUT:
----
-fail_compilation/fail7851.d(38): Error: need `this` for `__mem_field_0` of type `int`
-fail_compilation/fail7851.d(38): Error: need `this` for `__mem_field_1` of type `long`
-fail_compilation/fail7851.d(38): Error: need `this` for `__mem_field_2` of type `float`
----
-*/
+// 7851
 
 
 template TypeTuple(TList...)

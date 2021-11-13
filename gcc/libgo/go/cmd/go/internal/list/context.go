@@ -17,7 +17,6 @@ type Context struct {
 	UseAllFiles   bool     `json:",omitempty"` // use files regardless of +build lines, file names
 	Compiler      string   `json:",omitempty"` // compiler to assume when computing target paths
 	BuildTags     []string `json:",omitempty"` // build constraints to match in +build lines
-	ToolTags      []string `json:",omitempty"` // toolchain-specific build constraints
 	ReleaseTags   []string `json:",omitempty"` // releases the current release is compatible with
 	InstallSuffix string   `json:",omitempty"` // suffix to use in the name of the install dir
 }
@@ -32,7 +31,6 @@ func newContext(c *build.Context) *Context {
 		UseAllFiles:   c.UseAllFiles,
 		Compiler:      c.Compiler,
 		BuildTags:     c.BuildTags,
-		ToolTags:      c.ToolTags,
 		ReleaseTags:   c.ReleaseTags,
 		InstallSuffix: c.InstallSuffix,
 	}

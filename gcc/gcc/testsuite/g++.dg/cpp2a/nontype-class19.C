@@ -1,5 +1,5 @@
 // PR c++/90099
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 struct Unit {
   int value;

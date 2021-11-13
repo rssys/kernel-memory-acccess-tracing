@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // Delete the next line to include in the gob package.
-//go:build ignore
 // +build ignore
 
 package gob

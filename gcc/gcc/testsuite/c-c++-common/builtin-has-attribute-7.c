@@ -2,8 +2,7 @@
    and packed in various forms of array dereferencing and indirection
    expressions correspondingly to __alignof__.
    { dg-do compile }
-   { dg-options "-Wall -Wno-unused -ftrack-macro-expansion=0" }
-   { dg-require-effective-target size24plus } */
+   { dg-options "-Wall -Wno-unused -ftrack-macro-expansion=0" } */
 
 #define ATTR(...) __attribute__ ((__VA_ARGS__))
 #define ALIGN(N)  ATTR (aligned (N))

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,8 +30,13 @@
 ------------------------------------------------------------------------------
 
 with Ada.Wide_Text_IO.Generic_Aux; use Ada.Wide_Text_IO.Generic_Aux;
+with Ada.Wide_Text_IO.Float_Aux;
+
+with System.Img_Real; use System.Img_Real;
 
 package body Ada.Wide_Text_IO.Complex_Aux is
+
+   package Aux renames Ada.Wide_Text_IO.Float_Aux;
 
    ---------
    -- Get --
@@ -39,8 +44,8 @@ package body Ada.Wide_Text_IO.Complex_Aux is
 
    procedure Get
      (File  : File_Type;
-      ItemR : out Num;
-      ItemI : out Num;
+      ItemR : out Long_Long_Float;
+      ItemI : out Long_Long_Float;
       Width : Field)
    is
       Buf   : String (1 .. Field'Last);
@@ -90,8 +95,8 @@ package body Ada.Wide_Text_IO.Complex_Aux is
 
    procedure Gets
      (From  : String;
-      ItemR : out Num;
-      ItemI : out Num;
+      ItemR : out Long_Long_Float;
+      ItemI : out Long_Long_Float;
       Last  : out Positive)
    is
       Paren : Boolean;
@@ -134,8 +139,8 @@ package body Ada.Wide_Text_IO.Complex_Aux is
 
    procedure Put
      (File  : File_Type;
-      ItemR : Num;
-      ItemI : Num;
+      ItemR : Long_Long_Float;
+      ItemI : Long_Long_Float;
       Fore  : Field;
       Aft   : Field;
       Exp   : Field)
@@ -154,8 +159,8 @@ package body Ada.Wide_Text_IO.Complex_Aux is
 
    procedure Puts
      (To    : out String;
-      ItemR : Num;
-      ItemI : Num;
+      ItemR : Long_Long_Float;
+      ItemI : Long_Long_Float;
       Aft   :  Field;
       Exp   :  Field)
    is
@@ -169,9 +174,9 @@ package body Ada.Wide_Text_IO.Complex_Aux is
       --  Both parts are initially converted with a Fore of 0
 
       Rptr := 0;
-      Aux.Set_Image (ItemR, R_String, Rptr, 0, Aft, Exp);
+      Set_Image_Real (ItemR, R_String, Rptr, 0, Aft, Exp);
       Iptr := 0;
-      Aux.Set_Image (ItemI, I_String, Iptr, 0, Aft, Exp);
+      Set_Image_Real (ItemI, I_String, Iptr, 0, Aft, Exp);
 
       --  Check room for both parts plus parens plus comma (RM G.1.3(34))
 

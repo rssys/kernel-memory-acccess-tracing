@@ -97,7 +97,6 @@ var findTests = []FindTest{
 	{`\B`, "xx", build(1, 1, 1)},
 	{`\B`, "x y", nil},
 	{`\B`, "xx yy", build(2, 1, 1, 4, 4)},
-	{`(|a)*`, "aa", build(3, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2)},
 
 	// RE2 tests
 	{`[^\S\s]`, "abcd", nil},
@@ -162,9 +161,6 @@ func TestFind(t *testing.T) {
 			t.Errorf("expected match; got none: %s", test)
 		case test.matches != nil && result != nil:
 			expect := test.text[test.matches[0][0]:test.matches[0][1]]
-			if len(result) != cap(result) {
-				t.Errorf("expected capacity %d got %d: %s", len(result), cap(result), test)
-			}
 			if expect != string(result) {
 				t.Errorf("expected %q got %q: %s", expect, result, test)
 			}
@@ -246,13 +242,9 @@ func TestFindAll(t *testing.T) {
 				continue
 			}
 			for k, e := range test.matches {
-				got := result[k]
-				if len(got) != cap(got) {
-					t.Errorf("match %d: expected capacity %d got %d: %s", k, len(got), cap(got), test)
-				}
 				expect := test.text[e[0]:e[1]]
-				if expect != string(got) {
-					t.Errorf("match %d: expected %q got %q: %s", k, expect, got, test)
+				if expect != string(result[k]) {
+					t.Errorf("match %d: expected %q got %q: %s", k, expect, result[k], test)
 				}
 			}
 		}
@@ -331,14 +323,9 @@ func testSubmatchBytes(test *FindTest, n int, submatches []int, result [][]byte,
 			}
 			continue
 		}
-		got := result[k/2]
-		if len(got) != cap(got) {
-			t.Errorf("match %d: expected capacity %d got %d: %s", n, len(got), cap(got), test)
-			return
-		}
 		expect := test.text[submatches[k]:submatches[k+1]]
-		if expect != string(got) {
-			t.Errorf("match %d: expected %q got %q: %s", n, expect, got, test)
+		if expect != string(result[k/2]) {
+			t.Errorf("match %d: expected %q got %q: %s", n, expect, result, test)
 			return
 		}
 	}

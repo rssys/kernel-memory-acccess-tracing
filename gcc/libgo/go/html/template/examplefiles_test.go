@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build ignore
+
 package template_test
 
 import (
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,7 +22,7 @@ type templateFile struct {
 }
 
 func createTestDir(files []templateFile) string {
-	dir, err := os.MkdirTemp("", "template")
+	dir, err := ioutil.TempDir("", "template")
 	if err != nil {
 		log.Fatal(err)
 	}

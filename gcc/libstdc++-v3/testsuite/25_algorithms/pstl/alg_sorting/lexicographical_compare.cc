@@ -1,7 +1,6 @@
 // -*- C++ -*-
-// { dg-options "-ltbb" }
+// { dg-options "-std=gnu++17 -ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-timeout-factor 3 }
 // { dg-require-effective-target tbb-backend }
 
 //===-- lexicographical_compare.pass.cpp ----------------------------------===//
@@ -170,7 +169,7 @@ main()
 {
     test<uint16_t, float64_t>(std::less<float64_t>());
     test<float32_t, int32_t>(std::greater<float32_t>());
-#if !_PSTL_ICC_18_TEST_EARLY_EXIT_AVX_RELEASE_BROKEN
+#if !__PSTL_ICC_18_TEST_EARLY_EXIT_AVX_RELEASE_BROKEN
     test<float64_t, int32_t>([](const float64_t x, const int32_t y) { return x * x < y * y; });
 #endif
     test<LocalWrapper<int32_t>, LocalWrapper<int32_t>>(

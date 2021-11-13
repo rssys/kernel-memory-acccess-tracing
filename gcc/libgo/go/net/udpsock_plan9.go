@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-func (c *UDPConn) readFrom(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
+func (c *UDPConn) readFrom(b []byte) (n int, addr *UDPAddr, err error) {
 	buf := make([]byte, udpHeaderSize+len(b))
 	m, err := c.fd.Read(buf)
 	if err != nil {
@@ -23,9 +23,8 @@ func (c *UDPConn) readFrom(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
 	buf = buf[:m]
 
 	h, buf := unmarshalUDPHeader(buf)
-	n := copy(b, buf)
-	*addr = UDPAddr{IP: h.raddr, Port: int(h.rport)}
-	return n, addr, nil
+	n = copy(b, buf)
+	return n, &UDPAddr{IP: h.raddr, Port: int(h.rport)}, nil
 }
 
 func (c *UDPConn) readMsg(b, oob []byte) (n, oobn, flags int, addr *UDPAddr, err error) {
@@ -110,9 +109,7 @@ func (sl *sysListener) listenUDP(ctx context.Context, laddr *UDPAddr) (*UDPConn,
 }
 
 func (sl *sysListener) listenMulticastUDP(ctx context.Context, ifi *Interface, gaddr *UDPAddr) (*UDPConn, error) {
-	// Plan 9 does not like announce command with a multicast address,
-	// so do not specify an IP address when listening.
-	l, err := listenPlan9(ctx, sl.network, &UDPAddr{IP: nil, Port: gaddr.Port, Zone: gaddr.Zone})
+	l, err := listenPlan9(ctx, sl.network, gaddr)
 	if err != nil {
 		return nil, err
 	}
@@ -132,13 +129,11 @@ func (sl *sysListener) listenMulticastUDP(ctx context.Context, ifi *Interface, g
 			return nil, err
 		}
 	}
-
-	have4 := gaddr.IP.To4() != nil
 	for _, addr := range addrs {
-		if ipnet, ok := addr.(*IPNet); ok && (ipnet.IP.To4() != nil) == have4 {
+		if ipnet, ok := addr.(*IPNet); ok {
 			_, err = l.ctl.WriteString("addmulti " + ipnet.IP.String() + " " + gaddr.IP.String())
 			if err != nil {
-				return nil, &OpError{Op: "addmulti", Net: "", Source: nil, Addr: ipnet, Err: err}
+				return nil, err
 			}
 		}
 	}

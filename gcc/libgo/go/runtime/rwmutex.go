@@ -39,7 +39,7 @@ func (rw *rwmutex) rlock() {
 	if int32(atomic.Xadd(&rw.readerCount, 1)) < 0 {
 		// A writer is pending. Park on the reader queue.
 		systemstack(func() {
-			lockWithRank(&rw.rLock, lockRankRwmutexR)
+			lock(&rw.rLock)
 			if rw.readerPass > 0 {
 				// Writer finished.
 				rw.readerPass -= 1
@@ -67,7 +67,7 @@ func (rw *rwmutex) runlock() {
 		// A writer is pending.
 		if atomic.Xadd(&rw.readerWait, -1) == 0 {
 			// The last reader unblocks the writer.
-			lockWithRank(&rw.rLock, lockRankRwmutexR)
+			lock(&rw.rLock)
 			w := rw.writer.ptr()
 			if w != nil {
 				notewakeup(&w.park)
@@ -81,12 +81,12 @@ func (rw *rwmutex) runlock() {
 // lock locks rw for writing.
 func (rw *rwmutex) lock() {
 	// Resolve competition with other writers and stick to our P.
-	lockWithRank(&rw.wLock, lockRankRwmutexW)
+	lock(&rw.wLock)
 	m := getg().m
 	// Announce that there is a pending writer.
 	r := int32(atomic.Xadd(&rw.readerCount, -rwmutexMaxReaders)) + rwmutexMaxReaders
 	// Wait for any active readers to complete.
-	lockWithRank(&rw.rLock, lockRankRwmutexR)
+	lock(&rw.rLock)
 	if r != 0 && atomic.Xadd(&rw.readerWait, r) != 0 {
 		// Wait for reader to wake us up.
 		systemstack(func() {
@@ -108,7 +108,7 @@ func (rw *rwmutex) unlock() {
 		throw("unlock of unlocked rwmutex")
 	}
 	// Unblock blocked readers.
-	lockWithRank(&rw.rLock, lockRankRwmutexR)
+	lock(&rw.rLock)
 	for rw.readers.ptr() != nil {
 		reader := rw.readers.ptr()
 		rw.readers = reader.schedlink

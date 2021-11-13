@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,17 +23,14 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;          use Atree;
-with Einfo;          use Einfo;
-with Einfo.Entities; use Einfo.Entities;
-with Einfo.Utils;    use Einfo.Utils;
-with Errout;         use Errout;
-with Namet;          use Namet;
-with Sem;            use Sem;
-with Sem_Aux;        use Sem_Aux;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Snames;         use Snames;
+with Atree;   use Atree;
+with Einfo;   use Einfo;
+with Errout;  use Errout;
+with Namet;   use Namet;
+with Sem;     use Sem;
+with Sem_Aux; use Sem_Aux;
+with Sinfo;   use Sinfo;
+with Snames;  use Snames;
 
 package body Sem_Mech is
 
@@ -184,10 +181,11 @@ package body Sem_Mech is
                -- C --
                -------
 
-               --  Note: Assembler and Stdcall also use C conventions
+               --  Note: Assembler, C++, Stdcall also use C conventions
 
                when Convention_Assembler
-                  | Convention_C_Family
+                  | Convention_C
+                  | Convention_CPP
                   | Convention_Stdcall
                =>
                   --  The following values are passed by copy
@@ -233,8 +231,8 @@ package body Sem_Mech is
                      --  OUT and IN OUT parameters of record types are passed
                      --  by reference regardless of pragmas (RM B.3 (69/2)).
 
-                     elsif Ekind (Formal) in
-                             E_Out_Parameter | E_In_Out_Parameter
+                     elsif Ekind_In (Formal, E_Out_Parameter,
+                                             E_In_Out_Parameter)
                      then
                         Set_Mechanism (Formal, By_Reference);
 

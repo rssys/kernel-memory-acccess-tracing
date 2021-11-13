@@ -6,12 +6,12 @@ struct C : A, B {};
 
 struct X
 {
-  virtual B* foo(volatile int); // { dg-warning "deprecated" "" { target c++2a } }
+  virtual B* foo(volatile int);
 };
 
 struct Y : X
 {
-  virtual C* foo(volatile int); // { dg-warning "deprecated" "" { target c++2a } }
+  virtual C* foo(volatile int);
 };
 
-C* Y::foo(volatile int) { return 0; } // { dg-warning "deprecated" "" { target c++2a } }
+C* Y::foo(volatile int) { return 0; }

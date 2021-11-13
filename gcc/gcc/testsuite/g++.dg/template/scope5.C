@@ -57,12 +57,10 @@ enum { a = b::e<0>::f };
 template <typename> class au;
 template <typename av> struct ac : ao<av> { typedef c::e<am::an> aq; };
 template <typename aw, typename i, typename ax> void ay(aw, i, ax) {
-  // Not sure if this has been creduced from an initialization of a
-  // variable to a block-scope extern function decl
-  au<c::e<ap<typename ak<i>::o>::f> > az2(); // { dg-warning "empty parentheses" }
+  au<c::e<ap<typename ak<i>::o>::f> > az();
 }
 void v() {
   ad a;
-  void az1();
-  ay(az1, a, v);
+  void az();
+  ay(az, a, v);
 }

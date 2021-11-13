@@ -16,7 +16,7 @@ program test
     x = x + 0.3
   enddo
   ! continuation must begin with sentinel
-  !$acc end parallel & ! { dg-error "Unexpected junk" }
+  !$acc end parallel & ! { dg-error "Unclassifiable OpenACC directive" }
   ! loop
 
   print *, x

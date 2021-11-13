@@ -1,6 +1,6 @@
-// { dg-do run { target c++14 } }
+// { dg-do compile { target c++14 } }
 
-// Copyright (C) 2015-2021 Free Software Foundation, Inc.
+// Copyright (C) 2015-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -17,7 +17,7 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// C++11 26.6.10 valarray range access: [valarray.range]
+// 26.6.10 valarray range access: [valarray.range]
 
 #include <iterator>
 #include <valarray>
@@ -27,27 +27,9 @@ void
 test01()
 {
   std::valarray<double> va{1.0, 2.0, 3.0};
-  (void) std::cbegin(va);
-  (void) std::cend(va);
+  std::cbegin(va);
+  std::cend(va);
   const auto& cva = va;
-  (void) std::cbegin(cva);
-  (void) std::cend(cva);
-}
-
-// PR libstdc++/103022
-void
-test02()
-{
-  std::valarray<double> va;
-  (void) std::cbegin(va);
-  (void) std::cend(va);
-  const auto& cva = va;
-  (void) std::cbegin(cva);
-  (void) std::cend(cva);
-}
-
-int main()
-{
-  test01();
-  test02();
+  std::cbegin(cva);
+  std::cend(cva);
 }

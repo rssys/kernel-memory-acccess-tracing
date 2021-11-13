@@ -1,4 +1,5 @@
 ! { dg-do run }
+! { dg-options "-fdump-tree-original" }
 !
 ! PR fortran/36132
 !
@@ -24,3 +25,6 @@ END MODULE M1
 USE M1
 CALL S2()
 END
+
+! { dg-final { scan-tree-dump-times "a != 0B \\? \\\(.*\\\) _gfortran_internal_pack" 1 "original" } }
+! { dg-final { scan-tree-dump-times "if \\(a != 0B &&" 1 "original" } }

@@ -5,8 +5,7 @@
 // Only run where builders (build.golang.org) have
 // access to compiled packages for import.
 //
-//go:build !arm && !arm64
-// +build !arm,!arm64
+// +build ignore,!arm,!arm64,!nacl
 
 package types_test
 
@@ -78,7 +77,7 @@ func Unused() { {}; {{ var x int; _ = x }} } // make sure empty block scopes get
 	rx := regexp.MustCompile(` 0x[a-fA-F0-9]*`)
 	fmt.Println(rx.ReplaceAllString(buf.String(), ""))
 
-	// no output for gccgo--can't import "fmt"
+	// Output:
 	// package "temperature" scope {
 	// .  const temperature.Boiling temperature.Celsius
 	// .  type temperature.Celsius float64
@@ -121,9 +120,6 @@ import "fmt"
 type Celsius float64
 func (c Celsius) String() string  { return fmt.Sprintf("%g°C", c) }
 func (c *Celsius) SetF(f float64) { *c = Celsius(f - 32 / 9 * 5) }
-
-type S struct { I; m int }
-type I interface { m() byte }
 `
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "celsius.go", input, 0)
@@ -151,21 +147,13 @@ type I interface { m() byte }
 		fmt.Println()
 	}
 
-	// Print the method set of S.
-	styp := pkg.Scope().Lookup("S").Type()
-	fmt.Printf("Method set of %s:\n", styp)
-	fmt.Println(types.NewMethodSet(styp))
-
-	// no output for gccgo--can't import "fmt"
+	// Output:
 	// Method set of temperature.Celsius:
 	// method (temperature.Celsius) String() string
 	//
 	// Method set of *temperature.Celsius:
 	// method (*temperature.Celsius) SetF(f float64)
 	// method (*temperature.Celsius) String() string
-	//
-	// Method set of temperature.S:
-	// MethodSet {}
 }
 
 // ExampleInfo prints various facts recorded by the type checker in a

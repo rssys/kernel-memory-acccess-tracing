@@ -6,12 +6,12 @@ package cache
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"cmd/go/internal/base"
-	"cmd/go/internal/cfg"
 )
 
 // Default returns the default cache to use, or nil if no cache should be used.
@@ -48,7 +48,7 @@ func initDefaultCache() {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "README")); err != nil {
 		// Best effort.
-		os.WriteFile(filepath.Join(dir, "README"), []byte(cacheREADME), 0666)
+		ioutil.WriteFile(filepath.Join(dir, "README"), []byte(cacheREADME), 0666)
 	}
 
 	c, err := Open(dir)
@@ -73,7 +73,7 @@ func DefaultDir() string {
 	// otherwise distinguish between an explicit "off" and a UserCacheDir error.
 
 	defaultDirOnce.Do(func() {
-		defaultDir = cfg.Getenv("GOCACHE")
+		defaultDir = os.Getenv("GOCACHE")
 		if filepath.IsAbs(defaultDir) || defaultDir == "off" {
 			return
 		}

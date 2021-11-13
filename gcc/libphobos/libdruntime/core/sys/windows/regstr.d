@@ -8,11 +8,10 @@
  */
 module core.sys.windows.regstr;
 version (Windows):
-@system:
 
 // TODO: fix possible conflict with shloj. Sort out NEC_98 issue.
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum REGSTR_MAX_VALUE_LENGTH = 256;
 

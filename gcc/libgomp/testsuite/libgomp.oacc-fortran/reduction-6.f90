@@ -1,8 +1,5 @@
 ! { dg-do run }
-! { dg-additional-options "-cpp" }
-
-! { dg-additional-options "-Wopenacc-parallelism" } for testing/documenting
-! aspects of that functionality.
+! { dg-additional-options "-cpp -w" }
 
 program reduction
   implicit none
@@ -31,7 +28,6 @@ program reduction
   !$acc end parallel
 
   !$acc parallel num_workers (4) vector_length (32)
-  ! { dg-warning "region is vector partitioned but does not contain vector partitioned code" "" { target *-*-* } .-1 }
   !$acc loop reduction(+:ws1, ws2) worker
   do i = 1, n
      ws1 = ws1 + 1

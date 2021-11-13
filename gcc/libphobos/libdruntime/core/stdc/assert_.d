@@ -17,15 +17,6 @@
 
 module core.stdc.assert_;
 
-version (OSX)
-    version = Darwin;
-else version (iOS)
-    version = Darwin;
-else version (TVOS)
-    version = Darwin;
-else version (WatchOS)
-    version = Darwin;
-
 extern (C):
 @trusted:
 nothrow:
@@ -48,10 +39,10 @@ else version (CRuntime_Microsoft)
     ///
     void _assert(const(char)* exp, const(char)* file, uint line);
 }
-else version (Darwin)
+else version (OSX)
 {
     /***
-     * Assert failure function in the Darwin C library.
+     * Assert failure function in the OSX C library.
      */
     void __assert_rtn(const(char)* func, const(char)* file, uint line, const(char)* exp);
 }
@@ -68,15 +59,6 @@ else version (NetBSD)
      * Assert failure function in the NetBSD C library.
      */
     void __assert(const(char)* file, int line, const(char)* exp);
-}
-else version (OpenBSD)
-{
-    /***
-     * Assert failure function in the OpenBSD C library.
-     */
-    void __assert(const(char)* file, int line, const(char)* exp);
-    ///
-    void __assert2(const(char)* file, int line, const(char)* func, const(char)* exp);
 }
 else version (DragonFlyBSD)
 {

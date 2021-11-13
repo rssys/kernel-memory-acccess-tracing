@@ -5,7 +5,6 @@
 // js/wasm uses fake networking directly implemented in the net package.
 // This file only exists to make the compiler happy.
 
-//go:build js && wasm
 // +build js,wasm
 
 package syscall
@@ -43,7 +42,7 @@ const (
 const (
 	_ = iota
 	F_DUPFD_CLOEXEC
-	SYS_FCNTL = 500 // unsupported
+	SYS_FCNTL = 500 // unsupported; same value as net_nacl.go
 )
 
 type Sockaddr interface {

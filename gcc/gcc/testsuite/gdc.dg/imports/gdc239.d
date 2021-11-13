@@ -1,27 +1,9 @@
-module imports.gdc239;
+import std.path : buildNormalizedPath;
 
 class C239a
 {
     auto bar()
     {
-        chainPath();
+        auto path = buildNormalizedPath("/", "foo");
     }
-}
-
-auto chainPath()
-{
-    struct OnlyResult { }
-    chain([], OnlyResult(), []);
-}
-
-auto chain(Ranges...)(Ranges rs)
-{
-    static struct Result
-    {
-        Ranges source;
-        this(Ranges)
-        {
-        }
-    }
-    Result(rs);
 }

@@ -1,7 +1,9 @@
 /* { dg-do assemble { target aarch64_asm_sve_ok } } */
-/* { dg-options "-O -msve-vector-bits=256 --save-temps -mlittle-endian" } */
+/* { dg-options "-O -msve-vector-bits=256 --save-temps" } */
 
-typedef __UINT32_TYPE__ vnx4si __attribute__((vector_size (32)));
+#include <stdint.h>
+
+typedef uint32_t vnx4si __attribute__((vector_size (32)));
 typedef float vnx4sf __attribute__((vector_size (32)));
 
 #define MASK_2(X, Y) (X) ^ (Y), (X + 1) ^ (Y)

@@ -17,5 +17,4 @@ int g (int i, int j)
     return 1;
 }
 
-/* { dg-final { scan-tree-dump-times "return 0" 1 "vrp1" } } */
-/* { dg-final { scan-tree-dump-not "return 1" "vrp1" } } */
+/* { dg-final { scan-tree-dump-times "Folding predicate.*to 1" 1 "vrp1" } } */

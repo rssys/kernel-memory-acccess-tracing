@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !aix && !darwin && !dragonfly && !freebsd && !hurd && !linux && !netbsd && !openbsd && !plan9 && !solaris && !windows
 // +build !aix,!darwin,!dragonfly,!freebsd,!hurd,!linux,!netbsd,!openbsd,!plan9,!solaris,!windows
 
 package filelock
 
-import "io/fs"
+import "os"
 
 type lockType int8
 
@@ -17,7 +16,7 @@ const (
 )
 
 func lock(f File, lt lockType) error {
-	return &fs.PathError{
+	return &os.PathError{
 		Op:   lt.String(),
 		Path: f.Name(),
 		Err:  ErrNotSupported,
@@ -25,7 +24,7 @@ func lock(f File, lt lockType) error {
 }
 
 func unlock(f File) error {
-	return &fs.PathError{
+	return &os.PathError{
 		Op:   "Unlock",
 		Path: f.Name(),
 		Err:  ErrNotSupported,

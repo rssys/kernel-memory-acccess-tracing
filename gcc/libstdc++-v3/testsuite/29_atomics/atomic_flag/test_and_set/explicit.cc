@@ -1,7 +1,7 @@
 // { dg-do run { target c++11 } }
 // { dg-require-thread-fence "" }
 
-// Copyright (C) 2008-2021 Free Software Foundation, Inc.
+// Copyright (C) 2008-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,13 +19,14 @@
 // <http://www.gnu.org/licenses/>.
 
 #include <atomic>
-#include <testsuite_hooks.h>
 
 int main()
 {
   using namespace std;
   atomic_flag af = ATOMIC_FLAG_INIT;
 
-  VERIFY( ! af.test_and_set(memory_order_acquire) );
-  VERIFY( af.test_and_set(memory_order_acquire) );
+  if (!af.test_and_set(memory_order_acquire))
+    af.clear(memory_order_release);
+
+  return 0;
 }

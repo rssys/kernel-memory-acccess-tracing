@@ -55,7 +55,6 @@ GNAT Reference Manual
    gnat_rm/specialized_needs_annexes
    gnat_rm/implementation_of_specific_ada_features
    gnat_rm/implementation_of_ada_2012_features
-   gnat_rm/security_hardening_features
    gnat_rm/obsolescent_features
    gnat_rm/compatibility_and_porting_guide
 

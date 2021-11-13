@@ -5,6 +5,7 @@
 package testenv
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,7 +16,7 @@ var symlinkOnce sync.Once
 var winSymlinkErr error
 
 func initWinHasSymlink() {
-	tmpdir, err := os.MkdirTemp("", "symtest")
+	tmpdir, err := ioutil.TempDir("", "symtest")
 	if err != nil {
 		panic("failed to create temp directory: " + err.Error())
 	}

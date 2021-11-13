@@ -14,7 +14,6 @@
  */
 module core.sys.windows.threadaux;
 version (Windows):
-@system:
 
 import core.sys.windows.basetsd/+ : HANDLE+/;
 import core.sys.windows.winbase/+ : CloseHandle, GetCurrentThreadId, GetCurrentProcessId,
@@ -172,7 +171,7 @@ struct thread_aux
             version (GNU_InlineAsm)
             {
                 void** teb;
-                asm pure nothrow @nogc { "movl %%fs:0x18, %0;" : "=r" (teb); }
+                asm pure nothrow @nogc { "movl %%fs:0x18, %0;" : "=r" teb; }
                 return teb;
             }
             else
@@ -190,7 +189,7 @@ struct thread_aux
             version (GNU_InlineAsm)
             {
                 void** teb;
-                asm pure nothrow @nogc { "movq %%gs:0x30, %0;" : "=r" (teb); }
+                asm pure nothrow @nogc { "movq %%gs:0x30, %0;" : "=r" teb; }
                 return teb;
             }
             else

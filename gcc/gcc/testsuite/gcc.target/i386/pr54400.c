@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -msse3 -mfpmath=sse -mtune-ctrl=v2df_reduction_prefer_haddpd" } */
+/* { dg-options "-O2 -msse3 -mfpmath=sse" } */
 
 #include <x86intrin.h>
 

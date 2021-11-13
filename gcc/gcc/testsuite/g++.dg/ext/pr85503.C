@@ -138,7 +138,6 @@ struct ad< ai< cr, ag, ah, cu, ct, cw > > {
 };
 template < typename, int ag, int ah, int, int, int >
 class ai : public af< ai< double, ag, ah > > {
-public:
   typedef ai cv;
 };
 template < typename bk, typename ce, typename cf >

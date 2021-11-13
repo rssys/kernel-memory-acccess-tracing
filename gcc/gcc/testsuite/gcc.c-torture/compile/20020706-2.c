@@ -1,8 +1,6 @@
 // Contributed by Alexandre Oliva <aoliva@redhat.com>
 // From Red Hat case 106165.
 
-/* { dg-require-effective-target indirect_calls } */
-
 typedef unsigned short (FUNC_P) (void *, unsigned char *, unsigned short);
 
 void crashIt(int id, FUNC_P *func, unsigned char *funcparm)

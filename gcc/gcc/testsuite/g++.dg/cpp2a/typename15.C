@@ -1,5 +1,5 @@
 // PR c++/88979
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 template<typename T>
 struct B {

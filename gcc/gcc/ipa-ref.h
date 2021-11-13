@@ -1,5 +1,5 @@
 /* IPA reference lists.
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -22,12 +22,12 @@ along with GCC; see the file COPYING3.  If not see
 #define GCC_IPA_REF_H
 
 struct cgraph_node;
-struct varpool_node;
-struct symtab_node;
+class varpool_node;
+class symtab_node;
 
 
 /* How the reference is done.  */
-enum ipa_ref_use
+enum GTY(()) ipa_ref_use
 {
   IPA_REF_LOAD,
   IPA_REF_STORE,
@@ -36,7 +36,7 @@ enum ipa_ref_use
 };
 
 /* Record of reference in callgraph or varpool.  */
-struct ipa_ref
+struct GTY(()) ipa_ref
 {
 public:
   /* Remove reference.  */
@@ -46,7 +46,7 @@ public:
      function.  */
   bool cannot_lead_to_return ();
 
-  /* Return true if reference may be used in address compare.  */
+  /* Return true if refernece may be used in address compare.  */
   bool address_matters_p ();
 
   /* Return reference list this reference is in.  */
@@ -60,26 +60,24 @@ public:
   gimple *stmt;
   unsigned int lto_stmt_uid;
   unsigned int referred_index;
-  /* speculative id is used to link direct calls with their corresponding
-     IPA_REF_ADDR references when representing speculative calls.  */
-  unsigned int speculative_id : 16;
   ENUM_BITFIELD (ipa_ref_use) use:3;
   unsigned int speculative:1;
 };
 
 typedef struct ipa_ref ipa_ref_t;
+typedef struct ipa_ref *ipa_ref_ptr;
 
 
 /* List of references.  This is stored in both callgraph and varpool nodes.  */
-struct ipa_ref_list
+struct GTY(()) ipa_ref_list
 {
 public:
   /* Return first reference in list or NULL if empty.  */
   struct ipa_ref *first_reference (void)
   {
-    if (!references.length ())
+    if (!vec_safe_length (references))
       return NULL;
-    return &references[0];
+    return &(*references)[0];
   }
 
   /* Return first referring ref in list or NULL if empty.  */
@@ -120,20 +118,20 @@ public:
   void clear (void)
   {
     referring.create (0);
-    references.create (0);
+    references = NULL;
   }
 
   /* Return number of references.  */
   unsigned int nreferences (void)
   {
-    return references.length ();
+    return vec_safe_length (references);
   }
 
   /* Store actual references in references vector.  */
-  vec<ipa_ref_t, va_heap, vl_ptr> references;
+  vec<ipa_ref_t, va_gc> *references;
   /* Referring is vector of pointers to references.  It must not live in GGC space
      or GGC will try to mark middle of references vectors.  */
-  vec<ipa_ref_t *, va_heap, vl_ptr> referring;
+  vec<ipa_ref_ptr>  GTY((skip)) referring;
 };
 
 #endif /* GCC_IPA_REF_H */

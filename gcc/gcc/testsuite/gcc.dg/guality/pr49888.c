@@ -4,7 +4,7 @@
 
 static int v __attribute__((used));
 
-static void __attribute__((noipa))
+static void __attribute__((noinline, noclone))
 f (int *p)
 {
   int c = *p;

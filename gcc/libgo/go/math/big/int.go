@@ -323,8 +323,6 @@ func (x *Int) Cmp(y *Int) (r int) {
 	// (-x) cmp y == y
 	// (-x) cmp (-y) == -(x cmp y)
 	switch {
-	case x == y:
-		// nothing to do
 	case x.neg == y.neg:
 		r = x.abs.cmp(y.abs)
 		if x.neg {
@@ -403,29 +401,21 @@ func (x *Int) IsUint64() bool {
 // (not just a prefix) must be valid for success. If SetString fails,
 // the value of z is undefined but the returned value is nil.
 //
-// The base argument must be 0 or a value between 2 and MaxBase.
-// For base 0, the number prefix determines the actual base: A prefix of
-// ``0b'' or ``0B'' selects base 2, ``0'', ``0o'' or ``0O'' selects base 8,
-// and ``0x'' or ``0X'' selects base 16. Otherwise, the selected base is 10
-// and no prefix is accepted.
+// The base argument must be 0 or a value between 2 and MaxBase. If the base
+// is 0, the string prefix determines the actual conversion base. A prefix of
+// ``0x'' or ``0X'' selects base 16; the ``0'' prefix selects base 8, and a
+// ``0b'' or ``0B'' prefix selects base 2. Otherwise the selected base is 10.
 //
 // For bases <= 36, lower and upper case letters are considered the same:
 // The letters 'a' to 'z' and 'A' to 'Z' represent digit values 10 to 35.
 // For bases > 36, the upper case letters 'A' to 'Z' represent the digit
 // values 36 to 61.
 //
-// For base 0, an underscore character ``_'' may appear between a base
-// prefix and an adjacent digit, and between successive digits; such
-// underscores do not change the value of the number.
-// Incorrect placement of underscores is reported as an error if there
-// are no other errors. If base != 0, underscores are not recognized
-// and act like any other character that is not a valid digit.
-//
 func (z *Int) SetString(s string, base int) (*Int, bool) {
 	return z.setFromScanner(strings.NewReader(s), base)
 }
 
-// setFromScanner implements SetString given an io.ByteScanner.
+// setFromScanner implements SetString given an io.BytesScanner.
 // For documentation see comments of SetString.
 func (z *Int) setFromScanner(r io.ByteScanner, base int) (*Int, bool) {
 	if _, _, err := z.scan(r, base); err != nil {
@@ -447,24 +437,9 @@ func (z *Int) SetBytes(buf []byte) *Int {
 }
 
 // Bytes returns the absolute value of x as a big-endian byte slice.
-//
-// To use a fixed length slice, or a preallocated one, use FillBytes.
 func (x *Int) Bytes() []byte {
 	buf := make([]byte, len(x.abs)*_S)
 	return buf[x.abs.bytes(buf):]
-}
-
-// FillBytes sets buf to the absolute value of x, storing it as a zero-extended
-// big-endian byte slice, and returns buf.
-//
-// If the absolute value of x doesn't fit in buf, FillBytes will panic.
-func (x *Int) FillBytes(buf []byte) []byte {
-	// Clear whole buffer. (This gets optimized into a memclr.)
-	for i := range buf {
-		buf[i] = 0
-	}
-	x.abs.bytes(buf)
-	return buf
 }
 
 // BitLen returns the length of the absolute value of x in bits.
@@ -473,17 +448,10 @@ func (x *Int) BitLen() int {
 	return x.abs.bitLen()
 }
 
-// TrailingZeroBits returns the number of consecutive least significant zero
-// bits of |x|.
-func (x *Int) TrailingZeroBits() uint {
-	return x.abs.trailingZeroBits()
-}
-
 // Exp sets z = x**y mod |m| (i.e. the sign of m is ignored), and returns z.
-// If m == nil or m == 0, z = x**y unless y <= 0 then z = 1. If m != 0, y < 0,
-// and x and m are not relatively prime, z is unchanged and nil is returned.
+// If m == nil or m == 0, z = x**y unless y <= 0 then z = 1.
 //
-// Modular exponentiation of inputs of a particular size is not a
+// Modular exponentation of inputs of a particular size is not a
 // cryptographically constant-time operation.
 func (z *Int) Exp(x, y, m *Int) *Int {
 	// See Knuth, volume 2, section 4.6.3.
@@ -493,11 +461,7 @@ func (z *Int) Exp(x, y, m *Int) *Int {
 			return z.SetInt64(1)
 		}
 		// for y < 0: x**y mod m == (x**(-1))**|y| mod m
-		inverse := new(Int).ModInverse(x, m)
-		if inverse == nil {
-			return nil
-		}
-		xWords = inverse.abs
+		xWords = new(Int).ModInverse(x, m).abs
 	}
 	yWords := y.abs
 
@@ -517,41 +481,18 @@ func (z *Int) Exp(x, y, m *Int) *Int {
 	return z
 }
 
-// GCD sets z to the greatest common divisor of a and b and returns z.
+// GCD sets z to the greatest common divisor of a and b, which both must
+// be > 0, and returns z.
 // If x or y are not nil, GCD sets their value such that z = a*x + b*y.
-//
-// a and b may be positive, zero or negative. (Before Go 1.14 both had
-// to be > 0.) Regardless of the signs of a and b, z is always >= 0.
-//
-// If a == b == 0, GCD sets z = x = y = 0.
-//
-// If a == 0 and b != 0, GCD sets z = |b|, x = 0, y = sign(b) * 1.
-//
-// If a != 0 and b == 0, GCD sets z = |a|, x = sign(a) * 1, y = 0.
+// If either a or b is <= 0, GCD sets z = x = y = 0.
 func (z *Int) GCD(x, y, a, b *Int) *Int {
-	if len(a.abs) == 0 || len(b.abs) == 0 {
-		lenA, lenB, negA, negB := len(a.abs), len(b.abs), a.neg, b.neg
-		if lenA == 0 {
-			z.Set(b)
-		} else {
-			z.Set(a)
-		}
-		z.neg = false
+	if a.Sign() <= 0 || b.Sign() <= 0 {
+		z.SetInt64(0)
 		if x != nil {
-			if lenA == 0 {
-				x.SetUint64(0)
-			} else {
-				x.SetUint64(1)
-				x.neg = negA
-			}
+			x.SetInt64(0)
 		}
 		if y != nil {
-			if lenB == 0 {
-				y.SetUint64(0)
-			} else {
-				y.SetUint64(1)
-				y.neg = negB
-			}
+			y.SetInt64(0)
 		}
 		return z
 	}
@@ -659,7 +600,7 @@ func euclidUpdate(A, B, Ua, Ub, q, r, s, t *Int, extended bool) {
 }
 
 // lehmerGCD sets z to the greatest common divisor of a and b,
-// which both must be != 0, and returns z.
+// which both must be > 0, and returns z.
 // If x or y are not nil, their values are set such that z = a*x + b*y.
 // See Knuth, The Art of Computer Programming, Vol. 2, Section 4.5.2, Algorithm L.
 // This implementation uses the improved condition by Collins requiring only one
@@ -671,8 +612,8 @@ func euclidUpdate(A, B, Ua, Ub, q, r, s, t *Int, extended bool) {
 func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 	var A, B, Ua, Ub *Int
 
-	A = new(Int).Abs(a)
-	B = new(Int).Abs(b)
+	A = new(Int).Set(a)
+	B = new(Int).Set(b)
 
 	extended := x != nil || y != nil
 
@@ -758,28 +699,16 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 			A.abs[0] = aWord
 		}
 	}
-	negA := a.neg
-	if y != nil {
-		// avoid aliasing b needed in the division below
-		if y == b {
-			B.Set(b)
-		} else {
-			B = b
-		}
-		// y = (z - a*x)/b
-		y.Mul(a, Ua) // y can safely alias a
-		if negA {
-			y.neg = !y.neg
-		}
-		y.Sub(A, y)
-		y.Div(y, B)
-	}
 
 	if x != nil {
 		*x = *Ua
-		if negA {
-			x.neg = !x.neg
-		}
+	}
+
+	if y != nil {
+		// y = (z - a*x)/b
+		y.Mul(a, Ua)
+		y.Sub(A, y)
+		y.Div(y, b)
 	}
 
 	*z = *A

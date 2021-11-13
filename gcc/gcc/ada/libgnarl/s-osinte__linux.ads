@@ -7,7 +7,7 @@
 --                                  S p e c                                 --
 --                                                                          --
 --             Copyright (C) 1991-2017, Florida State University            --
---          Copyright (C) 1995-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -46,12 +46,9 @@ with System.OS_Constants;
 package System.OS_Interface is
    pragma Preelaborate;
 
+   pragma Linker_Options ("-lpthread");
    pragma Linker_Options ("-lrt");
    --  Needed for clock_getres with glibc versions prior to 2.17
-
-   pragma Linker_Options ("-lpthread");
-
-   use type System.Linux.time_t;
 
    subtype int            is Interfaces.C.int;
    subtype char           is Interfaces.C.char;
@@ -280,9 +277,9 @@ package System.OS_Interface is
    PR_GET_NAME : constant := 16;
 
    function prctl
-     (option : int;
-      arg    : unsigned_long) return int;
-   pragma Import (C_Variadic_1, prctl, "prctl");
+     (option                 : int;
+      arg2, arg3, arg4, arg5 : unsigned_long := 0) return int;
+   pragma Import (C, prctl);
 
    -------------
    -- Threads --
@@ -316,8 +313,6 @@ package System.OS_Interface is
    -- Stack --
    -----------
 
-   subtype char_array is Interfaces.C.char_array;
-
    type stack_t is record
       ss_sp    : System.Address;
       ss_flags : int;
@@ -330,12 +325,12 @@ package System.OS_Interface is
       oss : access stack_t) return int;
    pragma Import (C, sigaltstack, "sigaltstack");
 
-   Alternate_Stack_Size : constant := 32 * 1024;
-   --  This must be in keeping with init.c:__gnat_alternate_stack
-
-   Alternate_Stack : aliased char_array (1 .. Alternate_Stack_Size);
+   Alternate_Stack : aliased System.Address;
    pragma Import (C, Alternate_Stack, "__gnat_alternate_stack");
    --  The alternate signal stack for stack overflows
+
+   Alternate_Stack_Size : constant := 16 * 1024;
+   --  This must be in keeping with init.c:__gnat_alternate_stack
 
    function Get_Stack_Base (thread : pthread_t) return Address;
    pragma Inline (Get_Stack_Base);
@@ -637,6 +632,8 @@ private
    pragma Warnings (On);
 
    type pid_t is new int;
+
+   subtype char_array is Interfaces.C.char_array;
 
    type pthread_attr_t is record
       Data : char_array (1 .. OS_Constants.PTHREAD_ATTR_SIZE);

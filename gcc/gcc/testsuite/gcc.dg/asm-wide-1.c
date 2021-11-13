@@ -3,29 +3,29 @@
 /* { dg-do compile } */
 /* { dg-options "" } */
 
-int foo asm (L"bar"); /* { dg-error "14:a wide string is invalid in this context" } */
+int foo asm (L"bar"); /* { dg-error "14:wide string literal in 'asm'" } */
 
-asm (L"foo"); /* { dg-error "6:a wide string is invalid in this context" } */
+asm (L"foo"); /* { dg-error "6:wide string literal in 'asm'" } */
 
 void
 f (void)
 {
   int x = 1;
-  asm (L"foo"); /* { dg-error "8:a wide string is invalid in this context" } */
+  asm (L"foo"); /* { dg-error "8:wide string literal in 'asm'" } */
   asm ("foo" :
-       L"=g" (x)); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"=g" (x)); /* { dg-error "8:wide string literal in 'asm'" } */
   /* Extra errors from the substitution of "" for wide strings: */
   /* { dg-error "output" "output" { target *-*-* } .-2 } */
   asm ("foo" : [x]
-       L"=g" (x)); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"=g" (x)); /* { dg-error "8:wide string literal in 'asm'" } */
   /* { dg-error "output" "output" { target *-*-* } .-1 } */
   asm ("foo" : [x] "=g" (x),
-       L"=g" (x)); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"=g" (x)); /* { dg-error "8:wide string literal in 'asm'" } */
   /* { dg-error "output" "output" { target *-*-* } .-1 } */
   asm ("foo" : :
-       L"g" (x)); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"g" (x)); /* { dg-error "8:wide string literal in 'asm'" } */
   asm ("foo" : : :
-       L"memory"); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"memory"); /* { dg-error "8:wide string literal in 'asm'" } */
   asm ("foo" : : : "memory",
-       L"memory"); /* { dg-error "8:a wide string is invalid in this context" } */
+       L"memory"); /* { dg-error "8:wide string literal in 'asm'" } */
 }

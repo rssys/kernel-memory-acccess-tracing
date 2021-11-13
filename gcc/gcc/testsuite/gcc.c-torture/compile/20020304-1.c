@@ -4,8 +4,6 @@
    Original bug report is c/5830 by Manuel Serrano <Manuel.Serrano@inria.fr>.
  */
 
-/* { dg-require-stack-size "513" } */
-
 typedef union scmobj {
   struct pair {
     union scmobj *car;

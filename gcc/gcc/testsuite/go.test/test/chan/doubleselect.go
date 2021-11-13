@@ -61,7 +61,6 @@ func recver(in <-chan int) {
 func main() {
 	runtime.GOMAXPROCS(2)
 
-	flag.Parse()
 	c1 := make(chan int)
 	c2 := make(chan int)
 	c3 := make(chan int)

@@ -15,9 +15,9 @@ static assert(C1748!int.stringof == "C1748!int");
 **************************************************/
 
 version(all)
-    pragma(inline, true);
+    pragma(msg, "true");
 else
-    pragma(inline, false);
+    pragma(msg, "false");
 
 /**************************************************
     2438
@@ -78,7 +78,7 @@ template ice8982(T)
     void bug8982(ref const int v = 7){}
 
     static if (is(typeof(bug8982) P == __parameters)) {
-        enum eval8982 = ((P[0..1] g) => g[0])();
+        pragma(msg, ((P[0..1] g) => g[0])());
     }
 }
 
@@ -275,7 +275,7 @@ void main()
     try
     {
     }
-    catch(.object.Throwable)
+    catch
     {
     }
 }
@@ -298,7 +298,7 @@ void test11939()
 **************************************************/
 
 template A(B) {
-    pragma(lib, "missing ;")
+    pragma(msg, "missing ;")
     enum X = 0;
 }
 
@@ -766,7 +766,7 @@ struct A12799
 /***************************************************/
 // 13236
 
-enum bug13286 = is(typeof({ struct S { S x; } }));
+pragma(msg, is(typeof({ struct S { S x; } })));
 
 /***************************************************/
 // 13280
@@ -857,15 +857,14 @@ X14166[int] makeAA14166() { return aa14166; }
 struct Tup14166(T...) { T field; alias field this; }
 Tup14166!(int, int) tup14166;
 Tup14166!(int, int) makeTup14166() { return tup14166; }
-alias TT14166(T...) = T;
 
-static assert(is(typeof((s14166.x += 1) = 2) == int));     // ok <- error
-static assert(is(typeof(s14166.a.length += 2) == size_t)); // ok <- error
-static assert(is(typeof(s14166++) == S14166));             // ok <- error
-static assert(is(typeof(s14166.x ^^ 2) == int));           // ok <- error
-static assert(is(typeof(s14166.y ^^= 2.5) == double));     // ok <- error
-static assert(is(typeof(makeAA14166()[0] = 1) == X14166)); // ok <- error
-static assert(is(typeof(tup14166.field = makeTup14166()) == TT14166!(int, int))); // ok <- error
+pragma(msg, typeof((s14166.x += 1) = 2));    // ok <- error
+pragma(msg, typeof(s14166.a.length += 2));   // ok <- error
+pragma(msg, typeof(s14166++));               // ok <- error
+pragma(msg, typeof(s14166.x ^^ 2));          // ok <- error
+pragma(msg, typeof(s14166.y ^^= 2.5));       // ok <- error
+pragma(msg, typeof(makeAA14166()[0] = 1));   // ok <- error
+pragma(msg, typeof(tup14166.field = makeTup14166()));   // ok <- error
 
 /***************************************************/
 // 14388

@@ -9,5 +9,5 @@
 module core.sys.windows.cguid;
 version (Windows):
 
-import core.sys.windows.basetyps;
+private import core.sys.windows.basetyps;
 

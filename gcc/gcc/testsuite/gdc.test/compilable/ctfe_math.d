@@ -1,4 +1,3 @@
-// COMPILABLE_MATH_TEST
 // Test CTFE builtins for std.math functions.
 
 import std.math;

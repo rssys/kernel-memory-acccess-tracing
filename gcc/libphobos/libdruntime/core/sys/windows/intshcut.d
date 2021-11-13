@@ -9,11 +9,10 @@
  */
 module core.sys.windows.intshcut;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.unknwn, core.sys.windows.windef;
+private import core.sys.windows.unknwn, core.sys.windows.windef;
 
 enum : SCODE {
     E_FLAGS                     = 0x80041000,

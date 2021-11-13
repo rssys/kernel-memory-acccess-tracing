@@ -21,6 +21,9 @@ type Buffer struct {
 	buf      []byte // contents are the bytes buf[off : len(buf)]
 	off      int    // read at &buf[off], write at &buf[len(buf)]
 	lastRead readOp // last read operation, so that Unread* can work correctly.
+
+	// FIXME: it would be advisable to align Buffer to cachelines to avoid false
+	// sharing.
 }
 
 // The readOp constants describe the last action performed on
@@ -275,8 +278,7 @@ func (b *Buffer) WriteByte(c byte) error {
 // included to match bufio.Writer's WriteRune. The buffer is grown as needed;
 // if it becomes too large, WriteRune will panic with ErrTooLarge.
 func (b *Buffer) WriteRune(r rune) (n int, err error) {
-	// Compare as uint32 to correctly handle negative runes.
-	if uint32(r) < utf8.RuneSelf {
+	if r < utf8.RuneSelf {
 		b.WriteByte(byte(r))
 		return 1, nil
 	}
@@ -383,15 +385,13 @@ func (b *Buffer) UnreadRune() error {
 	return nil
 }
 
-var errUnreadByte = errors.New("bytes.Buffer: UnreadByte: previous operation was not a successful read")
-
 // UnreadByte unreads the last byte returned by the most recent successful
 // read operation that read at least one byte. If a write has happened since
 // the last read, if the last read returned an error, or if the read read zero
 // bytes, UnreadByte returns an error.
 func (b *Buffer) UnreadByte() error {
 	if b.lastRead == opInvalid {
-		return errUnreadByte
+		return errors.New("bytes.Buffer: UnreadByte: previous operation was not a successful read")
 	}
 	b.lastRead = opInvalid
 	if b.off > 0 {

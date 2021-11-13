@@ -1,6 +1,5 @@
 /* Contributed by Nicola Pero <nicola.pero@meta-innovation.com>, November 2010.  */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 /* Test deprecate attribute with a forward declarations of
    @protocol.  */

@@ -1,6 +1,5 @@
-/* { dg-do compile } */
-/* { dg-require-effective-target lp64 } */
-/* { dg-require-effective-target ppc_float128_sw } */
+/* { dg-do compile { target { powerpc*-*-* && lp64 } } } */
+/* { dg-skip-if "" { powerpc*-*-darwin* } } */
 /* { dg-require-effective-target powerpc_p8vector_ok } */
 /* { dg-options "-mdejagnu-cpu=power8 -O2 -mfloat128" } */
 

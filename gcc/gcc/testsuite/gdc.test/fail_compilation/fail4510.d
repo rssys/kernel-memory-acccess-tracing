@@ -1,10 +1,4 @@
-// https://issues.dlang.org/show_bug.cgi?id=4510
-/*
-TEST_OUTPUT:
----
-fail_compilation/fail4510.d(12): Error: argument type mismatch, `float` to `ref double`
----
-*/
+// 4510
 
 void main()
 {

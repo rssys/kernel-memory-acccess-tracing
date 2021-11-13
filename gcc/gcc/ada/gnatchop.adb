@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -995,8 +995,9 @@ procedure Gnatchop is
 
       Buffer (Read_Ptr) := EOF;
 
-      --  The following test can fail if there was an I/O error, in which case
-      --  Success will be set to False.
+      --  Comment needed for the following ???
+      --  Under what circumstances can the test fail ???
+      --  What is copy doing in that case???
 
       if Read_Ptr = Length then
          Contents := Buffer;

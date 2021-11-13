@@ -1,6 +1,6 @@
 /* LTO IL options.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by Simon Baldwin <simonb@google.com>
 
 This file is part of GCC.
@@ -65,22 +65,22 @@ lto_write_options (void)
   char *args;
   bool first_p = true;
 
-  section_name = lto_get_section_name (LTO_section_opts, NULL, 0, NULL);
+  section_name = lto_get_section_name (LTO_section_opts, NULL, NULL);
   lto_begin_section (section_name, false);
 
   obstack_init (&temporary_obstack);
 
-  if (!OPTION_SET_P (flag_openmp)
+  if (!global_options_set.x_flag_openmp
       && !global_options.x_flag_openmp)
     append_to_collect_gcc_options (&temporary_obstack, &first_p,
 				   "-fno-openmp");
-  if (!OPTION_SET_P (flag_openacc)
+  if (!global_options_set.x_flag_openacc
       && !global_options.x_flag_openacc)
     append_to_collect_gcc_options (&temporary_obstack, &first_p,
 				   "-fno-openacc");
   /* Append PIC/PIE mode because its default depends on target and it is
      subject of merging in lto-wrapper.  */
-  if (!OPTION_SET_P (flag_pic) && !OPTION_SET_P (flag_pie))
+  if (!global_options_set.x_flag_pic && !global_options_set.x_flag_pie)
     {
        append_to_collect_gcc_options (&temporary_obstack, &first_p,
 				      global_options.x_flag_pic == 2
@@ -93,25 +93,6 @@ lto_write_options (void)
 				      ? "-fpie"
 				      : "-fno-pie");
     }
-
-  if (!OPTION_SET_P (flag_cf_protection))
-    {
-      append_to_collect_gcc_options (
-	&temporary_obstack, &first_p,
-	global_options.x_flag_cf_protection == CF_NONE
-	? "-fcf-protection=none"
-	: global_options.x_flag_cf_protection == CF_FULL
-	? "-fcf-protection=full"
-	: global_options.x_flag_cf_protection == CF_BRANCH
-	? "-fcf-protection=branch"
-	: global_options.x_flag_cf_protection == CF_RETURN
-	? "-fcf-protection=return"
-	: "");
-    }
-
-  /* If debug info is enabled append -g.  */
-  if (debug_info_level > DINFO_LEVEL_NONE)
-    append_to_collect_gcc_options (&temporary_obstack, &first_p, "-g");
 
   /* Append options from target hook and store them to offload_lto section.  */
   if (lto_stream_offload_p)
@@ -141,14 +122,11 @@ lto_write_options (void)
 	case OPT_dumpbase:
 	case OPT_SPECIAL_unknown:
 	case OPT_SPECIAL_ignore:
-	case OPT_SPECIAL_warn_removed:
+	case OPT_SPECIAL_deprecated:
 	case OPT_SPECIAL_program_name:
 	case OPT_SPECIAL_input_file:
 	case OPT_dumpdir:
 	case OPT_fresolution_:
-	case OPT_fdebug_prefix_map_:
-	case OPT_ffile_prefix_map_:
-	case OPT_fmacro_prefix_map_:
 	  continue;
 
 	default:
@@ -174,20 +152,13 @@ lto_write_options (void)
 	 We do not need those.  The only exception is -foffload option, if we
 	 write it in offload_lto section.  Also drop all diagnostic options.  */
       if ((cl_options[option->opt_index].flags & (CL_DRIVER|CL_WARNING))
-	  && (!lto_stream_offload_p
-	      || option->opt_index != OPT_foffload_options_))
+	  && (!lto_stream_offload_p || option->opt_index != OPT_foffload_))
 	continue;
 
       for (j = 0; j < option->canonical_option_num_elements; ++j)
 	append_to_collect_gcc_options (&temporary_obstack, &first_p,
 				       option->canonical_option[j]);
     }
-
-  const char *collect_as_options = getenv ("COLLECT_AS_OPTIONS");
-  if (collect_as_options)
-    prepend_xassembler_to_collect_as_options (collect_as_options,
-					      &temporary_obstack);
-
   obstack_grow (&temporary_obstack, "\0", 1);
   args = XOBFINISH (&temporary_obstack, char *);
   lto_write_data (args, strlen (args) + 1);

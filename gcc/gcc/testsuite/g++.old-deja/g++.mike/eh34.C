@@ -11,7 +11,7 @@ void my_unexpected() {
 void foo() throw () { throw "Hi"; }
 
 int main() {
-  std::set_unexpected (my_unexpected); // { dg-warning "deprecated" "" { target c++11 } }
+  std::set_unexpected (my_unexpected);
   foo();
   return 1;
 }

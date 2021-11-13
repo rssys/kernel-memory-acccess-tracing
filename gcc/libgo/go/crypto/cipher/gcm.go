@@ -86,8 +86,7 @@ func NewGCM(cipher Block) (AEAD, error) {
 }
 
 // NewGCMWithNonceSize returns the given 128-bit, block cipher wrapped in Galois
-// Counter Mode, which accepts nonces of the given length. The length must not
-// be zero.
+// Counter Mode, which accepts nonces of the given length.
 //
 // Only use this function if you require compatibility with an existing
 // cryptosystem that uses non-standard nonce lengths. All other users should use
@@ -111,10 +110,6 @@ func NewGCMWithTagSize(cipher Block, tagSize int) (AEAD, error) {
 func newGCMWithNonceAndTagSize(cipher Block, nonceSize, tagSize int) (AEAD, error) {
 	if tagSize < gcmMinimumTagSize || tagSize > gcmBlockSize {
 		return nil, errors.New("cipher: incorrect tag size given to GCM")
-	}
-
-	if nonceSize <= 0 {
-		return nil, errors.New("cipher: the nonce can't have zero length, or the security of the key will be immediately compromised")
 	}
 
 	if cipher, ok := cipher.(gcmAble); ok {

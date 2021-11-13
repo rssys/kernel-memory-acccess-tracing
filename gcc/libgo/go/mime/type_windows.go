@@ -13,7 +13,7 @@ func init() {
 }
 
 func initMimeWindows() {
-	names, err := registry.CLASSES_ROOT.ReadSubKeyNames()
+	names, err := registry.CLASSES_ROOT.ReadSubKeyNames(-1)
 	if err != nil {
 		return
 	}

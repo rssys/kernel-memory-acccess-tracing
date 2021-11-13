@@ -1,5 +1,5 @@
 /* types.cc -- Lower D frontend types to GCC trees.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,51 +40,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "attribs.h"
 
 #include "d-tree.h"
-#include "d-target.h"
 
-
-/* Return the signed or unsigned version of TYPE, an integral type, the
-   signedness being specified by UNSIGNEDP.  */
-
-static tree
-d_signed_or_unsigned_type (int unsignedp, tree type)
-{
-  if (TYPE_UNSIGNED (type) == (unsigned) unsignedp)
-    return type;
-
-  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_cent_type))
-    return unsignedp ? d_ucent_type : d_cent_type;
-
-  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_long_type))
-    return unsignedp ? d_ulong_type : d_long_type;
-
-  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_int_type))
-    return unsignedp ? d_uint_type : d_int_type;
-
-  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_short_type))
-    return unsignedp ? d_ushort_type : d_short_type;
-
-  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_byte_type))
-    return unsignedp ? d_ubyte_type : d_byte_type;
-
-  return signed_or_unsigned_type_for (unsignedp, type);
-}
-
-/* Return the unsigned version of TYPE, an integral type.  */
-
-tree
-d_unsigned_type (tree type)
-{
-  return d_signed_or_unsigned_type (1, type);
-}
-
-/* Return the signed version of TYPE, an integral type.  */
-
-tree
-d_signed_type (tree type)
-{
-  return d_signed_or_unsigned_type (0, type);
-}
 
 /* Return TRUE if TYPE is a static array va_list.  This is for compatibility
    with the C ABI, where va_list static arrays are passed by reference.
@@ -93,11 +49,10 @@ d_signed_type (tree type)
 bool
 valist_array_p (Type *type)
 {
-  Type *tvalist = target.va_listType (Loc (), NULL);
-  if (tvalist->ty == Tsarray)
+  if (Type::tvalist->ty == Tsarray)
     {
       Type *tb = type->toBasetype ();
-      if (same_type_p (tb, tvalist))
+      if (same_type_p (tb, Type::tvalist))
 	return true;
     }
 
@@ -150,7 +105,7 @@ same_type_p (Type *t1, Type *t2)
   return false;
 }
 
-/* Returns `Object' type which all D classes are derived from.  */
+/* Returns 'Object' type which all D classes are derived from.  */
 
 Type *
 get_object_type (void)
@@ -187,11 +142,8 @@ make_array_type (Type *type, unsigned HOST_WIDE_INT size)
       return t;
     }
 
-  tree t = build_array_type (build_ctype (type),
-			     build_index_type (size_int (size - 1)));
-  /* Propagate TREE_ADDRESSABLE to the static array type.  */
-  TREE_ADDRESSABLE (t) = TREE_ADDRESSABLE (TREE_TYPE (t));
-  return t;
+  return build_array_type (build_ctype (type),
+			   build_index_type (size_int (size - 1)));
 }
 
 /* Builds a record type whose name is NAME.  NFIELDS is the number of fields,
@@ -251,7 +203,7 @@ insert_type_modifiers (tree type, unsigned mod)
 
   tree qualtype = build_qualified_type (type, quals);
 
-  /* Mark whether the type is qualified `shared'.  */
+  /* Mark whether the type is qualified 'shared'.  */
   if (mod & MODshared)
     TYPE_SHARED (qualtype) = 1;
 
@@ -282,20 +234,16 @@ insert_aggregate_field (tree type, tree field, size_t offset)
 static void
 fixup_anonymous_offset (tree fields, tree offset)
 {
-  /* No adjustment in field offset required.  */
-  if (integer_zerop (offset))
-    return;
-
   while (fields != NULL_TREE)
     {
-      /* Traverse all nested anonymous aggregates to update the offset of their
-	 fields.  Note that the anonymous field itself is not adjusted, as it
-	 already has an offset relative to its outer aggregate.  */
+      /* Traverse all nested anonymous aggregates to update their offset.
+	 Set the anonymous decl offset to its first member.  */
       tree ftype = TREE_TYPE (fields);
-      if (TYPE_NAME (ftype) && IDENTIFIER_ANON_P (TYPE_IDENTIFIER (ftype)))
+      if (TYPE_NAME (ftype) && anon_aggrname_p (TYPE_IDENTIFIER (ftype)))
 	{
 	  tree vfields = TYPE_FIELDS (ftype);
 	  fixup_anonymous_offset (vfields, offset);
+	  DECL_FIELD_OFFSET (fields) = DECL_FIELD_OFFSET (vfields);
 	}
       else
 	{
@@ -316,7 +264,7 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
 {
   size_t fields = 0;
 
-  for (size_t i = 0; i < members->length; i++)
+  for (size_t i = 0; i < members->dim; i++)
     {
       Dsymbol *sym = (*members)[i];
       VarDeclaration *var = sym->isVarDeclaration ();
@@ -333,13 +281,13 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
 	      Dsymbols tmembers;
 	      /* No other way to coerce the underlying type out of the tuple.
 		 Frontend should have already validated this.  */
-	      for (size_t j = 0; j < td->objects->length; j++)
+	      for (size_t j = 0; j < td->objects->dim; j++)
 		{
 		  RootObject *ro = (*td->objects)[j];
 		  gcc_assert (ro->dyncast () == DYNCAST_EXPRESSION);
 		  Expression *e = (Expression *) ro;
 		  gcc_assert (e->op == TOKdsymbol);
-		  DsymbolExp *se = e->isDsymbolExp ();
+		  DsymbolExp *se = (DsymbolExp *) e;
 
 		  tmembers.push (se->s);
 		}
@@ -355,7 +303,6 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
 	      const char *ident = var->ident ? var->ident->toChars () : NULL;
 	      tree field = create_field_decl (declaration_type (var), ident,
 					      inherited_p, inherited_p);
-	      apply_user_attributes (var, field);
 	      insert_aggregate_field (context, field, var->offset);
 
 	      /* Because the front-end shares field decls across classes, don't
@@ -377,7 +324,12 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
       AnonDeclaration *ad = sym->isAnonDeclaration ();
       if (ad != NULL)
 	{
-	  tree ident = make_anon_name ();
+	  /* Use a counter to create anonymous type names.  */
+	  static int anon_cnt = 0;
+	  char buf[32];
+	  sprintf (buf, anon_aggrname_format (), anon_cnt++);
+
+	  tree ident = get_identifier (buf);
 	  tree type = make_node (ad->isunion ? UNION_TYPE : RECORD_TYPE);
 	  ANON_AGGR_TYPE_P (type) = 1;
 	  d_keep (type);
@@ -401,11 +353,11 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
 	  tree offset = size_int (ad->anonoffset);
 	  fixup_anonymous_offset (TYPE_FIELDS (type), offset);
 
-	  finish_aggregate_type (ad->anonstructsize, ad->anonalignsize, type);
+	  finish_aggregate_type (ad->anonstructsize, ad->anonalignsize,
+				 type, NULL);
 
 	  /* And make the corresponding data member.  */
 	  tree field = create_field_decl (type, NULL, 0, 0);
-	  apply_user_attributes (ad, field);
 	  insert_aggregate_field (context, field, ad->anonoffset);
 	  continue;
 	}
@@ -414,7 +366,7 @@ layout_aggregate_members (Dsymbols *members, tree context, bool inherited_p)
       AttribDeclaration *attrib = sym->isAttribDeclaration ();
       if (attrib != NULL)
 	{
-	  Dsymbols *decls = attrib->include (NULL);
+	  Dsymbols *decls = attrib->include (NULL, NULL);
 	  if (decls != NULL)
 	    {
 	      fields += layout_aggregate_members (decls, context, inherited_p);
@@ -459,7 +411,7 @@ layout_aggregate_type (AggregateDeclaration *decl, tree type,
 
 	  /* Add the vtable pointer, and optionally the monitor fields.  */
 	  InterfaceDeclaration *id = cd->isInterfaceDeclaration ();
-	  if (!id || id->vtblInterfaces->length == 0)
+	  if (!id || id->vtblInterfaces->dim == 0)
 	    {
 	      tree field = create_field_decl (vtbl_ptr_type_node, "__vptr", 1,
 					      inherited_p);
@@ -469,17 +421,17 @@ layout_aggregate_type (AggregateDeclaration *decl, tree type,
 	      insert_aggregate_field (type, field, 0);
 	    }
 
-	  if (!id && cd->hasMonitor ())
+	  if (!id && !cd->isCPPclass ())
 	    {
 	      tree field = create_field_decl (ptr_type_node, "__monitor", 1,
 					      inherited_p);
-	      insert_aggregate_field (type, field, target.ptrsize);
+	      insert_aggregate_field (type, field, Target::ptrsize);
 	    }
 	}
 
       if (cd->vtblInterfaces)
 	{
-	  for (size_t i = 0; i < cd->vtblInterfaces->length; i++)
+	  for (size_t i = 0; i < cd->vtblInterfaces->dim; i++)
 	    {
 	      BaseClass *bc = (*cd->vtblInterfaces)[i];
 	      tree field = create_field_decl (vtbl_ptr_type_node, NULL, 1, 1);
@@ -492,12 +444,12 @@ layout_aggregate_type (AggregateDeclaration *decl, tree type,
     {
       size_t fields = layout_aggregate_members (base->members, type,
 						inherited_p);
-      gcc_assert (fields == base->fields.length);
+      gcc_assert (fields == base->fields.dim);
 
       /* Make sure that all fields have been created.  */
       if (!inherited_p)
 	{
-	  for (size_t i = 0; i < base->fields.length; i++)
+	  for (size_t i = 0; i < base->fields.dim; i++)
 	    {
 	      VarDeclaration *var = base->fields[i];
 	      gcc_assert (var->csym != NULL);
@@ -511,8 +463,19 @@ layout_aggregate_type (AggregateDeclaration *decl, tree type,
    the finalized record mode.  */
 
 void
-finish_aggregate_type (unsigned structsize, unsigned alignsize, tree type)
+finish_aggregate_type (unsigned structsize, unsigned alignsize,
+		       tree type, UserAttributeDeclaration *attrs)
 {
+  TYPE_SIZE (type) = NULL_TREE;
+
+  /* Write out any GCC attributes that were applied to the type declaration.  */
+  if (attrs)
+    {
+      Expressions *eattrs = attrs->getAttributes ();
+      decl_attributes (&type, build_attributes (eattrs),
+		       ATTR_FLAG_TYPE_IN_PLACE);
+    }
+
   /* Set size and alignment as requested by frontend.  */
   TYPE_SIZE (type) = bitsize_int (structsize * BITS_PER_UNIT);
   TYPE_SIZE_UNIT (type) = size_int (structsize);
@@ -536,40 +499,6 @@ finish_aggregate_type (unsigned structsize, unsigned alignsize, tree type)
     }
 }
 
-/* Returns true if the class or struct type TYPE has already been layed out by
-   the lowering of another front-end AST type.  In which case, there will either
-   be a reuse of the back-end type, or a multiple definition error.
-   DECO is the uniquely mangled decoration for the type.  */
-
-static bool
-merge_aggregate_types (Type *type, tree deco)
-{
-  AggregateDeclaration *sym;
-
-  if (type->ty == Tstruct)
-    sym = type->isTypeStruct ()->sym;
-  else if (type->ty == Tclass)
-    sym = type->isTypeClass ()->sym;
-  else
-    gcc_unreachable ();
-
-  if (IDENTIFIER_DAGGREGATE (deco))
-    {
-      AggregateDeclaration *ad = IDENTIFIER_DAGGREGATE (deco);
-      /* There should never be a class/struct mismatch in mangled names.  */
-      gcc_assert ((sym->isStructDeclaration () && ad->isStructDeclaration ())
-		  || (sym->isClassDeclaration () && ad->isClassDeclaration ()));
-
-      /* Non-templated variables shouldn't be defined twice.  */
-      if (!sym->isInstantiated ())
-	ScopeDsymbol::multiplyDefined (sym->loc, sym, ad);
-
-      type->ctype = build_ctype (ad->type);
-      return true;
-    }
-
-  return false;
-}
 
 /* Implements the visitor interface to build the GCC trees of all
    Type AST classes emitted from the D Front-end, where CTYPE holds
@@ -606,12 +535,6 @@ public:
     t->ctype = ptr_type_node;
   }
 
-  /* Bottom type used for functions that never return.  */
-
-  void visit (TypeNoreturn *t)
-  {
-    t->ctype = void_type_node;
-  }
 
   /* Basic Data Types.  */
 
@@ -726,7 +649,7 @@ public:
 
   void visit (TypeVector *t)
   {
-    int nunits = t->basetype->isTypeSArray ()->dim->toUInteger ();
+    int nunits = ((TypeSArray *) t->basetype)->dim->toUInteger ();
     tree inner = build_ctype (t->elementType ());
 
     /* Same rationale as void static arrays.  */
@@ -764,23 +687,26 @@ public:
 
        Variadic functions with D linkage have an additional hidden argument
        with the name _arguments passed to the function.  */
-    if (t->isDstyleVariadic ())
+    if (t->varargs == 1 && t->linkage == LINKd)
       {
 	tree type = build_ctype (Type::typeinfotypelist->type);
 	fnparams = chainon (fnparams, build_tree_list (0, type));
       }
 
-    size_t n_args = t->parameterList.length ();
-
-    for (size_t i = 0; i < n_args; i++)
+    if (t->parameters)
       {
-	tree type = parameter_type (t->parameterList[i]);
-	fnparams = chainon (fnparams, build_tree_list (0, type));
+	size_t n_args = Parameter::dim (t->parameters);
+
+	for (size_t i = 0; i < n_args; i++)
+	  {
+	    tree type = type_passed_as (Parameter::getNth (t->parameters, i));
+	    fnparams = chainon (fnparams, build_tree_list (0, type));
+	  }
       }
 
     /* When the last parameter is void_list_node, that indicates a fixed length
        parameter list, otherwise function is treated as variadic.  */
-    if (t->parameterList.varargs != VARARGvariadic)
+    if (t->varargs != 1)
       fnparams = chainon (fnparams, void_list_node);
 
     if (t->next != NULL)
@@ -800,20 +726,15 @@ public:
     /* Handle any special support for calling conventions.  */
     switch (t->linkage)
       {
+      case LINKpascal:
       case LINKwindows:
-	{
-	  /* [attribute/linkage]
+	/* [attribute/linkage]
 
-	     The Windows convention is distinct from the C convention only
-	     on Win32, where it is equivalent to the stdcall convention.  */
-	  unsigned link_system, link_windows;
-	  if (targetdm.d_has_stdcall_convention (&link_system, &link_windows))
-	    {
-	      if (link_windows)
-		t->ctype = insert_type_attribute (t->ctype, "stdcall");
-	    }
-	  break;
-	}
+	   The Windows convention is distinct from the C convention only
+	   on Win32, where it is equivalent to the stdcall convention.  */
+	if (!global.params.is64bit)
+	  t->ctype = insert_type_attribute (t->ctype, "stdcall");
+	break;
 
       case LINKc:
       case LINKcpp:
@@ -867,62 +788,19 @@ public:
     tree basetype = (t->sym->memtype)
       ? build_ctype (t->sym->memtype) : void_type_node;
 
-    if (t->sym->isSpecial ())
-      {
-	/* Special enums are opaque types that bind to C types.  */
-	const char *ident = t->toChars ();
-	Type *underlying = NULL;
-
-	/* Skip over the prefixing `__c_'.  */
-	gcc_assert (startswith (ident, "__c_"));
-	ident = ident + strlen ("__c_");
-
-	/* To keep things compatible within the code generation we stick to
-	   mapping to equivalent D types.  However it should be OK to use the
-	   GCC provided C types here as the front-end enforces that everything
-	   must be explicitly cast from a D type to any of the opaque types.  */
-	if (strcmp (ident, "long") == 0)
-	  underlying = build_frontend_type (long_integer_type_node);
-	else if (strcmp (ident, "ulong") == 0)
-	  underlying = build_frontend_type (long_unsigned_type_node);
-	else if (strcmp (ident, "wchar_t") == 0)
-	  underlying =
-	    build_frontend_type (make_unsigned_type (WCHAR_TYPE_SIZE));
-	else if (strcmp (ident, "longlong") == 0)
-	  underlying = build_frontend_type (long_long_integer_type_node);
-	else if (strcmp (ident, "ulonglong") == 0)
-	  underlying = build_frontend_type (long_long_unsigned_type_node);
-	else if (strcmp (ident, "long_double") == 0)
-	  underlying = build_frontend_type (long_double_type_node);
-	else if (strcmp (ident, "complex_real") == 0)
-	  underlying = build_frontend_type (complex_long_double_type_node);
-	else if (strcmp (ident, "complex_float") == 0)
-	  underlying = build_frontend_type (complex_float_type_node);
-	else if (strcmp (ident, "complex_double") == 0)
-	  underlying = build_frontend_type (complex_double_type_node);
-
-	/* Conversion failed or there's an unhandled special type.  */
-	gcc_assert (underlying != NULL);
-
-	t->ctype = build_variant_type_copy (build_ctype (underlying));
-	build_type_decl (t->ctype, t->sym);
-      }
-    else if (!INTEGRAL_TYPE_P (basetype) || TREE_CODE (basetype) == BOOLEAN_TYPE)
+    if (!INTEGRAL_TYPE_P (basetype) || TREE_CODE (basetype) == BOOLEAN_TYPE)
       {
 	/* Enums in D2 can have a base type that is not necessarily integral.
 	   For these, we simplify this a little by using the base type directly
 	   instead of building an ENUMERAL_TYPE.  */
 	t->ctype = build_variant_type_copy (basetype);
-	build_type_decl (t->ctype, t->sym);
       }
     else
       {
 	t->ctype = make_node (ENUMERAL_TYPE);
+	ENUM_IS_SCOPED (t->ctype) = 1;
 	TYPE_LANG_SPECIFIC (t->ctype) = build_lang_type (t);
 	d_keep (t->ctype);
-
-	ENUM_IS_SCOPED (t->ctype) = 1;
-	TREE_TYPE (t->ctype) = basetype;
 
 	if (flag_short_enums)
 	  TYPE_PACKED (t->ctype) = 1;
@@ -937,7 +815,7 @@ public:
 	tree values = NULL_TREE;
 	if (t->sym->members)
 	  {
-	    for (size_t i = 0; i < t->sym->members->length; i++)
+	    for (size_t i = 0; i < t->sym->members->dim; i++)
 	      {
 		EnumMember *member = (*t->sym->members)[i]->isEnumMember ();
 		/* Templated functions can seep through to the back-end
@@ -967,7 +845,12 @@ public:
 	build_type_decl (t->ctype, t->sym);
       }
 
-    apply_user_attributes (t->sym, t->ctype);
+    if (t->sym->userAttribDecl)
+      {
+	Expressions *eattrs = t->sym->userAttribDecl->getAttributes ();
+	decl_attributes (&t->ctype, build_attributes (eattrs),
+			 ATTR_FLAG_TYPE_IN_PLACE);
+      }
   }
 
   /* Build a struct or union type.  Layout should be exactly represented
@@ -975,19 +858,12 @@ public:
 
   void visit (TypeStruct *t)
   {
-    /* Merge types in the back-end if the front-end did not itself do so.  */
-    tree deco = get_identifier (d_mangle_decl (t->sym));
-    if (merge_aggregate_types (t, deco))
-      return;
-
     /* Need to set this right away in case of self-references.  */
     t->ctype = make_node (t->sym->isUnionDeclaration ()
 			  ? UNION_TYPE : RECORD_TYPE);
     d_keep (t->ctype);
-    IDENTIFIER_DAGGREGATE (deco) = t->sym;
 
     TYPE_LANG_SPECIFIC (t->ctype) = build_lang_type (t);
-    TYPE_CXX_ODR_P (t->ctype) = 1;
 
     if (t->sym->members)
       {
@@ -1006,8 +882,8 @@ public:
 
 	/* Put out all fields.  */
 	layout_aggregate_type (t->sym, t->ctype, t->sym);
-	apply_user_attributes (t->sym, t->ctype);
-	finish_aggregate_type (structsize, alignsize, t->ctype);
+	finish_aggregate_type (structsize, alignsize, t->ctype,
+			       t->sym->userAttribDecl);
       }
 
     TYPE_CONTEXT (t->ctype) = d_decl_context (t->sym);
@@ -1016,13 +892,10 @@ public:
     /* For structs with a user defined postblit or a destructor,
        also set TREE_ADDRESSABLE on the type and all variants.
        This will make the struct be passed around by reference.  */
-    if (!t->sym->isPOD ())
+    if (t->sym->postblit || t->sym->dtor)
       {
 	for (tree tv = t->ctype; tv != NULL_TREE; tv = TYPE_NEXT_VARIANT (tv))
-	  {
-	    TREE_ADDRESSABLE (tv) = 1;
-	    SET_TYPE_MODE (tv, BLKmode);
-	  }
+	  TREE_ADDRESSABLE (tv) = 1;
       }
   }
 
@@ -1031,36 +904,26 @@ public:
 
   void visit (TypeClass *t)
   {
-    /* Merge types in the back-end if the front-end did not itself do so.  */
-    tree deco = get_identifier (d_mangle_decl (t->sym));
-    if (merge_aggregate_types (t, deco))
-      return;
-
     /* Need to set ctype right away in case of self-references to
        the type during this call.  */
     tree basetype = make_node (RECORD_TYPE);
     t->ctype = build_pointer_type (basetype);
     d_keep (t->ctype);
-    IDENTIFIER_DAGGREGATE (deco) = t->sym;
 
     /* Note that lang_specific data is assigned to both the reference
        and the underlying record type.  */
     TYPE_LANG_SPECIFIC (t->ctype) = build_lang_type (t);
     TYPE_LANG_SPECIFIC (basetype) = TYPE_LANG_SPECIFIC (t->ctype);
     CLASS_TYPE_P (basetype) = 1;
-    TYPE_CXX_ODR_P (basetype) = 1;
 
     /* Put out all fields, including from each base class.  */
     layout_aggregate_type (t->sym, basetype, t->sym);
-    apply_user_attributes (t->sym, basetype);
-    finish_aggregate_type (t->sym->structsize, t->sym->alignsize, basetype);
+    finish_aggregate_type (t->sym->structsize, t->sym->alignsize,
+			   basetype, t->sym->userAttribDecl);
 
     /* Classes only live in memory, so always set the TREE_ADDRESSABLE bit.  */
     for (tree tv = basetype; tv != NULL_TREE; tv = TYPE_NEXT_VARIANT (tv))
-      {
-	TREE_ADDRESSABLE (tv) = 1;
-	SET_TYPE_MODE (tv, BLKmode);
-      }
+      TREE_ADDRESSABLE (tv) = 1;
 
     /* Type is final, there are no derivations.  */
     if (t->sym->storage_class & STCfinal)
@@ -1079,7 +942,7 @@ public:
       }
 
     /* Associate all virtual methods with the class too.  */
-    for (size_t i = 0; i < t->sym->vtbl.length; i++)
+    for (size_t i = 0; i < t->sym->vtbl.dim; i++)
       {
 	FuncDeclaration *fd = t->sym->vtbl[i]->isFuncDeclaration ();
 	tree method = fd ? get_symbol_decl (fd) : error_mark_node;

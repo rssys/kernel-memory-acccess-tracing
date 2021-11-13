@@ -1,5 +1,5 @@
 /* xcoff.c -- Get debug data from an XCOFF file for backtraces.
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Adapted from elf.c.
 
 Redistribution and use in source and binary forms, with or without
@@ -133,7 +133,6 @@ typedef struct {
 #define SSUBTYP_DWARNGE	0x50000	/* DWARF aranges section.  */
 #define SSUBTYP_DWABREV	0x60000	/* DWARF abbreviation section.  */
 #define SSUBTYP_DWSTR	0x70000	/* DWARF strings section.  */
-#define SSUBTYP_DWRNGES	0x80000	/* DWARF ranges section.  */
 
 /* XCOFF symbol.  */
 
@@ -388,6 +387,18 @@ struct xcoff_fileline_data
   uintptr_t base_address;
 };
 
+/* An index of DWARF sections we care about.  */
+
+enum dwarf_section
+{
+  DWSECT_INFO,
+  DWSECT_LINE,
+  DWSECT_ABBREV,
+  DWSECT_RANGES,
+  DWSECT_STR,
+  DWSECT_MAX
+};
+
 /* Information we gather for the DWARF sections we care about.  */
 
 struct dwsect_info
@@ -587,6 +598,7 @@ xcoff_symname (const b_xcoff_syment *asym,
 static int
 xcoff_initialize_syminfo (struct backtrace_state *state,
 			  uintptr_t base_address,
+			  const b_xcoff_scnhdr *sects,
 			  const b_xcoff_syment *syms, size_t nsyms,
 			  const unsigned char *strtab, size_t strtab_size,
 			  backtrace_error_callback error_callback, void *data,
@@ -628,7 +640,8 @@ xcoff_initialize_syminfo (struct backtrace_state *state,
 	{
 	  const b_xcoff_auxent *aux = (const b_xcoff_auxent *) (asym + 1);
 	  xcoff_symbols[j].name = xcoff_symname (asym, strtab, strtab_size);
-	  xcoff_symbols[j].address = base_address + asym->n_value;
+	  xcoff_symbols[j].address = base_address + asym->n_value
+				   - sects[asym->n_scnum - 1].s_paddr;
 	  /* x_fsize will be 0 if there is no debug information.  */
 	  xcoff_symbols[j].size = aux->x_fcn.x_fsize;
 	  ++j;
@@ -766,7 +779,7 @@ xcoff_lookup_pc (struct backtrace_state *state ATTRIBUTE_UNUSED,
       lineno = (const b_xcoff_lineno *) lineptr;
       if (lineno->l_lnno == 0)
 	break;
-      if (pc <= fdata->base_address + lineno->l_addr.l_paddr)
+      if (pc <= fdata->base_address + lineno->l_addr.l_paddr - fn->sect_base)
 	break;
       match = lnnoptr;
       lnno = lineno->l_lnno;
@@ -1001,7 +1014,7 @@ xcoff_initialize_fileline (struct backtrace_state *state,
 	    fn->name = xcoff_symname (fsym, strtab, strtab_size);
 	    fn->filename = filename;
 	    fn->sect_base = sects[fsym->n_scnum - 1].s_paddr;
-	    fn->pc = base_address + fsym->n_value;
+	    fn->pc = base_address + fsym->n_value - fn->sect_base;
 	    fn->size = fsize;
 	    fn->lnno = lnno;
 	    fn->lnnoptr = lnnoptr;
@@ -1087,7 +1100,7 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
   off_t str_off;
   off_t min_offset;
   off_t max_offset;
-  struct dwsect_info dwsect[DEBUG_MAX];
+  struct dwsect_info dwsect[DWSECT_MAX];
   size_t sects_size;
   size_t syms_size;
   int32_t str_size;
@@ -1098,7 +1111,6 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
   int dwarf_view_valid;
   int magic_ok;
   int i;
-  struct dwarf_sections dwarf_sections;
 
   *found_sym = 0;
 
@@ -1152,16 +1164,8 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
 
   stext = &sects[i];
 
-  /* base_address represents the difference between the
-     virtual memory address of the shared object or a loaded
-     executable and the offset of that object in the file
-     from which it was loaded.
-     On AIX, virtual address is either fixed for executable
-     or given by ldinfo.  This address will include the XCOFF
-     headers.  */
-  base_address = ((exe ? XCOFF_AIX_TEXTBASE : base_address)
-		  + stext->s_scnptr
-		  - stext->s_paddr);
+  /* AIX ldinfo_textorg includes the XCOFF headers.  */
+  base_address = (exe ? XCOFF_AIX_TEXTBASE : base_address) + stext->s_scnptr;
 
   lnnoptr = stext->s_lnnoptr;
   nlnno = stext->s_nlnno;
@@ -1219,7 +1223,7 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
       if (sdata == NULL)
 	goto fail;
 
-      if (!xcoff_initialize_syminfo (state, base_address,
+      if (!xcoff_initialize_syminfo (state, base_address, sects,
 				     syms_view.data, fhdr.f_nsyms,
 				     str_view.data, str_size,
 				     error_callback, data, sdata))
@@ -1251,19 +1255,19 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
       switch (sects[i].s_flags & 0xffff0000)
 	{
 	  case SSUBTYP_DWINFO:
-	    idx = DEBUG_INFO;
+	    idx = DWSECT_INFO;
 	    break;
 	  case SSUBTYP_DWLINE:
-	    idx = DEBUG_LINE;
+	    idx = DWSECT_LINE;
 	    break;
 	  case SSUBTYP_DWABREV:
-	    idx = DEBUG_ABBREV;
+	    idx = DWSECT_ABBREV;
 	    break;
-	  case SSUBTYP_DWRNGES:
-	    idx = DEBUG_RANGES;
+	  case SSUBTYP_DWARNGE:
+	    idx = DWSECT_RANGES;
 	    break;
 	  case SSUBTYP_DWSTR:
-	    idx = DEBUG_STR;
+	    idx = DWSECT_STR;
 	    break;
 	  default:
 	    continue;
@@ -1284,7 +1288,7 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
 	goto fail;
       dwarf_view_valid = 1;
 
-      for (i = 0; i < (int) DEBUG_MAX; ++i)
+      for (i = 0; i < (int) DWSECT_MAX; ++i)
 	{
 	  if (dwsect[i].offset == 0)
 	    dwsect[i].data = NULL;
@@ -1293,24 +1297,27 @@ xcoff_add (struct backtrace_state *state, int descriptor, off_t offset,
 			      + (dwsect[i].offset - min_offset));
 	}
 
-      memset (&dwarf_sections, 0, sizeof dwarf_sections);
-
-      dwarf_sections.data[DEBUG_INFO] = dwsect[DEBUG_INFO].data;
-      dwarf_sections.size[DEBUG_INFO] = dwsect[DEBUG_INFO].size;
-      dwarf_sections.data[DEBUG_LINE] = dwsect[DEBUG_LINE].data;
-      dwarf_sections.size[DEBUG_LINE] = dwsect[DEBUG_LINE].size;
-      dwarf_sections.data[DEBUG_ABBREV] = dwsect[DEBUG_ABBREV].data;
-      dwarf_sections.size[DEBUG_ABBREV] = dwsect[DEBUG_ABBREV].size;
-      dwarf_sections.data[DEBUG_RANGES] = dwsect[DEBUG_RANGES].data;
-      dwarf_sections.size[DEBUG_RANGES] = dwsect[DEBUG_RANGES].size;
-      dwarf_sections.data[DEBUG_STR] = dwsect[DEBUG_STR].data;
-      dwarf_sections.size[DEBUG_STR] = dwsect[DEBUG_STR].size;
-
-      if (!backtrace_dwarf_add (state, base_address, &dwarf_sections,
+      if (!backtrace_dwarf_add (state, 0,
+				dwsect[DWSECT_INFO].data,
+				dwsect[DWSECT_INFO].size,
+#if BACKTRACE_XCOFF_SIZE == 32
+				/* XXX workaround for broken lineoff */
+				dwsect[DWSECT_LINE].data - 4,
+#else
+				/* XXX workaround for broken lineoff */
+				dwsect[DWSECT_LINE].data - 12,
+#endif
+				dwsect[DWSECT_LINE].size,
+				dwsect[DWSECT_ABBREV].data,
+				dwsect[DWSECT_ABBREV].size,
+				dwsect[DWSECT_RANGES].data,
+				dwsect[DWSECT_RANGES].size,
+				dwsect[DWSECT_STR].data,
+				dwsect[DWSECT_STR].size,
 				1, /* big endian */
-				NULL, /* altlink */
+				NULL,
 				error_callback, data, fileline_fn,
-				NULL /* returned fileline_entry */))
+				NULL))
 	goto fail;
     }
 

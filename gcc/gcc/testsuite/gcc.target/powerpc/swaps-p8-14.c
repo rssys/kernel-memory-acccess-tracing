@@ -1,5 +1,4 @@
-/* { dg-do compile } */
-/* { dg-require-effective-target powerpc_p8vector_ok } */
+/* { dg-do compile { target { powerpc64le-*-* } } } */
 /* { dg-options "-mdejagnu-cpu=power8 -O3" } */
 /* { dg-final { scan-assembler "lxvd2x" } } */
 /* { dg-final { scan-assembler "stxvd2x" } } */

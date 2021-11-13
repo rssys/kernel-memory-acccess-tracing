@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2005-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2005-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,6 +31,7 @@
 
 with System.Tasking;
 with System.Task_Primitives.Operations;
+with System.Parameters;
 with System.Soft_Links;
 
 with Ada.Unchecked_Conversion;
@@ -41,6 +42,8 @@ package body Ada.Task_Termination is
 
    package STPO renames System.Task_Primitives.Operations;
    package SSL  renames System.Soft_Links;
+
+   use System.Parameters;
 
    -----------------------
    -- Local subprograms --
@@ -79,11 +82,21 @@ package body Ada.Task_Termination is
 
    begin
       SSL.Abort_Defer.all;
+
+      if Single_Lock then
+         STPO.Lock_RTS;
+      end if;
+
       STPO.Write_Lock (Self);
 
       Self.Common.Fall_Back_Handler := To_ST (Handler);
 
       STPO.Unlock (Self);
+
+      if Single_Lock then
+         STPO.Unlock_RTS;
+      end if;
+
       SSL.Abort_Undefer.all;
    end Set_Dependents_Fallback_Handler;
 
@@ -110,11 +123,21 @@ package body Ada.Task_Termination is
 
          begin
             SSL.Abort_Defer.all;
+
+            if Single_Lock then
+               STPO.Lock_RTS;
+            end if;
+
             STPO.Write_Lock (Target);
 
             Target.Common.Specific_Handler := To_ST (Handler);
 
             STPO.Unlock (Target);
+
+            if Single_Lock then
+               STPO.Unlock_RTS;
+            end if;
+
             SSL.Abort_Undefer.all;
          end;
       end if;
@@ -143,11 +166,21 @@ package body Ada.Task_Termination is
 
          begin
             SSL.Abort_Defer.all;
+
+            if Single_Lock then
+               STPO.Lock_RTS;
+            end if;
+
             STPO.Write_Lock (Target);
 
             TH := To_TT (Target.Common.Specific_Handler);
 
             STPO.Unlock (Target);
+
+            if Single_Lock then
+               STPO.Unlock_RTS;
+            end if;
+
             SSL.Abort_Undefer.all;
 
             return TH;

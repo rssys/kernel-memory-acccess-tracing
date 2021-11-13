@@ -1,16 +1,14 @@
-typedef unsigned uint32_t __attribute__((mode (__SI__)));
-
 typedef struct abc_s {
   char a1;
   short a2;
-  uint32_t a3;
-  uint32_t a4;
+  unsigned int a3;
+  unsigned int a4;
 } abc;
 
 
 typedef struct xyz_s {
- uint32_t x1;
- uint32_t x2;
+ unsigned int x1;
+ unsigned int x2;
  abc *x3;
 } xyz;
 

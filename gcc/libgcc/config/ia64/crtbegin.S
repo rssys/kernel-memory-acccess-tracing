@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Jes Sorensen, <Jes.Sorensen@cern.ch>
 
    This file is part of GCC.
@@ -45,11 +45,11 @@ dtor_ptr:
 	.type __dso_handle,@object
 	.size __dso_handle,8
 #ifdef SHARED
-	.section .sdata
+	.section .data
 __dso_handle:
 	data8	__dso_handle
 #else
-	.section .sbss
+	.section .bss
 	.align 8
 __dso_handle:
 	.skip	8

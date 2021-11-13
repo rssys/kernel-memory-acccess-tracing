@@ -6,17 +6,16 @@ package imports
 
 import (
 	"fmt"
-	"io/fs"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-
-	"cmd/go/internal/fsys"
 )
 
 func ScanDir(dir string, tags map[string]bool) ([]string, []string, error) {
-	infos, err := fsys.ReadDir(dir)
+	infos, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -26,14 +25,14 @@ func ScanDir(dir string, tags map[string]bool) ([]string, []string, error) {
 
 		// If the directory entry is a symlink, stat it to obtain the info for the
 		// link target instead of the link itself.
-		if info.Mode()&fs.ModeSymlink != 0 {
-			info, err = fsys.Stat(filepath.Join(dir, name))
+		if info.Mode()&os.ModeSymlink != 0 {
+			info, err = os.Stat(name)
 			if err != nil {
 				continue // Ignore broken symlinks.
 			}
 		}
 
-		if info.Mode().IsRegular() && !strings.HasPrefix(name, "_") && !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".go") && MatchFile(name, tags) {
+		if info.Mode().IsRegular() && !strings.HasPrefix(name, "_") && strings.HasSuffix(name, ".go") && MatchFile(name, tags) {
 			files = append(files, filepath.Join(dir, name))
 		}
 	}
@@ -50,7 +49,7 @@ func scanFiles(files []string, tags map[string]bool, explicitFiles bool) ([]stri
 	numFiles := 0
 Files:
 	for _, name := range files {
-		r, err := fsys.Open(name)
+		r, err := os.Open(name)
 		if err != nil {
 			return nil, nil, err
 		}

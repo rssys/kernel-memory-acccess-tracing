@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -18,6 +19,8 @@ import (
 	"testing"
 	"time"
 )
+
+var _ = log.Printf
 
 // fakeDriver is a fake database that implements Go's driver.Driver
 // interface, just for testing.
@@ -56,7 +59,6 @@ type fakeConnector struct {
 	name string
 
 	waiter func(context.Context)
-	closed bool
 }
 
 func (c *fakeConnector) Connect(context.Context) (driver.Conn, error) {
@@ -67,14 +69,6 @@ func (c *fakeConnector) Connect(context.Context) (driver.Conn, error) {
 
 func (c *fakeConnector) Driver() driver.Driver {
 	return fdriver
-}
-
-func (c *fakeConnector) Close() error {
-	if c.closed {
-		return errors.New("fakedb: connector is closed")
-	}
-	c.closed = true
-	return nil
 }
 
 type fakeDriverCtx struct {
@@ -399,17 +393,10 @@ func setStrictFakeConnClose(t *testing.T) {
 
 func (c *fakeConn) ResetSession(ctx context.Context) error {
 	c.dirtySession = false
-	c.currTx = nil
 	if c.isBad() {
 		return driver.ErrBadConn
 	}
 	return nil
-}
-
-var _ driver.Validator = (*fakeConn)(nil)
-
-func (c *fakeConn) IsValid() bool {
-	return !c.isBad()
 }
 
 func (c *fakeConn) Close() (err error) {
@@ -744,9 +731,6 @@ var hookExecBadConn func() bool
 func (s *fakeStmt) Exec(args []driver.Value) (driver.Result, error) {
 	panic("Using ExecContext")
 }
-
-var errFakeConnSessionDirty = errors.New("fakedb: session is dirty")
-
 func (s *fakeStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	if s.panic == "Exec" {
 		panic(s.panic)
@@ -759,7 +743,7 @@ func (s *fakeStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (d
 		return nil, driver.ErrBadConn
 	}
 	if s.c.isDirtyAndMark() {
-		return nil, errFakeConnSessionDirty
+		return nil, errors.New("fakedb: session is dirty")
 	}
 
 	err := checkSubsetTypes(s.c.db.allowAny, args)
@@ -873,7 +857,7 @@ func (s *fakeStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (
 		return nil, driver.ErrBadConn
 	}
 	if s.c.isDirtyAndMark() {
-		return nil, errFakeConnSessionDirty
+		return nil, errors.New("fakedb: session is dirty")
 	}
 
 	err := checkSubsetTypes(s.c.db.allowAny, args)
@@ -905,37 +889,6 @@ func (s *fakeStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (
 					time.Sleep(time.Duration(args[1].Value.(int64)) * time.Millisecond)
 				}
 			}
-		}
-		if s.table == "tx_status" && s.colName[0] == "tx_status" {
-			txStatus := "autocommit"
-			if s.c.currTx != nil {
-				txStatus = "transaction"
-			}
-			cursor := &rowsCursor{
-				parentMem: s.c,
-				posRow:    -1,
-				rows: [][]*row{
-					{
-						{
-							cols: []interface{}{
-								txStatus,
-							},
-						},
-					},
-				},
-				cols: [][]string{
-					{
-						"tx_status",
-					},
-				},
-				colType: [][]string{
-					{
-						"string",
-					},
-				},
-				errPos: -1,
-			}
-			return cursor, nil
 		}
 
 		t.mu.Lock()
@@ -1186,12 +1139,8 @@ func converterForType(typ string) driver.ValueConverter {
 		return driver.Bool
 	case "nullbool":
 		return driver.Null{Converter: driver.Bool}
-	case "byte", "int16":
-		return driver.NotNull{Converter: driver.DefaultParameterConverter}
 	case "int32":
 		return driver.Int32
-	case "nullbyte", "nullint32", "nullint16":
-		return driver.Null{Converter: driver.DefaultParameterConverter}
 	case "string":
 		return driver.NotNull{Converter: fakeDriverString{}}
 	case "nullstring":
@@ -1209,9 +1158,7 @@ func converterForType(typ string) driver.ValueConverter {
 		// TODO(coopernurse): add type-specific converter
 		return driver.Null{Converter: driver.DefaultParameterConverter}
 	case "datetime":
-		return driver.NotNull{Converter: driver.DefaultParameterConverter}
-	case "nulldatetime":
-		return driver.Null{Converter: driver.DefaultParameterConverter}
+		return driver.DefaultParameterConverter
 	case "any":
 		return anyTypeConverter{}
 	}
@@ -1224,14 +1171,8 @@ func colTypeToReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(false)
 	case "nullbool":
 		return reflect.TypeOf(NullBool{})
-	case "int16":
-		return reflect.TypeOf(int16(0))
-	case "nullint16":
-		return reflect.TypeOf(NullInt16{})
 	case "int32":
 		return reflect.TypeOf(int32(0))
-	case "nullint32":
-		return reflect.TypeOf(NullInt32{})
 	case "string":
 		return reflect.TypeOf("")
 	case "nullstring":

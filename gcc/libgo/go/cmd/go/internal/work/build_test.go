@@ -7,7 +7,7 @@ package work
 import (
 	"bytes"
 	"fmt"
-	"io/fs"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -169,15 +169,14 @@ func TestSharedLibName(t *testing.T) {
 	for _, data := range testData {
 		func() {
 			if data.rootedAt != "" {
-				tmpGopath, err := os.MkdirTemp("", "gopath")
+				tmpGopath, err := ioutil.TempDir("", "gopath")
 				if err != nil {
 					t.Fatal(err)
 				}
-				cwd := base.Cwd()
 				oldGopath := cfg.BuildContext.GOPATH
 				defer func() {
 					cfg.BuildContext.GOPATH = oldGopath
-					os.Chdir(cwd)
+					os.Chdir(base.Cwd)
 					err := os.RemoveAll(tmpGopath)
 					if err != nil {
 						t.Error(err)
@@ -222,10 +221,14 @@ func pkgImportPath(pkgpath string) *load.Package {
 // See https://golang.org/issue/18878.
 func TestRespectSetgidDir(t *testing.T) {
 	switch runtime.GOOS {
-	case "ios":
-		t.Skip("can't set SetGID bit with chmod on iOS")
-	case "windows", "plan9":
-		t.Skip("chown/chmod setgid are not supported on Windows or Plan 9")
+	case "nacl":
+		t.Skip("can't set SetGID bit with chmod on nacl")
+	case "darwin":
+		if runtime.GOARCH == "arm" || runtime.GOARCH == "arm64" {
+			t.Skip("can't set SetGID bit with chmod on iOS")
+		}
+	case "windows", "plan9", "js":
+		t.Skip("chown/chmod setgid are not supported on Windows, Plan 9, or JS")
 	}
 
 	var b Builder
@@ -238,7 +241,7 @@ func TestRespectSetgidDir(t *testing.T) {
 		return cmdBuf.WriteString(fmt.Sprint(a...))
 	}
 
-	setgiddir, err := os.MkdirTemp("", "SetGroupID")
+	setgiddir, err := ioutil.TempDir("", "SetGroupID")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,13 +257,13 @@ func TestRespectSetgidDir(t *testing.T) {
 	}
 
 	// Change setgiddir's permissions to include the SetGID bit.
-	if err := os.Chmod(setgiddir, 0755|fs.ModeSetgid); err != nil {
+	if err := os.Chmod(setgiddir, 0755|os.ModeSetgid); err != nil {
 		t.Fatal(err)
 	}
 
-	pkgfile, err := os.CreateTemp("", "pkgfile")
+	pkgfile, err := ioutil.TempFile("", "pkgfile")
 	if err != nil {
-		t.Fatalf("os.CreateTemp(\"\", \"pkgfile\"): %v", err)
+		t.Fatalf("ioutil.TempFile(\"\", \"pkgfile\"): %v", err)
 	}
 	defer os.Remove(pkgfile.Name())
 	defer pkgfile.Close()

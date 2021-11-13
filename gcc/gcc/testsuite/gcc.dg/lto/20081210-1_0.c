@@ -1,4 +1,10 @@
-typedef __UINTPTR_TYPE__ uintptr_t;
+#if defined(_LP64)
+typedef unsigned long int uintptr_t;
+#elif defined (_WIN64)
+typedef unsigned long long int uintptr_t;
+#else
+typedef unsigned int uintptr_t;
+#endif
 
 extern void srand (uintptr_t);
 

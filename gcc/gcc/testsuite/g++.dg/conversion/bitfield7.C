@@ -12,5 +12,5 @@ int foo (double);
 int
 main ()
 {
-  return foo (s.bar);		// { dg-error "cannot bind bit-field" }
+  return foo (s.bar);		// { dg-error "cannot bind bitfield" }
 }

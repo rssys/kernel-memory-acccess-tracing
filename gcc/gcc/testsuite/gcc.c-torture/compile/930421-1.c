@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 double q(double);
 
 f (int **x, int *r, int *s, int a, int b, int c, int d)

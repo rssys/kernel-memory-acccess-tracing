@@ -1,4 +1,4 @@
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,7 +15,8 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-do compile { target c++17 } }
+// { dg-options "-std=gnu++17" }
+// { dg-do compile }
 
 #include <type_traits>
 
@@ -154,18 +155,4 @@ void test01()
 		   "would call private member");
   static_assert( ! is_nt_invocable_r<void, F, int, int >(),
 		   "would call private member");
-
-  struct FX {
-    X operator()() const noexcept { return {}; }
-  };
-  static_assert( is_nt_invocable< FX >(), "FX::operator() is nothrow" );
-  static_assert( is_nt_invocable_r<X, FX >(), "no conversion needed" );
-  static_assert( is_nt_invocable_r<void, FX >(), "" );
-
-  struct Y {
-    explicit Y(X) noexcept; // not viable for implicit conversions
-    Y(...);
-  };
-
-  static_assert( ! is_nt_invocable_r<Y, FX >(), "conversion to Y can throw" );
 }

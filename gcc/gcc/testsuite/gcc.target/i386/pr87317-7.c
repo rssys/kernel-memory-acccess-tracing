@@ -1,7 +1,7 @@
 /* { dg-do compile { target { ! ia32 } } } */
 /* { dg-options "-O2 -march=haswell" } */
 /* { dg-final { scan-assembler-times "vpmovzxbd" 1 } } */
-/* { dg-final { scan-assembler-not "\tvmovd\t" } } */
+/* { dg-final { scan-assembler-not "vmovd" } } */
 
 #include <immintrin.h>
 

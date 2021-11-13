@@ -9,10 +9,9 @@
  */
 module core.sys.windows.windef;
 version (Windows):
-@system:
 
 public import core.sys.windows.winnt;
-import core.sys.windows.w32api;
+private import core.sys.windows.w32api;
 
 enum size_t MAX_PATH = 260;
 

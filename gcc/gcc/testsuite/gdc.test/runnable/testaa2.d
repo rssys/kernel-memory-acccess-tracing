@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // PERMUTE_ARGS:
 
 extern(C) int printf(const char*, ...);
@@ -151,7 +150,7 @@ void test3825()
      * it has no side effect. Then optimizer eliminate it completely, and
      * whole expression succeed to run in runtime. */
     int n = 0;
-    assert(thrown(aax[((){ n=aax[1]; return 0;}())] = 0)); // accessing aax[1] in key part, throws OK
+    assert(thrown(aax[(n=aax[1], 0)] = 0)); // accessing aax[1] in key part, throws OK
 
     // This works as expected.
     int[int][int] aaa;

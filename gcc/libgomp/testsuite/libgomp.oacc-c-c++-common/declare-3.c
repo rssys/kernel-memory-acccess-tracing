@@ -1,3 +1,5 @@
+/* { dg-do run { target openacc_nvidia_accel_selected } } */
+
 #include <stdlib.h>
 #include <openacc.h>
 

@@ -1,8 +1,8 @@
-int gl;
+int glob;
 
 g (x)
 {
-  gl = x;
+  glob = x;
   return 0;
 }
 
@@ -16,7 +16,7 @@ f (x)
 main ()
 {
   f (3);
-  if (gl != -4)
+  if (glob != -4)
     abort ();
   exit (0);
 }

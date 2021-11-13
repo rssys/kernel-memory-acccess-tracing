@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,7 +36,6 @@ with Ada.Iterator_Interfaces;
 with Ada.Containers.Helpers;
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 generic
    type Index_Type is range <>;
@@ -44,9 +43,7 @@ generic
 
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Indefinite_Vectors with
-  SPARK_Mode => Off
-is
+package Ada.Containers.Indefinite_Vectors is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -62,11 +59,7 @@ is
      Constant_Indexing => Constant_Reference,
      Variable_Indexing => Reference,
      Default_Iterator  => Iterate,
-     Iterator_Element  => Element_Type,
-     Aggregate         => (Empty          => Empty_Vector,
-                           Add_Unnamed    => Append,
-                           New_Indexed    => New_Vector,
-                           Assign_Indexed => Replace_Element);
+     Iterator_Element  => Element_Type;
 
    pragma Preelaborable_Initialization (Vector);
 
@@ -77,17 +70,12 @@ is
 
    No_Element : constant Cursor;
 
-   function Empty (Capacity : Count_Type := 10) return Vector;
-
    function Has_Element (Position : Cursor) return Boolean;
 
    package Vector_Iterator_Interfaces is new
      Ada.Iterator_Interfaces (Cursor, Has_Element);
 
    overriding function "=" (Left, Right : Vector) return Boolean;
-
-   function New_Vector (First, Last : Index_Type) return Vector
-     with Pre => First = Index_Type'First;
 
    function To_Vector (Length : Count_Type) return Vector;
 
@@ -195,40 +183,21 @@ is
 
    procedure Move (Target : in out Vector; Source : in out Vector);
 
-   procedure Insert_Vector
+   procedure Insert
      (Container : in out Vector;
       Before    : Extended_Index;
       New_Item  : Vector);
 
    procedure Insert
      (Container : in out Vector;
-      Before    : Extended_Index;
-      New_Item  : Vector) renames Insert_Vector;
-   --  Retained for now for compatibility; AI12-0400 will remove this.
-
-   procedure Insert_Vector
-     (Container : in out Vector;
       Before    : Cursor;
       New_Item  : Vector);
-
-   procedure Insert
-     (Container : in out Vector;
-      Before    : Cursor;
-      New_Item  : Vector) renames Insert_Vector;
-   --  Retained for now for compatibility; AI12-0400 will remove this.
-
-   procedure Insert_Vector
-     (Container : in out Vector;
-      Before    : Cursor;
-      New_Item  : Vector;
-      Position  : out Cursor);
 
    procedure Insert
      (Container : in out Vector;
       Before    : Cursor;
       New_Item  : Vector;
-      Position  : out Cursor) renames Insert_Vector;
-   --  Retained for now for compatibility; AI12-0400 will remove this.
+      Position  : out Cursor);
 
    procedure Insert
      (Container : in out Vector;
@@ -249,36 +218,23 @@ is
       Position  : out Cursor;
       Count     : Count_Type := 1);
 
-   procedure Prepend_Vector
-     (Container : in out Vector;
-      New_Item  : Vector);
-
    procedure Prepend
      (Container : in out Vector;
-      New_Item  : Vector) renames Prepend_Vector;
-   --  Retained for now for compatibility; AI12-0400 will remove this.
+      New_Item  : Vector);
 
    procedure Prepend
      (Container : in out Vector;
       New_Item  : Element_Type;
       Count     : Count_Type := 1);
 
-   procedure Append_Vector
+   procedure Append
      (Container : in out Vector;
       New_Item  : Vector);
 
    procedure Append
      (Container : in out Vector;
-      New_Item  : Vector) renames Append_Vector;
-   --  Retained for now for compatibility; AI12-0400 will remove this.
-
-   procedure Append
-     (Container : in out Vector;
       New_Item  : Element_Type;
-      Count     : Count_Type);
-
-   procedure Append (Container : in out Vector;
-                     New_Item  :        Element_Type);
+      Count     : Count_Type := 1);
 
    procedure Insert_Space
      (Container : in out Vector;
@@ -425,10 +381,7 @@ private
       Elements : Elements_Access := null;
       Last     : Extended_Index := No_Index;
       TC       : aliased Tamper_Counts;
-   end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Vector);
+   end record;
 
    overriding procedure Adjust (Container : in out Vector);
    overriding procedure Finalize (Container : in out Vector);

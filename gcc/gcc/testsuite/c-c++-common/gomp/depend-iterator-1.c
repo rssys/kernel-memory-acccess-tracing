@@ -1,5 +1,3 @@
-/* { dg-additional-options "-Wno-volatile" { target c++ } } */
-
 int arr[64], arr2[64];
 struct S { int a[4]; } k;
 short arr4[4];

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build dragonfly || netbsd || openbsd
 // +build dragonfly netbsd openbsd
 
 package net
@@ -10,7 +9,7 @@ package net
 import (
 	"syscall"
 
-	"golang.org/x/net/route"
+	"internal/x/net/route"
 )
 
 func interfaceMessages(ifindex int) ([]route.Message, error) {

@@ -1,5 +1,5 @@
 ;; GCC machine description for Tensilica's Xtensa architecture.
-;; Copyright (C) 2001-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2019 Free Software Foundation, Inc.
 ;; Contributed by Bob Wilson (bwilson@tensilica.com) at Tensilica.
 
 ;; This file is part of GCC.
@@ -162,14 +162,11 @@
 
 (define_insn "*addx"
   [(set (match_operand:SI 0 "register_operand" "=a")
-	(plus:SI (ashift:SI (match_operand:SI 1 "register_operand" "r")
-			    (match_operand:SI 3 "addsubx_operand" "i"))
+	(plus:SI (mult:SI (match_operand:SI 1 "register_operand" "r")
+			  (match_operand:SI 3 "addsubx_operand" "i"))
 		 (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_ADDX"
-{
-  operands[3] = GEN_INT (1 << INTVAL (operands[3]));
-  return "addx%3\t%0, %1, %2";
-}
+  "addx%3\t%0, %1, %2"
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3")])
@@ -199,14 +196,11 @@
 
 (define_insn "*subx"
   [(set (match_operand:SI 0 "register_operand" "=a")
-	(minus:SI (ashift:SI (match_operand:SI 1 "register_operand" "r")
-			     (match_operand:SI 3 "addsubx_operand" "i"))
+	(minus:SI (mult:SI (match_operand:SI 1 "register_operand" "r")
+			   (match_operand:SI 3 "addsubx_operand" "i"))
 		  (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_ADDX"
-{
-  operands[3] = GEN_INT (1 << INTVAL (operands[3]));
-  return "subx%3\t%0, %1, %2";
-}
+  "subx%3\t%0, %1, %2"
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3")])
@@ -469,27 +463,6 @@
 })
 
 
-;; Byte swap.
-
-(define_insn "bswapsi2"
-  [(set (match_operand:SI 0 "register_operand" "=&a")
-	(bswap:SI (match_operand:SI 1 "register_operand" "r")))]
-  "!optimize_size"
-  "ssai\t8\;srli\t%0, %1, 16\;src\t%0, %0, %1\;src\t%0, %0, %0\;src\t%0, %1, %0"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"15")])
-
-(define_insn "bswapdi2"
-  [(set (match_operand:DI 0 "register_operand" "=&a")
-	(bswap:DI (match_operand:DI 1 "register_operand" "r")))]
-  "!optimize_size"
-  "ssai\t8\;srli\t%0, %D1, 16\;src\t%0, %0, %D1\;src\t%0, %0, %0\;src\t%0, %D1, %0\;srli\t%D0, %1, 16\;src\t%D0, %D0, %1\;src\t%D0, %D0, %D0\;src\t%D0, %1, %D0"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"DI")
-   (set_attr "length"	"27")])
-
-
 ;; Negation and one's complement.
 
 (define_insn "negsi2"
@@ -565,7 +538,7 @@
   ""
   "@
    extui\t%0, %1, 0, 16
-   %v1l16ui\t%0, %1"
+   l16ui\t%0, %1"
   [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,3")])
@@ -576,7 +549,7 @@
   ""
   "@
    extui\t%0, %1, 0, 8
-   %v1l8ui\t%0, %1"
+   l8ui\t%0, %1"
   [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,3")])
@@ -602,7 +575,7 @@
   ""
   "@
    sext\t%0, %1, 15
-   %v1l16si\t%0, %1"
+   l16si\t%0, %1"
   [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,3")])
@@ -748,23 +721,8 @@
 	(match_operand:DI 1 "general_operand" ""))]
   ""
 {
-  if (CONSTANT_P (operands[1]))
-    {
-      /* Split in halves if 64-bit Const-to-Reg moves
-	 because of offering further optimization opportunities.  */
-      if (register_operand (operands[0], DImode))
-	{
-	  rtx first, second;
-
-	  split_double (operands[1], &first, &second);
-	  emit_insn (gen_movsi (gen_lowpart (SImode, operands[0]), first));
-	  emit_insn (gen_movsi (gen_highpart (SImode, operands[0]), second));
-	  DONE;
-	}
-
-      if (!TARGET_CONST16)
-	operands[1] = force_const_mem (DImode, operands[1]);
-    }
+  if (CONSTANT_P (operands[1]) && !TARGET_CONST16)
+    operands[1] = force_const_mem (DImode, operands[1]);
 
   if (!register_operand (operands[0], DImode)
       && !register_operand (operands[1], DImode))
@@ -1068,7 +1026,7 @@
 
 ;; Block moves
 
-(define_expand "cpymemsi"
+(define_expand "movmemsi"
   [(parallel [(set (match_operand:BLK 0 "" "")
 		   (match_operand:BLK 1 "" ""))
 	      (use (match_operand:SI 2 "arith_operand" ""))
@@ -1092,16 +1050,6 @@
   operands[1] = xtensa_copy_incoming_a7 (operands[1]);
 })
 
-(define_insn "*ashlsi3_1"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashift:SI (match_operand:SI 1 "register_operand" "r")
-		   (const_int 1)))]
-  "TARGET_DENSITY"
-  "add.n\t%0, %1, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"2")])
-
 (define_insn "ashlsi3_internal"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(ashift:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1114,17 +1062,6 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
 
-(define_insn "*ashlsi3_3x"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashift:SI (match_operand:SI 1 "register_operand" "r")
-		   (ashift:SI (match_operand:SI 2 "register_operand" "r")
-			      (const_int 3))))]
-  ""
-  "ssa8b\t%2\;sll\t%0, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"6")])
-
 (define_insn "ashrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(ashiftrt:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1136,17 +1073,6 @@
   [(set_attr "type"	"arith,arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
-
-(define_insn "*ashrsi3_3x"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashiftrt:SI (match_operand:SI 1 "register_operand" "r")
-		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
-				(const_int 3))))]
-  ""
-  "ssa8l\t%2\;sra\t%0, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"6")])
 
 (define_insn "lshrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
@@ -1166,17 +1092,6 @@
   [(set_attr "type"	"arith,arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
-
-(define_insn "*lshrsi3_3x"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(lshiftrt:SI (match_operand:SI 1 "register_operand" "r")
-		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
-				(const_int 3))))]
-  ""
-  "ssa8l\t%2\;srl\t%0, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"6")])
 
 (define_insn "rotlsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")

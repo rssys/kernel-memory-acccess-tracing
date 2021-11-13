@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"internal/bytealg"
-	"internal/itoa"
 	"io"
 	"os"
 )
@@ -85,7 +84,7 @@ func queryCS1(ctx context.Context, net string, ip IP, port int) (clone, dest str
 	if len(ip) != 0 && !ip.IsUnspecified() {
 		ips = ip.String()
 	}
-	lines, err := queryCS(ctx, net, ips, itoa.Itoa(port))
+	lines, err := queryCS(ctx, net, ips, itoa(port))
 	if err != nil {
 		return
 	}
@@ -148,12 +147,10 @@ func (*Resolver) lookupHost(ctx context.Context, host string) (addrs []string, e
 	// host names in local network (e.g. from /lib/ndb/local)
 	lines, err := queryCS(ctx, "net", host, "1")
 	if err != nil {
-		dnsError := &DNSError{Err: err.Error(), Name: host}
 		if stringsHasSuffix(err.Error(), "dns failure") {
-			dnsError.Err = errNoSuchHost.Error()
-			dnsError.IsNotFound = true
+			err = errNoSuchHost
 		}
-		return nil, dnsError
+		return
 	}
 loop:
 	for _, line := range lines {
@@ -309,7 +306,7 @@ func (*Resolver) lookupTXT(ctx context.Context, name string) (txt []string, err 
 	}
 	for _, line := range lines {
 		if i := bytealg.IndexByteString(line, '\t'); i >= 0 {
-			txt = append(txt, line[i+1:])
+			txt = append(txt, absDomainName([]byte(line[i+1:])))
 		}
 	}
 	return

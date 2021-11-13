@@ -1,6 +1,6 @@
 /* PR middle-end/91623 */
 /* { dg-do compile } */
-/* { dg-options "-O3 -msse4.1 -mno-sse4.2 -fcommon" } */
+/* { dg-options "-O3 -msse4.1 -mno-sse4.2" } */
 
 typedef long long V __attribute__((__vector_size__(16)));
 V e, h;

@@ -1,6 +1,7 @@
 -- { dg-do compile }
--- { dg-skip-if "No Dwarf" { { hppa*-*-hpux* } && { ! lp64 } } }
--- { dg-options "-cargs -O0 -g -dA -fgnat-encodings=minimal -margs" }
+-- { dg-options "-cargs -g -fgnat-encodings=minimal -dA -margs" }
+-- { dg-final { scan-assembler-not "DW_OP_const4u" } }
+-- { dg-final { scan-assembler-not "DW_OP_const8u" } }
 
 --  The DW_AT_byte_size attribute DWARF expression for the
 --  DW_TAG_structure_type DIE that describes Rec_Type contains the -4u literal.
@@ -26,6 +27,3 @@ procedure Debug8 is
 begin
    null;
 end Debug8;
-
--- { dg-final { scan-assembler-not "DW_OP_const4u" } }
--- { dg-final { scan-assembler-not "DW_OP_const8u" } }

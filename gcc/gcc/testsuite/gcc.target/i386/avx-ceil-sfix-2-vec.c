@@ -1,6 +1,7 @@
 /* { dg-do run } */
 /* { dg-options "-O2 -ffast-math -ftree-vectorize -mavx" } */
 /* { dg-require-effective-target avx } */
+/* { dg-skip-if "no M_PI" { vxworks_kernel } } */
 
 #ifndef CHECK_H
 #define CHECK_H "avx-check.h"
@@ -13,7 +14,7 @@
 #include CHECK_H
 
 #define __NO_MATH_INLINES
-#include "math_m_pi.h"
+#include <math.h>
 
 extern double ceil (double);
 

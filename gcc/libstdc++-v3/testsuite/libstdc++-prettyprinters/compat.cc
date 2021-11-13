@@ -1,7 +1,8 @@
 // { dg-options "-g -O0" }
 // { dg-do run { target c++11 } }
+// { dg-skip-if "" { *-*-* } { "-D_GLIBCXX_PROFILE" } }
 
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -22,29 +23,11 @@
 
 namespace std
 {
-  template<typename T>
-    struct _Head_base : T
-    { };
-
-  template<typename T>
-    struct _Head_base<T*>
+  template<typename T, typename U>
+    struct tuple
     {
-      T* _M_head_impl;
+      T _M_head_impl;
     };
-
-  template<unsigned long, typename ...> struct _Tuple_impl;
-
-  template<typename T, typename U>
-    struct _Tuple_impl<0, T, U> : _Tuple_impl<1, U>, _Head_base<T>
-    { };
-
-  template<typename U>
-    struct _Tuple_impl<1, U> : _Head_base<U>
-    { };
-
-  template<typename T, typename U>
-    struct tuple : _Tuple_impl<0, T, U>
-    { };
 
   template<typename T> struct default_delete { };
 
@@ -53,9 +36,7 @@ namespace std
     {
       unique_ptr(T* p) { _M_t._M_head_impl = p; }
 
-      using __tuple_type = tuple<T*, D>;
-
-      __tuple_type _M_t;
+      tuple<T*, D> _M_t;
     };
 
   // Old representation of std::optional, before GCC 9

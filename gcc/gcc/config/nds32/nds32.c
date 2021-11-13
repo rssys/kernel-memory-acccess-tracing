@@ -1,5 +1,5 @@
 /* Subroutines used for code generation of Andes NDS32 cpu for GNU compiler
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Contributed by Andes Technology Corporation.
 
    This file is part of GCC.
@@ -1868,20 +1868,19 @@ nds32_can_eliminate (const int from_reg, const int to_reg)
 /* -- Passing Arguments in Registers.  */
 
 static rtx
-nds32_function_arg (cumulative_args_t ca, const function_arg_info &arg)
+nds32_function_arg (cumulative_args_t ca, machine_mode mode,
+		    const_tree type, bool named)
 {
   unsigned int regno;
   CUMULATIVE_ARGS *cum = get_cumulative_args (ca);
-  tree type = arg.type;
-  machine_mode mode = arg.mode;
 
   /* The last time this hook is called,
-     it is called with an end marker.  */
-  if (arg.end_marker_p ())
+     it is called with MODE == VOIDmode.  */
+  if (mode == VOIDmode)
     return NULL_RTX;
 
   /* For nameless arguments, we need to take care it individually.  */
-  if (!arg.named)
+  if (!named)
     {
       /* If we are under hard float abi, we have arguments passed on the
 	 stack and all situation can be handled by GCC itself.  */
@@ -1951,20 +1950,21 @@ nds32_function_arg (cumulative_args_t ca, const function_arg_info &arg)
 }
 
 static bool
-nds32_must_pass_in_stack (const function_arg_info &arg)
+nds32_must_pass_in_stack (machine_mode mode, const_tree type)
 {
   /* Return true if a type must be passed in memory.
      If it is NOT using hard float abi, small aggregates can be
      passed in a register even we are calling a variadic function.
      So there is no need to take padding into consideration.  */
   if (TARGET_HARD_FLOAT)
-    return must_pass_in_stack_var_size_or_pad (arg);
+    return must_pass_in_stack_var_size_or_pad (mode, type);
   else
-    return must_pass_in_stack_var_size (arg);
+    return must_pass_in_stack_var_size (mode, type);
 }
 
 static int
-nds32_arg_partial_bytes (cumulative_args_t ca, const function_arg_info &arg)
+nds32_arg_partial_bytes (cumulative_args_t ca, machine_mode mode,
+			 tree type, bool named ATTRIBUTE_UNUSED)
 {
   /* Returns the number of bytes at the beginning of an argument that
      must be put in registers.  The value must be zero for arguments that are
@@ -1985,19 +1985,18 @@ nds32_arg_partial_bytes (cumulative_args_t ca, const function_arg_info &arg)
 
   /* If we have already runned out of argument registers, return zero
      so that the argument will be entirely pushed on the stack.  */
-  if (NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset, arg.mode, arg.type)
+  if (NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset, mode, type)
       >= NDS32_GPR_ARG_FIRST_REGNUM + NDS32_MAX_GPR_REGS_FOR_ARGS)
     return 0;
 
   /* Calculate how many registers do we need for this argument.  */
-  needed_reg_count = NDS32_NEED_N_REGS_FOR_ARG (arg.mode, arg.type);
+  needed_reg_count = NDS32_NEED_N_REGS_FOR_ARG (mode, type);
 
   /* Calculate how many argument registers have left for passing argument.
      Note that we should count it from next available register number.  */
   remaining_reg_count
     = NDS32_MAX_GPR_REGS_FOR_ARGS
-      - (NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset,
-					     arg.mode, arg.type)
+      - (NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset, mode, type)
 	 - NDS32_GPR_ARG_FIRST_REGNUM);
 
   /* Note that we have to return the nubmer of bytes, not registers count.  */
@@ -2008,14 +2007,12 @@ nds32_arg_partial_bytes (cumulative_args_t ca, const function_arg_info &arg)
 }
 
 static void
-nds32_function_arg_advance (cumulative_args_t ca,
-			    const function_arg_info &arg)
+nds32_function_arg_advance (cumulative_args_t ca, machine_mode mode,
+			    const_tree type, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (ca);
-  tree type = arg.type;
-  machine_mode mode = arg.mode;
 
-  if (arg.named)
+  if (named)
     {
       /* We need to further check TYPE and MODE so that we can determine
 	 which kind of register we shall advance.  */
@@ -2230,10 +2227,8 @@ nds32_asm_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 			   HOST_WIDE_INT vcall_offset ATTRIBUTE_UNUSED,
 			   tree function)
 {
-  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk));
   int this_regno;
 
-  assemble_start_function (thunk, fnname);
   /* Make sure unwind info is emitted for the thunk if needed.  */
   final_start_function (emit_barrier (), file, 1);
 
@@ -2304,7 +2299,6 @@ nds32_asm_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
     }
 
   final_end_function ();
-  assemble_end_function (thunk, fnname);
 }
 
 /* -- Permitting tail calls.  */
@@ -2348,7 +2342,8 @@ nds32_warn_func_return (tree decl)
 
 static void
 nds32_setup_incoming_varargs (cumulative_args_t ca,
-			      const function_arg_info &arg,
+			      machine_mode mode,
+			      tree type,
 			      int *pretend_args_size,
 			      int second_time ATTRIBUTE_UNUSED)
 {
@@ -2372,14 +2367,14 @@ nds32_setup_incoming_varargs (cumulative_args_t ca,
 
   cum = get_cumulative_args (ca);
 
-  /* ARG describes the last argument.
+  /* The MODE and TYPE describe the last argument.
      We need those information to determine the remaining registers
      for varargs.  */
   total_args_regs
     = NDS32_MAX_GPR_REGS_FOR_ARGS + NDS32_GPR_ARG_FIRST_REGNUM;
   num_of_used_regs
-    = NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset, arg.mode, arg.type)
-      + NDS32_NEED_N_REGS_FOR_ARG (arg.mode, arg.type);
+    = NDS32_AVAILABLE_REGNUM_FOR_GPR_ARG (cum->gpr_offset, mode, type)
+      + NDS32_NEED_N_REGS_FOR_ARG (mode, type);
 
   remaining_reg_count = total_args_regs - num_of_used_regs;
   *pretend_args_size = remaining_reg_count * UNITS_PER_WORD;
@@ -4197,10 +4192,8 @@ nds32_option_override (void)
 static rtx_insn *
 nds32_md_asm_adjust (vec<rtx> &outputs ATTRIBUTE_UNUSED,
 		     vec<rtx> &inputs ATTRIBUTE_UNUSED,
-		     vec<machine_mode> &input_modes ATTRIBUTE_UNUSED,
 		     vec<const char *> &constraints ATTRIBUTE_UNUSED,
-		     vec<rtx> &clobbers, HARD_REG_SET &clobbered_regs,
-		     location_t /*loc*/)
+		     vec<rtx> &clobbers, HARD_REG_SET &clobbered_regs)
 {
   if (!flag_inline_asm_r15)
     {
@@ -5498,7 +5491,7 @@ nds32_split_double_word_load_store_p(rtx *operands, bool load_p)
     return false;
 
   const char *pass_name = current_pass->name;
-  if (pass_name && ((strcmp (pass_name, "split3") == 0)
+  if (pass_name && ((strcmp (pass_name, "split4") == 0)
 		     || (strcmp (pass_name, "split5") == 0)))
     return !satisfies_constraint_Da (mem) || MEM_VOLATILE_P (mem);
 

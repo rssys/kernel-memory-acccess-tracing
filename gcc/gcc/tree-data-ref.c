@@ -1,5 +1,5 @@
 /* Data references and dependences detectors.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <pop@cri.ensmp.fr>
 
 This file is part of GCC.
@@ -93,13 +93,10 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-scalar-evolution.h"
 #include "dumpfile.h"
 #include "tree-affine.h"
+#include "params.h"
 #include "builtins.h"
 #include "tree-eh.h"
 #include "ssa.h"
-#include "internal-fn.h"
-#include "vr-values.h"
-#include "range-op.h"
-#include "tree-ssa-loop-ivopts.h"
 
 static struct datadep_stats
 {
@@ -130,7 +127,7 @@ static struct datadep_stats
 
 static bool subscript_dependence_tester_1 (struct data_dependence_relation *,
 					   unsigned int, unsigned int,
-					   class loop *);
+					   struct loop *);
 /* Returns true iff A divides B.  */
 
 static inline bool
@@ -144,7 +141,7 @@ tree_fold_divides_p (const_tree a, const_tree b)
 /* Returns true iff A divides B.  */
 
 static inline bool
-int_divides_p (lambda_int a, lambda_int b)
+int_divides_p (int a, int b)
 {
   return ((b % a) == 0);
 }
@@ -171,7 +168,10 @@ ref_contains_union_access_p (tree ref)
 static void
 dump_data_references (FILE *file, vec<data_reference_p> datarefs)
 {
-  for (data_reference *dr : datarefs)
+  unsigned int i;
+  struct data_reference *dr;
+
+  FOR_EACH_VEC_ELT (datarefs, i, dr)
     dump_data_reference (file, dr);
 }
 
@@ -376,7 +376,10 @@ DEBUG_FUNCTION void
 print_dir_vectors (FILE *outf, vec<lambda_vector> dir_vects,
 		   int length)
 {
-  for (lambda_vector v : dir_vects)
+  unsigned j;
+  lambda_vector v;
+
+  FOR_EACH_VEC_ELT (dir_vects, j, v)
     print_direction_vector (outf, v, length);
 }
 
@@ -398,14 +401,18 @@ DEBUG_FUNCTION void
 print_dist_vectors (FILE *outf, vec<lambda_vector> dist_vects,
 		    int length)
 {
-  for (lambda_vector v : dist_vects)
+  unsigned j;
+  lambda_vector v;
+
+  FOR_EACH_VEC_ELT (dist_vects, j, v)
     print_lambda_vector (outf, v, length);
 }
 
 /* Dump function for a DATA_DEPENDENCE_RELATION structure.  */
 
 DEBUG_FUNCTION void
-dump_data_dependence_relation (FILE *outf, const data_dependence_relation *ddr)
+dump_data_dependence_relation (FILE *outf,
+			       struct data_dependence_relation *ddr)
 {
   struct data_reference *dra, *drb;
 
@@ -441,7 +448,7 @@ dump_data_dependence_relation (FILE *outf, const data_dependence_relation *ddr)
   else if (DDR_ARE_DEPENDENT (ddr) == NULL_TREE)
     {
       unsigned int i;
-      class loop *loopi;
+      struct loop *loopi;
 
       subscript *sub;
       FOR_EACH_VEC_ELT (DDR_SUBSCRIPTS (ddr), i, sub)
@@ -453,6 +460,7 @@ dump_data_dependence_relation (FILE *outf, const data_dependence_relation *ddr)
 	  dump_subscript (outf, sub);
 	}
 
+      fprintf (outf, "  inner loop index: %d\n", DDR_INNER_LOOP (ddr));
       fprintf (outf, "  loop nest: (");
       FOR_EACH_VEC_ELT (DDR_LOOP_NEST (ddr), i, loopi)
 	fprintf (outf, "%d ", loopi->num);
@@ -479,7 +487,7 @@ dump_data_dependence_relation (FILE *outf, const data_dependence_relation *ddr)
 /* Debug version.  */
 
 DEBUG_FUNCTION void
-debug_data_dependence_relation (const struct data_dependence_relation *ddr)
+debug_data_dependence_relation (struct data_dependence_relation *ddr)
 {
   dump_data_dependence_relation (stderr, ddr);
 }
@@ -487,9 +495,13 @@ debug_data_dependence_relation (const struct data_dependence_relation *ddr)
 /* Dump into FILE all the dependence relations from DDRS.  */
 
 DEBUG_FUNCTION void
-dump_data_dependence_relations (FILE *file, const vec<ddr_p> &ddrs)
+dump_data_dependence_relations (FILE *file,
+				vec<ddr_p> ddrs)
 {
-  for (auto ddr : ddrs)
+  unsigned int i;
+  struct data_dependence_relation *ddr;
+
+  FOR_EACH_VEC_ELT (ddrs, i, ddr)
     dump_data_dependence_relation (file, ddr);
 }
 
@@ -525,17 +537,21 @@ debug_data_dependence_relations (vec<ddr_p> ddrs)
 DEBUG_FUNCTION void
 dump_dist_dir_vectors (FILE *file, vec<ddr_p> ddrs)
 {
-  for (data_dependence_relation *ddr : ddrs)
+  unsigned int i, j;
+  struct data_dependence_relation *ddr;
+  lambda_vector v;
+
+  FOR_EACH_VEC_ELT (ddrs, i, ddr)
     if (DDR_ARE_DEPENDENT (ddr) == NULL_TREE && DDR_AFFINE_P (ddr))
       {
-	for (lambda_vector v : DDR_DIST_VECTS (ddr))
+	FOR_EACH_VEC_ELT (DDR_DIST_VECTS (ddr), j, v)
 	  {
 	    fprintf (file, "DISTANCE_V (");
 	    print_lambda_vector (file, v, DDR_NB_LOOPS (ddr));
 	    fprintf (file, ")\n");
 	  }
 
-	for (lambda_vector v : DDR_DIR_VECTS (ddr))
+	FOR_EACH_VEC_ELT (DDR_DIR_VECTS (ddr), j, v)
 	  {
 	    fprintf (file, "DIRECTION_V (");
 	    print_direction_vector (file, v, DDR_NB_LOOPS (ddr));
@@ -551,7 +567,10 @@ dump_dist_dir_vectors (FILE *file, vec<ddr_p> ddrs)
 DEBUG_FUNCTION void
 dump_ddrs (FILE *file, vec<ddr_p> ddrs)
 {
-  for (data_dependence_relation *ddr : ddrs)
+  unsigned int i;
+  struct data_dependence_relation *ddr;
+
+  FOR_EACH_VEC_ELT (ddrs, i, ddr)
     dump_data_dependence_relation (file, ddr);
 
   fprintf (file, "\n\n");
@@ -563,242 +582,62 @@ debug_ddrs (vec<ddr_p> ddrs)
   dump_ddrs (stderr, ddrs);
 }
 
-/* If RESULT_RANGE is nonnull, set *RESULT_RANGE to the range of
-   OP0 CODE OP1, where:
-
-   - OP0 CODE OP1 has integral type TYPE
-   - the range of OP0 is given by OP0_RANGE and
-   - the range of OP1 is given by OP1_RANGE.
-
-   Independently of RESULT_RANGE, try to compute:
-
-     DELTA = ((sizetype) OP0 CODE (sizetype) OP1)
-	     - (sizetype) (OP0 CODE OP1)
-
-   as a constant and subtract DELTA from the ssizetype constant in *OFF.
-   Return true on success, or false if DELTA is not known at compile time.
-
-   Truncation and sign changes are known to distribute over CODE, i.e.
-
-     (itype) (A CODE B) == (itype) A CODE (itype) B
-
-   for any integral type ITYPE whose precision is no greater than the
-   precision of A and B.  */
-
-static bool
-compute_distributive_range (tree type, value_range &op0_range,
-			    tree_code code, value_range &op1_range,
-			    tree *off, value_range *result_range)
-{
-  gcc_assert (INTEGRAL_TYPE_P (type) && !TYPE_OVERFLOW_TRAPS (type));
-  if (result_range)
-    {
-      range_operator *op = range_op_handler (code, type);
-      op->fold_range (*result_range, type, op0_range, op1_range);
-    }
-
-  /* The distributive property guarantees that if TYPE is no narrower
-     than SIZETYPE,
-
-       (sizetype) (OP0 CODE OP1) == (sizetype) OP0 CODE (sizetype) OP1
-
-     and so we can treat DELTA as zero.  */
-  if (TYPE_PRECISION (type) >= TYPE_PRECISION (sizetype))
-    return true;
-
-  /* If overflow is undefined, we can assume that:
-
-       X == (ssizetype) OP0 CODE (ssizetype) OP1
-
-     is within the range of TYPE, i.e.:
-
-       X == (ssizetype) (TYPE) X
-
-     Distributing the (TYPE) truncation over X gives:
-
-       X == (ssizetype) (OP0 CODE OP1)
-
-     Casting both sides to sizetype and distributing the sizetype cast
-     over X gives:
-
-       (sizetype) OP0 CODE (sizetype) OP1 == (sizetype) (OP0 CODE OP1)
-
-     and so we can treat DELTA as zero.  */
-  if (TYPE_OVERFLOW_UNDEFINED (type))
-    return true;
-
-  /* Compute the range of:
-
-       (ssizetype) OP0 CODE (ssizetype) OP1
-
-     The distributive property guarantees that this has the same bitpattern as:
-
-       (sizetype) OP0 CODE (sizetype) OP1
-
-     but its range is more conducive to analysis.  */
-  range_cast (op0_range, ssizetype);
-  range_cast (op1_range, ssizetype);
-  value_range wide_range;
-  range_operator *op = range_op_handler (code, ssizetype);
-  bool saved_flag_wrapv = flag_wrapv;
-  flag_wrapv = 1;
-  op->fold_range (wide_range, ssizetype, op0_range, op1_range);
-  flag_wrapv = saved_flag_wrapv;
-  if (wide_range.num_pairs () != 1 || !range_int_cst_p (&wide_range))
-    return false;
-
-  wide_int lb = wide_range.lower_bound ();
-  wide_int ub = wide_range.upper_bound ();
-
-  /* Calculate the number of times that each end of the range overflows or
-     underflows TYPE.  We can only calculate DELTA if the numbers match.  */
-  unsigned int precision = TYPE_PRECISION (type);
-  if (!TYPE_UNSIGNED (type))
-    {
-      wide_int type_min = wi::mask (precision - 1, true, lb.get_precision ());
-      lb -= type_min;
-      ub -= type_min;
-    }
-  wide_int upper_bits = wi::mask (precision, true, lb.get_precision ());
-  lb &= upper_bits;
-  ub &= upper_bits;
-  if (lb != ub)
-    return false;
-
-  /* OP0 CODE OP1 overflows exactly arshift (LB, PRECISION) times, with
-     negative values indicating underflow.  The low PRECISION bits of LB
-     are clear, so DELTA is therefore LB (== UB).  */
-  *off = wide_int_to_tree (ssizetype, wi::to_wide (*off) - lb);
-  return true;
-}
-
-/* Return true if (sizetype) OP == (sizetype) (TO_TYPE) OP,
-   given that OP has type FROM_TYPE and range RANGE.  Both TO_TYPE and
-   FROM_TYPE are integral types.  */
-
-static bool
-nop_conversion_for_offset_p (tree to_type, tree from_type, value_range &range)
-{
-  gcc_assert (INTEGRAL_TYPE_P (to_type)
-	      && INTEGRAL_TYPE_P (from_type)
-	      && !TYPE_OVERFLOW_TRAPS (to_type)
-	      && !TYPE_OVERFLOW_TRAPS (from_type));
-
-  /* Converting to something no narrower than sizetype and then to sizetype
-     is equivalent to converting directly to sizetype.  */
-  if (TYPE_PRECISION (to_type) >= TYPE_PRECISION (sizetype))
-    return true;
-
-  /* Check whether TO_TYPE can represent all values that FROM_TYPE can.  */
-  if (TYPE_PRECISION (from_type) < TYPE_PRECISION (to_type)
-      && (TYPE_UNSIGNED (from_type) || !TYPE_UNSIGNED (to_type)))
-    return true;
-
-  /* For narrowing conversions, we could in principle test whether
-     the bits in FROM_TYPE but not in TO_TYPE have a fixed value
-     and apply a constant adjustment.
-
-     For other conversions (which involve a sign change) we could
-     check that the signs are always equal, and apply a constant
-     adjustment if the signs are negative.
-
-     However, both cases should be rare.  */
-  return range_fits_type_p (&range, TYPE_PRECISION (to_type),
-			    TYPE_SIGN (to_type));
-}
-
 static void
-split_constant_offset (tree type, tree *var, tree *off,
-		       value_range *result_range,
+split_constant_offset (tree exp, tree *var, tree *off,
 		       hash_map<tree, std::pair<tree, tree> > &cache,
 		       unsigned *limit);
 
-/* Helper function for split_constant_offset.  If TYPE is a pointer type,
-   try to express OP0 CODE OP1 as:
-
-     POINTER_PLUS <*VAR, (sizetype) *OFF>
-
-   where:
-
-   - *VAR has type TYPE
-   - *OFF is a constant of type ssizetype.
-
-   If TYPE is an integral type, try to express (sizetype) (OP0 CODE OP1) as:
-
-     *VAR + (sizetype) *OFF
-
-   where:
-
-   - *VAR has type sizetype
-   - *OFF is a constant of type ssizetype.
-
-   In both cases, OP0 CODE OP1 has type TYPE.
-
-   Return true on success.  A false return value indicates that we can't
-   do better than set *OFF to zero.
-
-   When returning true, set RESULT_RANGE to the range of OP0 CODE OP1,
-   if RESULT_RANGE is nonnull and if we can do better than assume VR_VARYING.
-
-   CACHE caches {*VAR, *OFF} pairs for SSA names that we've previously
-   visited.  LIMIT counts down the number of SSA names that we are
-   allowed to process before giving up.  */
+/* Helper function for split_constant_offset.  Expresses OP0 CODE OP1
+   (the type of the result is TYPE) as VAR + OFF, where OFF is a nonzero
+   constant of type ssizetype, and returns true.  If we cannot do this
+   with OFF nonzero, OFF and VAR are set to NULL_TREE instead and false
+   is returned.  */
 
 static bool
 split_constant_offset_1 (tree type, tree op0, enum tree_code code, tree op1,
-			 tree *var, tree *off, value_range *result_range,
+			 tree *var, tree *off,
 			 hash_map<tree, std::pair<tree, tree> > &cache,
 			 unsigned *limit)
 {
   tree var0, var1;
   tree off0, off1;
-  value_range op0_range, op1_range;
+  enum tree_code ocode = code;
 
   *var = NULL_TREE;
   *off = NULL_TREE;
 
-  if (INTEGRAL_TYPE_P (type) && TYPE_OVERFLOW_TRAPS (type))
-    return false;
-
   switch (code)
     {
     case INTEGER_CST:
-      *var = size_int (0);
+      *var = build_int_cst (type, 0);
       *off = fold_convert (ssizetype, op0);
-      if (result_range)
-	result_range->set (op0, op0);
       return true;
 
     case POINTER_PLUS_EXPR:
-      split_constant_offset (op0, &var0, &off0, nullptr, cache, limit);
-      split_constant_offset (op1, &var1, &off1, nullptr, cache, limit);
-      *var = fold_build2 (POINTER_PLUS_EXPR, type, var0, var1);
-      *off = size_binop (PLUS_EXPR, off0, off1);
-      return true;
-
+      ocode = PLUS_EXPR;
+      /* FALLTHROUGH */
     case PLUS_EXPR:
     case MINUS_EXPR:
-      split_constant_offset (op0, &var0, &off0, &op0_range, cache, limit);
-      split_constant_offset (op1, &var1, &off1, &op1_range, cache, limit);
-      *off = size_binop (code, off0, off1);
-      if (!compute_distributive_range (type, op0_range, code, op1_range,
-				       off, result_range))
-	return false;
-      *var = fold_build2 (code, sizetype, var0, var1);
+      if (TREE_CODE (op1) == INTEGER_CST)
+	{
+	  split_constant_offset (op0, &var0, &off0, cache, limit);
+	  *var = var0;
+	  *off = size_binop (ocode, off0, fold_convert (ssizetype, op1));
+	  return true;
+	}
+      split_constant_offset (op0, &var0, &off0, cache, limit);
+      split_constant_offset (op1, &var1, &off1, cache, limit);
+      *var = fold_build2 (code, type, var0, var1);
+      *off = size_binop (ocode, off0, off1);
       return true;
 
     case MULT_EXPR:
       if (TREE_CODE (op1) != INTEGER_CST)
 	return false;
 
-      split_constant_offset (op0, &var0, &off0, &op0_range, cache, limit);
-      op1_range.set (op1, op1);
+      split_constant_offset (op0, &var0, &off0, cache, limit);
+      *var = fold_build2 (MULT_EXPR, type, var0, op1);
       *off = size_binop (MULT_EXPR, off0, fold_convert (ssizetype, op1));
-      if (!compute_distributive_range (type, op0_range, code, op1_range,
-				       off, result_range))
-	return false;
-      *var = fold_build2 (MULT_EXPR, sizetype, var0,
-			  fold_convert (sizetype, op1));
       return true;
 
     case ADDR_EXPR:
@@ -820,10 +659,13 @@ split_constant_offset_1 (tree type, tree op0, enum tree_code code, tree op1,
 
 	if (poffset)
 	  {
-	    split_constant_offset (poffset, &poffset, &off1, nullptr,
-				   cache, limit);
+	    split_constant_offset (poffset, &poffset, &off1, cache, limit);
 	    off0 = size_binop (PLUS_EXPR, off0, off1);
-	    base = fold_build_pointer_plus (base, poffset);
+	    if (POINTER_TYPE_P (TREE_TYPE (base)))
+	      base = fold_build_pointer_plus (base, poffset);
+	    else
+	      base = fold_build2 (PLUS_EXPR, TREE_TYPE (base), base,
+				  fold_convert (TREE_TYPE (base), poffset));
 	  }
 
 	var0 = fold_convert (type, base);
@@ -882,7 +724,6 @@ split_constant_offset_1 (tree type, tree op0, enum tree_code code, tree op1,
 		  return false;
 		*var = e.first;
 		*off = e.second;
-		/* The caller sets the range in this case.  */
 		return true;
 	      }
 	    e = std::make_pair (op0, ssize_int (0));
@@ -896,80 +737,66 @@ split_constant_offset_1 (tree type, tree op0, enum tree_code code, tree op1,
 	var1 = gimple_assign_rhs2 (def_stmt);
 
 	bool res = split_constant_offset_1 (type, var0, subcode, var1,
-					    var, off, nullptr, cache, limit);
+					    var, off, cache, limit);
 	if (res && use_cache)
 	  *cache.get (op0) = std::make_pair (*var, *off);
-	/* The caller sets the range in this case.  */
 	return res;
       }
     CASE_CONVERT:
       {
-	/* We can only handle the following conversions:
-
-	   - Conversions from one pointer type to another pointer type.
-
-	   - Conversions from one non-trapping integral type to another
-	     non-trapping integral type.  In this case, the recursive
-	     call makes sure that:
-
-	       (sizetype) OP0
-
-	     can be expressed as a sizetype operation involving VAR and OFF,
-	     and all we need to do is check whether:
-
-	       (sizetype) OP0 == (sizetype) (TYPE) OP0
-
-	   - Conversions from a non-trapping sizetype-size integral type to
-	     a like-sized pointer type.  In this case, the recursive call
-	     makes sure that:
-
-	       (sizetype) OP0 == *VAR + (sizetype) *OFF
-
-	     and we can convert that to:
-
-	       POINTER_PLUS <(TYPE) *VAR, (sizetype) *OFF>
-
-	   - Conversions from a sizetype-sized pointer type to a like-sized
-	     non-trapping integral type.  In this case, the recursive call
-	     makes sure that:
-
-	       OP0 == POINTER_PLUS <*VAR, (sizetype) *OFF>
-
-	     where the POINTER_PLUS and *VAR have the same precision as
-	     TYPE (and the same precision as sizetype).  Then:
-
-	       (sizetype) (TYPE) OP0 == (sizetype) *VAR + (sizetype) *OFF.  */
+	/* We must not introduce undefined overflow, and we must not change
+	   the value.  Hence we're okay if the inner type doesn't overflow
+	   to start with (pointer or signed), the outer type also is an
+	   integer or pointer and the outer precision is at least as large
+	   as the inner.  */
 	tree itype = TREE_TYPE (op0);
 	if ((POINTER_TYPE_P (itype)
 	     || (INTEGRAL_TYPE_P (itype) && !TYPE_OVERFLOW_TRAPS (itype)))
-	    && (POINTER_TYPE_P (type)
-		|| (INTEGRAL_TYPE_P (type) && !TYPE_OVERFLOW_TRAPS (type)))
-	    && (POINTER_TYPE_P (type) == POINTER_TYPE_P (itype)
-		|| (TYPE_PRECISION (type) == TYPE_PRECISION (sizetype)
-		    && TYPE_PRECISION (itype) == TYPE_PRECISION (sizetype))))
+	    && TYPE_PRECISION (type) >= TYPE_PRECISION (itype)
+	    && (POINTER_TYPE_P (type) || INTEGRAL_TYPE_P (type)))
 	  {
-	    if (POINTER_TYPE_P (type))
+	    if (INTEGRAL_TYPE_P (itype) && TYPE_OVERFLOW_WRAPS (itype))
 	      {
-		split_constant_offset (op0, var, off, nullptr, cache, limit);
-		*var = fold_convert (type, *var);
-	      }
-	    else if (POINTER_TYPE_P (itype))
-	      {
-		split_constant_offset (op0, var, off, nullptr, cache, limit);
-		*var = fold_convert (sizetype, *var);
+		/* Split the unconverted operand and try to prove that
+		   wrapping isn't a problem.  */
+		tree tmp_var, tmp_off;
+		split_constant_offset (op0, &tmp_var, &tmp_off, cache, limit);
+
+		/* See whether we have an SSA_NAME whose range is known
+		   to be [A, B].  */
+		if (TREE_CODE (tmp_var) != SSA_NAME)
+		  return false;
+		wide_int var_min, var_max;
+		value_range_kind vr_type = get_range_info (tmp_var, &var_min,
+							   &var_max);
+		wide_int var_nonzero = get_nonzero_bits (tmp_var);
+		signop sgn = TYPE_SIGN (itype);
+		if (intersect_range_with_nonzero_bits (vr_type, &var_min,
+						       &var_max, var_nonzero,
+						       sgn) != VR_RANGE)
+		  return false;
+
+		/* See whether the range of OP0 (i.e. TMP_VAR + TMP_OFF)
+		   is known to be [A + TMP_OFF, B + TMP_OFF], with all
+		   operations done in ITYPE.  The addition must overflow
+		   at both ends of the range or at neither.  */
+		wi::overflow_type overflow[2];
+		unsigned int prec = TYPE_PRECISION (itype);
+		wide_int woff = wi::to_wide (tmp_off, prec);
+		wide_int op0_min = wi::add (var_min, woff, sgn, &overflow[0]);
+		wi::add (var_max, woff, sgn, &overflow[1]);
+		if ((overflow[0] != wi::OVF_NONE) != (overflow[1] != wi::OVF_NONE))
+		  return false;
+
+		/* Calculate (ssizetype) OP0 - (ssizetype) TMP_VAR.  */
+		widest_int diff = (widest_int::from (op0_min, sgn)
+				   - widest_int::from (var_min, sgn));
+		var0 = tmp_var;
+		*off = wide_int_to_tree (ssizetype, diff);
 	      }
 	    else
-	      {
-		split_constant_offset (op0, var, off, &op0_range,
-				       cache, limit);
-		if (!nop_conversion_for_offset_p (type, itype, op0_range))
-		  return false;
-		if (result_range)
-		  {
-		    *result_range = op0_range;
-		    range_cast (*result_range, type);
-		  }
-	      }
+	      split_constant_offset (op0, &var0, off, cache, limit);
+	    *var = fold_convert (type, var0);
 	    return true;
 	  }
 	return false;
@@ -980,98 +807,41 @@ split_constant_offset_1 (tree type, tree op0, enum tree_code code, tree op1,
     }
 }
 
-/* If EXP has pointer type, try to express it as:
-
-     POINTER_PLUS <*VAR, (sizetype) *OFF>
-
-   where:
-
-   - *VAR has the same type as EXP
-   - *OFF is a constant of type ssizetype.
-
-   If EXP has an integral type, try to express (sizetype) EXP as:
-
-     *VAR + (sizetype) *OFF
-
-   where:
-
-   - *VAR has type sizetype
-   - *OFF is a constant of type ssizetype.
-
-   If EXP_RANGE is nonnull, set it to the range of EXP.
-
-   CACHE caches {*VAR, *OFF} pairs for SSA names that we've previously
-   visited.  LIMIT counts down the number of SSA names that we are
-   allowed to process before giving up.  */
+/* Expresses EXP as VAR + OFF, where off is a constant.  The type of OFF
+   will be ssizetype.  */
 
 static void
-split_constant_offset (tree exp, tree *var, tree *off, value_range *exp_range,
+split_constant_offset (tree exp, tree *var, tree *off,
 		       hash_map<tree, std::pair<tree, tree> > &cache,
 		       unsigned *limit)
 {
-  tree type = TREE_TYPE (exp), op0, op1;
+  tree type = TREE_TYPE (exp), op0, op1, e, o;
   enum tree_code code;
 
-  code = TREE_CODE (exp);
-  if (exp_range)
-    {
-      *exp_range = type;
-      if (code == SSA_NAME)
-	{
-	  value_range vr;
-	  get_range_query (cfun)->range_of_expr (vr, exp);
-	  if (vr.undefined_p ())
-	    vr.set_varying (TREE_TYPE (exp));
-	  wide_int var_min = wi::to_wide (vr.min ());
-	  wide_int var_max = wi::to_wide (vr.max ());
-	  value_range_kind vr_kind = vr.kind ();
-	  wide_int var_nonzero = get_nonzero_bits (exp);
-	  vr_kind = intersect_range_with_nonzero_bits (vr_kind,
-						       &var_min, &var_max,
-						       var_nonzero,
-						       TYPE_SIGN (type));
-	  /* This check for VR_VARYING is here because the old code
-	     using get_range_info would return VR_RANGE for the entire
-	     domain, instead of VR_VARYING.  The new code normalizes
-	     full-domain ranges to VR_VARYING.  */
-	  if (vr_kind == VR_RANGE || vr_kind == VR_VARYING)
-	    *exp_range = value_range (type, var_min, var_max);
-	}
-    }
-
-  if (!tree_is_chrec (exp)
-      && get_gimple_rhs_class (TREE_CODE (exp)) != GIMPLE_TERNARY_RHS)
-    {
-      extract_ops_from_tree (exp, &code, &op0, &op1);
-      if (split_constant_offset_1 (type, op0, code, op1, var, off,
-				   exp_range, cache, limit))
-	return;
-    }
-
   *var = exp;
-  if (INTEGRAL_TYPE_P (type))
-    *var = fold_convert (sizetype, *var);
   *off = ssize_int (0);
 
-  value_range r;
-  if (exp_range && code != SSA_NAME
-      && get_range_query (cfun)->range_of_expr (r, exp)
-      && !r.undefined_p ())
-    *exp_range = r;
-}
+  if (tree_is_chrec (exp)
+      || get_gimple_rhs_class (TREE_CODE (exp)) == GIMPLE_TERNARY_RHS)
+    return;
 
-/* Expresses EXP as VAR + OFF, where OFF is a constant.  VAR has the same
-   type as EXP while OFF has type ssizetype.  */
+  code = TREE_CODE (exp);
+  extract_ops_from_tree (exp, &code, &op0, &op1);
+  if (split_constant_offset_1 (type, op0, code, op1, &e, &o, cache, limit))
+    {
+      *var = e;
+      *off = o;
+    }
+}
 
 void
 split_constant_offset (tree exp, tree *var, tree *off)
 {
-  unsigned limit = param_ssa_name_def_chain_limit;
+  unsigned limit = PARAM_VALUE (PARAM_SSA_NAME_DEF_CHAIN_LIMIT);
   static hash_map<tree, std::pair<tree, tree> > *cache;
   if (!cache)
     cache = new hash_map<tree, std::pair<tree, tree> > (37);
-  split_constant_offset (exp, var, off, nullptr, *cache, &limit);
-  *var = fold_convert (TREE_TYPE (exp), *var);
+  split_constant_offset (exp, var, off, *cache, &limit);
   cache->empty ();
 }
 
@@ -1119,7 +889,7 @@ canonicalize_base_object_address (tree addr)
 
 opt_result
 dr_analyze_innermost (innermost_loop_behavior *drb, tree ref,
-		      class loop *loop, const gimple *stmt)
+		      struct loop *loop, const gimple *stmt)
 {
   poly_int64 pbitsize, pbitpos;
   tree base, poffset;
@@ -1283,39 +1053,26 @@ access_fn_component_p (tree op)
     }
 }
 
-/* Returns whether BASE can have a access_fn_component_p with BASE
-   as base.  */
-
-static bool
-base_supports_access_fn_components_p (tree base)
-{
-  switch (TREE_CODE (TREE_TYPE (base)))
-    {
-    case COMPLEX_TYPE:
-    case ARRAY_TYPE:
-    case RECORD_TYPE:
-      return true;
-    default:
-      return false;
-    }
-}
-
 /* Determines the base object and the list of indices of memory reference
    DR, analyzed in LOOP and instantiated before NEST.  */
 
 static void
-dr_analyze_indices (struct indices *dri, tree ref, edge nest, loop_p loop)
+dr_analyze_indices (struct data_reference *dr, edge nest, loop_p loop)
 {
+  vec<tree> access_fns = vNULL;
+  tree ref, op;
+  tree base, off, access_fn;
+
   /* If analyzing a basic-block there are no indices to analyze
      and thus no access functions.  */
   if (!nest)
     {
-      dri->base_object = ref;
-      dri->access_fns.create (0);
+      DR_BASE_OBJECT (dr) = DR_REF (dr);
+      DR_ACCESS_FNS (dr).create (0);
       return;
     }
 
-  vec<tree> access_fns = vNULL;
+  ref = DR_REF (dr);
 
   /* REALPART_EXPR and IMAGPART_EXPR can be handled like accesses
      into a two element array with a constant index.  The base is
@@ -1338,8 +1095,8 @@ dr_analyze_indices (struct indices *dri, tree ref, edge nest, loop_p loop)
     {
       if (TREE_CODE (ref) == ARRAY_REF)
 	{
-	  tree op = TREE_OPERAND (ref, 1);
-	  tree access_fn = analyze_scalar_evolution (loop, op);
+	  op = TREE_OPERAND (ref, 1);
+	  access_fn = analyze_scalar_evolution (loop, op);
 	  access_fn = instantiate_scev (nest, loop, access_fn);
 	  access_fns.safe_push (access_fn);
 	}
@@ -1370,17 +1127,16 @@ dr_analyze_indices (struct indices *dri, tree ref, edge nest, loop_p loop)
      analyzed nest, add it as an additional independent access-function.  */
   if (TREE_CODE (ref) == MEM_REF)
     {
-      tree op = TREE_OPERAND (ref, 0);
-      tree access_fn = analyze_scalar_evolution (loop, op);
+      op = TREE_OPERAND (ref, 0);
+      access_fn = analyze_scalar_evolution (loop, op);
       access_fn = instantiate_scev (nest, loop, access_fn);
-      STRIP_NOPS (access_fn);
       if (TREE_CODE (access_fn) == POLYNOMIAL_CHREC)
 	{
+	  tree orig_type;
 	  tree memoff = TREE_OPERAND (ref, 1);
-	  tree base = initial_condition (access_fn);
-	  tree orig_type = TREE_TYPE (base);
+	  base = initial_condition (access_fn);
+	  orig_type = TREE_TYPE (base);
 	  STRIP_USELESS_TYPE_CONVERSION (base);
-	  tree off;
 	  split_constant_offset (base, &base, &off);
 	  STRIP_USELESS_TYPE_CONVERSION (base);
 	  /* Fold the MEM_REF offset into the evolutions initial
@@ -1425,7 +1181,7 @@ dr_analyze_indices (struct indices *dri, tree ref, edge nest, loop_p loop)
 				 base, memoff);
 	  MR_DEPENDENCE_CLIQUE (ref) = MR_DEPENDENCE_CLIQUE (old);
 	  MR_DEPENDENCE_BASE (ref) = MR_DEPENDENCE_BASE (old);
-	  dri->unconstrained_base = true;
+	  DR_UNCONSTRAINED_BASE (dr) = true;
 	  access_fns.safe_push (access_fn);
 	}
     }
@@ -1437,8 +1193,8 @@ dr_analyze_indices (struct indices *dri, tree ref, edge nest, loop_p loop)
 		    build_int_cst (reference_alias_ptr_type (ref), 0));
     }
 
-  dri->base_object = ref;
-  dri->access_fns = access_fns;
+  DR_BASE_OBJECT (dr) = ref;
+  DR_ACCESS_FNS (dr) = access_fns;
 }
 
 /* Extracts the alias analysis information from the memory reference DR.  */
@@ -1464,8 +1220,6 @@ void
 free_data_ref (data_reference_p dr)
 {
   DR_ACCESS_FNS (dr).release ();
-  if (dr->alt_indices.base_object)
-    dr->alt_indices.access_fns.release ();
   free (dr);
 }
 
@@ -1500,7 +1254,7 @@ create_data_ref (edge nest, loop_p loop, tree memref, gimple *stmt,
 
   dr_analyze_innermost (&DR_INNERMOST (dr), memref,
 			nest != NULL ? loop : NULL, stmt);
-  dr_analyze_indices (&dr->indices, DR_REF (dr), nest, loop);
+  dr_analyze_indices (dr, nest, loop);
   dr_analyze_alias (dr);
 
   if (dump_file && (dump_flags & TDF_DETAILS))
@@ -1533,7 +1287,7 @@ create_data_ref (edge nest, loop_p loop, tree memref, gimple *stmt,
   return dr;
 }
 
-/*  A helper function computes order between two tree expressions T1 and T2.
+/*  A helper function computes order between two tree epxressions T1 and T2.
     This is used in comparator functions sorting objects based on the order
     of tree expressions.  The function returns -1, 0, or 1.  */
 
@@ -1613,7 +1367,7 @@ data_ref_compare_tree (tree t1, tree t2)
    check.  */
 
 opt_result
-runtime_alias_check_p (ddr_p ddr, class loop *loop, bool speed_p)
+runtime_alias_check_p (ddr_p ddr, struct loop *loop, bool speed_p)
 {
   if (dump_enabled_p ())
     dump_printf (MSG_NOTE,
@@ -1700,54 +1454,6 @@ comp_dr_with_seg_len_pair (const void *pa_, const void *pb_)
   return 0;
 }
 
-/* Dump information about ALIAS_PAIR, indenting each line by INDENT.  */
-
-static void
-dump_alias_pair (dr_with_seg_len_pair_t *alias_pair, const char *indent)
-{
-  dump_printf (MSG_NOTE, "%sreference:      %T vs. %T\n", indent,
-	       DR_REF (alias_pair->first.dr),
-	       DR_REF (alias_pair->second.dr));
-
-  dump_printf (MSG_NOTE, "%ssegment length: %T", indent,
-	       alias_pair->first.seg_len);
-  if (!operand_equal_p (alias_pair->first.seg_len,
-			alias_pair->second.seg_len, 0))
-    dump_printf (MSG_NOTE, " vs. %T", alias_pair->second.seg_len);
-
-  dump_printf (MSG_NOTE, "\n%saccess size:    ", indent);
-  dump_dec (MSG_NOTE, alias_pair->first.access_size);
-  if (maybe_ne (alias_pair->first.access_size, alias_pair->second.access_size))
-    {
-      dump_printf (MSG_NOTE, " vs. ");
-      dump_dec (MSG_NOTE, alias_pair->second.access_size);
-    }
-
-  dump_printf (MSG_NOTE, "\n%salignment:      %d", indent,
-	       alias_pair->first.align);
-  if (alias_pair->first.align != alias_pair->second.align)
-    dump_printf (MSG_NOTE, " vs. %d", alias_pair->second.align);
-
-  dump_printf (MSG_NOTE, "\n%sflags:         ", indent);
-  if (alias_pair->flags & DR_ALIAS_RAW)
-    dump_printf (MSG_NOTE, " RAW");
-  if (alias_pair->flags & DR_ALIAS_WAR)
-    dump_printf (MSG_NOTE, " WAR");
-  if (alias_pair->flags & DR_ALIAS_WAW)
-    dump_printf (MSG_NOTE, " WAW");
-  if (alias_pair->flags & DR_ALIAS_ARBITRARY)
-    dump_printf (MSG_NOTE, " ARBITRARY");
-  if (alias_pair->flags & DR_ALIAS_SWAPPED)
-    dump_printf (MSG_NOTE, " SWAPPED");
-  if (alias_pair->flags & DR_ALIAS_UNSWAPPED)
-    dump_printf (MSG_NOTE, " UNSWAPPED");
-  if (alias_pair->flags & DR_ALIAS_MIXED_STEPS)
-    dump_printf (MSG_NOTE, " MIXED_STEPS");
-  if (alias_pair->flags == 0)
-    dump_printf (MSG_NOTE, " <none>");
-  dump_printf (MSG_NOTE, "\n");
-}
-
 /* Merge alias checks recorded in ALIAS_PAIRS and remove redundant ones.
    FACTOR is number of iterations that each data reference is accessed.
 
@@ -1782,50 +1488,19 @@ void
 prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 			       poly_uint64)
 {
-  if (alias_pairs->is_empty ())
-    return;
-
-  /* Canonicalize each pair so that the base components are ordered wrt
-     data_ref_compare_tree.  This allows the loop below to merge more
-     cases.  */
-  unsigned int i;
-  dr_with_seg_len_pair_t *alias_pair;
-  FOR_EACH_VEC_ELT (*alias_pairs, i, alias_pair)
-    {
-      data_reference_p dr_a = alias_pair->first.dr;
-      data_reference_p dr_b = alias_pair->second.dr;
-      int comp_res = data_ref_compare_tree (DR_BASE_ADDRESS (dr_a),
-					    DR_BASE_ADDRESS (dr_b));
-      if (comp_res == 0)
-	comp_res = data_ref_compare_tree (DR_OFFSET (dr_a), DR_OFFSET (dr_b));
-      if (comp_res == 0)
-	comp_res = data_ref_compare_tree (DR_INIT (dr_a), DR_INIT (dr_b));
-      if (comp_res > 0)
-	{
-	  std::swap (alias_pair->first, alias_pair->second);
-	  alias_pair->flags |= DR_ALIAS_SWAPPED;
-	}
-      else
-	alias_pair->flags |= DR_ALIAS_UNSWAPPED;
-    }
-
   /* Sort the collected data ref pairs so that we can scan them once to
      combine all possible aliasing checks.  */
   alias_pairs->qsort (comp_dr_with_seg_len_pair);
 
   /* Scan the sorted dr pairs and check if we can combine alias checks
      of two neighboring dr pairs.  */
-  unsigned int last = 0;
-  for (i = 1; i < alias_pairs->length (); ++i)
+  for (size_t i = 1; i < alias_pairs->length (); ++i)
     {
       /* Deal with two ddrs (dr_a1, dr_b1) and (dr_a2, dr_b2).  */
-      dr_with_seg_len_pair_t *alias_pair1 = &(*alias_pairs)[last];
-      dr_with_seg_len_pair_t *alias_pair2 = &(*alias_pairs)[i];
-
-      dr_with_seg_len *dr_a1 = &alias_pair1->first;
-      dr_with_seg_len *dr_b1 = &alias_pair1->second;
-      dr_with_seg_len *dr_a2 = &alias_pair2->first;
-      dr_with_seg_len *dr_b2 = &alias_pair2->second;
+      dr_with_seg_len *dr_a1 = &(*alias_pairs)[i-1].first,
+		      *dr_b1 = &(*alias_pairs)[i-1].second,
+		      *dr_a2 = &(*alias_pairs)[i].first,
+		      *dr_b2 = &(*alias_pairs)[i].second;
 
       /* Remove duplicate data ref pairs.  */
       if (*dr_a1 == *dr_a2 && *dr_b1 == *dr_b2)
@@ -1834,15 +1509,9 @@ prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 	    dump_printf (MSG_NOTE, "found equal ranges %T, %T and %T, %T\n",
 			 DR_REF (dr_a1->dr), DR_REF (dr_b1->dr),
 			 DR_REF (dr_a2->dr), DR_REF (dr_b2->dr));
-	  alias_pair1->flags |= alias_pair2->flags;
+	  alias_pairs->ordered_remove (i--);
 	  continue;
 	}
-
-      /* Assume that we won't be able to merge the pairs, then correct
-	 if we do.  */
-      last += 1;
-      if (last != i)
-	(*alias_pairs)[last] = (*alias_pairs)[i];
 
       if (*dr_a1 == *dr_a2 || *dr_b1 == *dr_b2)
 	{
@@ -1869,6 +1538,13 @@ prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 	  if (!ordered_p (init_a1, init_a2))
 	    continue;
 
+	  /* Make sure dr_a1 starts left of dr_a2.  */
+	  if (maybe_gt (init_a1, init_a2))
+	    {
+	      std::swap (*dr_a1, *dr_a2);
+	      std::swap (init_a1, init_a2);
+	    }
+
 	  /* Work out what the segment length would be if we did combine
 	     DR_A1 and DR_A2:
 
@@ -1885,10 +1561,7 @@ prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 
 	     The lengths both have sizetype, so the sign is taken from
 	     the step instead.  */
-	  poly_uint64 new_seg_len = 0;
-	  bool new_seg_len_p = !operand_equal_p (dr_a1->seg_len,
-						 dr_a2->seg_len, 0);
-	  if (new_seg_len_p)
+	  if (!operand_equal_p (dr_a1->seg_len, dr_a2->seg_len, 0))
 	    {
 	      poly_uint64 seg_len_a1, seg_len_a2;
 	      if (!poly_int_tree_p (dr_a1->seg_len, &seg_len_a1)
@@ -1906,29 +1579,14 @@ prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 	      int sign_a = tree_int_cst_sgn (indicator_a);
 	      int sign_b = tree_int_cst_sgn (indicator_b);
 
+	      poly_uint64 new_seg_len;
 	      if (sign_a <= 0 && sign_b <= 0)
 		new_seg_len = lower_bound (seg_len_a1, seg_len_a2);
 	      else if (sign_a >= 0 && sign_b >= 0)
 		new_seg_len = upper_bound (seg_len_a1, seg_len_a2);
 	      else
 		continue;
-	    }
-	  /* At this point we're committed to merging the refs.  */
 
-	  /* Make sure dr_a1 starts left of dr_a2.  */
-	  if (maybe_gt (init_a1, init_a2))
-	    {
-	      std::swap (*dr_a1, *dr_a2);
-	      std::swap (init_a1, init_a2);
-	    }
-
-	  /* The DR_Bs are equal, so only the DR_As can introduce
-	     mixed steps.  */
-	  if (!operand_equal_p (DR_STEP (dr_a1->dr), DR_STEP (dr_a2->dr), 0))
-	    alias_pair1->flags |= DR_ALIAS_MIXED_STEPS;
-
-	  if (new_seg_len_p)
-	    {
 	      dr_a1->seg_len = build_int_cst (TREE_TYPE (dr_a1->seg_len),
 					      new_seg_len);
 	      dr_a1->align = MIN (dr_a1->align, known_alignment (new_seg_len));
@@ -1950,114 +1608,17 @@ prune_runtime_alias_test_list (vec<dr_with_seg_len_pair_t> *alias_pairs,
 	    dump_printf (MSG_NOTE, "merging ranges for %T, %T and %T, %T\n",
 			 DR_REF (dr_a1->dr), DR_REF (dr_b1->dr),
 			 DR_REF (dr_a2->dr), DR_REF (dr_b2->dr));
-	  alias_pair1->flags |= alias_pair2->flags;
-	  last -= 1;
+	  alias_pairs->ordered_remove (i);
+	  i--;
 	}
     }
-  alias_pairs->truncate (last + 1);
-
-  /* Try to restore the original dr_with_seg_len order within each
-     dr_with_seg_len_pair_t.  If we ended up combining swapped and
-     unswapped pairs into the same check, we have to invalidate any
-     RAW, WAR and WAW information for it.  */
-  if (dump_enabled_p ())
-    dump_printf (MSG_NOTE, "merged alias checks:\n");
-  FOR_EACH_VEC_ELT (*alias_pairs, i, alias_pair)
-    {
-      unsigned int swap_mask = (DR_ALIAS_SWAPPED | DR_ALIAS_UNSWAPPED);
-      unsigned int swapped = (alias_pair->flags & swap_mask);
-      if (swapped == DR_ALIAS_SWAPPED)
-	std::swap (alias_pair->first, alias_pair->second);
-      else if (swapped != DR_ALIAS_UNSWAPPED)
-	alias_pair->flags |= DR_ALIAS_ARBITRARY;
-      alias_pair->flags &= ~swap_mask;
-      if (dump_enabled_p ())
-	dump_alias_pair (alias_pair, "  ");
-    }
 }
 
-/* A subroutine of create_intersect_range_checks, with a subset of the
-   same arguments.  Try to use IFN_CHECK_RAW_PTRS and IFN_CHECK_WAR_PTRS
-   to optimize cases in which the references form a simple RAW, WAR or
-   WAR dependence.  */
-
-static bool
-create_ifn_alias_checks (tree *cond_expr,
-			 const dr_with_seg_len_pair_t &alias_pair)
-{
-  const dr_with_seg_len& dr_a = alias_pair.first;
-  const dr_with_seg_len& dr_b = alias_pair.second;
-
-  /* Check for cases in which:
-
-     (a) we have a known RAW, WAR or WAR dependence
-     (b) the accesses are well-ordered in both the original and new code
-	 (see the comment above the DR_ALIAS_* flags for details); and
-     (c) the DR_STEPs describe all access pairs covered by ALIAS_PAIR.  */
-  if (alias_pair.flags & ~(DR_ALIAS_RAW | DR_ALIAS_WAR | DR_ALIAS_WAW))
-    return false;
-
-  /* Make sure that both DRs access the same pattern of bytes,
-     with a constant length and step.  */
-  poly_uint64 seg_len;
-  if (!operand_equal_p (dr_a.seg_len, dr_b.seg_len, 0)
-      || !poly_int_tree_p (dr_a.seg_len, &seg_len)
-      || maybe_ne (dr_a.access_size, dr_b.access_size)
-      || !operand_equal_p (DR_STEP (dr_a.dr), DR_STEP (dr_b.dr), 0)
-      || !tree_fits_uhwi_p (DR_STEP (dr_a.dr)))
-    return false;
-
-  unsigned HOST_WIDE_INT bytes = tree_to_uhwi (DR_STEP (dr_a.dr));
-  tree addr_a = DR_BASE_ADDRESS (dr_a.dr);
-  tree addr_b = DR_BASE_ADDRESS (dr_b.dr);
-
-  /* See whether the target suports what we want to do.  WAW checks are
-     equivalent to WAR checks here.  */
-  internal_fn ifn = (alias_pair.flags & DR_ALIAS_RAW
-		     ? IFN_CHECK_RAW_PTRS
-		     : IFN_CHECK_WAR_PTRS);
-  unsigned int align = MIN (dr_a.align, dr_b.align);
-  poly_uint64 full_length = seg_len + bytes;
-  if (!internal_check_ptrs_fn_supported_p (ifn, TREE_TYPE (addr_a),
-					   full_length, align))
-    {
-      full_length = seg_len + dr_a.access_size;
-      if (!internal_check_ptrs_fn_supported_p (ifn, TREE_TYPE (addr_a),
-					       full_length, align))
-	return false;
-    }
-
-  /* Commit to using this form of test.  */
-  addr_a = fold_build_pointer_plus (addr_a, DR_OFFSET (dr_a.dr));
-  addr_a = fold_build_pointer_plus (addr_a, DR_INIT (dr_a.dr));
-
-  addr_b = fold_build_pointer_plus (addr_b, DR_OFFSET (dr_b.dr));
-  addr_b = fold_build_pointer_plus (addr_b, DR_INIT (dr_b.dr));
-
-  *cond_expr = build_call_expr_internal_loc (UNKNOWN_LOCATION,
-					     ifn, boolean_type_node,
-					     4, addr_a, addr_b,
-					     size_int (full_length),
-					     size_int (align));
-
-  if (dump_enabled_p ())
-    {
-      if (ifn == IFN_CHECK_RAW_PTRS)
-	dump_printf (MSG_NOTE, "using an IFN_CHECK_RAW_PTRS test\n");
-      else
-	dump_printf (MSG_NOTE, "using an IFN_CHECK_WAR_PTRS test\n");
-    }
-  return true;
-}
-
-/* Try to generate a runtime condition that is true if ALIAS_PAIR is
-   free of aliases, using a condition based on index values instead
-   of a condition based on addresses.  Return true on success,
-   storing the condition in *COND_EXPR.
-
-   This can only be done if the two data references in ALIAS_PAIR access
-   the same array object and the index is the only difference.  For example,
-   if the two data references are DR_A and DR_B:
+/* Given LOOP's two data references and segment lengths described by DR_A
+   and DR_B, create expression checking if the two addresses ranges intersect
+   with each other based on index of the two addresses.  This can only be
+   done if DR_A and DR_B referring to the same (array) object and the index
+   is the only difference.  For example:
 
                        DR_A                           DR_B
       data-ref         arr[i]                         arr[j]
@@ -2074,20 +1635,16 @@ create_ifn_alias_checks (tree *cond_expr,
 
    We can create expression based on index rather than address:
 
-     (unsigned) (i_0 - j_0 + 3) <= 6
-
-   i.e. the indices are less than 4 apart.
+     (i_0 + 4 < j_0 || j_0 + 4 < i_0)
 
    Note evolution step of index needs to be considered in comparison.  */
 
 static bool
-create_intersect_range_checks_index (class loop *loop, tree *cond_expr,
-				     const dr_with_seg_len_pair_t &alias_pair)
+create_intersect_range_checks_index (struct loop *loop, tree *cond_expr,
+				     const dr_with_seg_len& dr_a,
+				     const dr_with_seg_len& dr_b)
 {
-  const dr_with_seg_len &dr_a = alias_pair.first;
-  const dr_with_seg_len &dr_b = alias_pair.second;
-  if ((alias_pair.flags & DR_ALIAS_MIXED_STEPS)
-      || integer_zerop (DR_STEP (dr_a.dr))
+  if (integer_zerop (DR_STEP (dr_a.dr))
       || integer_zerop (DR_STEP (dr_b.dr))
       || DR_NUM_DIMENSIONS (dr_a.dr) != DR_NUM_DIMENSIONS (dr_b.dr))
     return false;
@@ -2113,8 +1670,15 @@ create_intersect_range_checks_index (class loop *loop, tree *cond_expr,
   if (neg_step)
     {
       abs_step = -abs_step;
-      seg_len1 = (-wi::to_poly_wide (dr_a.seg_len)).force_uhwi ();
-      seg_len2 = (-wi::to_poly_wide (dr_b.seg_len)).force_uhwi ();
+      seg_len1 = -seg_len1;
+      seg_len2 = -seg_len2;
+    }
+  else
+    {
+      /* Include the access size in the length, so that we only have one
+	 tree addition below.  */
+      seg_len1 += dr_a.access_size;
+      seg_len2 += dr_b.access_size;
     }
 
   /* Infer the number of iterations with which the memory segment is accessed
@@ -2128,18 +1692,19 @@ create_intersect_range_checks_index (class loop *loop, tree *cond_expr,
       || !can_div_trunc_p (seg_len2 + abs_step - 1, abs_step, &niter_len2))
     return false;
 
-  /* Divide each access size by the byte step, rounding up.  */
-  poly_uint64 niter_access1, niter_access2;
-  if (!can_div_trunc_p (dr_a.access_size + abs_step - 1,
-			abs_step, &niter_access1)
-      || !can_div_trunc_p (dr_b.access_size + abs_step - 1,
-			   abs_step, &niter_access2))
-    return false;
+  poly_uint64 niter_access1 = 0, niter_access2 = 0;
+  if (neg_step)
+    {
+      /* Divide each access size by the byte step, rounding up.  */
+      if (!can_div_trunc_p (dr_a.access_size - abs_step - 1,
+			    abs_step, &niter_access1)
+	  || !can_div_trunc_p (dr_b.access_size + abs_step - 1,
+			       abs_step, &niter_access2))
+	return false;
+    }
 
-  bool waw_or_war_p = (alias_pair.flags & ~(DR_ALIAS_WAR | DR_ALIAS_WAW)) == 0;
-
-  int found = -1;
-  for (unsigned int i = 0; i < DR_NUM_DIMENSIONS (dr_a.dr); i++)
+  unsigned int i;
+  for (i = 0; i < DR_NUM_DIMENSIONS (dr_a.dr); i++)
     {
       tree access1 = DR_ACCESS_FN (dr_a.dr, i);
       tree access2 = DR_ACCESS_FN (dr_b.dr, i);
@@ -2155,330 +1720,65 @@ create_intersect_range_checks_index (class loop *loop, tree *cond_expr,
 
 	  return false;
 	}
-      if (found >= 0)
+      /* The two indices must have the same step.  */
+      if (!operand_equal_p (CHREC_RIGHT (access1), CHREC_RIGHT (access2), 0))
 	return false;
-      found = i;
-    }
 
-  /* Ought not to happen in practice, since if all accesses are equal then the
-     alias should be decidable at compile time.  */
-  if (found < 0)
-    return false;
+      tree idx_step = CHREC_RIGHT (access1);
+      /* Index must have const step, otherwise DR_STEP won't be constant.  */
+      gcc_assert (TREE_CODE (idx_step) == INTEGER_CST);
+      /* Index must evaluate in the same direction as DR.  */
+      gcc_assert (!neg_step || tree_int_cst_sign_bit (idx_step) == 1);
 
-  /* The two indices must have the same step.  */
-  tree access1 = DR_ACCESS_FN (dr_a.dr, found);
-  tree access2 = DR_ACCESS_FN (dr_b.dr, found);
-  if (!operand_equal_p (CHREC_RIGHT (access1), CHREC_RIGHT (access2), 0))
-    return false;
+      tree min1 = CHREC_LEFT (access1);
+      tree min2 = CHREC_LEFT (access2);
+      if (!types_compatible_p (TREE_TYPE (min1), TREE_TYPE (min2)))
+	return false;
 
-  tree idx_step = CHREC_RIGHT (access1);
-  /* Index must have const step, otherwise DR_STEP won't be constant.  */
-  gcc_assert (TREE_CODE (idx_step) == INTEGER_CST);
-  /* Index must evaluate in the same direction as DR.  */
-  gcc_assert (!neg_step || tree_int_cst_sign_bit (idx_step) == 1);
+      /* Ideally, alias can be checked against loop's control IV, but we
+	 need to prove linear mapping between control IV and reference
+	 index.  Although that should be true, we check against (array)
+	 index of data reference.  Like segment length, index length is
+	 linear function of the number of iterations with index_step as
+	 the coefficient, i.e, niter_len * idx_step.  */
+      tree idx_len1 = fold_build2 (MULT_EXPR, TREE_TYPE (min1), idx_step,
+				   build_int_cst (TREE_TYPE (min1),
+						  niter_len1));
+      tree idx_len2 = fold_build2 (MULT_EXPR, TREE_TYPE (min2), idx_step,
+				   build_int_cst (TREE_TYPE (min2),
+						  niter_len2));
+      tree max1 = fold_build2 (PLUS_EXPR, TREE_TYPE (min1), min1, idx_len1);
+      tree max2 = fold_build2 (PLUS_EXPR, TREE_TYPE (min2), min2, idx_len2);
+      /* Adjust ranges for negative step.  */
+      if (neg_step)
+	{
+	  /* IDX_LEN1 and IDX_LEN2 are negative in this case.  */
+	  std::swap (min1, max1);
+	  std::swap (min2, max2);
 
-  tree min1 = CHREC_LEFT (access1);
-  tree min2 = CHREC_LEFT (access2);
-  if (!types_compatible_p (TREE_TYPE (min1), TREE_TYPE (min2)))
-    return false;
+	  /* As with the lengths just calculated, we've measured the access
+	     sizes in iterations, so multiply them by the index step.  */
+	  tree idx_access1
+	    = fold_build2 (MULT_EXPR, TREE_TYPE (min1), idx_step,
+			   build_int_cst (TREE_TYPE (min1), niter_access1));
+	  tree idx_access2
+	    = fold_build2 (MULT_EXPR, TREE_TYPE (min2), idx_step,
+			   build_int_cst (TREE_TYPE (min2), niter_access2));
 
-  /* Ideally, alias can be checked against loop's control IV, but we
-     need to prove linear mapping between control IV and reference
-     index.  Although that should be true, we check against (array)
-     index of data reference.  Like segment length, index length is
-     linear function of the number of iterations with index_step as
-     the coefficient, i.e, niter_len * idx_step.  */
-  offset_int abs_idx_step = offset_int::from (wi::to_wide (idx_step),
-					      SIGNED);
-  if (neg_step)
-    abs_idx_step = -abs_idx_step;
-  poly_offset_int idx_len1 = abs_idx_step * niter_len1;
-  poly_offset_int idx_len2 = abs_idx_step * niter_len2;
-  poly_offset_int idx_access1 = abs_idx_step * niter_access1;
-  poly_offset_int idx_access2 = abs_idx_step * niter_access2;
-
-  gcc_assert (known_ge (idx_len1, 0)
-	      && known_ge (idx_len2, 0)
-	      && known_ge (idx_access1, 0)
-	      && known_ge (idx_access2, 0));
-
-  /* Each access has the following pattern, with lengths measured
-     in units of INDEX:
-
-	  <-- idx_len -->
-	  <--- A: -ve step --->
-	  +-----+-------+-----+-------+-----+
-	  | n-1 | ..... |  0  | ..... | n-1 |
-	  +-----+-------+-----+-------+-----+
-			<--- B: +ve step --->
-			<-- idx_len -->
-			|
-		       min
-
-     where "n" is the number of scalar iterations covered by the segment
-     and where each access spans idx_access units.
-
-     A is the range of bytes accessed when the step is negative,
-     B is the range when the step is positive.
-
-     When checking for general overlap, we need to test whether
-     the range:
-
-       [min1 + low_offset1, min1 + high_offset1 + idx_access1 - 1]
-
-     overlaps:
-
-       [min2 + low_offset2, min2 + high_offset2 + idx_access2 - 1]
-
-     where:
-
-	low_offsetN = +ve step ? 0 : -idx_lenN;
-       high_offsetN = +ve step ? idx_lenN : 0;
-
-     This is equivalent to testing whether:
-
-       min1 + low_offset1 <= min2 + high_offset2 + idx_access2 - 1
-       && min2 + low_offset2 <= min1 + high_offset1 + idx_access1 - 1
-
-     Converting this into a single test, there is an overlap if:
-
-       0 <= min2 - min1 + bias <= limit
-
-     where  bias = high_offset2 + idx_access2 - 1 - low_offset1
-	   limit = (high_offset1 - low_offset1 + idx_access1 - 1)
-		 + (high_offset2 - low_offset2 + idx_access2 - 1)
-      i.e. limit = idx_len1 + idx_access1 - 1 + idx_len2 + idx_access2 - 1
-
-     Combining the tests requires limit to be computable in an unsigned
-     form of the index type; if it isn't, we fall back to the usual
-     pointer-based checks.
-
-     We can do better if DR_B is a write and if DR_A and DR_B are
-     well-ordered in both the original and the new code (see the
-     comment above the DR_ALIAS_* flags for details).  In this case
-     we know that for each i in [0, n-1], the write performed by
-     access i of DR_B occurs after access numbers j<=i of DR_A in
-     both the original and the new code.  Any write or anti
-     dependencies wrt those DR_A accesses are therefore maintained.
-
-     We just need to make sure that each individual write in DR_B does not
-     overlap any higher-indexed access in DR_A; such DR_A accesses happen
-     after the DR_B access in the original code but happen before it in
-     the new code.
-
-     We know the steps for both accesses are equal, so by induction, we
-     just need to test whether the first write of DR_B overlaps a later
-     access of DR_A.  In other words, we need to move min1 along by
-     one iteration:
-
-       min1' = min1 + idx_step
-
-     and use the ranges:
-
-       [min1' + low_offset1', min1' + high_offset1' + idx_access1 - 1]
-
-     and:
-
-       [min2, min2 + idx_access2 - 1]
-
-     where:
-
-	low_offset1' = +ve step ? 0 : -(idx_len1 - |idx_step|)
-       high_offset1' = +ve_step ? idx_len1 - |idx_step| : 0.  */
-  if (waw_or_war_p)
-    idx_len1 -= abs_idx_step;
-
-  poly_offset_int limit = idx_len1 + idx_access1 - 1 + idx_access2 - 1;
-  if (!waw_or_war_p)
-    limit += idx_len2;
-
-  tree utype = unsigned_type_for (TREE_TYPE (min1));
-  if (!wi::fits_to_tree_p (limit, utype))
-    return false;
-
-  poly_offset_int low_offset1 = neg_step ? -idx_len1 : 0;
-  poly_offset_int high_offset2 = neg_step || waw_or_war_p ? 0 : idx_len2;
-  poly_offset_int bias = high_offset2 + idx_access2 - 1 - low_offset1;
-  /* Equivalent to adding IDX_STEP to MIN1.  */
-  if (waw_or_war_p)
-    bias -= wi::to_offset (idx_step);
-
-  tree subject = fold_build2 (MINUS_EXPR, utype,
-			      fold_convert (utype, min2),
-			      fold_convert (utype, min1));
-  subject = fold_build2 (PLUS_EXPR, utype, subject,
-			 wide_int_to_tree (utype, bias));
-  tree part_cond_expr = fold_build2 (GT_EXPR, boolean_type_node, subject,
-				     wide_int_to_tree (utype, limit));
-  if (*cond_expr)
-    *cond_expr = fold_build2 (TRUTH_AND_EXPR, boolean_type_node,
-			      *cond_expr, part_cond_expr);
-  else
-    *cond_expr = part_cond_expr;
-  if (dump_enabled_p ())
-    {
-      if (waw_or_war_p)
-	dump_printf (MSG_NOTE, "using an index-based WAR/WAW test\n");
+	  /* MINUS_EXPR because the above values are negative.  */
+	  max1 = fold_build2 (MINUS_EXPR, TREE_TYPE (max1), max1, idx_access1);
+	  max2 = fold_build2 (MINUS_EXPR, TREE_TYPE (max2), max2, idx_access2);
+	}
+      tree part_cond_expr
+	= fold_build2 (TRUTH_OR_EXPR, boolean_type_node,
+	    fold_build2 (LE_EXPR, boolean_type_node, max1, min2),
+	    fold_build2 (LE_EXPR, boolean_type_node, max2, min1));
+      if (*cond_expr)
+	*cond_expr = fold_build2 (TRUTH_AND_EXPR, boolean_type_node,
+				  *cond_expr, part_cond_expr);
       else
-	dump_printf (MSG_NOTE, "using an index-based overlap test\n");
+	*cond_expr = part_cond_expr;
     }
-  return true;
-}
-
-/* A subroutine of create_intersect_range_checks, with a subset of the
-   same arguments.  Try to optimize cases in which the second access
-   is a write and in which some overlap is valid.  */
-
-static bool
-create_waw_or_war_checks (tree *cond_expr,
-			  const dr_with_seg_len_pair_t &alias_pair)
-{
-  const dr_with_seg_len& dr_a = alias_pair.first;
-  const dr_with_seg_len& dr_b = alias_pair.second;
-
-  /* Check for cases in which:
-
-     (a) DR_B is always a write;
-     (b) the accesses are well-ordered in both the original and new code
-	 (see the comment above the DR_ALIAS_* flags for details); and
-     (c) the DR_STEPs describe all access pairs covered by ALIAS_PAIR.  */
-  if (alias_pair.flags & ~(DR_ALIAS_WAR | DR_ALIAS_WAW))
-    return false;
-
-  /* Check for equal (but possibly variable) steps.  */
-  tree step = DR_STEP (dr_a.dr);
-  if (!operand_equal_p (step, DR_STEP (dr_b.dr)))
-    return false;
-
-  /* Make sure that we can operate on sizetype without loss of precision.  */
-  tree addr_type = TREE_TYPE (DR_BASE_ADDRESS (dr_a.dr));
-  if (TYPE_PRECISION (addr_type) != TYPE_PRECISION (sizetype))
-    return false;
-
-  /* All addresses involved are known to have a common alignment ALIGN.
-     We can therefore subtract ALIGN from an exclusive endpoint to get
-     an inclusive endpoint.  In the best (and common) case, ALIGN is the
-     same as the access sizes of both DRs, and so subtracting ALIGN
-     cancels out the addition of an access size.  */
-  unsigned int align = MIN (dr_a.align, dr_b.align);
-  poly_uint64 last_chunk_a = dr_a.access_size - align;
-  poly_uint64 last_chunk_b = dr_b.access_size - align;
-
-  /* Get a boolean expression that is true when the step is negative.  */
-  tree indicator = dr_direction_indicator (dr_a.dr);
-  tree neg_step = fold_build2 (LT_EXPR, boolean_type_node,
-			       fold_convert (ssizetype, indicator),
-			       ssize_int (0));
-
-  /* Get lengths in sizetype.  */
-  tree seg_len_a
-    = fold_convert (sizetype, rewrite_to_non_trapping_overflow (dr_a.seg_len));
-  step = fold_convert (sizetype, rewrite_to_non_trapping_overflow (step));
-
-  /* Each access has the following pattern:
-
-	  <- |seg_len| ->
-	  <--- A: -ve step --->
-	  +-----+-------+-----+-------+-----+
-	  | n-1 | ..... |  0  | ..... | n-1 |
-	  +-----+-------+-----+-------+-----+
-			<--- B: +ve step --->
-			<- |seg_len| ->
-			|
-		   base address
-
-     where "n" is the number of scalar iterations covered by the segment.
-
-     A is the range of bytes accessed when the step is negative,
-     B is the range when the step is positive.
-
-     We know that DR_B is a write.  We also know (from checking that
-     DR_A and DR_B are well-ordered) that for each i in [0, n-1],
-     the write performed by access i of DR_B occurs after access numbers
-     j<=i of DR_A in both the original and the new code.  Any write or
-     anti dependencies wrt those DR_A accesses are therefore maintained.
-
-     We just need to make sure that each individual write in DR_B does not
-     overlap any higher-indexed access in DR_A; such DR_A accesses happen
-     after the DR_B access in the original code but happen before it in
-     the new code.
-
-     We know the steps for both accesses are equal, so by induction, we
-     just need to test whether the first write of DR_B overlaps a later
-     access of DR_A.  In other words, we need to move addr_a along by
-     one iteration:
-
-       addr_a' = addr_a + step
-
-     and check whether:
-
-       [addr_b, addr_b + last_chunk_b]
-
-     overlaps:
-
-       [addr_a' + low_offset_a, addr_a' + high_offset_a + last_chunk_a]
-
-     where [low_offset_a, high_offset_a] spans accesses [1, n-1].  I.e.:
-
-	low_offset_a = +ve step ? 0 : seg_len_a - step
-       high_offset_a = +ve step ? seg_len_a - step : 0
-
-     This is equivalent to testing whether:
-
-       addr_a' + low_offset_a <= addr_b + last_chunk_b
-       && addr_b <= addr_a' + high_offset_a + last_chunk_a
-
-     Converting this into a single test, there is an overlap if:
-
-       0 <= addr_b + last_chunk_b - addr_a' - low_offset_a <= limit
-
-     where limit = high_offset_a - low_offset_a + last_chunk_a + last_chunk_b
-
-     If DR_A is performed, limit + |step| - last_chunk_b is known to be
-     less than the size of the object underlying DR_A.  We also know
-     that last_chunk_b <= |step|; this is checked elsewhere if it isn't
-     guaranteed at compile time.  There can therefore be no overflow if
-     "limit" is calculated in an unsigned type with pointer precision.  */
-  tree addr_a = fold_build_pointer_plus (DR_BASE_ADDRESS (dr_a.dr),
-					 DR_OFFSET (dr_a.dr));
-  addr_a = fold_build_pointer_plus (addr_a, DR_INIT (dr_a.dr));
-
-  tree addr_b = fold_build_pointer_plus (DR_BASE_ADDRESS (dr_b.dr),
-					 DR_OFFSET (dr_b.dr));
-  addr_b = fold_build_pointer_plus (addr_b, DR_INIT (dr_b.dr));
-
-  /* Advance ADDR_A by one iteration and adjust the length to compensate.  */
-  addr_a = fold_build_pointer_plus (addr_a, step);
-  tree seg_len_a_minus_step = fold_build2 (MINUS_EXPR, sizetype,
-					   seg_len_a, step);
-  if (!CONSTANT_CLASS_P (seg_len_a_minus_step))
-    seg_len_a_minus_step = build1 (SAVE_EXPR, sizetype, seg_len_a_minus_step);
-
-  tree low_offset_a = fold_build3 (COND_EXPR, sizetype, neg_step,
-				   seg_len_a_minus_step, size_zero_node);
-  if (!CONSTANT_CLASS_P (low_offset_a))
-    low_offset_a = build1 (SAVE_EXPR, sizetype, low_offset_a);
-
-  /* We could use COND_EXPR <neg_step, size_zero_node, seg_len_a_minus_step>,
-     but it's usually more efficient to reuse the LOW_OFFSET_A result.  */
-  tree high_offset_a = fold_build2 (MINUS_EXPR, sizetype, seg_len_a_minus_step,
-				    low_offset_a);
-
-  /* The amount added to addr_b - addr_a'.  */
-  tree bias = fold_build2 (MINUS_EXPR, sizetype,
-			   size_int (last_chunk_b), low_offset_a);
-
-  tree limit = fold_build2 (MINUS_EXPR, sizetype, high_offset_a, low_offset_a);
-  limit = fold_build2 (PLUS_EXPR, sizetype, limit,
-		       size_int (last_chunk_a + last_chunk_b));
-
-  tree subject = fold_build2 (POINTER_DIFF_EXPR, ssizetype, addr_b, addr_a);
-  subject = fold_build2 (PLUS_EXPR, sizetype,
-			 fold_convert (sizetype, subject), bias);
-
-  *cond_expr = fold_build2 (GT_EXPR, boolean_type_node, subject, limit);
-  if (dump_enabled_p ())
-    dump_printf (MSG_NOTE, "using an address-based WAR/WAW test\n");
   return true;
 }
 
@@ -2566,32 +1866,24 @@ get_segment_min_max (const dr_with_seg_len &d, tree *seg_min_out,
   *seg_max_out = fold_build_pointer_plus (addr_base, max_reach);
 }
 
-/* Generate a runtime condition that is true if ALIAS_PAIR is free of aliases,
-   storing the condition in *COND_EXPR.  The fallback is to generate a
-   a test that the two accesses do not overlap:
+/* Given two data references and segment lengths described by DR_A and DR_B,
+   create expression checking if the two addresses ranges intersect with
+   each other:
 
-     end_a <= start_b || end_b <= start_a.  */
+     ((DR_A_addr_0 + DR_A_segment_length_0) <= DR_B_addr_0)
+     || (DR_B_addr_0 + DER_B_segment_length_0) <= DR_A_addr_0))  */
 
 static void
-create_intersect_range_checks (class loop *loop, tree *cond_expr,
-			       const dr_with_seg_len_pair_t &alias_pair)
+create_intersect_range_checks (struct loop *loop, tree *cond_expr,
+			       const dr_with_seg_len& dr_a,
+			       const dr_with_seg_len& dr_b)
 {
-  const dr_with_seg_len& dr_a = alias_pair.first;
-  const dr_with_seg_len& dr_b = alias_pair.second;
   *cond_expr = NULL_TREE;
-  if (create_intersect_range_checks_index (loop, cond_expr, alias_pair))
-    return;
-
-  if (create_ifn_alias_checks (cond_expr, alias_pair))
-    return;
-
-  if (create_waw_or_war_checks (cond_expr, alias_pair))
+  if (create_intersect_range_checks_index (loop, cond_expr, dr_a, dr_b))
     return;
 
   unsigned HOST_WIDE_INT min_align;
   tree_code cmp_code;
-  /* We don't have to check DR_ALIAS_MIXED_STEPS here, since both versions
-     are equivalent.  This is just an optimization heuristic.  */
   if (TREE_CODE (DR_STEP (dr_a.dr)) == INTEGER_CST
       && TREE_CODE (DR_STEP (dr_b.dr)) == INTEGER_CST)
     {
@@ -2632,8 +1924,6 @@ create_intersect_range_checks (class loop *loop, tree *cond_expr,
     = fold_build2 (TRUTH_OR_EXPR, boolean_type_node,
 	fold_build2 (cmp_code, boolean_type_node, seg_a_max, seg_b_min),
 	fold_build2 (cmp_code, boolean_type_node, seg_b_max, seg_a_min));
-  if (dump_enabled_p ())
-    dump_printf (MSG_NOTE, "using an address-based overlap test\n");
 }
 
 /* Create a conditional expression that represents the run-time checks for
@@ -2643,24 +1933,25 @@ create_intersect_range_checks (class loop *loop, tree *cond_expr,
    that controls which version of the loop gets executed at runtime.  */
 
 void
-create_runtime_alias_checks (class loop *loop,
-			     const vec<dr_with_seg_len_pair_t> *alias_pairs,
+create_runtime_alias_checks (struct loop *loop,
+			     vec<dr_with_seg_len_pair_t> *alias_pairs,
 			     tree * cond_expr)
 {
   tree part_cond_expr;
 
   fold_defer_overflow_warnings ();
-  for (const dr_with_seg_len_pair_t &alias_pair : alias_pairs)
+  for (size_t i = 0, s = alias_pairs->length (); i < s; ++i)
     {
-      gcc_assert (alias_pair.flags);
+      const dr_with_seg_len& dr_a = (*alias_pairs)[i].first;
+      const dr_with_seg_len& dr_b = (*alias_pairs)[i].second;
+
       if (dump_enabled_p ())
 	dump_printf (MSG_NOTE,
 		     "create runtime check for data references %T and %T\n",
-		     DR_REF (alias_pair.first.dr),
-		     DR_REF (alias_pair.second.dr));
+		     DR_REF (dr_a.dr), DR_REF (dr_b.dr));
 
       /* Create condition expression for each pair data references.  */
-      create_intersect_range_checks (loop, &part_cond_expr, alias_pair);
+      create_intersect_range_checks (loop, &part_cond_expr, dr_a, dr_b);
       if (*cond_expr)
 	*cond_expr = fold_build2 (TRUTH_AND_EXPR, boolean_type_node,
 				  *cond_expr, part_cond_expr);
@@ -2922,7 +2213,7 @@ conflict_fn_no_dependence (void)
 /* Returns true if the address of OBJ is invariant in LOOP.  */
 
 static bool
-object_address_invariant_in_loop_p (const class loop *loop, const_tree obj)
+object_address_invariant_in_loop_p (const struct loop *loop, const_tree obj)
 {
   while (handled_component_p (obj))
     {
@@ -2956,7 +2247,7 @@ object_address_invariant_in_loop_p (const class loop *loop, const_tree obj)
 
 bool
 dr_may_alias_p (const struct data_reference *a, const struct data_reference *b,
-		class loop *loop_nest)
+		struct loop *loop_nest)
 {
   tree addr_a = DR_BASE_OBJECT (a);
   tree addr_b = DR_BASE_OBJECT (b);
@@ -3069,30 +2360,41 @@ access_fn_components_comparable_p (tree ref_a, tree ref_b)
 			     TREE_TYPE (TREE_OPERAND (ref_b, 0)));
 }
 
-/* Initialize a data dependence relation RES in LOOP_NEST.  USE_ALT_INDICES
-   is true when the main indices of A and B were not comparable so we try again
-   with alternate indices computed on an indirect reference.  */
+/* Initialize a data dependence relation between data accesses A and
+   B.  NB_LOOPS is the number of loops surrounding the references: the
+   size of the classic distance/direction vectors.  */
 
 struct data_dependence_relation *
-initialize_data_dependence_relation (struct data_dependence_relation *res,
-				     vec<loop_p> loop_nest,
-				     bool use_alt_indices)
+initialize_data_dependence_relation (struct data_reference *a,
+				     struct data_reference *b,
+ 				     vec<loop_p> loop_nest)
 {
-  struct data_reference *a = DDR_A (res);
-  struct data_reference *b = DDR_B (res);
+  struct data_dependence_relation *res;
   unsigned int i;
 
-  struct indices *indices_a = &a->indices;
-  struct indices *indices_b = &b->indices;
-  if (use_alt_indices)
+  res = XCNEW (struct data_dependence_relation);
+  DDR_A (res) = a;
+  DDR_B (res) = b;
+  DDR_LOOP_NEST (res).create (0);
+  DDR_SUBSCRIPTS (res).create (0);
+  DDR_DIR_VECTS (res).create (0);
+  DDR_DIST_VECTS (res).create (0);
+
+  if (a == NULL || b == NULL)
     {
-      if (TREE_CODE (DR_REF (a)) != MEM_REF)
-	indices_a = &a->alt_indices;
-      if (TREE_CODE (DR_REF (b)) != MEM_REF)
-	indices_b = &b->alt_indices;
+      DDR_ARE_DEPENDENT (res) = chrec_dont_know;
+      return res;
     }
-  unsigned int num_dimensions_a = indices_a->access_fns.length ();
-  unsigned int num_dimensions_b = indices_b->access_fns.length ();
+
+  /* If the data references do not alias, then they are independent.  */
+  if (!dr_may_alias_p (a, b, loop_nest.exists () ? loop_nest[0] : NULL))
+    {
+      DDR_ARE_DEPENDENT (res) = chrec_known;
+      return res;
+    }
+
+  unsigned int num_dimensions_a = DR_NUM_DIMENSIONS (a);
+  unsigned int num_dimensions_b = DR_NUM_DIMENSIONS (b);
   if (num_dimensions_a == 0 || num_dimensions_b == 0)
     {
       DDR_ARE_DEPENDENT (res) = chrec_dont_know;
@@ -3117,9 +2419,9 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
 
      the a and b accesses have a single ARRAY_REF component reference [0]
      but have two subscripts.  */
-  if (indices_a->unconstrained_base)
+  if (DR_UNCONSTRAINED_BASE (a))
     num_dimensions_a -= 1;
-  if (indices_b->unconstrained_base)
+  if (DR_UNCONSTRAINED_BASE (b))
     num_dimensions_b -= 1;
 
   /* These structures describe sequences of component references in
@@ -3202,10 +2504,6 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
         B: [3, 4]  (i.e. s.e)  */
   while (index_a < num_dimensions_a && index_b < num_dimensions_b)
     {
-      /* The alternate indices form always has a single dimension
-	 with unconstrained base.  */
-      gcc_assert (!use_alt_indices);
-
       /* REF_A and REF_B must be one of the component access types
 	 allowed by dr_analyze_indices.  */
       gcc_checking_assert (access_fn_component_p (ref_a));
@@ -3276,20 +2574,14 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
   /* See whether FULL_SEQ ends at the base and whether the two bases
      are equal.  We do not care about TBAA or alignment info so we can
      use OEP_ADDRESS_OF to avoid false negatives.  */
-  tree base_a = indices_a->base_object;
-  tree base_b = indices_b->base_object;
+  tree base_a = DR_BASE_OBJECT (a);
+  tree base_b = DR_BASE_OBJECT (b);
   bool same_base_p = (full_seq.start_a + full_seq.length == num_dimensions_a
 		      && full_seq.start_b + full_seq.length == num_dimensions_b
-		      && (indices_a->unconstrained_base
-			  == indices_b->unconstrained_base)
+		      && DR_UNCONSTRAINED_BASE (a) == DR_UNCONSTRAINED_BASE (b)
 		      && operand_equal_p (base_a, base_b, OEP_ADDRESS_OF)
-		      && (types_compatible_p (TREE_TYPE (base_a),
-					      TREE_TYPE (base_b))
-			  || (!base_supports_access_fn_components_p (base_a)
-			      && !base_supports_access_fn_components_p (base_b)
-			      && operand_equal_p
-				   (TYPE_SIZE (TREE_TYPE (base_a)),
-				    TYPE_SIZE (TREE_TYPE (base_b)), 0)))
+		      && types_compatible_p (TREE_TYPE (base_a),
+					     TREE_TYPE (base_b))
 		      && (!loop_nest.exists ()
 			  || (object_address_invariant_in_loop_p
 			      (loop_nest[0], base_a))));
@@ -3320,7 +2612,7 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
      both lvalues are distinct from the object's declared type.  */
   if (same_base_p)
     {
-      if (indices_a->unconstrained_base)
+      if (DR_UNCONSTRAINED_BASE (a))
 	full_seq.length += 1;
     }
   else
@@ -3329,41 +2621,8 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
   /* Punt if we didn't find a suitable sequence.  */
   if (full_seq.length == 0)
     {
-      if (use_alt_indices
-	  || (TREE_CODE (DR_REF (a)) == MEM_REF
-	      && TREE_CODE (DR_REF (b)) == MEM_REF)
-	  || may_be_nonaddressable_p (DR_REF (a))
-	  || may_be_nonaddressable_p (DR_REF (b)))
-	{
-	  /* Fully exhausted possibilities.  */
-	  DDR_ARE_DEPENDENT (res) = chrec_dont_know;
-	  return res;
-	}
-
-      /* Try evaluating both DRs as dereferences of pointers.  */
-      if (!a->alt_indices.base_object
-	  && TREE_CODE (DR_REF (a)) != MEM_REF)
-	{
-	  tree alt_ref = build2 (MEM_REF, TREE_TYPE (DR_REF (a)),
-				 build1 (ADDR_EXPR, ptr_type_node, DR_REF (a)),
-				 build_int_cst
-				   (reference_alias_ptr_type (DR_REF (a)), 0));
-	  dr_analyze_indices (&a->alt_indices, alt_ref,
-			      loop_preheader_edge (loop_nest[0]),
-			      loop_containing_stmt (DR_STMT (a)));
-	}
-      if (!b->alt_indices.base_object
-	  && TREE_CODE (DR_REF (b)) != MEM_REF)
-	{
-	  tree alt_ref = build2 (MEM_REF, TREE_TYPE (DR_REF (b)),
-				 build1 (ADDR_EXPR, ptr_type_node, DR_REF (b)),
-				 build_int_cst
-				   (reference_alias_ptr_type (DR_REF (b)), 0));
-	  dr_analyze_indices (&b->alt_indices, alt_ref,
-			      loop_preheader_edge (loop_nest[0]),
-			      loop_containing_stmt (DR_STMT (b)));
-	}
-      return initialize_data_dependence_relation (res, loop_nest, true);
+      DDR_ARE_DEPENDENT (res) = chrec_dont_know;
+      return res;
     }
 
   if (!same_base_p)
@@ -3404,6 +2663,7 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
   DDR_ARE_DEPENDENT (res) = NULL_TREE;
   DDR_SUBSCRIPTS (res).create (full_seq.length);
   DDR_LOOP_NEST (res) = loop_nest;
+  DDR_INNER_LOOP (res) = 0;
   DDR_SELF_REFERENCE (res) = false;
 
   for (i = 0; i < full_seq.length; ++i)
@@ -3411,8 +2671,8 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
       struct subscript *subscript;
 
       subscript = XNEW (struct subscript);
-      SUB_ACCESS_FN (subscript, 0) = indices_a->access_fns[full_seq.start_a + i];
-      SUB_ACCESS_FN (subscript, 1) = indices_b->access_fns[full_seq.start_b + i];
+      SUB_ACCESS_FN (subscript, 0) = DR_ACCESS_FN (a, full_seq.start_a + i);
+      SUB_ACCESS_FN (subscript, 1) = DR_ACCESS_FN (b, full_seq.start_b + i);
       SUB_CONFLICTS_IN_A (subscript) = conflict_fn_not_known ();
       SUB_CONFLICTS_IN_B (subscript) = conflict_fn_not_known ();
       SUB_LAST_CONFLICT (subscript) = chrec_dont_know;
@@ -3422,40 +2682,6 @@ initialize_data_dependence_relation (struct data_dependence_relation *res,
 
   return res;
 }
-
-/* Initialize a data dependence relation between data accesses A and
-   B.  NB_LOOPS is the number of loops surrounding the references: the
-   size of the classic distance/direction vectors.  */
-
-struct data_dependence_relation *
-initialize_data_dependence_relation (struct data_reference *a,
-				     struct data_reference *b,
-				     vec<loop_p> loop_nest)
-{
-  data_dependence_relation *res = XCNEW (struct data_dependence_relation);
-  DDR_A (res) = a;
-  DDR_B (res) = b;
-  DDR_LOOP_NEST (res).create (0);
-  DDR_SUBSCRIPTS (res).create (0);
-  DDR_DIR_VECTS (res).create (0);
-  DDR_DIST_VECTS (res).create (0);
-
-  if (a == NULL || b == NULL)
-    {
-      DDR_ARE_DEPENDENT (res) = chrec_dont_know;
-      return res;
-    }
-
-  /* If the data references do not alias, then they are independent.  */
-  if (!dr_may_alias_p (a, b, loop_nest.exists () ? loop_nest[0] : NULL))
-    {
-      DDR_ARE_DEPENDENT (res) = chrec_known;
-      return res;
-    }
-
-  return initialize_data_dependence_relation (res, loop_nest, false);
-}
-
 
 /* Frees memory used by the conflict function F.  */
 
@@ -3477,7 +2703,10 @@ free_conflict_function (conflict_function *f)
 static void
 free_subscripts (vec<subscript_p> subscripts)
 {
-  for (subscript_p s : subscripts)
+  unsigned i;
+  subscript_p s;
+
+  FOR_EACH_VEC_ELT (subscripts, i, s)
     {
       free_conflict_function (s->conflicting_iterations_in_a);
       free_conflict_function (s->conflicting_iterations_in_b);
@@ -3680,7 +2909,7 @@ analyze_ziv_subscript (tree chrec_a,
    chrec_dont_know.  */
 
 static tree
-max_stmt_executions_tree (class loop *loop)
+max_stmt_executions_tree (struct loop *loop)
 {
   widest_int nit;
 
@@ -3834,7 +3063,7 @@ analyze_siv_subscript_cst_affine (tree chrec_a,
 		  if (tree_fold_divides_p (CHREC_RIGHT (chrec_b), difference))
 		    {
 		      HOST_WIDE_INT numiter;
-		      class loop *loop = get_chrec_loop (chrec_b);
+		      struct loop *loop = get_chrec_loop (chrec_b);
 
 		      *overlaps_a = conflict_fn (1, affine_fn_cst (integer_zero_node));
 		      tmp = fold_build2 (EXACT_DIV_EXPR, type,
@@ -3915,7 +3144,7 @@ analyze_siv_subscript_cst_affine (tree chrec_a,
 		  if (tree_fold_divides_p (CHREC_RIGHT (chrec_b), difference))
 		    {
 		      HOST_WIDE_INT numiter;
-		      class loop *loop = get_chrec_loop (chrec_b);
+		      struct loop *loop = get_chrec_loop (chrec_b);
 
 		      *overlaps_a = conflict_fn (1, affine_fn_cst (integer_zero_node));
 		      tmp = fold_build2 (EXACT_DIV_EXPR, type, difference,
@@ -3982,14 +3211,9 @@ initialize_matrix_A (lambda_matrix A, tree chrec, unsigned index, int mult)
   switch (TREE_CODE (chrec))
     {
     case POLYNOMIAL_CHREC:
-      HOST_WIDE_INT chrec_right;
       if (!cst_and_fits_in_hwi (CHREC_RIGHT (chrec)))
 	return chrec_dont_know;
-      chrec_right = int_cst_value (CHREC_RIGHT (chrec));
-      /* We want to be able to negate without overflow.  */
-      if (chrec_right == HOST_WIDE_INT_MIN)
-	return chrec_dont_know;
-      A[index][0] = mult * chrec_right;
+      A[index][0] = mult * int_cst_value (CHREC_RIGHT (chrec));
       return initialize_matrix_A (A, CHREC_LEFT (chrec), index + 1, mult);
 
     case PLUS_EXPR:
@@ -4256,28 +3480,17 @@ lambda_vector_first_nz (lambda_vector vec1, int n, int start)
 /* Add a multiple of row R1 of matrix MAT with N columns to row R2:
    R2 = R2 + CONST1 * R1.  */
 
-static bool
+static void
 lambda_matrix_row_add (lambda_matrix mat, int n, int r1, int r2,
 		       lambda_int const1)
 {
   int i;
 
   if (const1 == 0)
-    return true;
+    return;
 
   for (i = 0; i < n; i++)
-    {
-      bool ovf;
-      lambda_int tem = mul_hwi (mat[r1][i], const1, &ovf);
-      if (ovf)
-	return false;
-      lambda_int tem2 = add_hwi (mat[r2][i], tem, &ovf);
-      if (ovf || tem2 == HOST_WIDE_INT_MIN)
-	return false;
-      mat[r2][i] = tem2;
-    }
-
-  return true;
+    mat[r2][i] += const1 * mat[r1][i];
 }
 
 /* Multiply vector VEC1 of length SIZE by a constant CONST1,
@@ -4332,7 +3545,7 @@ lambda_vector_equal (lambda_vector vec1, lambda_vector vec2, int size)
    Ref: Algorithm 2.1 page 33 in "Loop Transformations for
    Restructuring Compilers" Utpal Banerjee.  */
 
-static bool
+static void
 lambda_matrix_right_hermite (lambda_matrix A, int m, int n,
 			     lambda_matrix S, lambda_matrix U)
 {
@@ -4350,26 +3563,24 @@ lambda_matrix_right_hermite (lambda_matrix A, int m, int n,
 	    {
 	      while (S[i][j] != 0)
 		{
-		  lambda_int factor, a, b;
+		  lambda_int sigma, factor, a, b;
 
 		  a = S[i-1][j];
 		  b = S[i][j];
-		  gcc_assert (a != HOST_WIDE_INT_MIN);
-		  factor = a / b;
+		  sigma = (a * b < 0) ? -1: 1;
+		  a = abs_hwi (a);
+		  b = abs_hwi (b);
+		  factor = sigma * (a / b);
 
-		  if (!lambda_matrix_row_add (S, n, i, i-1, -factor))
-		    return false;
+		  lambda_matrix_row_add (S, n, i, i-1, -factor);
 		  std::swap (S[i], S[i-1]);
 
-		  if (!lambda_matrix_row_add (U, m, i, i-1, -factor))
-		    return false;
+		  lambda_matrix_row_add (U, m, i, i-1, -factor);
 		  std::swap (U[i], U[i-1]);
 		}
 	    }
 	}
     }
-
-  return true;
 }
 
 /* Determines the overlapping elements due to accesses CHREC_A and
@@ -4385,7 +3596,7 @@ analyze_subscript_affine_affine (tree chrec_a,
 				 tree *last_conflicts)
 {
   unsigned nb_vars_a, nb_vars_b, dim;
-  lambda_int gamma, gcd_alpha_beta;
+  HOST_WIDE_INT gamma, gcd_alpha_beta;
   lambda_matrix A, U, S;
   struct obstack scratch_obstack;
 
@@ -4486,13 +3697,7 @@ analyze_subscript_affine_affine (tree chrec_a,
     }
 
   /* U.A = S */
-  if (!lambda_matrix_right_hermite (A, dim, 1, S, U))
-    {
-      *overlaps_a = conflict_fn_not_known ();
-      *overlaps_b = conflict_fn_not_known ();
-      *last_conflicts = chrec_dont_know;
-      goto end_analyze_subs_aa;
-    }
+  lambda_matrix_right_hermite (A, dim, 1, S, U);
 
   if (S[0][0] < 0)
     {
@@ -4835,7 +4040,7 @@ analyze_miv_subscript (tree chrec_a,
 		       conflict_function **overlaps_a,
 		       conflict_function **overlaps_b,
 		       tree *last_conflicts,
-		       class loop *loop_nest)
+		       struct loop *loop_nest)
 {
   tree type, difference;
 
@@ -4937,7 +4142,7 @@ analyze_overlapping_iterations (tree chrec_a,
 				tree chrec_b,
 				conflict_function **overlap_iterations_a,
 				conflict_function **overlap_iterations_b,
-				tree *last_conflicts, class loop *loop_nest)
+				tree *last_conflicts, struct loop *loop_nest)
 {
   unsigned int lnn = loop_nest->num;
 
@@ -5018,7 +4223,10 @@ analyze_overlapping_iterations (tree chrec_a,
 static void
 save_dist_v (struct data_dependence_relation *ddr, lambda_vector dist_v)
 {
-  for (lambda_vector v : DDR_DIST_VECTS (ddr))
+  unsigned i;
+  lambda_vector v;
+
+  FOR_EACH_VEC_ELT (DDR_DIST_VECTS (ddr), i, v)
     if (lambda_vector_equal (v, dist_v, DDR_NB_LOOPS (ddr)))
       return;
 
@@ -5030,7 +4238,10 @@ save_dist_v (struct data_dependence_relation *ddr, lambda_vector dist_v)
 static void
 save_dir_v (struct data_dependence_relation *ddr, lambda_vector dir_v)
 {
-  for (lambda_vector v : DDR_DIR_VECTS (ddr))
+  unsigned i;
+  lambda_vector v;
+
+  FOR_EACH_VEC_ELT (DDR_DIR_VECTS (ddr), i, v)
     if (lambda_vector_equal (v, dir_v, DDR_NB_LOOPS (ddr)))
       return;
 
@@ -5081,7 +4292,7 @@ build_classic_dist_vector_1 (struct data_dependence_relation *ddr,
 {
   unsigned i;
   lambda_vector init_v = lambda_vector_new (DDR_NB_LOOPS (ddr));
-  class loop *loop = DDR_LOOP_NEST (ddr)[0];
+  struct loop *loop = DDR_LOOP_NEST (ddr)[0];
 
   for (i = 0; i < DDR_NUM_SUBSCRIPTS (ddr); i++)
     {
@@ -5153,23 +4364,22 @@ build_classic_dist_vector_1 (struct data_dependence_relation *ddr,
 	  non_affine_dependence_relation (ddr);
 	  return false;
 	}
-      else
-	*init_b = true;
     }
 
   return true;
 }
 
-/* Return true when the DDR contains only invariant access functions wrto. loop
-   number LNUM.  */
+/* Return true when the DDR contains only constant access functions.  */
 
 static bool
-invariant_access_functions (const struct data_dependence_relation *ddr,
-			    int lnum)
+constant_access_functions (const struct data_dependence_relation *ddr)
 {
-  for (subscript *sub : DDR_SUBSCRIPTS (ddr))
-    if (!evolution_function_is_invariant_p (SUB_ACCESS_FN (sub, 0), lnum)
-	|| !evolution_function_is_invariant_p (SUB_ACCESS_FN (sub, 1), lnum))
+  unsigned i;
+  subscript *sub;
+
+  FOR_EACH_VEC_ELT (DDR_SUBSCRIPTS (ddr), i, sub)
+    if (!evolution_function_is_constant_p (SUB_ACCESS_FN (sub, 0))
+	|| !evolution_function_is_constant_p (SUB_ACCESS_FN (sub, 1)))
       return false;
 
   return true;
@@ -5233,7 +4443,7 @@ add_other_self_distances (struct data_dependence_relation *ddr)
   unsigned i;
   int index_carry = DDR_NB_LOOPS (ddr);
   subscript *sub;
-  class loop *loop = DDR_LOOP_NEST (ddr)[0];
+  struct loop *loop = DDR_LOOP_NEST (ddr)[0];
 
   FOR_EACH_VEC_ELT (DDR_SUBSCRIPTS (ddr), i, sub)
     {
@@ -5288,7 +4498,7 @@ insert_innermost_unit_dist_vector (struct data_dependence_relation *ddr)
 {
   lambda_vector dist_v = lambda_vector_new (DDR_NB_LOOPS (ddr));
 
-  dist_v[0] = 1;
+  dist_v[DDR_INNER_LOOP (ddr)] = 1;
   save_dist_v (ddr, dist_v);
 }
 
@@ -5336,7 +4546,10 @@ add_distance_for_zero_overlaps (struct data_dependence_relation *ddr)
 static inline bool
 same_access_functions (const struct data_dependence_relation *ddr)
 {
-  for (subscript *sub : DDR_SUBSCRIPTS (ddr))
+  unsigned i;
+  subscript *sub;
+
+  FOR_EACH_VEC_ELT (DDR_SUBSCRIPTS (ddr), i, sub)
     if (!eq_evolutions_p (SUB_ACCESS_FN (sub, 0),
 			  SUB_ACCESS_FN (sub, 1)))
       return false;
@@ -5350,7 +4563,7 @@ same_access_functions (const struct data_dependence_relation *ddr)
 
 static bool
 build_classic_dist_vector (struct data_dependence_relation *ddr,
-			   class loop *loop_nest)
+			   struct loop *loop_nest)
 {
   bool init_b = false;
   int index_carry = DDR_NB_LOOPS (ddr);
@@ -5365,7 +4578,7 @@ build_classic_dist_vector (struct data_dependence_relation *ddr,
       dist_v = lambda_vector_new (DDR_NB_LOOPS (ddr));
       save_dist_v (ddr, dist_v);
 
-      if (invariant_access_functions (ddr, loop_nest->num))
+      if (constant_access_functions (ddr))
 	add_distance_for_zero_overlaps (ddr);
 
       if (DDR_NB_LOOPS (ddr) > 1)
@@ -5537,7 +4750,7 @@ build_classic_dir_vector (struct data_dependence_relation *ddr)
 static bool
 subscript_dependence_tester_1 (struct data_dependence_relation *ddr,
 			       unsigned int a_index, unsigned int b_index,
-			       class loop *loop_nest)
+			       struct loop *loop_nest)
 {
   unsigned int i;
   tree last_conflicts;
@@ -5596,7 +4809,7 @@ subscript_dependence_tester_1 (struct data_dependence_relation *ddr,
 
 static void
 subscript_dependence_tester (struct data_dependence_relation *ddr,
-			     class loop *loop_nest)
+			     struct loop *loop_nest)
 {
   if (subscript_dependence_tester_1 (ddr, 0, 1, loop_nest))
     dependence_stats.num_dependence_dependent++;
@@ -5611,10 +4824,13 @@ subscript_dependence_tester (struct data_dependence_relation *ddr,
 
 static bool
 access_functions_are_affine_or_constant_p (const struct data_reference *a,
-					   const class loop *loop_nest)
+					   const struct loop *loop_nest)
 {
+  unsigned int i;
   vec<tree> fns = DR_ACCESS_FNS (a);
-  for (tree t : fns)
+  tree t;
+
+  FOR_EACH_VEC_ELT (fns, i, t)
     if (!evolution_function_is_invariant_p (t, loop_nest->num)
 	&& !evolution_function_is_affine_multivariate_p (t, loop_nest->num))
       return false;
@@ -5633,7 +4849,7 @@ access_functions_are_affine_or_constant_p (const struct data_reference *a,
 
 void
 compute_affine_dependence (struct data_dependence_relation *ddr,
-			   class loop *loop_nest)
+			   struct loop *loop_nest)
 {
   struct data_reference *dra = DDR_A (ddr);
   struct data_reference *drb = DDR_B (ddr);
@@ -5641,13 +4857,9 @@ compute_affine_dependence (struct data_dependence_relation *ddr,
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "(compute_affine_dependence\n");
-      fprintf (dump_file, "  ref_a: ");
-      print_generic_expr (dump_file, DR_REF (dra));
-      fprintf (dump_file, ", stmt_a: ");
+      fprintf (dump_file, "  stmt_a: ");
       print_gimple_stmt (dump_file, DR_STMT (dra), 0, TDF_SLIM);
-      fprintf (dump_file, "  ref_b: ");
-      print_generic_expr (dump_file, DR_REF (drb));
-      fprintf (dump_file, ", stmt_b: ");
+      fprintf (dump_file, "  stmt_b: ");
       print_gimple_stmt (dump_file, DR_STMT (drb), 0, TDF_SLIM);
     }
 
@@ -5697,9 +4909,9 @@ compute_affine_dependence (struct data_dependence_relation *ddr,
    is small enough to be handled.  */
 
 bool
-compute_all_dependences (const vec<data_reference_p> &datarefs,
+compute_all_dependences (vec<data_reference_p> datarefs,
 			 vec<ddr_p> *dependence_relations,
-			 const vec<loop_p> &loop_nest,
+			 vec<loop_p> loop_nest,
 			 bool compute_self_and_rr)
 {
   struct data_dependence_relation *ddr;
@@ -5707,7 +4919,7 @@ compute_all_dependences (const vec<data_reference_p> &datarefs,
   unsigned int i, j;
 
   if ((int) datarefs.length ()
-      > param_loop_max_datarefs_for_datadeps)
+      > PARAM_VALUE (PARAM_LOOP_MAX_DATAREFS_FOR_DATADEPS))
     {
       struct data_dependence_relation *ddr;
 
@@ -5780,7 +4992,7 @@ get_references_in_stmt (gimple *stmt, vec<data_ref_loc, va_heap> *references)
 	  {
 	  case IFN_GOMP_SIMD_LANE:
 	    {
-	      class loop *loop = gimple_bb (stmt)->loop_father;
+	      struct loop *loop = gimple_bb (stmt)->loop_father;
 	      tree uid = gimple_call_arg (stmt, 0);
 	      gcc_assert (TREE_CODE (uid) == SSA_NAME);
 	      if (loop == NULL
@@ -5922,21 +5134,23 @@ loop_nest_has_data_refs (loop_p loop)
    loop of the loop nest in which the references should be analyzed.  */
 
 opt_result
-find_data_references_in_stmt (class loop *nest, gimple *stmt,
+find_data_references_in_stmt (struct loop *nest, gimple *stmt,
 			      vec<data_reference_p> *datarefs)
 {
+  unsigned i;
   auto_vec<data_ref_loc, 2> references;
+  data_ref_loc *ref;
   data_reference_p dr;
 
   if (get_references_in_stmt (stmt, &references))
     return opt_result::failure_at (stmt, "statement clobbers memory: %G",
 				   stmt);
 
-  for (const data_ref_loc &ref : references)
+  FOR_EACH_VEC_ELT (references, i, ref)
     {
       dr = create_data_ref (nest ? loop_preheader_edge (nest) : NULL,
-			    loop_containing_stmt (stmt), ref.ref,
-			    stmt, ref.is_read, ref.is_conditional_in_stmt);
+			    loop_containing_stmt (stmt), ref->ref,
+			    stmt, ref->is_read, ref->is_conditional_in_stmt);
       gcc_assert (dr != NULL);
       datarefs->safe_push (dr);
     }
@@ -5954,17 +5168,19 @@ bool
 graphite_find_data_references_in_stmt (edge nest, loop_p loop, gimple *stmt,
 				       vec<data_reference_p> *datarefs)
 {
+  unsigned i;
   auto_vec<data_ref_loc, 2> references;
+  data_ref_loc *ref;
   bool ret = true;
   data_reference_p dr;
 
   if (get_references_in_stmt (stmt, &references))
     return false;
 
-  for (const data_ref_loc &ref : references)
+  FOR_EACH_VEC_ELT (references, i, ref)
     {
-      dr = create_data_ref (nest, loop, ref.ref, stmt, ref.is_read,
-			    ref.is_conditional_in_stmt);
+      dr = create_data_ref (nest, loop, ref->ref, stmt, ref->is_read,
+			    ref->is_conditional_in_stmt);
       gcc_assert (dr != NULL);
       datarefs->safe_push (dr);
     }
@@ -5977,7 +5193,7 @@ graphite_find_data_references_in_stmt (edge nest, loop_p loop, gimple *stmt,
    difficult case, returns NULL_TREE otherwise.  */
 
 tree
-find_data_references_in_bb (class loop *loop, basic_block bb,
+find_data_references_in_bb (struct loop *loop, basic_block bb,
                             vec<data_reference_p> *datarefs)
 {
   gimple_stmt_iterator bsi;
@@ -6007,7 +5223,7 @@ find_data_references_in_bb (class loop *loop, basic_block bb,
    arithmetic as if they were array accesses, etc.  */
 
 tree
-find_data_references_in_loop (class loop *loop,
+find_data_references_in_loop (struct loop *loop,
 			      vec<data_reference_p> *datarefs)
 {
   basic_block bb, *bbs;
@@ -6132,7 +5348,7 @@ get_base_for_alignment (tree addr, unsigned int *max_alignment)
 /* Recursive helper function.  */
 
 static bool
-find_loop_nest_1 (class loop *loop, vec<loop_p> *loop_nest)
+find_loop_nest_1 (struct loop *loop, vec<loop_p> *loop_nest)
 {
   /* Inner loops of the nest should not contain siblings.  Example:
      when there are two consecutive loops,
@@ -6163,7 +5379,7 @@ find_loop_nest_1 (class loop *loop, vec<loop_p> *loop_nest)
    appear in the classic distance vector.  */
 
 bool
-find_loop_nest (class loop *loop, vec<loop_p> *loop_nest)
+find_loop_nest (struct loop *loop, vec<loop_p> *loop_nest)
 {
   loop_nest->safe_push (loop);
   if (loop->inner)
@@ -6179,7 +5395,7 @@ find_loop_nest (class loop *loop, vec<loop_p> *loop_nest)
    COMPUTE_SELF_AND_READ_READ_DEPENDENCES is TRUE.  */
 
 bool
-compute_data_dependences_for_loop (class loop *loop,
+compute_data_dependences_for_loop (struct loop *loop,
 				   bool compute_self_and_read_read_dependences,
 				   vec<loop_p> *loop_nest,
 				   vec<data_reference_p> *datarefs,
@@ -6270,9 +5486,12 @@ free_dependence_relation (struct data_dependence_relation *ddr)
    DEPENDENCE_RELATIONS.  */
 
 void
-free_dependence_relations (vec<ddr_p>& dependence_relations)
+free_dependence_relations (vec<ddr_p> dependence_relations)
 {
-  for (data_dependence_relation *ddr : dependence_relations)
+  unsigned int i;
+  struct data_dependence_relation *ddr;
+
+  FOR_EACH_VEC_ELT (dependence_relations, i, ddr)
     if (ddr)
       free_dependence_relation (ddr);
 
@@ -6282,9 +5501,12 @@ free_dependence_relations (vec<ddr_p>& dependence_relations)
 /* Free the memory used by the data references from DATAREFS.  */
 
 void
-free_data_refs (vec<data_reference_p>& datarefs)
+free_data_refs (vec<data_reference_p> datarefs)
 {
-  for (data_reference *dr : datarefs)
+  unsigned int i;
+  struct data_reference *dr;
+
+  FOR_EACH_VEC_ELT (datarefs, i, dr)
     free_data_ref (dr);
   datarefs.release ();
 }
@@ -6326,18 +5548,11 @@ dr_step_indicator (struct data_reference *dr, int useful_min)
 
       /* Get the range of values that the unconverted step actually has.  */
       wide_int step_min, step_max;
-      value_range vr;
       if (TREE_CODE (step) != SSA_NAME
-	  || !get_range_query (cfun)->range_of_expr (vr, step)
-	  || vr.kind () != VR_RANGE)
+	  || get_range_info (step, &step_min, &step_max) != VR_RANGE)
 	{
 	  step_min = wi::to_wide (TYPE_MIN_VALUE (type));
 	  step_max = wi::to_wide (TYPE_MAX_VALUE (type));
-	}
-      else
-	{
-	  step_min = vr.lower_bound ();
-	  step_max = vr.upper_bound ();
 	}
 
       /* Check whether the unconverted step has an acceptable range.  */

@@ -1,5 +1,5 @@
 /* Output VMS debug format symbol table information from GCC.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
    Contributed by Douglas B. Rupp (rupp@gnat.com).
    Updated by Bernard W. Giroud (bgiroud@users.sourceforge.net).
 
@@ -188,7 +188,6 @@ const struct gcc_debug_hooks vmsdbg_debug_hooks
    vmsdbgout_end_block,
    vmsdbgout_ignore_block,
    vmsdbgout_source_line,
-   debug_nothing_int_int_charstar, /* set_ignored_loc */
    vmsdbgout_begin_prologue,
    vmsdbgout_end_prologue,
    vmsdbgout_begin_epilogue,
@@ -366,13 +365,13 @@ static char text_end_label[MAX_ARTIFICIAL_LABEL_BYTES];
 #define ASM_OUTPUT_DEBUG_STRING(FILE,P)		\
   do						\
     {						\
-      int slen = strlen (P);			\
-      const char *p = (P);			\
-      int i;					\
+      register int slen = strlen (P);		\
+      register const char *p = (P);		\
+      register int i;				\
       fprintf (FILE, "\t.ascii \"");		\
       for (i = 0; i < slen; i++)		\
 	{					\
-	  int c = p[i];				\
+	  register int c = p[i];		\
 	  if (c == '\"' || c == '\\')		\
 	    putc ('\\', FILE);			\
 	  if (c >= ' ' && c < 0177)		\
@@ -1230,7 +1229,7 @@ vmsdbgout_end_epilogue (unsigned int line, const char *file)
    a lexical block.  */
 
 static void
-vmsdbgout_begin_block (unsigned line, unsigned blocknum)
+vmsdbgout_begin_block (register unsigned line, register unsigned blocknum)
 {
   if (write_symbols == VMS_AND_DWARF2_DEBUG)
     (*dwarf2_debug_hooks.begin_block) (line, blocknum);
@@ -1243,7 +1242,7 @@ vmsdbgout_begin_block (unsigned line, unsigned blocknum)
    lexical block.  */
 
 static void
-vmsdbgout_end_block (unsigned line, unsigned blocknum)
+vmsdbgout_end_block (register unsigned line, register unsigned blocknum)
 {
   if (write_symbols == VMS_AND_DWARF2_DEBUG)
     (*dwarf2_debug_hooks.end_block) (line, blocknum);
@@ -1316,8 +1315,8 @@ static unsigned int
 lookup_filename (const char *file_name)
 {
   static unsigned int last_file_lookup_index = 0;
-  char *fn;
-  unsigned i;
+  register char *fn;
+  register unsigned i;
   const char *fnam;
   long long cdt = 0;
   long ebk = 0;
@@ -1406,8 +1405,8 @@ vmsdbgout_write_source_line (unsigned line, const char *filename,
 }
 
 static void
-vmsdbgout_source_line (unsigned line, unsigned int column,
-		       const char *filename,
+vmsdbgout_source_line (register unsigned line, unsigned int column,
+		       register const char *filename,
                        int discriminator, bool is_stmt)
 {
   if (write_symbols == VMS_AND_DWARF2_DEBUG)

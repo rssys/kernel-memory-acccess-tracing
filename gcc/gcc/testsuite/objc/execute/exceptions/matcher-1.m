@@ -20,7 +20,7 @@ int main(void)
 
 static unsigned int handlerExpected = 0;
 
-int
+void
 my_exception_matcher(Class match_class, id exception)
 {
   /* Always matches.  */

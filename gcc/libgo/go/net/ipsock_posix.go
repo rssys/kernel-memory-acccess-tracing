@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || (js && wasm) || linux || netbsd || openbsd || solaris || windows
-// +build aix darwin dragonfly freebsd hurd js,wasm linux netbsd openbsd solaris windows
+// +build aix darwin dragonfly freebsd hurd js,wasm linux nacl netbsd openbsd solaris windows
 
 package net
 
@@ -14,13 +13,13 @@ import (
 	"syscall"
 )
 
-// probe probes IPv4, IPv6 and IPv4-mapped IPv6 communication
+// Probe probes IPv4, IPv6 and IPv4-mapped IPv6 communication
 // capabilities which are controlled by the IPV6_V6ONLY socket option
 // and kernel configuration.
 //
 // Should we try to use the IPv4 socket interface if we're only
 // dealing with IPv4 sockets? As long as the host system understands
-// IPv4-mapped IPv6, it's okay to pass IPv4-mapped IPv6 addresses to
+// IPv4-mapped IPv6, it's okay to pass IPv4-mapeed IPv6 addresses to
 // the IPv6 interface. That simplifies our code and is most
 // general. Unfortunately, we need to run on kernels built without
 // IPv6 support too. So probe the kernel to figure it out.
@@ -135,7 +134,7 @@ func favoriteAddrFamily(network string, laddr, raddr sockaddr, mode string) (fam
 }
 
 func internetSocket(ctx context.Context, net string, laddr, raddr sockaddr, sotype, proto int, mode string, ctrlFn func(string, string, syscall.RawConn) error) (fd *netFD, err error) {
-	if (runtime.GOOS == "aix" || runtime.GOOS == "windows" || runtime.GOOS == "openbsd") && mode == "dial" && raddr.isWildcard() {
+	if (runtime.GOOS == "aix" || runtime.GOOS == "windows" || runtime.GOOS == "openbsd" || runtime.GOOS == "nacl") && mode == "dial" && raddr.isWildcard() {
 		raddr = raddr.toLocal(net)
 	}
 	family, ipv6only := favoriteAddrFamily(net, laddr, raddr, mode)
@@ -163,7 +162,7 @@ func ipToSockaddr(family int, ip IP, port int, zone string) (syscall.Sockaddr, e
 		// of IP node.
 		//
 		// When the IP node supports IPv4-mapped IPv6 address,
-		// we allow a listener to listen to the wildcard
+		// we allow an listener to listen to the wildcard
 		// address of both IP addressing spaces by specifying
 		// IPv6 wildcard address.
 		if len(ip) == 0 || ip.Equal(IPv4zero) {

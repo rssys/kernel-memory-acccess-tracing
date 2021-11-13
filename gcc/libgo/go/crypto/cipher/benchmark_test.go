@@ -7,15 +7,28 @@ package cipher_test
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"strconv"
 	"testing"
 )
 
-func benchmarkAESGCMSeal(b *testing.B, buf []byte, keySize int) {
-	b.ReportAllocs()
+func benchmarkAESGCMSign(b *testing.B, buf []byte) {
 	b.SetBytes(int64(len(buf)))
 
-	var key = make([]byte, keySize)
+	var key [16]byte
+	var nonce [12]byte
+	aes, _ := aes.NewCipher(key[:])
+	aesgcm, _ := cipher.NewGCM(aes)
+	var out []byte
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out = aesgcm.Seal(out[:0], nonce[:], nil, buf)
+	}
+}
+
+func benchmarkAESGCMSeal(b *testing.B, buf []byte) {
+	b.SetBytes(int64(len(buf)))
+
+	var key [16]byte
 	var nonce [12]byte
 	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
@@ -28,41 +41,44 @@ func benchmarkAESGCMSeal(b *testing.B, buf []byte, keySize int) {
 	}
 }
 
-func benchmarkAESGCMOpen(b *testing.B, buf []byte, keySize int) {
-	b.ReportAllocs()
+func benchmarkAESGCMOpen(b *testing.B, buf []byte) {
 	b.SetBytes(int64(len(buf)))
 
-	var key = make([]byte, keySize)
+	var key [16]byte
 	var nonce [12]byte
 	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
 	aesgcm, _ := cipher.NewGCM(aes)
 	var out []byte
-
-	ct := aesgcm.Seal(nil, nonce[:], buf[:], ad[:])
+	out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		out, _ = aesgcm.Open(out[:0], nonce[:], ct, ad[:])
+		_, err := aesgcm.Open(buf[:0], nonce[:], out, ad[:])
+		if err != nil {
+			b.Errorf("Open: %v", err)
+		}
 	}
 }
 
-func BenchmarkAESGCM(b *testing.B) {
-	for _, length := range []int{64, 1350, 8 * 1024} {
-		b.Run("Open-128-"+strconv.Itoa(length), func(b *testing.B) {
-			benchmarkAESGCMOpen(b, make([]byte, length), 128/8)
-		})
-		b.Run("Seal-128-"+strconv.Itoa(length), func(b *testing.B) {
-			benchmarkAESGCMSeal(b, make([]byte, length), 128/8)
-		})
+func BenchmarkAESGCMSeal1K(b *testing.B) {
+	benchmarkAESGCMSeal(b, make([]byte, 1024))
+}
 
-		b.Run("Open-256-"+strconv.Itoa(length), func(b *testing.B) {
-			benchmarkAESGCMOpen(b, make([]byte, length), 256/8)
-		})
-		b.Run("Seal-256-"+strconv.Itoa(length), func(b *testing.B) {
-			benchmarkAESGCMSeal(b, make([]byte, length), 256/8)
-		})
-	}
+func BenchmarkAESGCMOpen1K(b *testing.B) {
+	benchmarkAESGCMOpen(b, make([]byte, 1024))
+}
+
+func BenchmarkAESGCMSign8K(b *testing.B) {
+	benchmarkAESGCMSign(b, make([]byte, 8*1024))
+}
+
+func BenchmarkAESGCMSeal8K(b *testing.B) {
+	benchmarkAESGCMSeal(b, make([]byte, 8*1024))
+}
+
+func BenchmarkAESGCMOpen8K(b *testing.B) {
+	benchmarkAESGCMOpen(b, make([]byte, 8*1024))
 }
 
 func benchmarkAESStream(b *testing.B, mode func(cipher.Block, []byte) cipher.Stream, buf []byte) {

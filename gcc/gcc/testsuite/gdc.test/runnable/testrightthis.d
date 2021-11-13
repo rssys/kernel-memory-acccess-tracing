@@ -1,11 +1,5 @@
-/*
-runnable/traits.d    9091,8972,8971,7027
-runnable/test4.d     test6()
-RUN_OUTPUT:
----
-Success
----
-*/
+// runnable/traits.d    9091,8972,8971,7027
+// runnable/test4.d     test6()
 
 extern(C) int printf(const char*, ...);
 
@@ -584,6 +578,7 @@ class Bar11245
 {
     void func()
     {
+        pragma(msg, "====");
         float[Vec11245.f.length] newVal;
     }
 }

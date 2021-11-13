@@ -1,6 +1,5 @@
 /* { dg-do compile } */
 /* { dg-require-effective-target vect_int } */
-/* { dg-additional-options "-fno-tree-loop-distribute-patterns" } */
 
 #include <stdarg.h>
 #include "../../tree-vect.h"

@@ -130,7 +130,6 @@ toolexeclibgo_DATA = \
 	bytes.gox \
 	context.gox \
 	crypto.gox \
-	embed.gox \
 	encoding.gox \
 	errors.gox \
 	expvar.gox \
@@ -188,7 +187,6 @@ toolexeclibgocrypto_DATA = \
 	crypto/des.gox \
 	crypto/dsa.gox \
 	crypto/ecdsa.gox \
-	crypto/ed25519.gox \
 	crypto/elliptic.gox \
 	crypto/hmac.gox \
 	crypto/md5.gox \
@@ -257,19 +255,13 @@ toolexeclibgogo_DATA = \
 	go/token.gox \
 	go/types.gox
 
-toolexeclibgogobuilddir = $(toolexeclibgogodir)/build
-
-toolexeclibgogobuild_DATA = \
-	go/build/constraint.gox
-
 toolexeclibgohashdir = $(toolexeclibgodir)/hash
 
 toolexeclibgohash_DATA = \
 	hash/adler32.gox \
 	hash/crc32.gox \
 	hash/crc64.gox \
-	hash/fnv.gox \
-	hash/maphash.gox
+	hash/fnv.gox
 
 toolexeclibgohtmldir = $(toolexeclibgodir)/html
 
@@ -298,7 +290,6 @@ toolexeclibgoindex_DATA = \
 toolexeclibgoiodir = $(toolexeclibgodir)/io
 
 toolexeclibgoio_DATA = \
-	io/fs.gox \
 	io/ioutil.gox
 
 toolexeclibgologdir = $(toolexeclibgodir)/log
@@ -366,9 +357,7 @@ toolexeclibgoregexp_DATA = \
 toolexeclibgoruntimedir = $(toolexeclibgodir)/runtime
 
 toolexeclibgoruntime_DATA = \
-	runtime/cgo.gox \
 	runtime/debug.gox \
-	runtime/metrics.gox \
 	runtime/pprof.gox \
 	runtime/trace.gox
 
@@ -380,7 +369,6 @@ toolexeclibgosync_DATA = \
 toolexeclibgotestingdir = $(toolexeclibgodir)/testing
 
 toolexeclibgotesting_DATA = \
-	testing/fstest.gox \
 	testing/iotest.gox \
 	testing/quick.gox
 
@@ -401,37 +389,23 @@ toolexeclibgotexttemplatedir = $(toolexeclibgotextdir)/template
 toolexeclibgotexttemplate_DATA = \
 	text/template/parse.gox
 
-toolexeclibgotimedir = $(toolexeclibgodir)/time
-
-toolexeclibgotime_DATA = \
-	time/tzdata.gox
-
 toolexeclibgounicodedir = $(toolexeclibgodir)/unicode
 
 toolexeclibgounicode_DATA = \
 	unicode/utf16.gox \
 	unicode/utf8.gox
 
-# Some internal packages are needed to bootstrap the gc toolchain.
-toolexeclibgointernaldir = $(toolexeclibgodir)/internal
-toolexeclibgointernal_DATA = \
-	internal/reflectlite.gox \
-	internal/unsafeheader.gox
-
 # Some packages are only needed for tests, so unlike the other
 # internal packages nothing will explicitly depend on them.
 # Force them to be built.
 noinst_DATA = \
-	golang.org/x/net/nettest.gox \
-	internal/cfg.gox \
-	internal/obscuretestdata.gox \
-	internal/profile.gox \
+	internal/x/net/internal/nettest.gox \
+	internal/x/net/nettest.gox \
 	internal/testenv.gox \
 	internal/trace.gox \
 	net/internal/socktest.gox \
 	os/signal/internal/pty.gox \
-	reflect/internal/example1.gox \
-	reflect/internal/example2.gox
+	runtime/pprof/internal/profile.gox
 
 if LIBGO_IS_RTEMS
 rtems_task_variable_add_file = runtime/rtems-task-variable-add.c
@@ -439,10 +413,37 @@ else
 rtems_task_variable_add_file =
 endif
 
-runtime_context_asm_file =
-if LIBGO_IS_X86
 if LIBGO_IS_LINUX
-runtime_context_asm_file += runtime/go-context.S
+runtime_getncpu_file = runtime/getncpu-linux.c
+else
+if LIBGO_IS_DARWIN
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+if LIBGO_IS_IRIX
+runtime_getncpu_file = runtime/getncpu-irix.c
+else
+if LIBGO_IS_SOLARIS
+runtime_getncpu_file = runtime/getncpu-solaris.c
+else
+if LIBGO_IS_FREEBSD
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+if LIBGO_IS_NETBSD
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+if LIBGO_IS_AIX
+runtime_getncpu_file = runtime/getncpu-aix.c
+else
+if LIBGO_IS_HURD
+runtime_getncpu_file = runtime/getncpu-hurd.c
+else
+runtime_getncpu_file = runtime/getncpu-none.c
+endif
+endif
+endif
+endif
+endif
+endif
 endif
 endif
 
@@ -451,20 +452,25 @@ runtime_files = \
 	runtime/go-assert.c \
 	runtime/go-caller.c \
 	runtime/go-callers.c \
+	runtime/go-cdiv.c \
 	runtime/go-cgo.c \
 	runtime/go-construct-map.c \
 	runtime/go-ffi.c \
 	runtime/go-fieldtrack.c \
 	runtime/go-matherr.c \
 	runtime/go-memclr.c \
-	runtime/go-memmove.c \
+	runtime/go-memcmp.c \
 	runtime/go-memequal.c \
+	runtime/go-memmove.c \
 	runtime/go-nanotime.c \
 	runtime/go-now.c \
 	runtime/go-nosys.c \
 	runtime/go-reflect-call.c \
+	runtime/go-runtime-error.c \
 	runtime/go-setenv.c \
 	runtime/go-signal.c \
+	runtime/go-strslice.c \
+	runtime/go-typedesc-equal.c \
 	runtime/go-unsafe-pointer.c \
 	runtime/go-unsetenv.c \
 	runtime/go-unwind.c \
@@ -476,17 +482,21 @@ runtime_files = \
 	runtime/runtime_c.c \
 	runtime/stack.c \
 	runtime/yield.c \
-	$(runtime_context_asm_file) \
-	$(rtems_task_variable_add_file)
+	$(rtems_task_variable_add_file) \
+	$(runtime_getncpu_file)
 
 version.go: s-version; @true
 s-version: Makefile
 	rm -f version.go.tmp
 	echo "package sys" > version.go.tmp
+	echo 'func init() { DefaultGoroot = "$(prefix)" }' >> version.go.tmp
+	echo 'const TheVersion = "'`cat $(srcdir)/VERSION | sed 1q`' '`$(GOC) --version | sed 1q`'"' >> version.go.tmp
+	echo 'const Goexperiment = ``' >> version.go.tmp
 	echo 'const GOARCH = "'$(GOARCH)'"' >> version.go.tmp
 	echo 'const GOOS = "'$(GOOS)'"' >> version.go.tmp
 	echo 'const GccgoToolDir = "$(libexecsubdir)"' >> version.go.tmp
-	echo 'const StackGuardMultiplierDefault = 1' >> version.go.tmp
+	echo >> version.go.tmp
+	echo "type ArchFamilyType int" >> version.go.tmp
 	echo >> version.go.tmp
 	echo "const (" >> version.go.tmp
 	echo "	UNKNOWN ArchFamilyType = iota" >> version.go.tmp
@@ -506,13 +516,14 @@ s-version: Makefile
 	done
 	echo >> version.go.tmp
 	echo "const (" >> version.go.tmp
-	echo "  _ArchFamily = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) family`" >> version.go.tmp
-	echo "  _BigEndian = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) bigendian`" >> version.go.tmp
-	echo "  _DefaultPhysPageSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) defaultphyspagesize`" >> version.go.tmp
-	echo "  _Int64Align = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) int64align`" >> version.go.tmp
-	echo "  _MinFrameSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) minframesize`" >> version.go.tmp
-	echo "  _PCQuantum = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) pcquantum`" >> version.go.tmp
-	echo "  _StackAlign = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) stackalign`" >> version.go.tmp
+	echo "  ArchFamily = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) family`" >> version.go.tmp
+	echo "  BigEndian = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) bigendian`" >> version.go.tmp
+	echo "  CacheLineSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) cachelinesize`" >> version.go.tmp
+	echo "  DefaultPhysPageSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) defaultphyspagesize`" >> version.go.tmp
+	echo "  HugePageSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) hugepagesize`" >> version.go.tmp
+	echo "  Int64Align = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) int64align`" >> version.go.tmp
+	echo "  MinFrameSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) minframesize`" >> version.go.tmp
+	echo "  PCQuantum = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) pcquantum`" >> version.go.tmp
 	echo ")" >> version.go.tmp
 	echo >> version.go.tmp
 	for a in $(ALLGOOS); do \
@@ -525,6 +536,7 @@ s-version: Makefile
 	  fi; \
 	done
 	echo >> version.go.tmp
+	echo "type Uintreg uintptr" >> version.go.tmp
 	$(SHELL) $(srcdir)/mvifdiff.sh version.go.tmp version.go
 	$(STAMP) $@
 
@@ -537,47 +549,22 @@ s-cpu: Makefile
 	$(SHELL) $(srcdir)/mvifdiff.sh cpugen.go.tmp cpugen.go
 	$(STAMP) $@
 
-gcpugen.go: s-gcpu; @true
-s-gcpu: Makefile
-	rm -f gcpugen.go.tmp
-	echo "package cpu" > gcpugen.go.tmp
-	echo "const cacheLineSize = `$(SHELL) $(srcdir)/goarch.sh $(GOARCH) cachelinesize`" >> gcpugen.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh gcpugen.go.tmp gcpugen.go
-	$(STAMP) $@
-
-goroot.go: s-goroot; @true
-s-goroot: Makefile
-	rm -f goroot.go.tmp
-	echo "package runtime" > goroot.go.tmp
-	echo 'var defaultGOROOT = `$(prefix)`' >> goroot.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh goroot.go.tmp goroot.go
-	$(STAMP) $@
-
-buildcfg.go: s-buildcfg; @true
-s-buildcfg: Makefile
-	rm -f buildcfg.go.tmp
-	echo "package buildcfg" > buildcfg.go.tmp
-	echo "import \"runtime\"" >> buildcfg.go.tmp
-	echo 'func defaultGOROOTValue() string { return `$(prefix)` }' >> buildcfg.go.tmp
-	echo 'const defaultGO386 = `sse2`' >> buildcfg.go.tmp
-	echo 'const defaultGOARM = `5`' >> buildcfg.go.tmp
-	echo 'const defaultGOMIPS = `hardfloat`' >> buildcfg.go.tmp
-	echo 'const defaultGOMIPS64 = `hardfloat`' >> buildcfg.go.tmp
-	echo 'const defaultGOPPC64 = `power8`' >> buildcfg.go.tmp
-	echo 'const defaultGOEXPERIMENT = `fieldtrack`' >> buildcfg.go.tmp
-	echo 'const defaultGO_EXTLINK_ENABLED = ``' >> buildcfg.go.tmp
-	echo 'const defaultGO_LDSO = ``' >> buildcfg.go.tmp
-	echo 'const version = `'`cat $(srcdir)/VERSION | sed 1q`' '`$(GOC) --version | sed 1q`'`' >> buildcfg.go.tmp
-	echo 'const defaultGOOS = runtime.GOOS' >> buildcfg.go.tmp
-	echo 'const defaultGOARCH = runtime.GOARCH' >> buildcfg.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh buildcfg.go.tmp buildcfg.go
-	$(STAMP) $@
-
 objabi.go: s-objabi; @true
 s-objabi: Makefile
 	rm -f objabi.go.tmp
 	echo "package objabi" > objabi.go.tmp
+	echo "import \"runtime\"" >> objabi.go.tmp
+	echo 'func init() { defaultGOROOT = `$(prefix)` }' >> objabi.go.tmp
+	echo 'const defaultGO386 = `sse2`' >> objabi.go.tmp
+	echo 'const defaultGOARM = `5`' >> objabi.go.tmp
+	echo 'const defaultGOMIPS = `hardfloat`' >> objabi.go.tmp
+	echo 'const defaultGOMIPS64 = `hardfloat`' >> objabi.go.tmp
+	echo 'const defaultGOOS = runtime.GOOS' >> objabi.go.tmp
+	echo 'const defaultGOARCH = runtime.GOARCH' >> objabi.go.tmp
+	echo 'const defaultGO_EXTLINK_ENABLED = ``' >> objabi.go.tmp
+	echo 'const version = `'`cat $(srcdir)/VERSION | sed 1q`' '`$(GOC) --version | sed 1q`'`' >> objabi.go.tmp
 	echo 'const stackGuardMultiplierDefault = 1' >> objabi.go.tmp
+	echo 'const goexperiment = ``' >> objabi.go.tmp
 	$(SHELL) $(srcdir)/mvifdiff.sh objabi.go.tmp objabi.go
 	$(STAMP) $@
 
@@ -594,48 +581,6 @@ s-gccgosizes: Makefile goarch.sh
 	done
 	echo "}" >> gccgosizes.go.tmp
 	$(SHELL) $(srcdir)/mvifdiff.sh gccgosizes.go.tmp gccgosizes.go
-	$(STAMP) $@
-
-os_linknames.go: s-os_linknames; @true
-s-os_linknames: os-list gen-sysinfo.go $(srcdir)/mklinknames.awk $(srcdir)/go/os/*.go
-	rm -f os_linknames.go.tmp
-	$(AWK) -f $(srcdir)/mklinknames.awk -v package=os `cat os-list` > os_linknames.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh os_linknames.go.tmp os_linknames.go
-	$(STAMP) $@
-
-os-list: s-os-list; @true
-s-os-list: Makefile $(srcdir)/go/os/*.go
-	rm -f os-list.tmp
-	$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/os > os-list.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh os-list.tmp os-list
-	$(STAMP) $@
-
-os_user_linknames.go: s-os_user_linknames; @true
-s-os_user_linknames: os-user-list gen-sysinfo.go $(srcdir)/mklinknames.awk $(srcdir)/go/os/user/*.go
-	rm -f os_user_linknames.go.tmp
-	$(AWK) -f $(srcdir)/mklinknames.awk -v package=user `cat os-user-list` > os_user_linknames.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh os_user_linknames.go.tmp os_user_linknames.go
-	$(STAMP) $@
-
-os-user-list: s-os-user-list; @true
-s-os-user-list: Makefile $(srcdir)/go/os/user/*.go
-	rm -f os-user-list.tmp
-	$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/os/user > os-user-list.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh os-user-list.tmp os-user-list
-	$(STAMP) $@
-
-runtime_linknames.go: s-runtime_linknames; @true
-s-runtime_linknames: runtime-list gen-sysinfo.go $(srcdir)/mklinknames.awk $(srcdir)/go/runtime/*.go
-	rm -f runtime_linknames.go.tmp
-	$(AWK) -f $(srcdir)/mklinknames.awk -v package=runtime `cat runtime-list` > runtime_linknames.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh runtime_linknames.go.tmp runtime_linknames.go
-	$(STAMP) $@
-
-runtime-list: s-runtime-list; @true
-s-runtime-list: Makefile $(srcdir)/go/runtime/*.go
-	rm -f runtime-list.tmp
-	$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/runtime > runtime-list.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh runtime-list.tmp runtime-list
 	$(STAMP) $@
 
 runtime_sysinfo.go: s-runtime_sysinfo; @true
@@ -670,7 +615,7 @@ s-zdefaultcc: Makefile
 # compiling runtime) to prune out certain types that should not be
 # exported back to C. See comments in mkruntimeinc.sh for more details.
 runtime.inc: s-runtime-inc; @true
-s-runtime-inc: runtime.lo mkruntimeinc.sh Makefile
+s-runtime-inc: runtime.lo Makefile
 	$(SHELL) $(srcdir)/mkruntimeinc.sh
 	$(SHELL) $(srcdir)/mvifdiff.sh tmp-runtime.inc runtime.inc
 	$(STAMP) $@
@@ -679,12 +624,12 @@ noinst_DATA += zdefaultcc.go
 
 # Generate the list of go std packages that were included in libgo
 zstdpkglist.go: s-zstdpkglist; @true
-s-zstdpkglist: Makefile libgo-packages.txt
+s-zstdpkglist: Makefile
 	rm -f zstdpkglist.go.tmp
 	echo 'package goroot' > zstdpkglist.go.tmp
 	echo "" >> zstdpkglist.go.tmp
 	echo 'var stdpkg = map[string]bool{' >> zstdpkglist.go.tmp
-	echo $(libgo_go_objs) 'unsafe.lo' | sed 's|[a-z0-9_./]*_c\.lo||g' | sed 's|golang\.org/[a-z0-9_./]*\.lo||g' | sed 's|\([a-z0-9_./]*\)\.lo|"\1": true,|g' >> zstdpkglist.go.tmp
+	echo $(libgo_go_objs) 'unsafe.lo' 'runtime/cgo.lo' | sed 's|[a-z0-9_/]*_c\.lo||g' | sed 's|\([a-z0-9_/]*\)\.lo|"\1": true,|g' >> zstdpkglist.go.tmp
 	echo '}' >> zstdpkglist.go.tmp
 	$(SHELL) $(srcdir)/mvifdiff.sh zstdpkglist.go.tmp zstdpkglist.go
 	$(STAMP) $@
@@ -716,13 +661,6 @@ s-syscall_arch: Makefile
 	echo 'const ARCH = "'$(GOARCH)'"' >> syscall_arch.go.tmp
 	echo 'const OS = "'$(GOOS)'"' >> syscall_arch.go.tmp
 	$(SHELL) $(srcdir)/mvifdiff.sh syscall_arch.go.tmp syscall_arch.go
-	$(STAMP) $@
-
-syscall_linknames.go: s-syscall_linknames; @true
-s-syscall_linknames: libcalls.go gen-sysinfo.go $(srcdir)/mklinknames.awk
-	rm -f syscall_linknames.go.tmp
-	$(AWK) -v package=syscall -f $(srcdir)/mklinknames.awk libcalls.go > syscall_linknames.go.tmp
-	$(SHELL) $(srcdir)/mvifdiff.sh syscall_linknames.go.tmp syscall_linknames.go
 	$(STAMP) $@
 
 SYSINFO_FLAGS = \
@@ -782,12 +720,6 @@ else
 syscall_lib_clone_lo =
 endif
 
-if LIBGO_IS_X86
-golangorg_x_sys_cpu_gccgo_x86_lo = golang.org/x/sys/cpu_gccgo_x86.lo
-else
-golangorg_x_sys_cpu_gccgo_x86_lo =
-endif
-
 PACKAGES = $(shell cat $(srcdir)/libgo-packages.txt)
 
 libgo_go_objs = \
@@ -798,15 +730,13 @@ libgo_go_objs = \
 	syscall/errno.lo \
 	syscall/signame.lo \
 	syscall/wait.lo \
-	os/dir_gccgo_c.lo \
-	$(golangorg_x_net_lif_lo) \
-	$(golangorg_x_net_route_lo) \
+	$(internal_x_net_lif_lo) \
+	$(internal_x_net_route_lo) \
 	log/syslog/syslog_c.lo \
 	$(os_lib_inotify_lo) \
 	runtime/internal/atomic_c.lo \
 	sync/atomic_c.lo \
-	internal/cpu/cpu_gccgo.lo \
-	$(golangorg_x_sys_cpu_gccgo_x86_lo)
+	internal/cpu/cpu_gccgo.lo
 
 libgo_ldflags = \
 	-version-info $(libtool_VERSION) $(PTHREAD_CFLAGS) $(AM_LDFLAGS)
@@ -873,7 +803,7 @@ GOLINK = $(LIBTOOL) --tag GO --mode-link $(GOC) \
 BUILDDEPS = \
 	$(MKDIR_P) $(@D); \
 	dir=`echo $@ | sed -e 's/.lo.dep$$//'`; \
-	files=`$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/$$dir --extrafiles="$(extra_go_files_$(subst .,_,$(subst /,_,$(subst .lo.dep,,$@))))" $(matchargs_$(subst /,_,$(subst .lo.dep,,$@)))`; \
+	files=`$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/$$dir --extrafiles="$(extra_go_files_$(subst /,_,$(subst .lo.dep,,$@)))" $(matchargs_$(subst /,_,$(subst .lo.dep,,$@)))`; \
 	$(SHELL) $(srcdir)/godeps.sh `echo $@ | sed -e 's/.dep$$//'` $$files > $@.tmp; \
 	if ! cmp $@.tmp $@ >/dev/null 2>/dev/null; then \
 	  rm -f `echo $@ | sed -e 's/\.dep$$//'`; \
@@ -904,7 +834,7 @@ GOBENCH =
 CHECK = \
 	GC="$(GOC) $(GOCFLAGS) $($(subst /,_,$@)_GOCFLAGS) -L `${PWD_COMMAND}` -L `${PWD_COMMAND}`/.libs"; \
 	export GC; \
-	GOLIBS="$(extra_check_libs_$(subst .,_,$(subst /,_,$(@D)))) $(PTHREAD_LIBS) $(MATH_LIBS) $(NET_LIBS) $(LIBS)"; \
+	GOLIBS="$(extra_check_libs_$(subst /,_,$(@D))) $(MATH_LIBS) $(NET_LIBS) $(LIBS)"; \
 	export GOLIBS; \
 	RUNTESTFLAGS="$(RUNTESTFLAGS)"; \
 	export RUNTESTFLAGS; \
@@ -918,7 +848,7 @@ CHECK = \
 	export LD_LIBRARY_PATH; \
 	$(MKDIR_P) $(@D); \
 	rm -f $@-testsum $@-testlog; \
-	files=`$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/$(@D) --extrafiles="$(extra_go_files_$(subst .,_,$(subst /,_,$(@D))))" $(matchargs_$(subst /,_,$(@D)))`; \
+	files=`$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/$(@D) --extrafiles="$(extra_go_files_$(subst /,_,$(@D)))" $(matchargs_$(subst /,_,$(@D)))`; \
 	if test "$(USE_DEJAGNU)" = "yes"; then \
 	  $(SHELL) $(srcdir)/testsuite/gotest --goarch=$(GOARCH) --goos=$(GOOS) --dejagnu=yes --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$$files" --testname="$(@D)" $(GOTESTFLAGS); \
 	elif test "$(GOBENCH)" != ""; then \
@@ -1012,9 +942,8 @@ $(foreach package,$(GOTOOL_PACKAGES),$(eval $(call PACKAGE_template,$(package)))
 math_lo_GOCFLAGS = $(MATH_FLAG)
 math_check_GOCFLAGS = $(MATH_FLAG)
 
-# Add generated files to the runtime package.
-extra_go_files_runtime = \
-	runtime_linknames.go runtime_sysinfo.go sigtab.go goroot.go
+# Add the generated file runtime_sysinfo.go to the runtime package.
+extra_go_files_runtime = runtime_sysinfo.go sigtab.go
 runtime.lo.dep: $(extra_go_files_runtime)
 
 # Add generated files to the syscall package.
@@ -1022,7 +951,6 @@ extra_go_files_syscall = \
 	libcalls.go \
 	sysinfo.go \
 	syscall_arch.go \
-	syscall_linknames.go \
 	$(syscall_epoll_file)
 syscall.lo.dep: $(extra_go_files_syscall)
 
@@ -1047,29 +975,11 @@ endif
 # Also use -fno-inline to get better results from the memory profiler.
 runtime_pprof_check_GOCFLAGS = -static-libgo -fno-inline
 
-if LIBGO_IS_AIX
-# reflect tests must be done with -static-libgo. Otherwize,
-# there will be a duplication of the canonicalization map.
-reflect_check_GOCFLAGS = -static-libgo -Wl,-bbigtoc
-endif
-
-if HAVE_STATIC_LINK
-# Use -static for the syscall tests if possible, because otherwise when
-# running as root the re-execs ignore LD_LIBRARY_PATH.
-syscall_check_GOCFLAGS = -static
-endif
-
 extra_go_files_runtime_internal_sys = version.go
 runtime/internal/sys.lo.dep: $(extra_go_files_runtime_internal_sys)
 
 extra_go_files_internal_cpu = cpugen.go
 internal/cpu.lo.dep: $(extra_go_files_internal_cpu)
-
-extra_go_files_golang_org_x_sys_cpu = gcpugen.go
-golang.org/x/sys/cpu.lo.dep: $(extra_go_files_golang_org_x_sys_cpu)
-
-extra_go_files_internal_buildcfg = buildcfg.go
-cmd/internal/buildcfg.lo.dep: $(extra_go_files_internal_buildcfg)
 
 extra_go_files_internal_goroot = zstdpkglist.go
 internal/goroot.lo.dep: $(extra_go_files_internal_goroot)
@@ -1083,14 +993,7 @@ cmd/internal/objabi.lo.dep: $(extra_go_files_cmd_internal_objabi)
 extra_go_files_cmd_go_internal_cfg = zdefaultcc.go
 cmd/go/internal/cfg.lo.dep: $(extra_go_files_cmd_go_internal_cfg)
 
-extra_go_files_os = os_linknames.go
-os.lo.dep: $(extra_go_files_os)
-
-extra_go_files_os_user = os_user_linknames.go
-os/user.lo.dep: $(extra_go_files_os_user)
-
 extra_check_libs_cmd_go_internal_cache = $(abs_builddir)/libgotool.a
-extra_check_libs_cmd_go_internal_fsys = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_generate = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_get = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_load = $(abs_builddir)/libgotool.a
@@ -1104,13 +1007,8 @@ extra_check_libs_cmd_go_internal_modload = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_module = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_mvs = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_search = $(abs_builddir)/libgotool.a
-extra_check_libs_cmd_go_internal_str = $(abs_builddir)/libgotool.a
-extra_check_libs_cmd_go_internal_test = $(abs_builddir)/libgotool.a
-extra_check_libs_cmd_go_internal_vcs = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_web2 = $(abs_builddir)/libgotool.a
 extra_check_libs_cmd_go_internal_work = $(abs_builddir)/libgotool.a
-
-extra_check_libs_cmd_internal_buildid = $(abs_builddir)/libgotool.a
 
 extra_check_libs_cmd_vet_internal_cfg = $(abs_builddir)/libgotool.a
 
@@ -1155,20 +1053,10 @@ syscall/wait.lo: go/syscall/wait.c runtime.inc
 	@$(MKDIR_P) syscall
 	$(LTCOMPILE) -c -o $@ $(srcdir)/go/syscall/wait.c
 
-# An os function is written in C.
-os/dir_gccgo_c.lo: go/os/dir_gccgo_c.c runtime.inc
-	@$(MKDIR_P) os
-	$(LTCOMPILE) -c -o $@ $(srcdir)/go/os/dir_gccgo_c.c
-
 # internal/cpu needs some C code.
 internal/cpu/cpu_gccgo.lo: go/internal/cpu/cpu_gccgo.c runtime.inc
 	@$(MKDIR_P) internal/cpu
 	$(LTCOMPILE) -c -o $@ $(srcdir)/go/internal/cpu/cpu_gccgo.c
-
-# Similarly, golang.org/x/sys/cpu needs some C code.
-golang.org/x/sys/cpu_gccgo_x86.lo: go/golang.org/x/sys/cpu/cpu_gccgo_x86.c runtime.inc
-	@$(MKDIR_P) golang.org/x/sys
-	$(LTCOMPILE) -c -o $@ $(srcdir)/go/golang.org/x/sys/cpu/cpu_gccgo_x86.c
 
 # Solaris 11.4 changed the type of fields in struct stat.
 # Use a build tag, based on a configure check, to cope.
@@ -1184,27 +1072,34 @@ endif
 
 if LIBGO_IS_BSD
 
-# Build golang.org/x/net/route only on BSD systems.
+# Build internal/x/net/route only on BSD systems.
 
-$(eval $(call PACKAGE_template,golang.org/x/net/route))
+$(eval $(call PACKAGE_template,internal/x/net/route))
 
-golangorg_x_net_route_lo = \
-	golang.org/x/net/route.lo
+internal_x_net_route_lo = \
+	internal/x/net/route.lo
+internal_x_net_route_check = \
+	internal/x/net/route/check
 
 endif
 
 if LIBGO_IS_SOLARIS
 
-# Build golang.org/x/net/lif only on Solaris systems.
+# Build internal/x/net/lif only on Solaris systems.
 
-$(eval $(call PACKAGE_template,golang.org/x/net/lif))
+$(eval $(call PACKAGE_template,internal/x/net/lif))
 
-golangorg_x_net_lif_lo = \
-	golang.org/x/net/lif.lo
+internal_x_net_lif_lo = \
+	internal/x/net/lif.lo
+internal_x_net_lif_check = \
+	internal/x/net/lif/check
 
 endif
 
-TEST_PACKAGES = $(addsuffix /check,$(shell cat $(srcdir)/check-packages.txt))
+TPACKAGES = $(shell cat $(srcdir)/check-packages.txt)
+TEST_PACKAGES = $(addsuffix /check,$(TPACKAGES)) \
+	$(internal_x_net_lif_check) \
+	$(internal_x_net_route_check)
 
 check: check-tail
 check-recursive: check-head
@@ -1313,8 +1208,7 @@ MOSTLYCLEANFILES = \
 	s-libcalls s-libcalls-list s-syscall_arch s-gen-sysinfo s-sysinfo \
 	s-errno s-epoll \
 	libgo.head libgo.sum.sep libgo.log.sep libgo.var \
-	libcalls-list \
-	runtime.inc runtime.inc.tmp2 runtime.inc.tmp3 runtime.inc.raw
+	libcalls-list runtime.inc runtime.inc.tmp2 runtime.inc.tmp3
 
 mostlyclean-local:
 	find . -name '*.lo' -print | xargs $(LIBTOOL) --mode=clean rm -f
@@ -1334,28 +1228,3 @@ distclean-local:
 	find . -name '*.lo.dep' -print | xargs rm -f
 
 include $(top_srcdir)/../multilib.am
-
-if LIBGO_IS_AIX
-ALL_LOCAL_DEPS = add-aix-fat-library
-else
-ALL_LOCAL_DEPS =
-endif
-all-local: $(ALL_LOCAL_DEPS)
-
-MAJOR=$(firstword $(subst :, ,$(libtool_VERSION)))
-
-# If we want to use "AR -r" when creating AIX FAT archives,
-# AR must be stripped of all its -X flags.
-# Otherwize, if AR was defined with -X32_64, the replace option would
-# erase the default .so when adding the extra one. There is no
-# order priority within -X flags.
-add-aix-fat-library: all-multi
-	@if test "$(MULTIBUILDTOP)" = ""; then \
-	  arx=`echo $(AR) | sed -e 's/-X[^ ]*//g'`; \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc .libs/$(PACKAGE).a ../ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/.libs/$(PACKAGE).so.$(MAJOR); \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc ../pthread/$(PACKAGE)/.libs/$(PACKAGE).a ../pthread/ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/.libs/$(PACKAGE).so.$(MAJOR); \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc libgobegin.a ../ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/$(libgobegin_a_OBJECTS); \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc ../pthread/$(PACKAGE)/libgobegin.a ../pthread/ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/$(libgobegin_a_OBJECTS); \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc libgolibbegin.a ../ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/$(libgolibbegin_a_OBJECTS); \
-	  $${arx} -X$(AIX_EXTRA_ARCH) rc ../pthread/$(PACKAGE)/libgolibbegin.a ../pthread/ppc$(AIX_EXTRA_ARCH)/$(PACKAGE)/$(libgolibbegin_a_OBJECTS); \
-	fi

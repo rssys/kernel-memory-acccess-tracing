@@ -1,6 +1,6 @@
 // errorcheck
 
-// Copyright 2009 The Go Authors. All rights reserved.
+// Copyright 2009 The Go Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -41,21 +41,21 @@ func main() {
 	asBool(1 != 2) // ok now
 	asBool(i < j)  // ok now
 
-	_, b = m[2] // ok now
+	_, b = m[2]
 
 	var inter interface{}
-	_, b = inter.(Map) // ok now
+	_, b = inter.(Map)
 	_ = b
 
 	var minter interface {
 		M()
 	}
-	_, b = minter.(Map) // ok now
+	_, b = minter.(Map)
 	_ = b
 
 	_, bb := <-c
 	asBool(bb) // ERROR "cannot use.*type bool.*as type Bool"
-	_, b = <-c // ok now
+	_, b = <-c
 	_ = b
 
 	asString(String(slice)) // ok

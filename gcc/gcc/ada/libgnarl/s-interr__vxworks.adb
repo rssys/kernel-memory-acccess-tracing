@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2021, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -66,6 +66,7 @@
 with Ada.Unchecked_Conversion;
 with Ada.Task_Identification;
 
+with Interfaces.C; use Interfaces.C;
 with System.OS_Interface; use System.OS_Interface;
 with System.Interrupt_Management;
 with System.Task_Primitives.Operations;
@@ -75,17 +76,11 @@ with System.Tasking.Utilities;
 with System.Tasking.Rendezvous;
 pragma Elaborate_All (System.Tasking.Rendezvous);
 
-with System.VxWorks.Ext;
-
 package body System.Interrupts is
 
    use Tasking;
 
    package POP renames System.Task_Primitives.Operations;
-
-   use type System.VxWorks.Ext.STATUS;
-   subtype STATUS is System.VxWorks.Ext.STATUS;
-   OK : constant STATUS := System.VxWorks.Ext.OK;
 
    function To_Ada is new Ada.Unchecked_Conversion
      (System.Tasking.Task_Id, Ada.Task_Identification.Task_Id);
@@ -204,7 +199,7 @@ package body System.Interrupts is
    type Interrupt_Connector is access function
      (Vector    : Interrupt_Vector;
       Handler   : Interrupt_Handler;
-      Parameter : System.Address := System.Null_Address) return STATUS;
+      Parameter : System.Address := System.Null_Address) return int;
    --  Profile must match VxWorks intConnect()
 
    Interrupt_Connect : Interrupt_Connector :=
@@ -499,7 +494,7 @@ package body System.Interrupts is
    ---------------------------------
 
    procedure Install_Restricted_Handlers
-      (Prio     : Interrupt_Priority;
+      (Prio     : Any_Priority;
        Handlers : New_Handler_Array)
    is
       pragma Unreferenced (Prio);
@@ -520,7 +515,7 @@ package body System.Interrupts is
       Vec : constant Interrupt_Vector :=
               Interrupt_Number_To_Vector (int (Interrupt));
 
-      Result : STATUS;
+      Status : int;
 
    begin
       --  Only install umbrella handler when no Ada handler has already been
@@ -530,9 +525,9 @@ package body System.Interrupts is
       --  number.
 
       if not Handler_Installed (Interrupt) then
-         Result :=
+         Status :=
            Interrupt_Connect.all (Vec, Handler, System.Address (Interrupt));
-         pragma Assert (Result = OK);
+         pragma Assert (Status = 0);
 
          Handler_Installed (Interrupt) := True;
       end if;
@@ -583,12 +578,9 @@ package body System.Interrupts is
    -------------------
 
    function Is_Registered (Handler : Parameterless_Handler) return Boolean is
-
-      type Acc_Proc is access procedure;
-
       type Fat_Ptr is record
          Object_Addr  : System.Address;
-         Handler_Addr : Acc_Proc;
+         Handler_Addr : System.Address;
       end record;
 
       function To_Fat_Ptr is new Ada.Unchecked_Conversion
@@ -606,7 +598,7 @@ package body System.Interrupts is
 
       Ptr := Registered_Handler_Head;
       while Ptr /= null loop
-         if Ptr.H = Fat.Handler_Addr.all'Address then
+         if Ptr.H = Fat.Handler_Addr then
             return True;
          end if;
 
@@ -651,11 +643,11 @@ package body System.Interrupts is
    procedure Notify_Interrupt (Param : System.Address) is
       Interrupt : constant Interrupt_ID := Interrupt_ID (Param);
       Id        : constant Binary_Semaphore_Id := Semaphore_ID_Map (Interrupt);
-      Result    : STATUS;
+      Status    : int;
    begin
       if Id /= 0 then
-         Result := Binary_Semaphore_Release (Id);
-         pragma Assert (Result = OK);
+         Status := Binary_Semaphore_Release (Id);
+         pragma Assert (Status = 0);
       end if;
    end Notify_Interrupt;
 
@@ -792,13 +784,13 @@ package body System.Interrupts is
       --------------------
 
       procedure Unbind_Handler (Interrupt : Interrupt_ID) is
-         Result : STATUS;
+         Status : int;
 
       begin
          --  Flush server task off semaphore, allowing it to terminate
 
-         Result := Binary_Semaphore_Flush (Semaphore_ID_Map (Interrupt));
-         pragma Assert (Result = OK);
+         Status := Binary_Semaphore_Flush (Semaphore_ID_Map (Interrupt));
+         pragma Assert (Status = 0);
       end Unbind_Handler;
 
       --------------------------------
@@ -1045,7 +1037,7 @@ package body System.Interrupts is
                null;
 
             when others =>
-               pragma Assert (Standard.False);
+               pragma Assert (False);
                null;
          end;
       end loop;
@@ -1072,7 +1064,7 @@ package body System.Interrupts is
       Tmp_Handler     : Parameterless_Handler;
       Tmp_ID          : Task_Id;
       Tmp_Entry_Index : Task_Entry_Index;
-      Result          : STATUS;
+      Status          : int;
 
    begin
       Semaphore_ID_Map (Interrupt) := Int_Sema;
@@ -1081,8 +1073,8 @@ package body System.Interrupts is
          --  Pend on semaphore that will be triggered by the umbrella handler
          --  when the associated interrupt comes in.
 
-         Result := Binary_Semaphore_Obtain (Int_Sema);
-         pragma Assert (Result = OK);
+         Status := Binary_Semaphore_Obtain (Int_Sema);
+         pragma Assert (Status = 0);
 
          if User_Handler (Interrupt).H /= null then
 
@@ -1114,9 +1106,9 @@ package body System.Interrupts is
 
             --  Delete the associated semaphore
 
-            Result := Binary_Semaphore_Delete (Int_Sema);
+            Status := Binary_Semaphore_Delete (Int_Sema);
 
-            pragma Assert (Result = OK);
+            pragma Assert (Status = 0);
 
             --  Set status for the Interrupt_Manager
 

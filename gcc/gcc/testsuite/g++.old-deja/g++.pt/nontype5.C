@@ -19,5 +19,5 @@ static int g() { return f(); }
 int f() { return 0; }
 
 int main() {
-return B<int,&f>::g();
+return B<int,&f>::g();  // { dg-error "" } could not convert arg
 }

@@ -3,7 +3,7 @@
 
 class A { 
 public: 
-  A() : argc(0), argv() { }; 	// { dg-error "flexible array" }
+  A() : argc(0), argv() { }; 
 private: 
   int argc; 
   char* argv[]; 

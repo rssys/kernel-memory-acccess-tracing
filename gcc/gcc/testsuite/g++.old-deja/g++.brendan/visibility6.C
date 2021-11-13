@@ -3,9 +3,9 @@
 class bottom
 {
 public:
-  int b; 
+  int b; // { dg-message "" } private
 };
-class middle : private bottom // { dg-message "" } private
+class middle : private bottom
 {
 public:
   void foo () { b; }

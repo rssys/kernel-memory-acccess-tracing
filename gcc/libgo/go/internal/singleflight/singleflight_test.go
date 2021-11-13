@@ -28,7 +28,7 @@ func TestDo(t *testing.T) {
 
 func TestDoErr(t *testing.T) {
 	var g Group
-	someErr := errors.New("some error")
+	someErr := errors.New("Some error")
 	v, err, _ := g.Do("key", func() (interface{}, error) {
 		return nil, someErr
 	})

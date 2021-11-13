@@ -23,12 +23,7 @@ func (sd *sysDialer) dialTCP(ctx context.Context, laddr, raddr *TCPAddr) (*TCPCo
 
 func (sd *sysDialer) doDialTCP(ctx context.Context, laddr, raddr *TCPAddr) (*TCPConn, error) {
 	switch sd.network {
-	case "tcp4":
-		// Plan 9 doesn't complain about [::]:0->127.0.0.1, so it's up to us.
-		if laddr != nil && len(laddr.IP) != 0 && laddr.IP.To4() == nil {
-			return nil, &AddrError{Err: "non-IPv4 local address", Addr: laddr.String()}
-		}
-	case "tcp", "tcp6":
+	case "tcp", "tcp4", "tcp6":
 	default:
 		return nil, UnknownNetworkError(sd.network)
 	}
@@ -49,16 +44,7 @@ func (ln *TCPListener) accept() (*TCPConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc := newTCPConn(fd)
-	if ln.lc.KeepAlive >= 0 {
-		setKeepAlive(fd, true)
-		ka := ln.lc.KeepAlive
-		if ln.lc.KeepAlive == 0 {
-			ka = defaultTCPKeepAlive
-		}
-		setKeepAlivePeriod(fd, ka)
-	}
-	return tc, nil
+	return newTCPConn(fd), nil
 }
 
 func (ln *TCPListener) close() error {
@@ -88,5 +74,5 @@ func (sl *sysListener) listenTCP(ctx context.Context, laddr *TCPAddr) (*TCPListe
 	if err != nil {
 		return nil, err
 	}
-	return &TCPListener{fd: fd, lc: sl.ListenConfig}, nil
+	return &TCPListener{fd}, nil
 }

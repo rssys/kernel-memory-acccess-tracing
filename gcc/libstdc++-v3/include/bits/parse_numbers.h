@@ -1,6 +1,6 @@
 // Components for compile-time parsing of numbers -*- C++ -*-
 
-// Copyright (C) 2013-2021 Free Software Foundation, Inc.
+// Copyright (C) 2013-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,10 +34,9 @@
 
 // From n3642.pdf except I added binary literals and digit separator '\''.
 
-#if __cplusplus >= 201402L
+#if __cplusplus > 201103L
 
-#include <type_traits>
-#include <ext/numeric_traits.h>
+#include <limits>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -266,9 +265,9 @@ namespace __select_int
 
   template<unsigned long long _Val, typename _IntType, typename... _Ints>
     struct _Select_int_base<_Val, _IntType, _Ints...>
-    : __conditional_t<(_Val <= __gnu_cxx::__int_traits<_IntType>::__max),
-		      integral_constant<_IntType, (_IntType)_Val>,
-		      _Select_int_base<_Val, _Ints...>>
+    : conditional_t<(_Val <= std::numeric_limits<_IntType>::max()),
+		    integral_constant<_IntType, _Val>,
+		    _Select_int_base<_Val, _Ints...>>
     { };
 
   template<unsigned long long _Val>
@@ -290,6 +289,6 @@ namespace __select_int
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
-#endif // C++14
+#endif // __cplusplus > 201103L
 
 #endif // _GLIBCXX_PARSE_NUMBERS_H

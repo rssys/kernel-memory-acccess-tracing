@@ -5,9 +5,6 @@
 
 template <class T> struct A {
   typename T::X x;			// { dg-error "this context" }
-};
-
-template <class T> struct A2 {
   int f() { return T::i; }		// { dg-error "this context" }
 };
 
@@ -19,6 +16,5 @@ class B {
 int main()
 {
   A<B> ab;				// { dg-message "required" }
-  A2<B> a2b;
-  a2b.f();				// { dg-message "required" }
+  ab.f();				// { dg-message "required" }
 }

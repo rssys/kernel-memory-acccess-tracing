@@ -1,5 +1,5 @@
 /* Communication between reload.c, reload1.c and the rest of compiler.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -274,19 +274,18 @@ extern int reload_first_uid;
 
 extern int num_not_at_initial_offset;
 
-#if defined HARD_CONST && defined CLEAR_REG_SET
+#if defined SET_HARD_REG_BIT && defined CLEAR_REG_SET
 /* This structure describes instructions which are relevant for reload.
    Apart from all regular insns, this also includes CODE_LABELs, since they
    must be examined for register elimination.  */
-class insn_chain
+struct insn_chain
 {
-public:
   /* Links to the neighbor instructions.  */
-  class insn_chain *next, *prev;
+  struct insn_chain *next, *prev;
 
   /* Link through a chains set up by calculate_needs_all_insns, containing
      all insns that need reloading.  */
-  class insn_chain *next_need_reload;
+  struct insn_chain *next_need_reload;
 
   /* The rtx of the insn.  */
   rtx_insn *insn;
@@ -320,13 +319,13 @@ public:
 
 /* A chain of insn_chain structures to describe all non-note insns in
    a function.  */
-extern class insn_chain *reload_insn_chain;
+extern struct insn_chain *reload_insn_chain;
 
 /* Allocate a new insn_chain structure.  */
-extern class insn_chain *new_insn_chain (void);
+extern struct insn_chain *new_insn_chain (void);
 #endif
 
-#if defined HARD_CONST
+#if defined SET_HARD_REG_BIT
 extern void compute_use_by_pseudos (HARD_REG_SET *, bitmap);
 #endif
 

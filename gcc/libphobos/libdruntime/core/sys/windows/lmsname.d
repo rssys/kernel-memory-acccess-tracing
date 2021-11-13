@@ -8,9 +8,8 @@
  */
 module core.sys.windows.lmsname;
 version (Windows):
-@system:
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 const TCHAR[]
     SERVICE_WORKSTATION      = "LanmanWorkstation",

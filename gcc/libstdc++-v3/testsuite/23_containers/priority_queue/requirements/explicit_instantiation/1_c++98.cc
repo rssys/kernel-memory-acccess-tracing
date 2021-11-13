@@ -1,7 +1,7 @@
 // { dg-options "-std=gnu++98" }
 // { dg-do compile }
 
-// Copyright (C) 2009-2021 Free Software Foundation, Inc.
+// Copyright (C) 2009-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -24,15 +24,12 @@
 
 template class std::priority_queue<int>;
 
-struct Cmp : std::less<int> {
-  Cmp(int) { }
-};
-template class std::priority_queue<int, std::vector<int>, Cmp>;
-
-#ifndef _GLIBCXX_CONCEPT_CHECKS
 struct NonDefaultConstructible : std::vector<int> {
   NonDefaultConstructible(int) { }
 };
+struct Cmp : std::less<int> {
+  Cmp(int) { }
+};
 template class std::priority_queue<int, NonDefaultConstructible>;
 template class std::priority_queue<int, NonDefaultConstructible, Cmp>;
-#endif
+template class std::priority_queue<int, std::vector<int>, Cmp>;

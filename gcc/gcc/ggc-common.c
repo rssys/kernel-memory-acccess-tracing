@@ -1,5 +1,5 @@
 /* Simple garbage collection for the GNU compiler.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,15 +21,17 @@ along with GCC; see the file COPYING3.  If not see
    any particular GC implementation.  */
 
 #include "config.h"
-#define INCLUDE_MALLOC_H
 #include "system.h"
 #include "coretypes.h"
 #include "timevar.h"
 #include "diagnostic-core.h"
 #include "ggc-internal.h"
+#include "params.h"
 #include "hosthooks.h"
 #include "plugin.h"
-#include "options.h"
+
+/* When set, ggc_collect will do collection.  */
+bool ggc_force_collect;
 
 /* When true, protect the contents of the identifier hash table.  */
 bool ggc_protect_identifiers = true;
@@ -380,7 +382,7 @@ write_pch_globals (const struct ggc_root_tab * const *tab,
 	    {
 	      if (fwrite (&ptr, sizeof (void *), 1, state->f)
 		  != 1)
-		fatal_error (input_location, "cannot write PCH file: %m");
+		fatal_error (input_location, "can%'t write PCH file: %m");
 	    }
 	  else
 	    {
@@ -388,7 +390,7 @@ write_pch_globals (const struct ggc_root_tab * const *tab,
 		saving_htab->find_with_hash (ptr, POINTER_HASH (ptr));
 	      if (fwrite (&new_ptr->new_addr, sizeof (void *), 1, state->f)
 		  != 1)
-		fatal_error (input_location, "cannot write PCH file: %m");
+		fatal_error (input_location, "can%'t write PCH file: %m");
 	    }
 	}
 }
@@ -457,7 +459,7 @@ gt_pch_save (FILE *f)
   for (rt = gt_pch_scalar_rtab; *rt; rt++)
     for (rti = *rt; rti->base != NULL; rti++)
       if (fwrite (rti->base, rti->stride, 1, f) != 1)
-	fatal_error (input_location, "cannot write PCH file: %m");
+	fatal_error (input_location, "can%'t write PCH file: %m");
 
   /* Write out all the global pointers, after translation.  */
   write_pch_globals (gt_ggc_rtab, &state);
@@ -468,17 +470,17 @@ gt_pch_save (FILE *f)
     long o;
     o = ftell (state.f) + sizeof (mmi);
     if (o == -1)
-      fatal_error (input_location, "cannot get position in PCH file: %m");
+      fatal_error (input_location, "can%'t get position in PCH file: %m");
     mmi.offset = mmap_offset_alignment - o % mmap_offset_alignment;
     if (mmi.offset == mmap_offset_alignment)
       mmi.offset = 0;
     mmi.offset += o;
   }
   if (fwrite (&mmi, sizeof (mmi), 1, state.f) != 1)
-    fatal_error (input_location, "cannot write PCH file: %m");
+    fatal_error (input_location, "can%'t write PCH file: %m");
   if (mmi.offset != 0
       && fseek (state.f, mmi.offset, SEEK_SET) != 0)
-    fatal_error (input_location, "cannot write padding to PCH file: %m");
+    fatal_error (input_location, "can%'t write padding to PCH file: %m");
 
   ggc_pch_prepare_write (state.d, state.f);
 
@@ -503,7 +505,7 @@ gt_pch_save (FILE *f)
       if (__builtin_expect (RUNNING_ON_VALGRIND, 0))
 	{
 	  if (vbits.length () < valid_size)
-	    vbits.safe_grow (valid_size, true);
+	    vbits.safe_grow (valid_size);
 	  get_vbits = VALGRIND_GET_VBITS (state.ptrs[i]->obj,
 					  vbits.address (), valid_size);
 	  if (get_vbits == 3)
@@ -600,7 +602,7 @@ gt_pch_restore (FILE *f)
   for (rt = gt_pch_scalar_rtab; *rt; rt++)
     for (rti = *rt; rti->base != NULL; rti++)
       if (fread (rti->base, rti->stride, 1, f) != 1)
-	fatal_error (input_location, "cannot read PCH file: %m");
+	fatal_error (input_location, "can%'t read PCH file: %m");
 
   /* Read in all the global pointers, in 6 easy loops.  */
   for (rt = gt_ggc_rtab; *rt; rt++)
@@ -608,10 +610,10 @@ gt_pch_restore (FILE *f)
       for (i = 0; i < rti->nelt; i++)
 	if (fread ((char *)rti->base + rti->stride * i,
 		   sizeof (void *), 1, f) != 1)
-	  fatal_error (input_location, "cannot read PCH file: %m");
+	  fatal_error (input_location, "can%'t read PCH file: %m");
 
   if (fread (&mmi, sizeof (mmi), 1, f) != 1)
-    fatal_error (input_location, "cannot read PCH file: %m");
+    fatal_error (input_location, "can%'t read PCH file: %m");
 
   result = host_hooks.gt_pch_use_address (mmi.preferred_base, mmi.size,
 					  fileno (f), mmi.offset);
@@ -621,10 +623,10 @@ gt_pch_restore (FILE *f)
     {
       if (fseek (f, mmi.offset, SEEK_SET) != 0
 	  || fread (mmi.preferred_base, mmi.size, 1, f) != 1)
-	fatal_error (input_location, "cannot read PCH file: %m");
+	fatal_error (input_location, "can%'t read PCH file: %m");
     }
   else if (fseek (f, mmi.offset + mmi.size, SEEK_SET) != 0)
-    fatal_error (input_location, "cannot read PCH file: %m");
+    fatal_error (input_location, "can%'t read PCH file: %m");
 
   ggc_pch_read (f, mmi.preferred_base);
 
@@ -739,7 +741,7 @@ ggc_rlimit_bound (double limit)
 	 appears to be ignored.  Ignore such silliness.  If a limit
 	 this small was actually effective for mmap, GCC wouldn't even
 	 start up.  */
-      && rlim.rlim_cur >= 8 * ONE_M)
+      && rlim.rlim_cur >= 8 * 1024 * 1024)
     limit = rlim.rlim_cur;
 # endif /* RLIMIT_AS or RLIMIT_DATA */
 #endif /* HAVE_GETRLIMIT */
@@ -758,7 +760,7 @@ ggc_min_expand_heuristic (void)
 
   /* The heuristic is a percentage equal to 30% + 70%*(RAM/1GB), yielding
      a lower bound of 30% and an upper bound of 100% (when RAM >= 1GB).  */
-  min_expand /= ONE_G;
+  min_expand /= 1024*1024*1024;
   min_expand *= 70;
   min_expand = MIN (min_expand, 70);
   min_expand += 30;
@@ -773,8 +775,8 @@ ggc_min_heapsize_heuristic (void)
   double phys_kbytes = physmem_total ();
   double limit_kbytes = ggc_rlimit_bound (phys_kbytes * 2);
 
-  phys_kbytes /= ONE_K; /* Convert to Kbytes.  */
-  limit_kbytes /= ONE_K;
+  phys_kbytes /= 1024; /* Convert to Kbytes.  */
+  limit_kbytes /= 1024;
 
   /* The heuristic is RAM/8, with a lower bound of 4M and an upper
      bound of 128M (when RAM >= 1GB).  */
@@ -787,7 +789,7 @@ ggc_min_heapsize_heuristic (void)
    struct rlimit rlim;
    if (getrlimit (RLIMIT_RSS, &rlim) == 0
        && rlim.rlim_cur != (rlim_t) RLIM_INFINITY)
-     phys_kbytes = MIN (phys_kbytes, rlim.rlim_cur / ONE_K);
+     phys_kbytes = MIN (phys_kbytes, rlim.rlim_cur / 1024);
  }
 # endif
 
@@ -795,12 +797,12 @@ ggc_min_heapsize_heuristic (void)
      *next* GC would be within 20Mb of the limit or within a quarter of
      the limit, whichever is larger.  If GCC does hit the data limit,
      compilation will fail, so this tries to be conservative.  */
-  limit_kbytes = MAX (0, limit_kbytes - MAX (limit_kbytes / 4, 20 * ONE_K));
+  limit_kbytes = MAX (0, limit_kbytes - MAX (limit_kbytes / 4, 20 * 1024));
   limit_kbytes = (limit_kbytes * 100) / (110 + ggc_min_expand_heuristic ());
   phys_kbytes = MIN (phys_kbytes, limit_kbytes);
 
-  phys_kbytes = MAX (phys_kbytes, 4 * ONE_K);
-  phys_kbytes = MIN (phys_kbytes, 128 * ONE_K);
+  phys_kbytes = MAX (phys_kbytes, 4 * 1024);
+  phys_kbytes = MIN (phys_kbytes, 128 * 1024);
 
   return phys_kbytes;
 }
@@ -810,15 +812,14 @@ void
 init_ggc_heuristics (void)
 {
 #if !defined ENABLE_GC_CHECKING && !defined ENABLE_GC_ALWAYS_COLLECT
-  param_ggc_min_expand = ggc_min_expand_heuristic ();
-  param_ggc_min_heapsize = ggc_min_heapsize_heuristic ();
+  set_default_param_value (GGC_MIN_EXPAND, ggc_min_expand_heuristic ());
+  set_default_param_value (GGC_MIN_HEAPSIZE, ggc_min_heapsize_heuristic ());
 #endif
 }
 
 /* GGC memory usage.  */
-class ggc_usage: public mem_usage
+struct ggc_usage: public mem_usage
 {
-public:
   /* Default constructor.  */
   ggc_usage (): m_freed (0), m_collected (0), m_overhead (0) {}
   /* Constructor.  */
@@ -885,11 +886,10 @@ public:
     fprintf (stderr,
 	     "%-48s " PRsa (9) ":%5.1f%%" PRsa (9) ":%5.1f%%"
 	     PRsa (9) ":%5.1f%%" PRsa (9) ":%5.1f%%" PRsa (9) "\n",
-	     prefix,
-	     SIZE_AMOUNT (balance), get_percent (balance, total.get_balance ()),
-	     SIZE_AMOUNT (m_collected),
+	     prefix, SIZE_AMOUNT (m_collected),
 	     get_percent (m_collected, total.m_collected),
 	     SIZE_AMOUNT (m_freed), get_percent (m_freed, total.m_freed),
+	     SIZE_AMOUNT (balance), get_percent (balance, total.get_balance ()),
 	     SIZE_AMOUNT (m_overhead),
 	     get_percent (m_overhead, total.m_overhead),
 	     SIZE_AMOUNT (m_times));
@@ -926,21 +926,33 @@ public:
   static int
   compare (const void *first, const void *second)
   {
-    const mem_pair_t mem1 = *(const mem_pair_t *) first;
-    const mem_pair_t mem2 = *(const mem_pair_t *) second;
+    const mem_pair_t f = *(const mem_pair_t *)first;
+    const mem_pair_t s = *(const mem_pair_t *)second;
 
-    size_t balance1 = mem1.second->get_balance ();
-    size_t balance2 = mem2.second->get_balance ();
+    return s.second->get_balance () - f.second->get_balance ();
+  }
 
-    return balance1 == balance2 ? 0 : (balance1 < balance2 ? 1 : -1);
+  /* Compare rows in final GGC summary dump.  */
+  static int
+  compare_final (const void *first, const void *second)
+  {
+    typedef std::pair<mem_location *, ggc_usage *> mem_pair_t;
+
+    const ggc_usage *f = ((const mem_pair_t *)first)->second;
+    const ggc_usage *s = ((const mem_pair_t *)second)->second;
+
+    size_t a = f->m_allocated + f->m_overhead - f->m_freed;
+    size_t b = s->m_allocated + s->m_overhead - s->m_freed;
+
+    return a == b ? 0 : (a < b ? 1 : -1);
   }
 
   /* Dump header with NAME.  */
   static inline void
   dump_header (const char *name)
   {
-    fprintf (stderr, "%-48s %11s%17s%17s%16s%17s\n", name, "Leak", "Garbage",
-	     "Freed", "Overhead", "Times");
+    fprintf (stderr, "%-48s %11s%17s%17s%16s%17s\n", name, "Garbage", "Freed",
+	     "Leak", "Overhead", "Times");
   }
 
   /* Freed memory in bytes.  */
@@ -957,14 +969,17 @@ static mem_alloc_description<ggc_usage> ggc_mem_desc;
 /* Dump per-site memory statistics.  */
 
 void
-dump_ggc_loc_statistics ()
+dump_ggc_loc_statistics (bool final)
 {
   if (! GATHER_STATISTICS)
     return;
 
-  ggc_collect (GGC_COLLECT_FORCE);
+  ggc_force_collect = true;
+  ggc_collect ();
 
-  ggc_mem_desc.dump (GGC_ORIGIN);
+  ggc_mem_desc.dump (GGC_ORIGIN, final ? ggc_usage::compare_final : NULL);
+
+  ggc_force_collect = false;
 }
 
 /* Record ALLOCATED and OVERHEAD bytes to descriptor NAME:LINE (FUNCTION).  */
@@ -996,25 +1011,8 @@ ggc_prune_overhead_list (void)
 
   for (; it != ggc_mem_desc.m_reverse_object_map->end (); ++it)
     if (!ggc_marked_p ((*it).first))
-      {
-        (*it).second.first->m_collected += (*it).second.second;
-	ggc_mem_desc.m_reverse_object_map->remove ((*it).first);
-      }
-}
+      (*it).second.first->m_collected += (*it).second.second;
 
-/* Print memory used by heap if this info is available.  */
-
-void
-report_heap_memory_use ()
-{
-#if defined(HAVE_MALLINFO) || defined(HAVE_MALLINFO2)
-#ifdef HAVE_MALLINFO2
-  #define MALLINFO_FN mallinfo2
-#else
-  #define MALLINFO_FN mallinfo
-#endif
-  if (!quiet_flag)
-    fprintf (stderr, " {heap " PRsa (0) "}",
-	     SIZE_AMOUNT (MALLINFO_FN ().arena));
-#endif
+  delete ggc_mem_desc.m_reverse_object_map;
+  ggc_mem_desc.m_reverse_object_map = new map_t (13, false, false);
 }

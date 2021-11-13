@@ -1,5 +1,5 @@
 /* Operations with affine combinations of trees.
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -28,9 +28,8 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Element of an affine combination.  */
 
-class aff_comb_elt
+struct aff_comb_elt
 {
-public:
   /* The value of the element.  */
   tree val;
 
@@ -38,9 +37,8 @@ public:
   widest_int coef;
 };
 
-class aff_tree
+struct aff_tree
 {
-public:
   /* Type of the result of the combination.  */
   tree type;
 
@@ -56,7 +54,7 @@ public:
 
      The coefficients are always sign extended from the precision of TYPE
      (regardless of signedness of TYPE).  */
-  class aff_comb_elt elts[MAX_AFF_ELTS];
+  struct aff_comb_elt elts[MAX_AFF_ELTS];
 
   /* Remainder of the expression.  Usually NULL, used only if there are more
      than MAX_AFF_ELTS elements.  Type of REST will be either sizetype for
@@ -64,7 +62,7 @@ public:
   tree rest;
 };
 
-class name_expansion;
+struct name_expansion;
 
 void aff_combination_const (aff_tree *, tree, const poly_widest_int &);
 void aff_combination_elt (aff_tree *, tree, tree);

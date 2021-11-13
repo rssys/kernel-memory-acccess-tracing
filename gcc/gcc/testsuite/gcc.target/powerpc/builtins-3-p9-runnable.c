@@ -1,5 +1,4 @@
-/* { dg-do run } */
-/* { dg-require-effective-target p9vector_hw } */
+/* { dg-do run { target { powerpc64*-*-* && { lp64 && p9vector_hw } } } } */
 /* { dg-options "-mdejagnu-cpu=power9 -O2" } */
 
 #ifdef DEBUG

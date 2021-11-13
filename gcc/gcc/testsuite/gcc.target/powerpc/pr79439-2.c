@@ -1,6 +1,5 @@
 /* { dg-do compile { target { powerpc*-*-linux* && lp64 } } } */
-/* { dg-options "-O2 -fpic -fno-reorder-blocks -mno-pcrel" } */
-/* { dg-require-effective-target fpic } */
+/* { dg-options "-O2 -fpic -fno-reorder-blocks" } */
 
 /* On the Linux 64-bit ABIs, we should not eliminate NOP in the 'rec' call if
    -fpic is used because rec can be interposed at link time (since it has an

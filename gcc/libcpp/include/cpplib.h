@@ -1,5 +1,5 @@
 /* Definitions for CPP library.
-   Copyright (C) 1995-2021 Free Software Foundation, Inc.
+   Copyright (C) 1995-2019 Free Software Foundation, Inc.
    Written by Per Bothner, 1994-95.
 
 This program is free software; you can redistribute it and/or modify it
@@ -78,7 +78,6 @@ struct _cpp_file;
   OP(NOT_EQ,		"!=")						\
   OP(GREATER_EQ,	">=")						\
   OP(LESS_EQ,		"<=")						\
-  OP(SPACESHIP,		"<=>")						\
 									\
   /* These two are unary + / - in preprocessor expressions.  */		\
   OP(PLUS_EQ,		"+=")	/* math */				\
@@ -173,8 +172,7 @@ enum c_lang {CLK_GNUC89 = 0, CLK_GNUC99, CLK_GNUC11, CLK_GNUC17, CLK_GNUC2X,
 	     CLK_STDC2X,
 	     CLK_GNUCXX, CLK_CXX98, CLK_GNUCXX11, CLK_CXX11,
 	     CLK_GNUCXX14, CLK_CXX14, CLK_GNUCXX17, CLK_CXX17,
-	     CLK_GNUCXX20, CLK_CXX20, CLK_GNUCXX23, CLK_CXX23,
-	     CLK_ASM};
+	     CLK_GNUCXX2A, CLK_CXX2A, CLK_ASM};
 
 /* Payload of a NUMBER, STRING, CHAR or COMMENT token.  */
 struct GTY(()) cpp_string {
@@ -198,7 +196,6 @@ struct GTY(()) cpp_string {
 				    operator, or before this token
 				    after a # operator.  */
 #define NO_EXPAND	(1 << 10) /* Do not macro-expand this token.  */
-#define PRAGMA_OP	(1 << 11) /* _Pragma token.  */
 
 /* Specify which field, if any, of the cpp_token union is used.  */
 
@@ -310,19 +307,13 @@ enum cpp_normalize_level {
   normalized_none
 };
 
-enum cpp_main_search 
-{
-  CMS_none,    /* A regular source file.  */
-  CMS_header,  /* Is a directly-specified header file (eg PCH or
-		  header-unit).  */
-  CMS_user,    /* Search the user INCLUDE path.  */
-  CMS_system,  /* Search the system INCLUDE path.  */
-};
-
 /* This structure is nested inside struct cpp_reader, and
    carries all the options visible to the command line.  */
 struct cpp_options
 {
+  /* Characters between tab stops.  */
+  unsigned int tabstop;
+
   /* The language we're preprocessing.  */
   enum c_lang lang;
 
@@ -483,33 +474,14 @@ struct cpp_options
      in C11 and C++11.  */
   unsigned char c11_identifiers;
 
-  /* Nonzero means extended identifiers allow the characters specified
-     in C++23.  */
-  unsigned char cxx23_identifiers;
-
   /* Nonzero for C++ 2014 Standard binary constants.  */
   unsigned char binary_constants;
 
   /* Nonzero for C++ 2014 Standard digit separators.  */
   unsigned char digit_separators;
 
-  /* Nonzero for C2X decimal floating-point constants.  */
-  unsigned char dfp_constants;
-
-  /* Nonzero for C++20 __VA_OPT__ feature.  */
+  /* Nonzero for C++2a __VA_OPT__ feature.  */
   unsigned char va_opt;
-
-  /* Nonzero for the '::' token.  */
-  unsigned char scope;
-
-  /* Nonzero for the '#elifdef' and '#elifndef' directives.  */
-  unsigned char elifdef;
-
-  /* Nonzero means tokenize C++20 module directives.  */
-  unsigned char module_directives;
-
-  /* Nonzero for C++23 size_t literals.  */
-  unsigned char size_t_literals;
 
   /* Holds the name of the target (execution) character set.  */
   const char *narrow_charset;
@@ -533,9 +505,6 @@ struct cpp_options
   /* True if warn about differences between C90 and C99.  */
   signed char cpp_warn_c90_c99_compat;
 
-  /* True if warn about differences between C11 and C2X.  */
-  signed char cpp_warn_c11_c2x_compat;
-
   /* True if warn about differences between C++98 and C++11.  */
   bool cpp_warn_cxx11_compat;
 
@@ -551,9 +520,6 @@ struct cpp_options
     /* Generate phony targets for each dependency apart from the first
        one.  */
     bool phony_targets;
-
-    /* Generate dependency info for modules.  */
-    bool modules;
 
     /* If true, no dependency is generated on the main file.  */
     bool ignore_main_file;
@@ -584,11 +550,6 @@ struct cpp_options
 
   /* True enables canonicalization of system header file paths. */
   bool canonical_system_headers;
-
-  /* The maximum depth of the nested #include.  */
-  unsigned int max_include_depth;
-
-  cpp_main_search main_search : 8;
 };
 
 /* Diagnostic levels.  To get a diagnostic without associating a
@@ -637,11 +598,9 @@ enum cpp_warning_reason {
   CPP_W_INVALID_PCH,
   CPP_W_WARNING_DIRECTIVE,
   CPP_W_LITERAL_SUFFIX,
-  CPP_W_SIZE_T_LITERALS,
   CPP_W_DATE_TIME,
   CPP_W_PEDANTIC,
   CPP_W_C90_C99_COMPAT,
-  CPP_W_C11_C2X_COMPAT,
   CPP_W_CXX11_COMPAT,
   CPP_W_EXPANSION_TO_DEFINED
 };
@@ -702,16 +661,10 @@ struct cpp_callbacks
   void (*used) (cpp_reader *, location_t, cpp_hashnode *);
 
   /* Callback to identify whether an attribute exists.  */
-  int (*has_attribute) (cpp_reader *, bool);
-
-  /* Callback to determine whether a built-in function is recognized.  */
-  int (*has_builtin) (cpp_reader *);
+  int (*has_attribute) (cpp_reader *);
 
   /* Callback that can change a user lazy into normal macro.  */
   void (*user_lazy_macro) (cpp_reader *, cpp_macro *, unsigned);
-
-  /* Callback to handle deferred cpp_macros.  */
-  cpp_macro *(*user_deferred_macro) (cpp_reader *, location_t, cpp_hashnode *);
 
   /* Callback to parse SOURCE_DATE_EPOCH from environment.  */
   time_t (*get_source_date_epoch) (cpp_reader *);
@@ -731,11 +684,6 @@ struct cpp_callbacks
   /* Callback for filename remapping in __FILE__ and __BASE_FILE__ macro
      expansions.  */
   const char *(*remap_filename) (const char*);
-
-  /* Maybe translate a #include into something else.  Return a
-     cpp_buffer containing the translation if translating.  */
-  char *(*translate_include) (cpp_reader *, line_maps *, location_t,
-			      const char *path);
 };
 
 #ifdef VMS
@@ -839,10 +787,7 @@ struct GTY(()) cpp_macro {
      tokens.  */
   unsigned int extra_tokens : 1;
 
-  /* Imported C++20 macro (from a header unit).  */
-  unsigned int imported_p : 1;
-
-  /* 0 bits spare (32-bit). 32 on 64-bit target.  */
+  /* 1 bits spare (32-bit). 33 on 64-bit target.  */
 
   union cpp_exp_u
   {
@@ -872,7 +817,6 @@ struct GTY(()) cpp_macro {
 #define NODE_USED	(1 << 5)	/* Dumped with -dU.  */
 #define NODE_CONDITIONAL (1 << 6)	/* Conditional macro */
 #define NODE_WARN_OPERATOR (1 << 7)	/* Warn about C++ named operator.  */
-#define NODE_MODULE (1 << 8)		/* C++-20 module-related name.  */
 
 /* Different flavors of hash node.  */
 enum node_type
@@ -891,7 +835,6 @@ enum cpp_builtin_type
   BT_SPECLINE = 0,		/* `__LINE__' */
   BT_DATE,			/* `__DATE__' */
   BT_FILE,			/* `__FILE__' */
-  BT_FILE_NAME,			/* `__FILE_NAME__' */
   BT_BASE_FILE,			/* `__BASE_FILE__' */
   BT_INCLUDE_LEVEL,		/* `__INCLUDE_LEVEL__' */
   BT_TIME,			/* `__TIME__' */
@@ -899,11 +842,7 @@ enum cpp_builtin_type
   BT_PRAGMA,			/* `_Pragma' operator */
   BT_TIMESTAMP,			/* `__TIMESTAMP__' */
   BT_COUNTER,			/* `__COUNTER__' */
-  BT_HAS_ATTRIBUTE,		/* `__has_attribute(x)' */
-  BT_HAS_STD_ATTRIBUTE,		/* `__has_c_attribute(x)' */
-  BT_HAS_BUILTIN,		/* `__has_builtin(x)' */
-  BT_HAS_INCLUDE,		/* `__has_include(x)' */
-  BT_HAS_INCLUDE_NEXT		/* `__has_include_next(x)' */
+  BT_HAS_ATTRIBUTE		/* `__has_attribute__(x)' */
 };
 
 #define CPP_HASHNODE(HNODE)	((cpp_hashnode *) (HNODE))
@@ -918,7 +857,7 @@ enum cpp_builtin_type
 union GTY(()) _cpp_hashnode_value {
   /* Assert (maybe NULL) */
   cpp_macro * GTY((tag ("NT_VOID"))) answers;
-  /* Macro (maybe NULL) */
+  /* Macro (never NULL) */
   cpp_macro * GTY((tag ("NT_USER_MACRO"))) macro;
   /* Code for a builtin macro.  */
   enum cpp_builtin_type GTY ((tag ("NT_BUILTIN_MACRO"))) builtin;
@@ -932,17 +871,11 @@ struct GTY(()) cpp_hashnode {
   unsigned int directive_index : 7;	/* If is_directive,
 					   then index into directive table.
 					   Otherwise, a NODE_OPERATOR.  */
-  unsigned int rid_code : 8;		/* Rid code - for front ends.  */
-  unsigned int flags : 9;		/* CPP flags.  */
+  unsigned char rid_code;		/* Rid code - for front ends.  */
   ENUM_BITFIELD(node_type) type : 2;	/* CPP node type.  */
+  unsigned int flags : 8;		/* CPP flags.  */
 
-  /* 5 bits spare.  */
-
-  /* The deferred cookie is applicable to NT_USER_MACRO or NT_VOID.
-     The latter for when a macro had a prevailing undef.
-     On a 64-bit system there would be 32-bits of padding to the value
-     field.  So placing the deferred index here is not costly.   */
-  unsigned deferred;			/* Deferred cookie  */
+  /* 6 bits spare (plus another 32 on 64-bit hosts).  */
 
   union _cpp_hashnode_value GTY ((desc ("%1.type"))) value;
 };
@@ -961,6 +894,7 @@ class cpp_string_location_reader {
  private:
   location_t m_loc;
   int m_offset_per_column;
+  line_maps *m_line_table;
 };
 
 /* A class for storing the source ranges of all of the characters within
@@ -998,11 +932,11 @@ class cpp_substring_ranges
    that cpplib will share; this technique is used by the C front
    ends.  */
 extern cpp_reader *cpp_create_reader (enum c_lang, struct ht *,
-				      class line_maps *);
+				      struct line_maps *);
 
 /* Reset the cpp_reader's line_map.  This is only used after reading a
    PCH file.  */
-extern void cpp_set_line_map (cpp_reader *, class line_maps *);
+extern void cpp_set_line_map (cpp_reader *, struct line_maps *);
 
 /* Call this to change the selected language standard (e.g. because of
    command line options).  */
@@ -1016,30 +950,17 @@ extern void cpp_set_include_chains (cpp_reader *, cpp_dir *, cpp_dir *, int);
    call cpp_finish on that reader.  You can either edit the callbacks
    through the pointer returned from cpp_get_callbacks, or set them
    with cpp_set_callbacks.  */
-extern cpp_options *cpp_get_options (cpp_reader *) ATTRIBUTE_PURE;
-extern cpp_callbacks *cpp_get_callbacks (cpp_reader *) ATTRIBUTE_PURE;
+extern cpp_options *cpp_get_options (cpp_reader *);
+extern cpp_callbacks *cpp_get_callbacks (cpp_reader *);
 extern void cpp_set_callbacks (cpp_reader *, cpp_callbacks *);
-extern class mkdeps *cpp_get_deps (cpp_reader *) ATTRIBUTE_PURE;
-
-extern const char *cpp_probe_header_unit (cpp_reader *, const char *file,
-					  bool angle_p,  location_t);
-
-/* Call these to get name data about the various compile-time
-   charsets.  */
-extern const char *cpp_get_narrow_charset_name (cpp_reader *) ATTRIBUTE_PURE;
-extern const char *cpp_get_wide_charset_name (cpp_reader *) ATTRIBUTE_PURE;
+extern struct deps *cpp_get_deps (cpp_reader *);
 
 /* This function reads the file, but does not start preprocessing.  It
    returns the name of the original file; this is the same as the
    input file, except for preprocessed input.  This will generate at
    least one file change callback, and possibly a line change callback
    too.  If there was an error opening the file, it returns NULL.  */
-extern const char *cpp_read_main_file (cpp_reader *, const char *,
-				       bool injecting = false);
-extern location_t cpp_main_loc (const cpp_reader *);
-
-/* Adjust for the main file to be an include.  */
-extern void cpp_retrofit_as_include (cpp_reader *);
+extern const char *cpp_read_main_file (cpp_reader *, const char *);
 
 /* Set up built-ins with special behavior.  Use cpp_init_builtins()
    instead unless your know what you are doing.  */
@@ -1089,18 +1010,6 @@ inline bool cpp_macro_p (const cpp_hashnode *node)
 {
   return node->type & NT_MACRO_MASK;
 }
-inline cpp_macro *cpp_set_deferred_macro (cpp_hashnode *node,
-					  cpp_macro *forced = NULL)
-{
-  cpp_macro *old = node->value.macro;
-
-  node->value.macro = forced;
-  node->type = NT_USER_MACRO;
-  node->flags &= ~NODE_USED;
-
-  return old;
-}
-cpp_macro *cpp_get_deferred_macro (cpp_reader *, cpp_hashnode *, location_t);
 
 /* Returns true if NODE is a function-like user macro.  */
 inline bool cpp_fun_like_macro_p (cpp_hashnode *node)
@@ -1108,23 +1017,12 @@ inline bool cpp_fun_like_macro_p (cpp_hashnode *node)
   return cpp_user_macro_p (node) && node->value.macro->fun_like;
 }
 
-extern const unsigned char *cpp_macro_definition (cpp_reader *, cpp_hashnode *);
-extern const unsigned char *cpp_macro_definition (cpp_reader *, cpp_hashnode *,
-						  const cpp_macro *);
+extern const unsigned char *cpp_macro_definition (cpp_reader *,
+						  cpp_hashnode *);
 inline location_t cpp_macro_definition_location (cpp_hashnode *node)
 {
-  const cpp_macro *macro = node->value.macro;
-  return macro ? macro->line : 0;
+  return node->value.macro->line;
 }
-/* Return an idempotent time stamp (possibly from SOURCE_DATE_EPOCH).  */
-enum class CPP_time_kind 
-{
-  FIXED = -1,	/* Fixed time via source epoch.  */
-  DYNAMIC = -2,	/* Dynamic via time(2).  */
-  UNKNOWN = -3	/* Wibbly wobbly, timey wimey.  */
-};
-extern CPP_time_kind cpp_get_date (cpp_reader *, time_t *);
-
 extern void _cpp_backup_tokens (cpp_reader *, unsigned int);
 extern const cpp_token *cpp_peek_token (cpp_reader *, int);
 
@@ -1151,12 +1049,8 @@ extern cppchar_t cpp_host_to_exec_charset (cpp_reader *, cppchar_t);
 /* Used to register macros and assertions, perhaps from the command line.
    The text is the same as the command line argument.  */
 extern void cpp_define (cpp_reader *, const char *);
-extern void cpp_define_unused (cpp_reader *, const char *);
 extern void cpp_define_formatted (cpp_reader *pfile, 
 				  const char *fmt, ...) ATTRIBUTE_PRINTF_2;
-extern void cpp_define_formatted_unused (cpp_reader *pfile,
-					 const char *fmt,
-					 ...) ATTRIBUTE_PRINTF_2;
 extern void cpp_assert (cpp_reader *, const char *);
 extern void cpp_undef (cpp_reader *, const char *);
 extern void cpp_unassert (cpp_reader *, const char *);
@@ -1224,9 +1118,7 @@ struct cpp_num
 #define CPP_N_FLOATN	0x400000 /* _FloatN types.  */
 #define CPP_N_FLOATNX	0x800000 /* _FloatNx types.  */
 
-#define CPP_N_USERDEF	0x1000000 /* C++11 user-defined literal.  */
-
-#define CPP_N_SIZE_T	0x2000000 /* C++23 size_t literal.  */
+#define CPP_N_USERDEF	0x1000000 /* C++0x user-defined literal.  */
 
 #define CPP_N_WIDTH_FLOATN_NX	0xF0000000 /* _FloatN / _FloatNx value
 					      of N, divided by 16.  */
@@ -1267,14 +1159,6 @@ extern bool cpp_pedwarning (cpp_reader *, enum cpp_warning_reason,
 extern bool cpp_warning_syshdr (cpp_reader *, enum cpp_warning_reason reason,
 				const char *msgid, ...)
   ATTRIBUTE_PRINTF_3;
-
-/* As their counterparts above, but use RICHLOC.  */
-extern bool cpp_warning_at (cpp_reader *, enum cpp_warning_reason,
-			    rich_location *richloc, const char *msgid, ...)
-  ATTRIBUTE_PRINTF_4;
-extern bool cpp_pedwarning_at (cpp_reader *, enum cpp_warning_reason,
-			       rich_location *richloc, const char *msgid, ...)
-  ATTRIBUTE_PRINTF_4;
 
 /* Output a diagnostic with "MSGID: " preceding the
    error string of errno.  No location is printed.  */
@@ -1318,8 +1202,6 @@ extern int cpp_ideq (const cpp_token *, const char *);
 extern void cpp_output_line (cpp_reader *, FILE *);
 extern unsigned char *cpp_output_line_to_string (cpp_reader *,
 						 const unsigned char *);
-extern const unsigned char *cpp_alloc_token_string
-  (cpp_reader *, const unsigned char *, unsigned);
 extern void cpp_output_token (const cpp_token *, FILE *);
 extern const char *cpp_type2name (enum cpp_ttype, unsigned char flags);
 /* Returns the value of an escape sequence, truncated to the correct
@@ -1375,8 +1257,6 @@ extern void cpp_scan_nooutput (cpp_reader *);
 extern int  cpp_sys_macro_p (cpp_reader *);
 extern unsigned char *cpp_quote_string (unsigned char *, const unsigned char *,
 					unsigned int);
-extern bool cpp_compare_macros (const cpp_macro *macro1,
-				const cpp_macro *macro2);
 
 /* In files.c */
 extern bool cpp_included (cpp_reader *, const char *);
@@ -1392,20 +1272,6 @@ extern struct _cpp_file *cpp_get_file (cpp_buffer *);
 extern cpp_buffer *cpp_get_prev (cpp_buffer *);
 extern void cpp_clear_file_cache (cpp_reader *);
 
-/* cpp_get_converted_source returns the contents of the given file, as it exists
-   after cpplib has read it and converted it from the input charset to the
-   source charset.  Return struct will be zero-filled if the data could not be
-   read for any reason.  The data starts at the DATA pointer, but the TO_FREE
-   pointer is what should be passed to free(), as there may be an offset.  */
-struct cpp_converted_source
-{
-  char *to_free;
-  char *data;
-  size_t len;
-};
-cpp_converted_source cpp_get_converted_source (const char *fname,
-					       const char *input_charset);
-
 /* In pch.c */
 struct save_macro_data;
 extern int cpp_save_state (cpp_reader *, FILE *);
@@ -1419,18 +1285,6 @@ extern int cpp_read_state (cpp_reader *, const char *, FILE *,
 /* In lex.c */
 extern void cpp_force_token_locations (cpp_reader *, location_t);
 extern void cpp_stop_forcing_token_locations (cpp_reader *);
-enum CPP_DO_task
-{
-  CPP_DO_print,
-  CPP_DO_location,
-  CPP_DO_token
-};
-
-extern void cpp_directive_only_process (cpp_reader *pfile,
-					void *data,
-					void (*cb) (cpp_reader *,
-						    CPP_DO_task,
-						    void *data, ...));
 
 /* In expr.c */
 extern enum cpp_ttype cpp_userdef_string_remove_type
@@ -1447,101 +1301,5 @@ extern bool cpp_userdef_char_p
   (enum cpp_ttype type);
 extern const char * cpp_get_userdef_suffix
   (const cpp_token *);
-
-/* In charset.c */
-
-/* The result of attempting to decode a run of UTF-8 bytes.  */
-
-struct cpp_decoded_char
-{
-  const char *m_start_byte;
-  const char *m_next_byte;
-
-  bool m_valid_ch;
-  cppchar_t m_ch;
-};
-
-/* Information for mapping between code points and display columns.
-
-   This is a tabstop value, along with a callback for getting the
-   widths of characters.  Normally this callback is cpp_wcwidth, but we
-   support other schemes for escaping non-ASCII unicode as a series of
-   ASCII chars when printing the user's source code in diagnostic-show-locus.c
-
-   For example, consider:
-   - the Unicode character U+03C0 "GREEK SMALL LETTER PI" (UTF-8: 0xCF 0x80)
-   - the Unicode character U+1F642 "SLIGHTLY SMILING FACE"
-     (UTF-8: 0xF0 0x9F 0x99 0x82)
-   - the byte 0xBF (a stray trailing byte of a UTF-8 character)
-   Normally U+03C0 would occupy one display column, U+1F642
-   would occupy two display columns, and the stray byte would be
-   printed verbatim as one display column.
-
-   However when escaping them as unicode code points as "<U+03C0>"
-   and "<U+1F642>" they occupy 8 and 9 display columns respectively,
-   and when escaping them as bytes as "<CF><80>" and "<F0><9F><99><82>"
-   they occupy 8 and 16 display columns respectively.  In both cases
-   the stray byte is escaped to <BF> as 4 display columns.  */
-
-struct cpp_char_column_policy
-{
-  cpp_char_column_policy (int tabstop,
-			  int (*width_cb) (cppchar_t c))
-  : m_tabstop (tabstop),
-    m_undecoded_byte_width (1),
-    m_width_cb (width_cb)
-  {}
-
-  int m_tabstop;
-  /* Width in display columns of a stray byte that isn't decodable
-     as UTF-8.  */
-  int m_undecoded_byte_width;
-  int (*m_width_cb) (cppchar_t c);
-};
-
-/* A class to manage the state while converting a UTF-8 sequence to cppchar_t
-   and computing the display width one character at a time.  */
-class cpp_display_width_computation {
- public:
-  cpp_display_width_computation (const char *data, int data_length,
-				 const cpp_char_column_policy &policy);
-  const char *next_byte () const { return m_next; }
-  int bytes_processed () const { return m_next - m_begin; }
-  int bytes_left () const { return m_bytes_left; }
-  bool done () const { return !bytes_left (); }
-  int display_cols_processed () const { return m_display_cols; }
-
-  int process_next_codepoint (cpp_decoded_char *out);
-  int advance_display_cols (int n);
-
- private:
-  const char *const m_begin;
-  const char *m_next;
-  size_t m_bytes_left;
-  const cpp_char_column_policy &m_policy;
-  int m_display_cols;
-};
-
-/* Convenience functions that are simple use cases for class
-   cpp_display_width_computation.  Tab characters will be expanded to spaces
-   as determined by POLICY.m_tabstop, and non-printable-ASCII characters
-   will be escaped as per POLICY.  */
-
-int cpp_byte_column_to_display_column (const char *data, int data_length,
-				       int column,
-				       const cpp_char_column_policy &policy);
-inline int cpp_display_width (const char *data, int data_length,
-			      const cpp_char_column_policy &policy)
-{
-  return cpp_byte_column_to_display_column (data, data_length, data_length,
-					    policy);
-}
-int cpp_display_column_to_byte_column (const char *data, int data_length,
-				       int display_col,
-				       const cpp_char_column_policy &policy);
-int cpp_wcwidth (cppchar_t c);
-
-bool cpp_input_conversion_is_trivial (const char *input_charset);
-int cpp_check_utf8_bom (const char *data, size_t data_length);
 
 #endif /* ! LIBCPP_CPPLIB_H */

@@ -1,6 +1,6 @@
 // run
 
-// Copyright 2012 The Go Authors. All rights reserved.
+// Copyright 2012 The Go Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -10,13 +10,15 @@
 
 package main
 
-//go:noinline
+func DontInline() {}
+
 func F(e interface{}) (int, int) {
+	DontInline()
 	return 3, 7
 }
 
-//go:noinline
 func G() (int, int) {
+	DontInline()
 	return 3, 7
 }
 

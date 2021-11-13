@@ -1,5 +1,3 @@
-/* { dg-additional-options "-fno-thread-jumps --param max-stores-to-sink=0" } */
-
 #define N 1500
 
 int x[N][N], y[N];

@@ -1,6 +1,4 @@
-
-/* Avoid inclusion of alloca.h, unavailable on some systems.  */
-#define alloca __builtin_alloca
+#include <alloca.h>
 
 __attribute__((noinline, noipa))
 void g (char* ptr, int y)

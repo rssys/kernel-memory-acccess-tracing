@@ -7,6 +7,6 @@ void *malloc(size_t x);
 void foo(void)
 {
  volatile int i;
- void *p = malloc(1);
+ malloc(1);
  i;
 }

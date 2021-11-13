@@ -1,5 +1,5 @@
 /* Chains of recurrences.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <pop@cri.ensmp.fr>
 
 This file is part of GCC.
@@ -35,9 +35,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa-loop-ivopts.h"
 #include "tree-ssa-loop-niter.h"
 #include "tree-chrec.h"
-#include "gimple.h"
-#include "tree-ssa-loop.h"
 #include "dumpfile.h"
+#include "params.h"
 #include "tree-scalar-evolution.h"
 
 /* Extended folder for chrecs.  */
@@ -51,8 +50,8 @@ chrec_fold_plus_poly_poly (enum tree_code code,
 			   tree poly1)
 {
   tree left, right;
-  class loop *loop0 = get_chrec_loop (poly0);
-  class loop *loop1 = get_chrec_loop (poly1);
+  struct loop *loop0 = get_chrec_loop (poly0);
+  struct loop *loop1 = get_chrec_loop (poly1);
   tree rtype = code == POINTER_PLUS_EXPR ? chrec_type (poly1) : type;
 
   gcc_assert (poly0);
@@ -143,8 +142,8 @@ chrec_fold_multiply_poly_poly (tree type,
 {
   tree t0, t1, t2;
   int var;
-  class loop *loop0 = get_chrec_loop (poly0);
-  class loop *loop1 = get_chrec_loop (poly1);
+  struct loop *loop0 = get_chrec_loop (poly0);
+  struct loop *loop1 = get_chrec_loop (poly1);
 
   gcc_assert (poly0);
   gcc_assert (poly1);
@@ -332,9 +331,9 @@ chrec_fold_plus_1 (enum tree_code code, tree type,
 	    int size = 0;
 	    if ((tree_contains_chrecs (op0, &size)
 		 || tree_contains_chrecs (op1, &size))
-		&& size < param_scev_max_expr_size)
+		&& size < PARAM_VALUE (PARAM_SCEV_MAX_EXPR_SIZE))
 	      return build2 (code, type, op0, op1);
-	    else if (size < param_scev_max_expr_size)
+	    else if (size < PARAM_VALUE (PARAM_SCEV_MAX_EXPR_SIZE))
 	      {
 		if (code == POINTER_PLUS_EXPR)
 		  return fold_build_pointer_plus (fold_convert (type, op0),
@@ -538,7 +537,7 @@ chrec_evaluate (unsigned var, tree chrec, tree n, unsigned int k)
 {
   tree arg0, arg1, binomial_n_k;
   tree type = TREE_TYPE (chrec);
-  class loop *var_loop = get_loop (cfun, var);
+  struct loop *var_loop = get_loop (cfun, var);
 
   while (TREE_CODE (chrec) == POLYNOMIAL_CHREC
 	 && flow_loop_nested_p (var_loop, get_chrec_loop (chrec)))
@@ -719,7 +718,7 @@ tree
 hide_evolution_in_other_loops_than_loop (tree chrec,
 					 unsigned loop_num)
 {
-  class loop *loop = get_loop (cfun, loop_num), *chloop;
+  struct loop *loop = get_loop (cfun, loop_num), *chloop;
   if (automatically_generated_chrec_p (chrec))
     return chrec;
 
@@ -760,7 +759,7 @@ chrec_component_in_loop_num (tree chrec,
 			     bool right)
 {
   tree component;
-  class loop *loop = get_loop (cfun, loop_num), *chloop;
+  struct loop *loop = get_loop (cfun, loop_num), *chloop;
 
   if (automatically_generated_chrec_p (chrec))
     return chrec;
@@ -842,7 +841,7 @@ reset_evolution_in_loop (unsigned loop_num,
 			 tree chrec,
 			 tree new_evol)
 {
-  class loop *loop = get_loop (cfun, loop_num);
+  struct loop *loop = get_loop (cfun, loop_num);
 
   if (POINTER_TYPE_P (chrec_type (chrec)))
     gcc_assert (ptrofftype_p (chrec_type (new_evol)));
@@ -938,7 +937,7 @@ is_multivariate_chrec (const_tree chrec)
 
 static bool
 chrec_contains_symbols (const_tree chrec, hash_set<const_tree> &visited,
-			class loop *loop)
+			struct loop *loop)
 {
   int i, n;
 
@@ -960,9 +959,6 @@ chrec_contains_symbols (const_tree chrec, hash_set<const_tree> &visited,
       && flow_loop_nested_p (get_chrec_loop (chrec), loop))
     return true;
 
-  if (visited.add (chrec))
-    return false;
-
   n = TREE_OPERAND_LENGTH (chrec);
   for (i = 0; i < n; i++)
     if (chrec_contains_symbols (TREE_OPERAND (chrec, i), visited, loop))
@@ -976,67 +972,10 @@ chrec_contains_symbols (const_tree chrec, hash_set<const_tree> &visited,
    the chrec is considered as a SYMBOL.  */
 
 bool
-chrec_contains_symbols (const_tree chrec, class loop* loop)
+chrec_contains_symbols (const_tree chrec, struct loop* loop)
 {
   hash_set<const_tree> visited;
   return chrec_contains_symbols (chrec, visited, loop);
-}
-
-/* Return true when CHREC contains symbolic names defined in
-   LOOP_NB.  */
-
-static bool
-chrec_contains_symbols_defined_in_loop (const_tree chrec, unsigned loop_nb,
-					hash_set<const_tree> &visited)
-{
-  int i, n;
-
-  if (chrec == NULL_TREE)
-    return false;
-
-  if (is_gimple_min_invariant (chrec))
-    return false;
-
-  if (TREE_CODE (chrec) == SSA_NAME)
-    {
-      gimple *def;
-      loop_p def_loop, loop;
-
-      if (SSA_NAME_IS_DEFAULT_DEF (chrec))
-	return false;
-
-      def = SSA_NAME_DEF_STMT (chrec);
-      def_loop = loop_containing_stmt (def);
-      loop = get_loop (cfun, loop_nb);
-
-      if (def_loop == NULL)
-	return false;
-
-      if (loop == def_loop || flow_loop_nested_p (loop, def_loop))
-	return true;
-
-      return false;
-    }
-
-  if (visited.add (chrec))
-    return false;
-
-  n = TREE_OPERAND_LENGTH (chrec);
-  for (i = 0; i < n; i++)
-    if (chrec_contains_symbols_defined_in_loop (TREE_OPERAND (chrec, i),
-						loop_nb, visited))
-      return true;
-  return false;
-}
-
-/* Return true when CHREC contains symbolic names defined in
-   LOOP_NB.  */
-
-bool
-chrec_contains_symbols_defined_in_loop (const_tree chrec, unsigned loop_nb)
-{
-  hash_set<const_tree> visited;
-  return chrec_contains_symbols_defined_in_loop (chrec, loop_nb, visited);
 }
 
 /* Determines whether the chrec contains undetermined coefficients.  */
@@ -1086,9 +1025,6 @@ tree_contains_chrecs (const_tree expr, int *size, hash_set<const_tree> &visited)
 
   if (tree_is_chrec (expr))
     return true;
-
-  if (visited.add (expr))
-    return false;
 
   n = TREE_OPERAND_LENGTH (expr);
   for (i = 0; i < n; i++)
@@ -1295,7 +1231,7 @@ nb_vars_in_chrec (tree chrec)
    the conversion succeeded, false otherwise.  */
 
 bool
-convert_affine_scev (class loop *loop, tree type,
+convert_affine_scev (struct loop *loop, tree type,
 		     tree *base, tree *step, gimple *at_stmt,
 		     bool use_overflow_semantics, tree from)
 {
@@ -1426,7 +1362,7 @@ chrec_convert_1 (tree type, tree chrec, gimple *at_stmt,
 {
   tree ct, res;
   tree base, step;
-  class loop *loop;
+  struct loop *loop;
 
   if (automatically_generated_chrec_p (chrec))
     return chrec;
@@ -1562,7 +1498,7 @@ chrec_convert_aggressive (tree type, tree chrec, bool *fold_conversions)
   if (!*fold_conversions && evolution_function_is_affine_p (chrec))
     {
       tree base, step;
-      class loop *loop;
+      struct loop *loop;
 
       loop = get_chrec_loop (chrec);
       base = CHREC_LEFT (chrec);

@@ -14,9 +14,7 @@ bar (void)
     #pragma omp section
     foo (-3);
   }
-  #pragma omp scope reduction (task, +: v) nowait	/* { dg-error "'task' reduction modifier on a construct with a 'nowait' clause" } */
-  foo (-4);
-  #pragma omp simd reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for', 'sections' or 'scope'" } */
+  #pragma omp simd reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for' or 'sections'" } */
   for (i = 0; i < 64; i++)
     v++;
   #pragma omp for simd reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct combined with 'simd'" } */
@@ -28,13 +26,13 @@ bar (void)
   #pragma omp teams distribute parallel for simd reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct combined with 'simd'" } */
   for (i = 0; i < 64; i++)
     v++;
-  #pragma omp taskloop reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for', 'sections' or 'scope'" } */
+  #pragma omp taskloop reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for' or 'sections'" } */
   for (i = 0; i < 64; i++)
     foo (i);
   #pragma omp taskloop simd reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct combined with 'simd'" } */
   for (i = 0; i < 64; i++)
     v++;
-  #pragma omp teams reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for', 'sections' or 'scope'" } */
+  #pragma omp teams reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct other than 'parallel', 'for' or 'sections'" } */
   foo (i);
   #pragma omp teams distribute reduction (task, +: v)	/* { dg-error "invalid 'task' reduction modifier on construct not combined with 'parallel', 'for' or 'sections'" } */
   for (i = 0; i < 64; i++)

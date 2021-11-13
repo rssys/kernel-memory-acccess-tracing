@@ -1,9 +1,7 @@
-/* OpenACC 'cache' directive: invalid usage.  */
+/* OpenACC cache directive: invalid usage.  */
 
-/* See also corresponding C++ variant: '../../g++.dg/goacc/cache-2.C'.  */
-
-static void
-test ()
+int
+main (int argc, char **argv)
 {
 #define N   2
     int a[N], b[N];
@@ -54,4 +52,6 @@ test ()
         if (a[i] != b[i])
             __builtin_abort ();
     }
+
+    return 0;
 }

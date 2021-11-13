@@ -1,5 +1,5 @@
 # Configure script for libada.
-#   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2003-2019 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ sinclude(../config/acx.m4)
 sinclude(../config/multi.m4)
 sinclude(../config/override.m4)
 sinclude(../config/picflag.m4)
-sinclude(../config/toolexeclibdir.m4)
 sinclude(../config/unwind_ipinfo.m4)
 
 AC_INIT
@@ -39,21 +38,6 @@ ACX_NONCANONICAL_TARGET
 GCC_TOPLEV_SUBDIRS
 
 # Command-line options.
-
-AC_ARG_ENABLE(version-specific-runtime-libs,
-  [AS_HELP_STRING([--enable-version-specific-runtime-libs],
-		  [specify that runtime libraries should be
-		   installed in a compiler-specific directory])],
-  [case "$enableval" in
-     yes|no)
-       ;;
-     *)
-       AC_MSG_ERROR([--enable-version-specific-runtime-libs must be yes or no])
-       ;;
-   esac],
-  [enable_version_specific_runtime_libs=yes]
-)
-
 # Very limited version of AC_MAINTAINER_MODE.
 AC_ARG_ENABLE([maintainer-mode],
   [AC_HELP_STRING([--enable-maintainer-mode],
@@ -68,8 +52,6 @@ AC_ARG_ENABLE([maintainer-mode],
   [MAINT='#'])
 AC_SUBST([MAINT])dnl
 
-GCC_WITH_TOOLEXECLIBDIR
-
 AM_ENABLE_MULTILIB(, ..)
 # Calculate toolexeclibdir
 # Also toolexecdir, though it's only used in toolexeclibdir
@@ -78,22 +60,15 @@ case ${enable_version_specific_runtime_libs} in
     # Need the gcc compiler version to know where to install libraries
     # and header files if --enable-version-specific-runtime-libs option
     # is selected.
-    toolexecdir='$(libdir)/gcc/$(target_noncanonical)'
-    toolexeclibdir='$(toolexecdir)/$(version)$(MULTISUBDIR)/adalib'
+    toolexecdir='$(libdir)/gcc/$(target_alias)'
+    toolexeclibdir='$(toolexecdir)/$(gcc_version)$(MULTISUBDIR)'
     ;;
   no)
     if test -n "$with_cross_host" &&
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_alias)'
-      case ${with_toolexeclibdir} in
-	no)
-	  toolexeclibdir='$(toolexecdir)/lib'
-	  ;;
-	*)
-	  toolexeclibdir=${with_toolexeclibdir}
-	  ;;
-      esac
+      toolexeclibdir='$(toolexecdir)/lib'
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_alias)'
       toolexeclibdir='$(libdir)'
@@ -107,6 +82,7 @@ case ${enable_version_specific_runtime_libs} in
 esac
 AC_SUBST(toolexecdir)
 AC_SUBST(toolexeclibdir)
+#TODO: toolexeclibdir is currently disregarded
 
 # Check the compiler.
 # The same as in boehm-gc and libstdc++. Have to borrow it from there.

@@ -16,7 +16,6 @@ type mapInterface interface {
 	Load(interface{}) (interface{}, bool)
 	Store(key, value interface{})
 	LoadOrStore(key, value interface{}) (actual interface{}, loaded bool)
-	LoadAndDelete(key interface{}) (value interface{}, loaded bool)
 	Delete(interface{})
 	Range(func(key, value interface{}) (shouldContinue bool))
 }
@@ -55,18 +54,6 @@ func (m *RWMutexMap) LoadOrStore(key, value interface{}) (actual interface{}, lo
 	}
 	m.mu.Unlock()
 	return actual, loaded
-}
-
-func (m *RWMutexMap) LoadAndDelete(key interface{}) (value interface{}, loaded bool) {
-	m.mu.Lock()
-	value, loaded = m.dirty[key]
-	if !loaded {
-		m.mu.Unlock()
-		return nil, false
-	}
-	delete(m.dirty, key)
-	m.mu.Unlock()
-	return value, loaded
 }
 
 func (m *RWMutexMap) Delete(key interface{}) {
@@ -135,16 +122,6 @@ func (m *DeepCopyMap) LoadOrStore(key, value interface{}) (actual interface{}, l
 	}
 	m.mu.Unlock()
 	return actual, loaded
-}
-
-func (m *DeepCopyMap) LoadAndDelete(key interface{}) (value interface{}, loaded bool) {
-	m.mu.Lock()
-	dirty := m.dirty()
-	value, loaded = dirty[key]
-	delete(dirty, key)
-	m.clean.Store(dirty)
-	m.mu.Unlock()
-	return
 }
 
 func (m *DeepCopyMap) Delete(key interface{}) {

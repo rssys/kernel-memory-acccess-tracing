@@ -1,6 +1,6 @@
 // Safe container implementation  -*- C++ -*-
 
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -57,12 +57,7 @@ namespace __gnu_debug
       _Safe_container(const _Safe_container&) = default;
       _Safe_container(_Safe_container&&) = default;
 
-    private:
-      _Safe_container(_Safe_container&& __x, const _Alloc&, std::true_type)
-      : _Safe_container(std::move(__x))
-      { }
-
-      _Safe_container(_Safe_container&& __x, const _Alloc& __a, std::false_type)
+      _Safe_container(_Safe_container&& __x, const _Alloc& __a)
       : _Safe_container()
       {
 	if (__x._M_cont().get_allocator() == __a)
@@ -70,14 +65,9 @@ namespace __gnu_debug
 	else
 	  __x._M_invalidate_all();
       }
-
-    protected:
-      _Safe_container(_Safe_container&& __x, const _Alloc& __a)
-      : _Safe_container(std::move(__x), __a,
-		      typename std::allocator_traits<_Alloc>::is_always_equal{})
-      { }
 #endif
 
+    public:
       // Copy assignment invalidate all iterators.
       _Safe_container&
       operator=(const _Safe_container&) _GLIBCXX_NOEXCEPT
@@ -90,14 +80,7 @@ namespace __gnu_debug
       _Safe_container&
       operator=(_Safe_container&& __x) noexcept
       {
-	if (std::__addressof(__x) == this)
-	  {
-	    // Standard containers have a valid but unspecified value after
-	    // self-move, so we invalidate all debug iterators even if the
-	    // underlying container happens to preserve its contents.
-	    this->_M_invalidate_all();
-	    return *this;
-	  }
+	__glibcxx_check_self_move_assign(__x);
 
 	if (_IsCxx11AllocatorAware)
 	  {

@@ -10,16 +10,14 @@
 package http
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
-	"net/http/internal/ascii"
 	"net/url"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -102,7 +100,7 @@ type Client struct {
 	// For compatibility, the Client will also use the deprecated
 	// CancelRequest method on Transport if found. New
 	// RoundTripper implementations should use the Request's Context
-	// for cancellation instead of implementing CancelRequest.
+	// for cancelation instead of implementing CancelRequest.
 	Timeout time.Duration
 }
 
@@ -216,7 +214,7 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 
 	if req.RequestURI != "" {
 		req.closeBody()
-		return nil, alwaysFalse, errors.New("http: Request.RequestURI can't be set in client requests")
+		return nil, alwaysFalse, errors.New("http: Request.RequestURI can't be set in client requests.")
 	}
 
 	// forkReq forks req into a shallow clone of ireq the first
@@ -240,7 +238,7 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 		username := u.Username()
 		password, _ := u.Password()
 		forkReq()
-		req.Header = cloneOrMakeHeader(ireq.Header)
+		req.Header = ireq.Header.clone()
 		req.Header.Set("Authorization", "Basic "+basicAuth(username, password))
 	}
 
@@ -265,25 +263,6 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 		}
 		return nil, didTimeout, err
 	}
-	if resp == nil {
-		return nil, didTimeout, fmt.Errorf("http: RoundTripper implementation (%T) returned a nil *Response with a nil error", rt)
-	}
-	if resp.Body == nil {
-		// The documentation on the Body field says “The http Client and Transport
-		// guarantee that Body is always non-nil, even on responses without a body
-		// or responses with a zero-length body.” Unfortunately, we didn't document
-		// that same constraint for arbitrary RoundTripper implementations, and
-		// RoundTripper implementations in the wild (mostly in tests) assume that
-		// they can use a nil Body to mean an empty one (similar to Request.Body).
-		// (See https://golang.org/issue/38095.)
-		//
-		// If the ContentLength allows the Body to be empty, fill in an empty one
-		// here to ensure that it is non-nil.
-		if resp.ContentLength > 0 && req.Method != "HEAD" {
-			return nil, didTimeout, fmt.Errorf("http: RoundTripper implementation (%T) returned a *Response with content length %d but a nil Body", rt, resp.ContentLength)
-		}
-		resp.Body = io.NopCloser(strings.NewReader(""))
-	}
 	if !deadline.IsZero() {
 		resp.Body = &cancelTimerBody{
 			stop:          stopTimer,
@@ -294,102 +273,46 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 	return resp, nil, nil
 }
 
-// timeBeforeContextDeadline reports whether the non-zero Time t is
-// before ctx's deadline, if any. If ctx does not have a deadline, it
-// always reports true (the deadline is considered infinite).
-func timeBeforeContextDeadline(t time.Time, ctx context.Context) bool {
-	d, ok := ctx.Deadline()
-	if !ok {
-		return true
-	}
-	return t.Before(d)
-}
-
-// knownRoundTripperImpl reports whether rt is a RoundTripper that's
-// maintained by the Go team and known to implement the latest
-// optional semantics (notably contexts). The Request is used
-// to check whether this particular request is using an alternate protocol,
-// in which case we need to check the RoundTripper for that protocol.
-func knownRoundTripperImpl(rt RoundTripper, req *Request) bool {
-	switch t := rt.(type) {
-	case *Transport:
-		if altRT := t.alternateRoundTripper(req); altRT != nil {
-			return knownRoundTripperImpl(altRT, req)
-		}
-		return true
-	case *http2Transport, http2noDialH2RoundTripper:
-		return true
-	}
-	// There's a very minor chance of a false positive with this.
-	// Instead of detecting our golang.org/x/net/http2.Transport,
-	// it might detect a Transport type in a different http2
-	// package. But I know of none, and the only problem would be
-	// some temporarily leaked goroutines if the transport didn't
-	// support contexts. So this is a good enough heuristic:
-	if reflect.TypeOf(rt).String() == "*http2.Transport" {
-		return true
-	}
-	return false
-}
-
-// setRequestCancel sets req.Cancel and adds a deadline context to req
-// if deadline is non-zero. The RoundTripper's type is used to
-// determine whether the legacy CancelRequest behavior should be used.
+// setRequestCancel sets the Cancel field of req, if deadline is
+// non-zero. The RoundTripper's type is used to determine whether the legacy
+// CancelRequest behavior should be used.
 //
 // As background, there are three ways to cancel a request:
 // First was Transport.CancelRequest. (deprecated)
-// Second was Request.Cancel.
+// Second was Request.Cancel (this mechanism).
 // Third was Request.Context.
-// This function populates the second and third, and uses the first if it really needs to.
 func setRequestCancel(req *Request, rt RoundTripper, deadline time.Time) (stopTimer func(), didTimeout func() bool) {
 	if deadline.IsZero() {
 		return nop, alwaysFalse
 	}
-	knownTransport := knownRoundTripperImpl(rt, req)
-	oldCtx := req.Context()
 
-	if req.Cancel == nil && knownTransport {
-		// If they already had a Request.Context that's
-		// expiring sooner, do nothing:
-		if !timeBeforeContextDeadline(deadline, oldCtx) {
-			return nop, alwaysFalse
-		}
-
-		var cancelCtx func()
-		req.ctx, cancelCtx = context.WithDeadline(oldCtx, deadline)
-		return cancelCtx, func() bool { return time.Now().After(deadline) }
-	}
 	initialReqCancel := req.Cancel // the user's original Request.Cancel, if any
-
-	var cancelCtx func()
-	if oldCtx := req.Context(); timeBeforeContextDeadline(deadline, oldCtx) {
-		req.ctx, cancelCtx = context.WithDeadline(oldCtx, deadline)
-	}
 
 	cancel := make(chan struct{})
 	req.Cancel = cancel
 
 	doCancel := func() {
-		// The second way in the func comment above:
+		// The newer way (the second way in the func comment):
 		close(cancel)
-		// The first way, used only for RoundTripper
-		// implementations written before Go 1.5 or Go 1.6.
-		type canceler interface{ CancelRequest(*Request) }
-		if v, ok := rt.(canceler); ok {
+
+		// The legacy compatibility way, used only
+		// for RoundTripper implementations written
+		// before Go 1.5 or Go 1.6.
+		type canceler interface {
+			CancelRequest(*Request)
+		}
+		switch v := rt.(type) {
+		case *Transport, *http2Transport:
+			// Do nothing. The net/http package's transports
+			// support the new Request.Cancel channel
+		case canceler:
 			v.CancelRequest(req)
 		}
 	}
 
 	stopTimerCh := make(chan struct{})
 	var once sync.Once
-	stopTimer = func() {
-		once.Do(func() {
-			close(stopTimerCh)
-			if cancelCtx != nil {
-				cancelCtx()
-			}
-		})
-	}
+	stopTimer = func() { once.Do(func() { close(stopTimerCh) }) }
 
 	timer := time.NewTimer(time.Until(deadline))
 	var timedOut atomicBool
@@ -433,7 +356,8 @@ func basicAuth(username, password string) string {
 // An error is returned if there were too many redirects or if there
 // was an HTTP protocol error. A non-2xx response doesn't cause an
 // error. Any returned error will be of type *url.Error. The url.Error
-// value's Timeout method will report true if the request timed out.
+// value's Timeout method will report true if request timed out or was
+// canceled.
 //
 // When err is nil, resp always contains a non-nil resp.Body.
 // Caller should close resp.Body when done reading from it.
@@ -442,9 +366,6 @@ func basicAuth(username, password string) string {
 //
 // To make a request with custom headers, use NewRequest and
 // DefaultClient.Do.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and DefaultClient.Do.
 func Get(url string) (resp *Response, err error) {
 	return DefaultClient.Get(url)
 }
@@ -462,16 +383,13 @@ func Get(url string) (resp *Response, err error) {
 // An error is returned if the Client's CheckRedirect function fails
 // or if there was an HTTP protocol error. A non-2xx response doesn't
 // cause an error. Any returned error will be of type *url.Error. The
-// url.Error value's Timeout method will report true if the request
-// timed out.
+// url.Error value's Timeout method will report true if request timed
+// out or was canceled.
 //
 // When err is nil, resp always contains a non-nil resp.Body.
 // Caller should close resp.Body when done reading from it.
 //
 // To make a request with custom headers, use NewRequest and Client.Do.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and Client.Do.
 func (c *Client) Get(url string) (resp *Response, err error) {
 	req, err := NewRequest("GET", url, nil)
 	if err != nil {
@@ -547,10 +465,7 @@ func urlErrorOp(method string) string {
 	if method == "" {
 		return "Get"
 	}
-	if lowerMethod, ok := ascii.ToLower(method); ok {
-		return method[:1] + lowerMethod[1:]
-	}
-	return method
+	return method[:1] + strings.ToLower(method[1:])
 }
 
 // Do sends an HTTP request and returns an HTTP response, following
@@ -588,7 +503,8 @@ func urlErrorOp(method string) string {
 // standard library body types.
 //
 // Any returned error will be of type *url.Error. The url.Error
-// value's Timeout method will report true if the request timed out.
+// value's Timeout method will report true if request timed out or was
+// canceled.
 func (c *Client) Do(req *Request) (*Response, error) {
 	return c.do(req)
 }
@@ -704,7 +620,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 			// fails, the Transport won't reuse it anyway.
 			const maxBodySlurpSize = 2 << 10
 			if resp.ContentLength == -1 || resp.ContentLength <= maxBodySlurpSize {
-				io.CopyN(io.Discard, resp.Body, maxBodySlurpSize)
+				io.CopyN(ioutil.Discard, resp.Body, maxBodySlurpSize)
 			}
 			resp.Body.Close()
 
@@ -727,6 +643,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 			reqBodyClosed = true
 			if !deadline.IsZero() && didTimeout() {
 				err = &httpError{
+					// TODO: early in cycle: s/Client.Timeout exceeded/timeout or context cancelation/
 					err:     err.Error() + " (Client.Timeout exceeded while awaiting headers)",
 					timeout: true,
 				}
@@ -751,7 +668,7 @@ func (c *Client) makeHeadersCopier(ireq *Request) func(*Request) {
 	// The headers to copy are from the very initial request.
 	// We use a closured callback to keep a reference to these original headers.
 	var (
-		ireqhdr  = cloneOrMakeHeader(ireq.Header)
+		ireqhdr  = ireq.Header.clone()
 		icookies map[string][]*Cookie
 	)
 	if c.Jar != nil && ireq.Header.Get("Cookie") != "" {
@@ -828,9 +745,6 @@ func defaultCheckRedirect(req *Request, via []*Request) error {
 //
 // See the Client.Do method documentation for details on how redirects
 // are handled.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and DefaultClient.Do.
 func Post(url, contentType string, body io.Reader) (resp *Response, err error) {
 	return DefaultClient.Post(url, contentType, body)
 }
@@ -843,9 +757,6 @@ func Post(url, contentType string, body io.Reader) (resp *Response, err error) {
 // request.
 //
 // To set custom headers, use NewRequest and Client.Do.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and Client.Do.
 //
 // See the Client.Do method documentation for details on how redirects
 // are handled.
@@ -871,9 +782,6 @@ func (c *Client) Post(url, contentType string, body io.Reader) (resp *Response, 
 //
 // See the Client.Do method documentation for details on how redirects
 // are handled.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and DefaultClient.Do.
 func PostForm(url string, data url.Values) (resp *Response, err error) {
 	return DefaultClient.PostForm(url, data)
 }
@@ -889,9 +797,6 @@ func PostForm(url string, data url.Values) (resp *Response, err error) {
 //
 // See the Client.Do method documentation for details on how redirects
 // are handled.
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and Client.Do.
 func (c *Client) PostForm(url string, data url.Values) (resp *Response, err error) {
 	return c.Post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
 }
@@ -907,9 +812,6 @@ func (c *Client) PostForm(url string, data url.Values) (resp *Response, err erro
 //    308 (Permanent Redirect)
 //
 // Head is a wrapper around DefaultClient.Head
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and DefaultClient.Do.
 func Head(url string) (resp *Response, err error) {
 	return DefaultClient.Head(url)
 }
@@ -923,9 +825,6 @@ func Head(url string) (resp *Response, err error) {
 //    303 (See Other)
 //    307 (Temporary Redirect)
 //    308 (Permanent Redirect)
-//
-// To make a request with a specified context.Context, use NewRequestWithContext
-// and Client.Do.
 func (c *Client) Head(url string) (resp *Response, err error) {
 	req, err := NewRequest("HEAD", url, nil)
 	if err != nil {
@@ -951,7 +850,7 @@ func (c *Client) CloseIdleConnections() {
 }
 
 // cancelTimerBody is an io.ReadCloser that wraps rc with two features:
-// 1) On Read error or close, the stop func is called.
+// 1) on Read error or close, the stop func is called.
 // 2) On Read failure, if reqDidTimeout is true, the error is wrapped and
 //    marked as net.Error that hit its timeout.
 type cancelTimerBody struct {
@@ -971,7 +870,8 @@ func (b *cancelTimerBody) Read(p []byte) (n int, err error) {
 	}
 	if b.reqDidTimeout() {
 		err = &httpError{
-			err:     err.Error() + " (Client.Timeout or context cancellation while reading body)",
+			// TODO: early in cycle: s/Client.Timeout exceeded/timeout or context cancelation/
+			err:     err.Error() + " (Client.Timeout exceeded while reading body)",
 			timeout: true,
 		}
 	}
@@ -1026,9 +926,10 @@ func isDomainOrSubdomain(sub, parent string) bool {
 }
 
 func stripPassword(u *url.URL) string {
-	_, passSet := u.User.Password()
+	pass, passSet := u.User.Password()
 	if passSet {
-		return strings.Replace(u.String(), u.User.String()+"@", u.User.Username()+":***@", 1)
+		return strings.Replace(u.String(), pass+"@", "***@", 1)
 	}
+
 	return u.String()
 }

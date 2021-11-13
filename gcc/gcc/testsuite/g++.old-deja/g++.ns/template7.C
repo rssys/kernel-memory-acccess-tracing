@@ -8,6 +8,5 @@ namespace foo {
 }
 
 void baz() {
-  foo::bar(); // { dg-error "12:class template argument deduction failed|no match" "" { target c++17 } } template used as expression
-  // { dg-error "11:missing template arguments" "" { target c++14_down } .-1 }
+  foo::bar(); // { dg-error "" } template used as expression
 }

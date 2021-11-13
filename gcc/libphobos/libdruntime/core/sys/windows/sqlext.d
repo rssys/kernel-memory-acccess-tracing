@@ -8,7 +8,6 @@
  */
 module core.sys.windows.sqlext;
 version (Windows):
-@system:
 
 /* Conversion notes:
    The MinGW file was a horrible mess. All of the #defines were sorted alphabetically,
@@ -18,7 +17,7 @@ version (Windows):
 */
 
 public import core.sys.windows.sql;
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum SQL_SPEC_MAJOR = 3;
 enum SQL_SPEC_MINOR = 51;

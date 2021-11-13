@@ -1,10 +1,3 @@
-/*
-TEST_OUTPUT:
----
-fail_compilation/fix350a.d(12): Error: comma expected separating field initializers
-fail_compilation/fix350a.d(12): Error: comma expected separating field initializers
----
-*/
 struct S1
 {
     int a, b, c;

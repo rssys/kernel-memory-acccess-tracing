@@ -5,9 +5,6 @@
 package macho
 
 import (
-	"bytes"
-	"internal/obscuretestdata"
-	"io"
 	"reflect"
 	"testing"
 )
@@ -22,7 +19,7 @@ type fileTest struct {
 
 var fileTests = []fileTest{
 	{
-		"testdata/gcc-386-darwin-exec.base64",
+		"testdata/gcc-386-darwin-exec",
 		FileHeader{0xfeedface, Cpu386, 0x3, 0x2, 0xc, 0x3c0, 0x85},
 		[]interface{}{
 			&SegmentHeader{LoadCmdSegment, 0x38, "__PAGEZERO", 0x0, 0x1000, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -48,7 +45,7 @@ var fileTests = []fileTest{
 		nil,
 	},
 	{
-		"testdata/gcc-amd64-darwin-exec.base64",
+		"testdata/gcc-amd64-darwin-exec",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0x2, 0xb, 0x568, 0x85},
 		[]interface{}{
 			&SegmentHeader{LoadCmdSegment64, 0x48, "__PAGEZERO", 0x0, 0x100000000, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -76,7 +73,7 @@ var fileTests = []fileTest{
 		nil,
 	},
 	{
-		"testdata/gcc-amd64-darwin-exec-debug.base64",
+		"testdata/gcc-amd64-darwin-exec-debug",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0xa, 0x4, 0x5a0, 0},
 		[]interface{}{
 			nil, // LC_UUID
@@ -104,7 +101,7 @@ var fileTests = []fileTest{
 		nil,
 	},
 	{
-		"testdata/clang-386-darwin-exec-with-rpath.base64",
+		"testdata/clang-386-darwin-exec-with-rpath",
 		FileHeader{0xfeedface, Cpu386, 0x3, 0x2, 0x10, 0x42c, 0x1200085},
 		[]interface{}{
 			nil, // LC_SEGMENT
@@ -128,7 +125,7 @@ var fileTests = []fileTest{
 		nil,
 	},
 	{
-		"testdata/clang-amd64-darwin-exec-with-rpath.base64",
+		"testdata/clang-amd64-darwin-exec-with-rpath",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0x2, 0x10, 0x4c8, 0x200085},
 		[]interface{}{
 			nil, // LC_SEGMENT
@@ -152,12 +149,12 @@ var fileTests = []fileTest{
 		nil,
 	},
 	{
-		"testdata/clang-386-darwin.obj.base64",
+		"testdata/clang-386-darwin.obj",
 		FileHeader{0xfeedface, Cpu386, 0x3, 0x1, 0x4, 0x138, 0x2000},
 		nil,
 		nil,
 		map[string][]Reloc{
-			"__text": {
+			"__text": []Reloc{
 				{
 					Addr:      0x1d,
 					Type:      uint8(GENERIC_RELOC_VANILLA),
@@ -187,12 +184,12 @@ var fileTests = []fileTest{
 		},
 	},
 	{
-		"testdata/clang-amd64-darwin.obj.base64",
+		"testdata/clang-amd64-darwin.obj",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x3, 0x1, 0x4, 0x200, 0x2000},
 		nil,
 		nil,
 		map[string][]Reloc{
-			"__text": {
+			"__text": []Reloc{
 				{
 					Addr:   0x19,
 					Type:   uint8(X86_64_RELOC_BRANCH),
@@ -210,7 +207,7 @@ var fileTests = []fileTest{
 					Value:  2,
 				},
 			},
-			"__compact_unwind": {
+			"__compact_unwind": []Reloc{
 				{
 					Addr:   0x0,
 					Type:   uint8(X86_64_RELOC_UNSIGNED),
@@ -224,47 +221,11 @@ var fileTests = []fileTest{
 	},
 }
 
-func readerAtFromObscured(name string) (io.ReaderAt, error) {
-	b, err := obscuretestdata.ReadFile(name)
-	if err != nil {
-		return nil, err
-	}
-	return bytes.NewReader(b), nil
-}
-
-func openObscured(name string) (*File, error) {
-	ra, err := readerAtFromObscured(name)
-	if err != nil {
-		return nil, err
-	}
-	ff, err := NewFile(ra)
-	if err != nil {
-		return nil, err
-	}
-	return ff, nil
-}
-
-func openFatObscured(name string) (*FatFile, error) {
-	ra, err := readerAtFromObscured(name)
-	if err != nil {
-		return nil, err
-	}
-	ff, err := NewFatFile(ra)
-	if err != nil {
-		return nil, err
-	}
-	return ff, nil
-}
-
 func TestOpen(t *testing.T) {
 	for i := range fileTests {
 		tt := &fileTests[i]
 
-		// Use obscured files to prevent Apple’s notarization service from
-		// mistaking them as candidates for notarization and rejecting the entire
-		// toolchain.
-		// See golang.org/issue/34986
-		f, err := openObscured(tt.file)
+		f, err := Open(tt.file)
 		if err != nil {
 			t.Error(err)
 			continue
@@ -357,7 +318,7 @@ func TestOpenFailure(t *testing.T) {
 }
 
 func TestOpenFat(t *testing.T) {
-	ff, err := openFatObscured("testdata/fat-gcc-386-amd64-darwin-exec.base64")
+	ff, err := OpenFat("testdata/fat-gcc-386-amd64-darwin-exec")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,8 +350,8 @@ func TestOpenFatFailure(t *testing.T) {
 		t.Errorf("OpenFat %s: succeeded unexpectedly", filename)
 	}
 
-	filename = "testdata/gcc-386-darwin-exec.base64" // not a fat Mach-O
-	ff, err := openFatObscured(filename)
+	filename = "testdata/gcc-386-darwin-exec" // not a fat Mach-O
+	ff, err := OpenFat(filename)
 	if err != ErrNotFat {
 		t.Errorf("OpenFat %s: got %v, want ErrNotFat", filename, err)
 	}

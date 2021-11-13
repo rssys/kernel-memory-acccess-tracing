@@ -10,5 +10,3 @@ int main(void)
  int var, *p = &var;
  return (double)(uintptr_t)(p);
 }
-
-/* { dg-prune-output "-Wreturn-local-addr" } */

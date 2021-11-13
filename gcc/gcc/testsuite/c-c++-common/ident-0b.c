@@ -2,7 +2,6 @@
  * Make sure scan-assembler-not turns off .ident unless -fident in testcase */
 /* { dg-do compile } */
 /* { dg-options "-fident" } */
-/* { dg-require-effective-target ident_directive }*/
 /* { dg-skip-if "no assembler .ident support" { { hppa*-*-hpux* && { ! lp64 } } || powerpc*-*-darwin* } } */
 int i;
 

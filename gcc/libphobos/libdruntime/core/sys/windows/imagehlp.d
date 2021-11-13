@@ -9,7 +9,6 @@
  */
 module core.sys.windows.imagehlp;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 
@@ -19,7 +18,7 @@ version (ANSI) {} else version = Unicode;
     as well provide it here.
 */
 
-import core.sys.windows.winbase, core.sys.windows.windef;
+private import core.sys.windows.winbase, core.sys.windows.windef;
 
 // FIXME: check types of constants
 

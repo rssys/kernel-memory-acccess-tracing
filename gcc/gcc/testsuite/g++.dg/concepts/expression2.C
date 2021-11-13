@@ -1,16 +1,16 @@
-// { dg-do compile { target c++17_only } }
+// { dg-do compile { target c++17 } }
 // { dg-options "-fconcepts" }
 
 template<typename T>
 concept bool C1()
 {
-  return requires (T t) { t.f(); }; // { dg-message "in requirements" }
+  return requires (T t) { t.f(); };
 }
 
 template<typename T>
 concept bool C2()
 {
-  return requires { typename T::type; }; // { dg-message "in requirements" }
+  return requires { typename T::type; };
 }
 
 template<typename T>
@@ -22,7 +22,7 @@ template<typename T>
 void f2(T x) { }
 
 // Note that these declarations are private and therefore
-// cannot satisfy the constraints.
+// cannot satisify the constraints.
 class S
 {
   using type = int;
@@ -31,12 +31,12 @@ class S
 
 int main()
 {
-  f1(s); // { dg-error "no match" }
+  f1(s); // { dg-error "cannot call" }
   f2(s); // { dg-error "" }
 
   // When used in non-SFINAE contexts, make sure that we fail
   // the constraint check before emitting the access check
-  // failures. The context is being presented consistently
+  // failures. The context is being presented constistently
   // in both cases.
   static_assert(C1<S>(), ""); // { dg-error "failed" }
   static_assert(C2<S>(), ""); // { dg-error "" }

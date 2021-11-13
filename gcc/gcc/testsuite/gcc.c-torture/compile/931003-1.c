@@ -1,5 +1,3 @@
-/* { dg-require-stack-size "52*8" } */
-
 f (n, a)
      int n;
      double a[];

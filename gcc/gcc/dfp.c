@@ -1,5 +1,5 @@
 /* Decimal floating point support.
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -342,13 +342,9 @@ decimal_to_binary (REAL_VALUE_TYPE *to, const REAL_VALUE_TYPE *from,
 		   const real_format *fmt)
 {
   char string[256];
-  if (from->cl == rvc_normal)
-    {
-      const decimal128 *const d128 = (const decimal128 *) from->sig;
-      decimal128ToString (d128, string);
-    }
-  else
-    real_to_decimal (string, from, sizeof (string), 0, 1);
+  const decimal128 *const d128 = (const decimal128 *) from->sig;
+
+  decimal128ToString (d128, string);
   real_from_string3 (to, string, fmt);
 }
 
@@ -740,6 +736,4 @@ decimal_real_maxval (REAL_VALUE_TYPE *r, int sign, machine_mode mode)
   decimal_real_from_string (r, max);
   if (sign)
     decimal128SetSign ((decimal128 *) r->sig, 1);
-
-  r->sign = sign;
 }

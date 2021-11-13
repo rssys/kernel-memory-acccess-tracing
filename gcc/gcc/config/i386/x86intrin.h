@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -24,7 +24,7 @@
 #ifndef _X86INTRIN_H_INCLUDED
 #define _X86INTRIN_H_INCLUDED
 
-#include <x86gprintrin.h>
+#include <ia32intrin.h>
 
 #ifndef __iamcu__
 
@@ -36,6 +36,16 @@
 #include <fma4intrin.h>
 
 #include <xopintrin.h>
+
+#include <lwpintrin.h>
+
+#include <tbmintrin.h>
+
+#include <popcntintrin.h>
+
+#include <mwaitxintrin.h>
+
+#include <clzerointrin.h>
 
 #endif /* __iamcu__ */
 

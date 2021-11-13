@@ -1,3 +1,4 @@
+/* { dg-do run } */
 /* { dg-additional-options "-ffast-math" } */
 
 #include "tree-vect.h"

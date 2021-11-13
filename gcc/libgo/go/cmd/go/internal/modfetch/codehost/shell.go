@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // Interactive debugging shell for codehost.Repo implementations.
@@ -15,13 +14,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	"cmd/go/internal/cfg"
 	"cmd/go/internal/modfetch/codehost"
 )
 
@@ -31,7 +29,7 @@ func usage() {
 }
 
 func main() {
-	cfg.GOMODCACHE = "/tmp/vcswork"
+	codehost.WorkRoot = "/tmp/vcswork"
 	log.SetFlags(0)
 	log.SetPrefix("shell: ")
 	flag.Usage = usage
@@ -111,12 +109,12 @@ func main() {
 			if subdir == "-" {
 				subdir = ""
 			}
-			rc, err := repo.ReadZip(f[1], subdir, 10<<20)
+			rc, _, err := repo.ReadZip(f[1], subdir, 10<<20)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "?%s\n", err)
 				continue
 			}
-			data, err := io.ReadAll(rc)
+			data, err := ioutil.ReadAll(rc)
 			rc.Close()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "?%s\n", err)
@@ -124,7 +122,7 @@ func main() {
 			}
 
 			if f[3] != "-" {
-				if err := os.WriteFile(f[3], data, 0666); err != nil {
+				if err := ioutil.WriteFile(f[3], data, 0666); err != nil {
 					fmt.Fprintf(os.Stderr, "?%s\n", err)
 					continue
 				}

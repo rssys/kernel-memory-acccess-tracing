@@ -1,5 +1,5 @@
 /* Implementation of Fortran 2003 Polymorphism.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by Paul Richard Thomas <pault@gcc.gnu.org>
    and Janus Weil <janus@gcc.gnu.org>
 
@@ -49,8 +49,6 @@ along with GCC; see the file COPYING3.  If not see
     * _copy:     A procedure pointer to a copying procedure.
     * _final:    A procedure pointer to a wrapper function, which frees
 		 allocatable components and calls FINAL subroutines.
-    * _deallocate: A procedure pointer to a deallocation procedure; nonnull
-		 only for a recursive derived type.
 
    After these follow procedure pointer components for the specific
    type-bound procedures.  */
@@ -230,7 +228,7 @@ gfc_add_component_ref (gfc_expr *e, const char *name)
 	break;
       tail = &((*tail)->next);
     }
-  if (derived && derived->components && derived->components->next &&
+  if (derived->components && derived->components->next &&
       derived->components->next->ts.type == BT_DERIVED &&
       derived->components->next->ts.u.derived == NULL)
     {
@@ -478,38 +476,22 @@ gfc_class_initializer (gfc_typespec *ts, gfc_expr *init_expr)
    and module name. This is used to construct unique names for the class
    containers and vtab symbols.  */
 
-static char *
-get_unique_type_string (gfc_symbol *derived)
+static void
+get_unique_type_string (char *string, gfc_symbol *derived)
 {
-  const char *dt_name;
-  char *string;
-  size_t len;
+  char dt_name[GFC_MAX_SYMBOL_LEN+1];
   if (derived->attr.unlimited_polymorphic)
-    dt_name = "STAR";
+    strcpy (dt_name, "STAR");
   else
-    dt_name = gfc_dt_upper_string (derived->name);
-  len = strlen (dt_name) + 2;
+    strcpy (dt_name, gfc_dt_upper_string (derived->name));
   if (derived->attr.unlimited_polymorphic)
-    {
-      string = XNEWVEC (char, len);
-      sprintf (string, "_%s", dt_name);
-    }
+    sprintf (string, "_%s", dt_name);
   else if (derived->module)
-    {
-      string = XNEWVEC (char, strlen (derived->module) + len);
-      sprintf (string, "%s_%s", derived->module, dt_name);
-    }
+    sprintf (string, "%s_%s", derived->module, dt_name);
   else if (derived->ns->proc_name)
-    {
-      string = XNEWVEC (char, strlen (derived->ns->proc_name->name) + len);
-      sprintf (string, "%s_%s", derived->ns->proc_name->name, dt_name);
-    }
+    sprintf (string, "%s_%s", derived->ns->proc_name->name, dt_name);
   else
-    {
-      string = XNEWVEC (char, len);
-      sprintf (string, "_%s", dt_name);
-    }
-  return string;
+    sprintf (string, "_%s", dt_name);
 }
 
 
@@ -519,9 +501,8 @@ get_unique_type_string (gfc_symbol *derived)
 static void
 get_unique_hashed_string (char *string, gfc_symbol *derived)
 {
-  /* Provide sufficient space to hold "symbol.symbol_symbol".  */
-  char *tmp;
-  tmp = get_unique_type_string (derived);
+  char tmp[2*GFC_MAX_SYMBOL_LEN+2];
+  get_unique_type_string (&tmp[0], derived);
   /* If string is too long, use hash value in hex representation (allow for
      extra decoration, cf. gfc_build_class_symbol & gfc_find_derived_vtab).
      We need space to for 15 characters "__class_" + symbol name + "_%d_%da",
@@ -533,7 +514,6 @@ get_unique_hashed_string (char *string, gfc_symbol *derived)
     }
   else
     strcpy (string, tmp);
-  free (tmp);
 }
 
 
@@ -543,17 +523,15 @@ unsigned int
 gfc_hash_value (gfc_symbol *sym)
 {
   unsigned int hash = 0;
-  /* Provide sufficient space to hold "symbol.symbol_symbol".  */
-  char *c;
+  char c[2*(GFC_MAX_SYMBOL_LEN+1)];
   int i, len;
 
-  c = get_unique_type_string (sym);
+  get_unique_type_string (&c[0], sym);
   len = strlen (c);
 
   for (i = 0; i < len; i++)
     hash = (hash << 6) + (hash << 16) - hash + c[i];
 
-  free (c);
   /* Return the hash but take the modulus for the sake of module read,
      even though this slightly increases the chance of collision.  */
   return (hash % 100000000);
@@ -566,7 +544,7 @@ unsigned int
 gfc_intrinsic_hash_value (gfc_typespec *ts)
 {
   unsigned int hash = 0;
-  const char *c = gfc_typename (ts, true);
+  const char *c = gfc_typename (ts);
   int i, len;
 
   len = strlen (c);
@@ -630,7 +608,6 @@ gfc_get_len_component (gfc_expr *e, int k)
    component '_vptr' which determines the dynamic type.  When this CLASS
    entity is unlimited polymorphic, then also add a component '_len' to
    store the length of string when that is stored in it.  */
-static int ctr = 0;
 
 bool
 gfc_build_class_symbol (gfc_typespec *ts, symbol_attribute *attr,
@@ -646,6 +623,13 @@ gfc_build_class_symbol (gfc_typespec *ts, symbol_attribute *attr,
 
   gcc_assert (as);
 
+  if (*as && (*as)->type == AS_ASSUMED_SIZE)
+    {
+      gfc_error ("Assumed size polymorphic objects or components, such "
+		 "as that at %C, have not yet been implemented");
+      return false;
+    }
+
   if (attr->class_ok)
     /* Class container has already been built.  */
     return true;
@@ -659,10 +643,6 @@ gfc_build_class_symbol (gfc_typespec *ts, symbol_attribute *attr,
 
   /* Determine the name of the encapsulating type.  */
   rank = !(*as) || (*as)->rank == -1 ? GFC_MAX_DIMENSIONS : (*as)->rank;
-
-  if (!ts->u.derived)
-    return false;
-
   get_unique_hashed_string (tname, ts->u.derived);
   if ((*as) && attr->allocatable)
     name = xasprintf ("__class_%s_%d_%da", tname, rank, (*as)->corank);
@@ -687,30 +667,7 @@ gfc_build_class_symbol (gfc_typespec *ts, symbol_attribute *attr,
   else
     ns = ts->u.derived->ns;
 
-  /* Although this might seem to be counterintuitive, we can build separate
-     class types with different array specs because the TKR interface checks
-     work on the declared type. All array type other than deferred shape or
-     assumed rank are added to the function namespace to ensure that they
-     are properly distinguished.  */
-  if (attr->dummy && !attr->codimension && (*as)
-      && !((*as)->type == AS_DEFERRED || (*as)->type == AS_ASSUMED_RANK))
-    {
-      char *sname;
-      ns = gfc_current_ns;
-      gfc_find_symbol (name, ns, 0, &fclass);
-      /* If a local class type with this name already exists, update the
-	 name with an index.  */
-      if (fclass)
-	{
-	  fclass = NULL;
-	  sname = xasprintf ("%s_%d", name, ++ctr);
-	  free (name);
-	  name = sname;
-	}
-    }
-  else
-    gfc_find_symbol (name, ns, 0, &fclass);
-
+  gfc_find_symbol (name, ns, 0, &fclass);
   if (fclass == NULL)
     {
       gfc_symtree *st;
@@ -950,18 +907,12 @@ finalize_component (gfc_expr *expr, gfc_symbol *derived, gfc_component *comp,
 {
   gfc_expr *e;
   gfc_ref *ref;
-  gfc_was_finalized *f;
 
   if (!comp_is_finalizable (comp))
     return;
 
-  /* If this expression with this component has been finalized
-     already in this namespace, there is nothing to do.  */
-  for (f = sub_ns->was_finalized; f; f = f->next)
-    {
-      if (f->e == expr && f->c == comp)
-	return;
-    }
+  if (comp->finalized)
+    return;
 
   e = gfc_copy_expr (expr);
   if (!e->ref)
@@ -1051,7 +1002,6 @@ finalize_component (gfc_expr *expr, gfc_symbol *derived, gfc_component *comp,
 	}
       else
 	(*code) = cond;
-
     }
   else if (comp->ts.type == BT_DERIVED
 	    && comp->ts.u.derived->f2k_derived
@@ -1091,13 +1041,7 @@ finalize_component (gfc_expr *expr, gfc_symbol *derived, gfc_component *comp,
 			    sub_ns);
       gfc_free_expr (e);
     }
-
-  /* Record that this was finalized already in this namespace.  */
-  f = sub_ns->was_finalized;
-  sub_ns->was_finalized = XCNEW (gfc_was_finalized);
-  sub_ns->was_finalized->e = expr;
-  sub_ns->was_finalized->c = comp;
-  sub_ns->was_finalized->next = f;
+  comp->finalized = true;
 }
 
 
@@ -1602,6 +1546,7 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
   gfc_code *last_code, *block;
   char *name;
   bool finalizable_comp = false;
+  bool expr_null_wrapper = false;
   gfc_expr *ancestor_wrapper = NULL, *rank;
   gfc_iterator *iter;
 
@@ -1629,17 +1574,13 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
     }
 
   /* No wrapper of the ancestor and no own FINAL subroutines and allocatable
-     components: Return a NULL() expression; we defer this a bit to have
+     components: Return a NULL() expression; we defer this a bit to have have
      an interface declaration.  */
   if ((!ancestor_wrapper || ancestor_wrapper->expr_type == EXPR_NULL)
       && !derived->attr.alloc_comp
       && (!derived->f2k_derived || !derived->f2k_derived->finalizers)
       && !has_finalizer_component (derived))
-    {
-      vtab_final->initializer = gfc_get_null_expr (NULL);
-      gcc_assert (vtab_final->ts.interface == NULL);
-      return;
-    }
+    expr_null_wrapper = true;
   else
     /* Check whether there are new allocatable components.  */
     for (comp = derived->components; comp; comp = comp->next)
@@ -1653,7 +1594,7 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
 
   /* If there is no new finalizer and no new allocatable, return with
      an expr to the ancestor's one.  */
-  if (!finalizable_comp
+  if (!expr_null_wrapper && !finalizable_comp
       && (!derived->f2k_derived || !derived->f2k_derived->finalizers))
     {
       gcc_assert (ancestor_wrapper && ancestor_wrapper->ref == NULL
@@ -1677,7 +1618,8 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
   /* Set up the namespace.  */
   sub_ns = gfc_get_namespace (ns, 0);
   sub_ns->sibling = ns->contained;
-  ns->contained = sub_ns;
+  if (!expr_null_wrapper)
+    ns->contained = sub_ns;
   sub_ns->resolved = 1;
 
   /* Set up the procedure symbol.  */
@@ -1693,7 +1635,7 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
   final->ts.kind = 4;
   final->attr.artificial = 1;
   final->attr.always_explicit = 1;
-  final->attr.if_source = IFSRC_DECL;
+  final->attr.if_source = expr_null_wrapper ? IFSRC_IFBODY : IFSRC_DECL;
   if (ns->proc_name->attr.flavor == FL_MODULE)
     final->module = ns->proc_name->name;
   gfc_set_sym_referenced (final);
@@ -1742,6 +1684,15 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
   final->formal->next->next = gfc_get_formal_arglist ();
   final->formal->next->next->sym = fini_coarray;
   gfc_commit_symbol (fini_coarray);
+
+  /* Return with a NULL() expression but with an interface which has
+     the formal arguments.  */
+  if (expr_null_wrapper)
+    {
+      vtab_final->initializer = gfc_get_null_expr (NULL);
+      vtab_final->ts.interface = final;
+      return;
+    }
 
   /* Local variables.  */
 
@@ -2291,9 +2242,6 @@ gfc_find_derived_vtab (gfc_symbol *derived)
     derived = gfc_get_derived_super_type (derived);
 
   if (!derived)
-    return NULL;
-
-  if (!derived->name)
     return NULL;
 
   /* Find the gsymbol for the module of use associated derived types.  */
@@ -2916,9 +2864,7 @@ gfc_find_vtab (gfc_typespec *ts)
     case BT_DERIVED:
       return gfc_find_derived_vtab (ts->u.derived);
     case BT_CLASS:
-      if (ts->u.derived->attr.is_class
-	  && ts->u.derived->components
-	  && ts->u.derived->components->ts.u.derived)
+      if (ts->u.derived->components && ts->u.derived->components->ts.u.derived)
 	return gfc_find_derived_vtab (ts->u.derived->components->ts.u.derived);
       else
 	return NULL;

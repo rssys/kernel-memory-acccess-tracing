@@ -1,5 +1,5 @@
 /* Generic routines for manipulating SSA_NAME expressions
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -31,7 +31,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa.h"
 #include "cfgloop.h"
 #include "tree-scalar-evolution.h"
-#include "value-query.h"
 
 /* Rewriting a function into SSA form can create a huge number of SSA_NAMEs,
    many of which may be thrown away shortly after their creation if jumps
@@ -78,10 +77,10 @@ unsigned int ssa_name_nodes_created;
 void
 init_ssanames (struct function *fn, int size)
 {
-  if (!size)
-    vec_alloc (SSANAMES (fn), 50);
-  else
-    vec_safe_reserve (SSANAMES (fn), size, true);
+  if (size < 50)
+    size = 50;
+
+  vec_alloc (SSANAMES (fn), size);
 
   /* Version 0 is special, so reserve the first slot in the table.  Though
      currently unused, we may use version 0 in alias analysis as part of
@@ -103,14 +102,6 @@ init_ssanames (struct function *fn, int size)
 void
 fini_ssanames (struct function *fn)
 {
-  unsigned i;
-  tree name;
-  /* Some SSA names leak into global tree data structures so we can't simply
-     ggc_free them.  But make sure to clear references to stmts since we now
-     ggc_free the CFG itself.  */
-  FOR_EACH_VEC_SAFE_ELT (SSANAMES (fn), i, name)
-    if (name)
-      SSA_NAME_DEF_STMT (name) = NULL;
   vec_free (SSANAMES (fn));
   vec_free (FREE_SSANAMES (fn));
   vec_free (FREE_SSANAMES_QUEUE (fn));
@@ -261,19 +252,6 @@ flush_ssaname_freelist (void)
   vec_safe_truncate (FREE_SSANAMES_QUEUE (cfun), 0);
 }
 
-/* Initialize SSA_NAME_IMM_USE_NODE of a SSA NAME.  */
-
-void
-init_ssa_name_imm_use (tree name)
-{
-  use_operand_p imm;
-  imm = &(SSA_NAME_IMM_USE_NODE (name));
-  imm->use = NULL;
-  imm->prev = imm;
-  imm->next = imm;
-  imm->loc.ssa_name = name;
-}
-
 /* Return an SSA_NAME node for variable VAR defined in statement STMT
    in function FN.  STMT may be an empty statement for artificial
    references (e.g., default definitions created when a variable is
@@ -285,6 +263,8 @@ make_ssa_name_fn (struct function *fn, tree var, gimple *stmt,
 		  unsigned int version)
 {
   tree t;
+  use_operand_p imm;
+
   gcc_assert (VAR_P (var)
 	      || TREE_CODE (var) == PARM_DECL
 	      || TREE_CODE (var) == RESULT_DECL
@@ -296,7 +276,7 @@ make_ssa_name_fn (struct function *fn, tree var, gimple *stmt,
       t = make_node (SSA_NAME);
       SSA_NAME_VERSION (t) = version;
       if (version >= SSANAMES (fn)->length ())
-	vec_safe_grow_cleared (SSANAMES (fn), version + 1, true);
+	vec_safe_grow_cleared (SSANAMES (fn), version + 1);
       gcc_assert ((*SSANAMES (fn))[version] == NULL);
       (*SSANAMES (fn))[version] = t;
       ssa_name_nodes_created++;
@@ -338,7 +318,11 @@ make_ssa_name_fn (struct function *fn, tree var, gimple *stmt,
 
   SSA_NAME_IN_FREE_LIST (t) = 0;
   SSA_NAME_IS_DEFAULT_DEF (t) = 0;
-  init_ssa_name_imm_use (t);
+  imm = &(SSA_NAME_IMM_USE_NODE (t));
+  imm->use = NULL;
+  imm->prev = imm;
+  imm->next = imm;
+  imm->loc.ssa_name = t;
 
   return t;
 }
@@ -417,11 +401,54 @@ set_range_info (tree name, enum value_range_kind range_type,
 /* Store range information for NAME from a value_range.  */
 
 void
-set_range_info (tree name, const value_range &vr)
+set_range_info (tree name, const value_range_base &vr)
 {
   wide_int min = wi::to_wide (vr.min ());
   wide_int max = wi::to_wide (vr.max ());
   set_range_info (name, vr.kind (), min, max);
+}
+
+/* Gets range information MIN, MAX and returns enum value_range_kind
+   corresponding to tree ssa_name NAME.  enum value_range_kind returned
+   is used to determine if MIN and MAX are valid values.  */
+
+enum value_range_kind
+get_range_info (const_tree name, wide_int *min, wide_int *max)
+{
+  gcc_assert (!POINTER_TYPE_P (TREE_TYPE (name)));
+  gcc_assert (min && max);
+  range_info_def *ri = SSA_NAME_RANGE_INFO (name);
+
+  /* Return VR_VARYING for SSA_NAMEs with NULL RANGE_INFO or SSA_NAMEs
+     with integral types width > 2 * HOST_BITS_PER_WIDE_INT precision.  */
+  if (!ri || (GET_MODE_PRECISION (SCALAR_INT_TYPE_MODE (TREE_TYPE (name)))
+	      > 2 * HOST_BITS_PER_WIDE_INT))
+    return VR_VARYING;
+
+  *min = ri->get_min ();
+  *max = ri->get_max ();
+  return SSA_NAME_RANGE_TYPE (name);
+}
+
+/* Gets range information corresponding to ssa_name NAME and stores it
+   in a value_range VR.  Returns the value_range_kind.  */
+
+enum value_range_kind
+get_range_info (const_tree name, value_range_base &vr)
+{
+  tree min, max;
+  wide_int wmin, wmax;
+  enum value_range_kind kind = get_range_info (name, &wmin, &wmax);
+
+  if (kind == VR_VARYING || kind == VR_UNDEFINED)
+    min = max = NULL;
+  else
+    {
+      min = wide_int_to_tree (TREE_TYPE (name), wmin);
+      max = wide_int_to_tree (TREE_TYPE (name), wmax);
+    }
+  vr.set (kind, min, max);
+  return kind;
 }
 
 /* Set nonnull attribute to pointer NAME.  */
@@ -432,6 +459,25 @@ set_ptr_nonnull (tree name)
   gcc_assert (POINTER_TYPE_P (TREE_TYPE (name)));
   struct ptr_info_def *pi = get_ptr_info (name);
   pi->pt.null = 0;
+}
+
+/* Return nonnull attribute of pointer NAME.  */
+bool
+get_ptr_nonnull (const_tree name)
+{
+  gcc_assert (POINTER_TYPE_P (TREE_TYPE (name)));
+  struct ptr_info_def *pi = SSA_NAME_PTR_INFO (name);
+  if (pi == NULL)
+    return false;
+  /* TODO Now pt->null is conservatively set to true in PTA
+     analysis. vrp is the only pass (including ipa-vrp)
+     that clears pt.null via set_ptr_nonull when it knows
+     for sure. PTA will preserves the pt.null value set by VRP.
+
+     When PTA analysis is improved, pt.anything, pt.nonlocal
+     and pt.escaped may also has to be considered before
+     deciding that pointer cannot point to NULL.  */
+  return !pi->pt.null;
 }
 
 /* Change non-zero bits bitmask of NAME.  */
@@ -485,7 +531,7 @@ get_nonzero_bits (const_tree name)
 
    This can be because it is a boolean type, any unsigned integral
    type with a single bit of precision, or has known range of [0..1]
-   via range analysis.  */
+   via VRP analysis.  */
 
 bool
 ssa_name_has_boolean_range (tree op)
@@ -503,20 +549,12 @@ ssa_name_has_boolean_range (tree op)
     return true;
 
   /* An integral type with more precision, but the object
-     only takes on values [0..1] as determined by range
+     only takes on values [0..1] as determined by VRP
      analysis.  */
   if (INTEGRAL_TYPE_P (TREE_TYPE (op))
-      && (TYPE_PRECISION (TREE_TYPE (op)) > 1))
-    {
-      int_range<2> onezero (build_zero_cst (TREE_TYPE (op)),
-			    build_one_cst (TREE_TYPE (op)));
-      int_range<2> r;
-      if (get_range_query (cfun)->range_of_expr (r, op) && r == onezero)
-	return true;
-
-      if (wi::eq_p (get_nonzero_bits (op), 1))
-	return true;
-    }
+      && (TYPE_PRECISION (TREE_TYPE (op)) > 1)
+      && wi::eq_p (get_nonzero_bits (op), 1))
+    return true;
 
   return false;
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2006-2021 Free Software Foundation, Inc.
+// Copyright (C) 2006-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,15 +19,13 @@
 
 #include <deque>
 #include <testsuite_hooks.h>
-#include <testsuite_allocator.h>
 
 // libstdc++/29134
 void test01()
 {
   std::deque<int> d;
 
-  std::allocator<int> a = d.get_allocator();
-  VERIFY( d.max_size() == __gnu_test::max_size(a) );
+  VERIFY( d.max_size() == d.get_allocator().max_size() );
 }
 
 int main()

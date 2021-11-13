@@ -9,14 +9,13 @@
  */
 module core.sys.windows.rapi;
 version (Windows):
-@system:
 
 /* Comment from MinGW
    NOTE: This strictly does not belong in the Win32 API since it's
    really part of Platform SDK.
  */
 
-import core.sys.windows.winbase, core.sys.windows.windef;
+private import core.sys.windows.winbase, core.sys.windows.windef;
 
 extern (Windows):
 

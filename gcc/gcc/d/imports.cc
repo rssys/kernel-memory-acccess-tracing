@@ -1,5 +1,5 @@
 /* imports.cc -- Build imported modules/declarations.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -131,11 +131,11 @@ public:
 	if (type != NULL)
 	  {
 	    if (type->ty == Tenum)
-	      dsym = type->isTypeEnum ()->sym;
+	      dsym = ((TypeEnum *) type)->sym;
 	    else if (type->ty == Tstruct)
-	      dsym = type->isTypeStruct ()->sym;
+	      dsym = ((TypeStruct *) type)->sym;
 	    else if (type->ty == Tclass)
-	      dsym = type->isTypeClass ()->sym;
+	      dsym = ((TypeClass *) type)->sym;
 	  }
       }
 
@@ -202,7 +202,7 @@ build_import_decl (Dsymbol *d)
       input_location = saved_location;
     }
 
-  /* Not all visitors set `isym'.  */
+  /* Not all visitors set 'isym'.  */
   return d->isym ? d->isym : NULL_TREE;
 }
 

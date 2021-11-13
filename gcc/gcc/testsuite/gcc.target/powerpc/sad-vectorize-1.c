@@ -1,5 +1,6 @@
-/* { dg-do compile } */
+/* { dg-do compile { target { powerpc*-*-* } } } */
 /* { dg-require-effective-target powerpc_p9vector_ok } */
+/* { dg-skip-if "" { powerpc*-*-aix* } } */
 /* { dg-options "-O3 -mdejagnu-cpu=power9" } */
 
 /* Verify that we vectorize this SAD loop using vabsdub. */

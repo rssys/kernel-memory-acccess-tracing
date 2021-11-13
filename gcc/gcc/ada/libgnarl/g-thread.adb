@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                    Copyright (C) 1998-2021, AdaCore                      --
+--                    Copyright (C) 1998-2019, AdaCore                      --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -168,14 +168,9 @@ package body GNAT.Threads is
    ----------------
 
    procedure Get_Thread (Id : Address; Thread : Address) is
+      Thr : constant Thread_Id_Ptr := To_Thread (Thread);
    begin
-      To_Thread (Thread).all :=
-        Task_Primitives.Operations.Get_Thread_Id (To_Id (Id));
-   end Get_Thread;
-
-   procedure Get_Thread (Id : Task_Id; Thread : Address) is
-   begin
-      Get_Thread (To_Addr (Id), Thread);
+      Thr.all := Task_Primitives.Operations.Get_Thread_Id (To_Id (Id));
    end Get_Thread;
 
    ----------------------

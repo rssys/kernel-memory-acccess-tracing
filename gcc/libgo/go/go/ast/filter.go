@@ -474,9 +474,7 @@ func MergePackageFiles(pkg *Package, mode MergeMode) *File {
 			}
 		}
 	} else {
-		// Iterate over filenames for deterministic order.
-		for _, filename := range filenames {
-			f := pkg.Files[filename]
+		for _, f := range pkg.Files {
 			imports = append(imports, f.Imports...)
 		}
 	}
@@ -486,8 +484,7 @@ func MergePackageFiles(pkg *Package, mode MergeMode) *File {
 	if mode&FilterUnassociatedComments == 0 {
 		comments = make([]*CommentGroup, ncomments)
 		i := 0
-		for _, filename := range filenames {
-			f := pkg.Files[filename]
+		for _, f := range pkg.Files {
 			i += copy(comments[i:], f.Comments)
 		}
 	}

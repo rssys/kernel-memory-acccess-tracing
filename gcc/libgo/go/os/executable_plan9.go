@@ -2,18 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build plan9
 // +build plan9
 
 package os
 
-import (
-	"internal/itoa"
-	"syscall"
-)
+import "syscall"
 
 func executable() (string, error) {
-	fn := "/proc/" + itoa.Itoa(Getpid()) + "/text"
+	fn := "/proc/" + itoa(Getpid()) + "/text"
 	f, err := Open(fn)
 	if err != nil {
 		return "", err

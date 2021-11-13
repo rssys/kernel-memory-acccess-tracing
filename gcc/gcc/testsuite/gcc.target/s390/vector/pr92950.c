@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-O3 -mzarch -march=z13 --save-temps" } */
+/* { dg-options "-O3 -mzarch -march=z13" } */
 
 struct a {
   int b;

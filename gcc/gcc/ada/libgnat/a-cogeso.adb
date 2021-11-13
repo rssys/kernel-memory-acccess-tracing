@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---            Copyright (C) 2011-2021, Free Software Foundation, Inc.       --
+--            Copyright (C) 2011-2019, Free Software Foundation, Inc.       --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,8 +29,10 @@
 
 --  This algorithm was adapted from GNAT.Heap_Sort (see g-heasor.ad[sb])
 
+with System;
+
 procedure Ada.Containers.Generic_Sort (First, Last : Index_Type'Base) is
-   subtype T is Long_Long_Integer;
+   type T is range System.Min_Int .. System.Max_Int;
 
    function To_Index (J : T) return Index_Type;
    pragma Inline (To_Index);

@@ -72,7 +72,7 @@ func (p *Pipeline) EndResponse(id uint) {
 type sequencer struct {
 	mu   sync.Mutex
 	id   uint
-	wait map[uint]chan struct{}
+	wait map[uint]chan uint
 }
 
 // Start waits until it is time for the event numbered id to begin.
@@ -84,9 +84,9 @@ func (s *sequencer) Start(id uint) {
 		s.mu.Unlock()
 		return
 	}
-	c := make(chan struct{})
+	c := make(chan uint)
 	if s.wait == nil {
-		s.wait = make(map[uint]chan struct{})
+		s.wait = make(map[uint]chan uint)
 	}
 	s.wait[id] = c
 	s.mu.Unlock()
@@ -99,13 +99,12 @@ func (s *sequencer) Start(id uint) {
 func (s *sequencer) End(id uint) {
 	s.mu.Lock()
 	if s.id != id {
-		s.mu.Unlock()
 		panic("out of sync")
 	}
 	id++
 	s.id = id
 	if s.wait == nil {
-		s.wait = make(map[uint]chan struct{})
+		s.wait = make(map[uint]chan uint)
 	}
 	c, ok := s.wait[id]
 	if ok {
@@ -113,6 +112,6 @@ func (s *sequencer) End(id uint) {
 	}
 	s.mu.Unlock()
 	if ok {
-		close(c)
+		c <- 1
 	}
 }

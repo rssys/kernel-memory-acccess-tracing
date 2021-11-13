@@ -1,5 +1,5 @@
 /* Code translation -- generate GCC trees from gfc_code.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Paul Brook
 
 This file is part of GCC.
@@ -45,19 +45,8 @@ along with GCC; see the file COPYING3.  If not see
 static gfc_file *gfc_current_backend_file;
 
 const char gfc_msg_fault[] = N_("Array reference out of bounds");
+const char gfc_msg_wrong_return[] = N_("Incorrect function return value");
 
-
-/* Return a location_t suitable for 'tree' for a gfortran locus.  The way the
-   parser works in gfortran, loc->lb->location contains only the line number
-   and LOCATION_COLUMN is 0; hence, the column has to be added when generating
-   locations for 'tree'.  Cf. error.c's gfc_format_decoder.  */
-
-location_t
-gfc_get_location (locus *loc)
-{
-  return linemap_position_for_loc_and_offset (line_table, loc->lb->location,
-					      loc->nextc - loc->lb->line);
-}
 
 /* Advance along TREE_CHAIN n times.  */
 
@@ -72,48 +61,6 @@ gfc_advance_chain (tree t, int n)
   return t;
 }
 
-static int num_var;
-
-#define MAX_PREFIX_LEN 20
-
-static tree
-create_var_debug_raw (tree type, const char *prefix)
-{
-  /* Space for prefix + "_" + 10-digit-number + \0.  */
-  char name_buf[MAX_PREFIX_LEN + 1 + 10 + 1];
-  tree t;
-  int i;
-
-  if (prefix == NULL)
-    prefix = "gfc";
-  else
-    gcc_assert (strlen (prefix) <= MAX_PREFIX_LEN);
-
-  for (i = 0; prefix[i] != 0; i++)
-    name_buf[i] = gfc_wide_toupper (prefix[i]);
-
-  snprintf (name_buf + i, sizeof (name_buf) - i, "_%d", num_var++);
-
-  t = build_decl (input_location, VAR_DECL, get_identifier (name_buf), type);
-
-  /* Not setting this causes some regressions.  */
-  DECL_ARTIFICIAL (t) = 1;
-
-  /* We want debug info for it.  */
-  DECL_IGNORED_P (t) = 0;
-  /* It should not be nameless.  */
-  DECL_NAMELESS (t) = 0;
-
-  /* Make the variable writable.  */
-  TREE_READONLY (t) = 0;
-
-  DECL_EXTERNAL (t) = 0;
-  TREE_STATIC (t) = 0;
-  TREE_USED (t) = 1;
-
-  return t;
-}
-
 /* Creates a variable declaration with a given TYPE.  */
 
 tree
@@ -121,14 +68,11 @@ gfc_create_var_np (tree type, const char *prefix)
 {
   tree t;
 
-  if (flag_debug_aux_vars)
-    return create_var_debug_raw (type, prefix);
-
   t = create_tmp_var_raw (type, prefix);
 
   /* No warnings for anonymous variables.  */
   if (prefix == NULL)
-    suppress_warning (t);
+    TREE_NO_WARNING (t) = 1;
 
   return t;
 }
@@ -370,16 +314,30 @@ get_array_span (tree type, tree decl)
     return gfc_conv_descriptor_span_get (decl);
 
   /* Return the span for deferred character length array references.  */
-  if (type && TREE_CODE (type) == ARRAY_TYPE && TYPE_STRING_FLAG (type))
+  if (type && TREE_CODE (type) == ARRAY_TYPE
+      && TYPE_MAX_VALUE (TYPE_DOMAIN (type)) != NULL_TREE
+      && (VAR_P (TYPE_MAX_VALUE (TYPE_DOMAIN (type)))
+	  || TREE_CODE (TYPE_MAX_VALUE (TYPE_DOMAIN (type))) == INDIRECT_REF)
+      && (TREE_CODE (TYPE_MAX_VALUE (TYPE_DOMAIN (type))) == INDIRECT_REF
+	  || TREE_CODE (decl) == FUNCTION_DECL
+	  || DECL_CONTEXT (TYPE_MAX_VALUE (TYPE_DOMAIN (type)))
+					== DECL_CONTEXT (decl)))
     {
-      if (TREE_CODE (decl) == PARM_DECL)
-	decl = build_fold_indirect_ref_loc (input_location, decl);
+      span = fold_convert (gfc_array_index_type,
+			   TYPE_MAX_VALUE (TYPE_DOMAIN (type)));
+      span = fold_build2 (MULT_EXPR, gfc_array_index_type,
+			  fold_convert (gfc_array_index_type,
+					TYPE_SIZE_UNIT (TREE_TYPE (type))),
+			  span);
+    }
+  else if (type && TREE_CODE (type) == ARRAY_TYPE
+	   && TYPE_MAX_VALUE (TYPE_DOMAIN (type)) != NULL_TREE
+	   && integer_zerop (TYPE_MAX_VALUE (TYPE_DOMAIN (type))))
+    {
       if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
 	span = gfc_conv_descriptor_span_get (decl);
       else
-	span = gfc_get_character_len_in_bytes (type);
-      span = (span && !integer_zerop (span))
-	? (fold_convert (gfc_array_index_type, span)) : (NULL_TREE);
+	span = NULL_TREE;
     }
   /* Likewise for class array or pointer array references.  */
   else if (TREE_CODE (decl) == FIELD_DECL
@@ -407,9 +365,6 @@ get_array_span (tree type, tree decl)
 		return NULL_TREE;
 	    }
 	  span = gfc_class_vtab_size_get (decl);
-	  /* For unlimited polymorphic entities then _len component needs
-	     to be multiplied with the size.  */
-	  span = gfc_resize_class_size_with_len (NULL, decl, span);
 	}
       else if (GFC_DECL_PTR_ARRAY_P (decl))
 	{
@@ -427,31 +382,13 @@ get_array_span (tree type, tree decl)
 }
 
 
-tree
-gfc_build_spanned_array_ref (tree base, tree offset, tree span)
-{
-  tree type;
-  tree tmp;
-  type = TREE_TYPE (TREE_TYPE (base));
-  offset = fold_build2_loc (input_location, MULT_EXPR,
-			    gfc_array_index_type,
-			    offset, span);
-  tmp = gfc_build_addr_expr (pvoid_type_node, base);
-  tmp = fold_build_pointer_plus_loc (input_location, tmp, offset);
-  tmp = fold_convert (build_pointer_type (type), tmp);
-  if ((TREE_CODE (type) != INTEGER_TYPE && TREE_CODE (type) != ARRAY_TYPE)
-      || !TYPE_STRING_FLAG (type))
-    tmp = build_fold_indirect_ref_loc (input_location, tmp);
-  return tmp;
-}
-
-
 /* Build an ARRAY_REF with its natural type.  */
 
 tree
 gfc_build_array_ref (tree base, tree offset, tree decl, tree vptr)
 {
   tree type = TREE_TYPE (base);
+  tree tmp;
   tree span = NULL_TREE;
 
   if (GFC_ARRAY_TYPE_P (type) && GFC_TYPE_ARRAY_RANK (type) == 0)
@@ -480,21 +417,24 @@ gfc_build_array_ref (tree base, tree offset, tree decl, tree vptr)
   /* If decl or vptr are non-null, pointer arithmetic for the array reference
      is likely. Generate the 'span' for the array reference.  */
   if (vptr)
-    {
-      span = gfc_vptr_size_get (vptr);
-
-      /* Check if this is an unlimited polymorphic object carrying a character
-	 payload. In this case, the 'len' field is non-zero.  */
-      if (decl && GFC_CLASS_TYPE_P (TREE_TYPE (decl)))
-	span = gfc_resize_class_size_with_len (NULL, decl, span);
-    }
+    span = gfc_vptr_size_get (vptr);
   else if (decl)
     span = get_array_span (type, decl);
 
   /* If a non-null span has been generated reference the element with
      pointer arithmetic.  */
   if (span != NULL_TREE)
-    return gfc_build_spanned_array_ref (base, offset, span);
+    {
+      offset = fold_build2_loc (input_location, MULT_EXPR,
+				gfc_array_index_type,
+				offset, span);
+      tmp = gfc_build_addr_expr (pvoid_type_node, base);
+      tmp = fold_build_pointer_plus_loc (input_location, tmp, offset);
+      tmp = fold_convert (build_pointer_type (type), tmp);
+      if (!TYPE_STRING_FLAG (type))
+	tmp = build_fold_indirect_ref_loc (input_location, tmp);
+      return tmp;
+    }
   /* Otherwise use a straightforward array reference.  */
   else
     return build4_loc (input_location, ARRAY_REF, type, base, offset,
@@ -506,7 +446,7 @@ gfc_build_array_ref (tree base, tree offset, tree decl, tree vptr)
    arguments and a locus.  */
 
 static tree
-trans_runtime_error_vararg (tree errorfunc, locus* where, const char* msgid,
+trans_runtime_error_vararg (bool error, locus* where, const char* msgid,
 			    va_list ap)
 {
   stmtblock_t block;
@@ -560,13 +500,18 @@ trans_runtime_error_vararg (tree errorfunc, locus* where, const char* msgid,
   /* Build the function call to runtime_(warning,error)_at; because of the
      variable number of arguments, we can't use build_call_expr_loc dinput_location,
      irectly.  */
-  fntype = TREE_TYPE (errorfunc);
+  if (error)
+    fntype = TREE_TYPE (gfor_fndecl_runtime_error_at);
+  else
+    fntype = TREE_TYPE (gfor_fndecl_runtime_warning_at);
 
-  loc = where ? gfc_get_location (where) : input_location;
+  loc = where ? where->lb->location : input_location;
   tmp = fold_build_call_array_loc (loc, TREE_TYPE (fntype),
 				   fold_build1_loc (loc, ADDR_EXPR,
 					     build_pointer_type (fntype),
-					     errorfunc),
+					     error
+					     ? gfor_fndecl_runtime_error_at
+					     : gfor_fndecl_runtime_warning_at),
 				   nargs + 2, argarray);
   gfc_add_expr_to_block (&block, tmp);
 
@@ -581,10 +526,7 @@ gfc_trans_runtime_error (bool error, locus* where, const char* msgid, ...)
   tree result;
 
   va_start (ap, msgid);
-  result = trans_runtime_error_vararg (error
-				       ? gfor_fndecl_runtime_error_at
-				       : gfor_fndecl_runtime_warning_at,
-				       where, msgid, ap);
+  result = trans_runtime_error_vararg (error, where, msgid, ap);
   va_end (ap);
   return result;
 }
@@ -607,9 +549,9 @@ gfc_trans_runtime_check (bool error, bool once, tree cond, stmtblock_t * pblock,
 
   if (once)
     {
-       tmpvar = gfc_create_var (boolean_type_node, "print_warning");
+       tmpvar = gfc_create_var (logical_type_node, "print_warning");
        TREE_STATIC (tmpvar) = 1;
-       DECL_INITIAL (tmpvar) = boolean_true_node;
+       DECL_INITIAL (tmpvar) = logical_true_node;
        gfc_add_expr_to_block (pblock, tmpvar);
     }
 
@@ -623,14 +565,12 @@ gfc_trans_runtime_check (bool error, bool once, tree cond, stmtblock_t * pblock,
   /* The code to generate the error.  */
   va_start (ap, msgid);
   gfc_add_expr_to_block (&block,
-			 trans_runtime_error_vararg
-			 (error ? gfor_fndecl_runtime_error_at
-			  : gfor_fndecl_runtime_warning_at,
-			  where, msgid, ap));
+			 trans_runtime_error_vararg (error, where,
+						     msgid, ap));
   va_end (ap);
 
   if (once)
-    gfc_add_modify (&block, tmpvar, boolean_false_node);
+    gfc_add_modify (&block, tmpvar, logical_false_node);
 
   body = gfc_finish_block (&block);
 
@@ -641,31 +581,17 @@ gfc_trans_runtime_check (bool error, bool once, tree cond, stmtblock_t * pblock,
   else
     {
       if (once)
-	cond = fold_build2_loc (gfc_get_location (where), TRUTH_AND_EXPR,
-				boolean_type_node, tmpvar,
-				fold_convert (boolean_type_node, cond));
+	cond = fold_build2_loc (where->lb->location, TRUTH_AND_EXPR,
+				long_integer_type_node, tmpvar, cond);
+      else
+	cond = fold_convert (long_integer_type_node, cond);
 
-      tmp = fold_build3_loc (gfc_get_location (where), COND_EXPR, void_type_node,
+      tmp = fold_build3_loc (where->lb->location, COND_EXPR, void_type_node,
 			     cond, body,
-			     build_empty_stmt (gfc_get_location (where)));
+			     build_empty_stmt (where->lb->location));
       gfc_add_expr_to_block (pblock, tmp);
     }
 }
-
-
-static tree
-trans_os_error_at (locus* where, const char* msgid, ...)
-{
-  va_list ap;
-  tree result;
-
-  va_start (ap, msgid);
-  result = trans_runtime_error_vararg (gfor_fndecl_os_error_at,
-				       where, msgid, ap);
-  va_end (ap);
-  return result;
-}
-
 
 
 /* Call malloc to allocate size bytes of memory, with special conditions:
@@ -674,7 +600,7 @@ trans_os_error_at (locus* where, const char* msgid, ...)
 tree
 gfc_call_malloc (stmtblock_t * block, tree type, tree size)
 {
-  tree tmp, malloc_result, null_result, res, malloc_tree;
+  tree tmp, msg, malloc_result, null_result, res, malloc_tree;
   stmtblock_t block2;
 
   /* Create a variable to hold the result.  */
@@ -682,9 +608,6 @@ gfc_call_malloc (stmtblock_t * block, tree type, tree size)
 
   /* Call malloc.  */
   gfc_start_block (&block2);
-
-  if (size == NULL_TREE)
-    size = build_int_cst (size_type_node, 1);
 
   size = fold_convert (size_type_node, size);
   size = fold_build2_loc (input_location, MAX_EXPR, size_type_node, size,
@@ -702,14 +625,13 @@ gfc_call_malloc (stmtblock_t * block, tree type, tree size)
       null_result = fold_build2_loc (input_location, EQ_EXPR,
 				     logical_type_node, res,
 				     build_int_cst (pvoid_type_node, 0));
+      msg = gfc_build_addr_expr (pchar_type_node,
+	      gfc_build_localized_cstring_const ("Memory allocation failed"));
       tmp = fold_build3_loc (input_location, COND_EXPR, void_type_node,
 			     null_result,
-			     trans_os_error_at (NULL,
-						"Error allocating %lu bytes",
-						fold_convert
-						(long_unsigned_type_node,
-						 size)),
-			     build_empty_stmt (input_location));
+	      build_call_expr_loc (input_location,
+				   gfor_fndecl_os_error, 1, msg),
+				   build_empty_stmt (input_location));
       gfc_add_expr_to_block (&block2, tmp);
     }
 
@@ -778,9 +700,11 @@ gfc_allocate_using_malloc (stmtblock_t * block, tree pointer,
     }
   else
     {
-      /* Here, os_error_at already implies PRED_NORETURN.  */
-      tree lusize = fold_convert (long_unsigned_type_node, size);
-      tmp = trans_os_error_at (NULL, "Error allocating %lu bytes", lusize);
+      /* Here, os_error already implies PRED_NORETURN.  */
+      tmp = build_call_expr_loc (input_location, gfor_fndecl_os_error, 1,
+		    gfc_build_addr_expr (pchar_type_node,
+				 gfc_build_localized_cstring_const
+				    ("Allocation would exceed memory limit")));
       gfc_add_expr_to_block (&on_error, tmp);
     }
 
@@ -1102,6 +1026,9 @@ gfc_build_final_call (gfc_typespec ts, gfc_expr *final_wrapper, gfc_expr *var,
 	  gfc_add_block_to_block (&block, &se.pre);
 	  gcc_assert (se.post.head == NULL_TREE);
 	  array = se.expr;
+	  if (TREE_CODE (array) == ADDR_EXPR
+	      && POINTER_TYPE_P (TREE_TYPE (TREE_OPERAND (array, 0))))
+	    tmp = TREE_OPERAND (array, 0);
 
 	  if (!gfc_is_coarray (array_expr))
 	    {
@@ -1739,7 +1666,7 @@ internal_realloc (void *mem, size_t size)
 tree
 gfc_call_realloc (stmtblock_t * block, tree mem, tree size)
 {
-  tree res, nonzero, null_result, tmp;
+  tree msg, res, nonzero, null_result, tmp;
   tree type = TREE_TYPE (mem);
 
   /* Only evaluate the size once.  */
@@ -1759,12 +1686,12 @@ gfc_call_realloc (stmtblock_t * block, tree mem, tree size)
 			     build_int_cst (size_type_node, 0));
   null_result = fold_build2_loc (input_location, TRUTH_AND_EXPR, logical_type_node,
 				 null_result, nonzero);
+  msg = gfc_build_addr_expr (pchar_type_node, gfc_build_localized_cstring_const
+			     ("Allocation would exceed memory limit"));
   tmp = fold_build3_loc (input_location, COND_EXPR, void_type_node,
 			 null_result,
-			 trans_os_error_at (NULL,
-					    "Error reallocating to %lu bytes",
-					    fold_convert
-					    (long_unsigned_type_node, size)),
+			 build_call_expr_loc (input_location,
+					      gfor_fndecl_os_error, 1, msg),
 			 build_empty_stmt (input_location));
   gfc_add_expr_to_block (block, tmp);
 
@@ -1857,7 +1784,7 @@ void
 gfc_set_backend_locus (locus * loc)
 {
   gfc_current_backend_file = loc->lb->file;
-  input_location = gfc_get_location (loc);
+  input_location = loc->lb->location;
 }
 
 
@@ -1867,10 +1794,7 @@ gfc_set_backend_locus (locus * loc)
 void
 gfc_restore_backend_locus (locus * loc)
 {
-  /* This only restores the information captured by gfc_save_backend_locus,
-     intentionally does not use gfc_get_location.  */
-  input_location = loc->lb->location;
-  gfc_current_backend_file = loc->lb->file;
+  gfc_set_backend_locus (loc);
   free (loc->lb);
 }
 
@@ -2032,10 +1956,6 @@ trans_code (gfc_code * code, tree cond)
 	  res = gfc_trans_select_type (code);
 	  break;
 
-	case EXEC_SELECT_RANK:
-	  res = gfc_trans_select_rank (code);
-	  break;
-
 	case EXEC_FLUSH:
 	  res = gfc_trans_flush (code);
 	  break;
@@ -2145,36 +2065,20 @@ trans_code (gfc_code * code, tree cond)
 	case EXEC_OMP_CANCEL:
 	case EXEC_OMP_CANCELLATION_POINT:
 	case EXEC_OMP_CRITICAL:
-	case EXEC_OMP_DEPOBJ:
 	case EXEC_OMP_DISTRIBUTE:
 	case EXEC_OMP_DISTRIBUTE_PARALLEL_DO:
 	case EXEC_OMP_DISTRIBUTE_PARALLEL_DO_SIMD:
 	case EXEC_OMP_DISTRIBUTE_SIMD:
 	case EXEC_OMP_DO:
 	case EXEC_OMP_DO_SIMD:
-	case EXEC_OMP_LOOP:
-	case EXEC_OMP_ERROR:
 	case EXEC_OMP_FLUSH:
-	case EXEC_OMP_MASKED:
-	case EXEC_OMP_MASKED_TASKLOOP:
-	case EXEC_OMP_MASKED_TASKLOOP_SIMD:
 	case EXEC_OMP_MASTER:
-	case EXEC_OMP_MASTER_TASKLOOP:
-	case EXEC_OMP_MASTER_TASKLOOP_SIMD:
 	case EXEC_OMP_ORDERED:
 	case EXEC_OMP_PARALLEL:
 	case EXEC_OMP_PARALLEL_DO:
 	case EXEC_OMP_PARALLEL_DO_SIMD:
-	case EXEC_OMP_PARALLEL_LOOP:
-	case EXEC_OMP_PARALLEL_MASKED:
-	case EXEC_OMP_PARALLEL_MASKED_TASKLOOP:
-	case EXEC_OMP_PARALLEL_MASKED_TASKLOOP_SIMD:
-	case EXEC_OMP_PARALLEL_MASTER:
-	case EXEC_OMP_PARALLEL_MASTER_TASKLOOP:
-	case EXEC_OMP_PARALLEL_MASTER_TASKLOOP_SIMD:
 	case EXEC_OMP_PARALLEL_SECTIONS:
 	case EXEC_OMP_PARALLEL_WORKSHARE:
-	case EXEC_OMP_SCOPE:
 	case EXEC_OMP_SECTIONS:
 	case EXEC_OMP_SIMD:
 	case EXEC_OMP_SINGLE:
@@ -2185,14 +2089,12 @@ trans_code (gfc_code * code, tree cond)
 	case EXEC_OMP_TARGET_PARALLEL:
 	case EXEC_OMP_TARGET_PARALLEL_DO:
 	case EXEC_OMP_TARGET_PARALLEL_DO_SIMD:
-	case EXEC_OMP_TARGET_PARALLEL_LOOP:
 	case EXEC_OMP_TARGET_SIMD:
 	case EXEC_OMP_TARGET_TEAMS:
 	case EXEC_OMP_TARGET_TEAMS_DISTRIBUTE:
 	case EXEC_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO:
 	case EXEC_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
 	case EXEC_OMP_TARGET_TEAMS_DISTRIBUTE_SIMD:
-	case EXEC_OMP_TARGET_TEAMS_LOOP:
 	case EXEC_OMP_TARGET_UPDATE:
 	case EXEC_OMP_TASK:
 	case EXEC_OMP_TASKGROUP:
@@ -2205,7 +2107,6 @@ trans_code (gfc_code * code, tree cond)
 	case EXEC_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO:
 	case EXEC_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
 	case EXEC_OMP_TEAMS_DISTRIBUTE_SIMD:
-	case EXEC_OMP_TEAMS_LOOP:
 	case EXEC_OMP_WORKSHARE:
 	  res = gfc_trans_omp_directive (code);
 	  break;
@@ -2220,8 +2121,6 @@ trans_code (gfc_code * code, tree cond)
 	case EXEC_OACC_KERNELS_LOOP:
 	case EXEC_OACC_PARALLEL:
 	case EXEC_OACC_PARALLEL_LOOP:
-	case EXEC_OACC_SERIAL:
-	case EXEC_OACC_SERIAL_LOOP:
 	case EXEC_OACC_ENTER_DATA:
 	case EXEC_OACC_EXIT_DATA:
 	case EXEC_OACC_ATOMIC:
@@ -2297,7 +2196,7 @@ gfc_generate_module_code (gfc_namespace * ns)
 
   gcc_assert (ns->proc_name->backend_decl == NULL);
   ns->proc_name->backend_decl
-    = build_decl (gfc_get_location (&ns->proc_name->declared_at),
+    = build_decl (ns->proc_name->declared_at.lb->location,
 		  NAMESPACE_DECL, get_identifier (ns->proc_name->name),
 		  void_type_node);
   entry = gfc_find_module (ns->proc_name->name);

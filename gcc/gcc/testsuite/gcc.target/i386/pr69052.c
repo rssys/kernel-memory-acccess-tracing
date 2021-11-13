@@ -1,6 +1,6 @@
-/* { dg-do compile { target ia32 } } */
+/* { dg-do compile } */
 /* { dg-require-effective-target pie } */
-/* { dg-options "-O2 -fPIE -fcommon" } */
+/* { dg-options "-O2 -fPIE -pie" } */
 
 int look_nbits[256], loop_sym[256];
 const int ind[] = {
@@ -51,4 +51,4 @@ void foo (int *l1, int *l2, int *v, int *v1, int *m1, int i)
     }
 }
 
-/* { dg-final { scan-assembler-not "leal\[ \t\]ind@GOTOFF\\(%\[^,\]*\\), %" } } */
+/* { dg-final { scan-assembler-not "leal\[ \t\]ind@GOTOFF\\(%\[^,\]*\\), %" { target ia32 } } } */

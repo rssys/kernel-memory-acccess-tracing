@@ -1,5 +1,5 @@
 /* Print RTL for GCC.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -54,13 +54,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "print-rtl.h"
 #include "rtl-iter.h"
 
-/* Disable warnings about quoting issues in the pp_xxx calls below
-   that (intentionally) don't follow GCC diagnostic conventions.  */
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-diag"
-#endif
-
 /* String printed at beginning of each RTL when it is dumped.
    This string is set to ASM_COMMENT_START when the RTL is dumped in
    the assembly output file.  */
@@ -84,12 +77,10 @@ int flag_dump_unnumbered_links = 0;
 /* Constructor for rtx_writer.  */
 
 rtx_writer::rtx_writer (FILE *outf, int ind, bool simple, bool compact,
-			rtx_reuse_manager *reuse_manager ATTRIBUTE_UNUSED)
+			rtx_reuse_manager *reuse_manager)
 : m_outfile (outf), m_sawclose (0), m_indent (ind),
-  m_in_call_function_usage (false), m_simple (simple), m_compact (compact)
-#ifndef GENERATOR_FILE
-  , m_rtx_reuse_manager (reuse_manager)
-#endif
+  m_in_call_function_usage (false), m_simple (simple), m_compact (compact),
+  m_rtx_reuse_manager (reuse_manager)
 {
 }
 
@@ -185,8 +176,7 @@ void
 print_mem_expr (FILE *outfile, const_tree expr)
 {
   fputc (' ', outfile);
-  print_generic_expr (outfile, CONST_CAST_TREE (expr),
-		      dump_flags | TDF_SLIM);
+  print_generic_expr (outfile, CONST_CAST_TREE (expr), dump_flags);
 }
 #endif
 
@@ -372,10 +362,6 @@ rtx_writer::print_rtx_operand_codes_E_and_V (const_rtx in_rtx, int idx)
       print_rtx_head, m_indent * 2, "");
       m_sawclose = 0;
     }
-  if (GET_CODE (in_rtx) == CONST_VECTOR
-      && !GET_MODE_NUNITS (GET_MODE (in_rtx)).is_constant ()
-      && CONST_VECTOR_DUPLICATE_P (in_rtx))
-    fprintf (m_outfile, " repeat");
   fputs (" [", m_outfile);
   if (XVEC (in_rtx, idx) != NULL)
     {
@@ -383,32 +369,12 @@ rtx_writer::print_rtx_operand_codes_E_and_V (const_rtx in_rtx, int idx)
       if (XVECLEN (in_rtx, idx))
 	m_sawclose = 1;
 
-      int barrier = XVECLEN (in_rtx, idx);
-      if (GET_CODE (in_rtx) == CONST_VECTOR
-	  && !GET_MODE_NUNITS (GET_MODE (in_rtx)).is_constant ())
-	barrier = CONST_VECTOR_NPATTERNS (in_rtx);
-
       for (int j = 0; j < XVECLEN (in_rtx, idx); j++)
 	{
 	  int j1;
 
-	  if (j == barrier)
-	    {
-	      fprintf (m_outfile, "\n%s%*s",
-		       print_rtx_head, m_indent * 2, "");
-	      if (!CONST_VECTOR_STEPPED_P (in_rtx))
-		fprintf (m_outfile, "repeat [");
-	      else if (CONST_VECTOR_NPATTERNS (in_rtx) == 1)
-		fprintf (m_outfile, "stepped [");
-	      else
-		fprintf (m_outfile, "stepped (interleave %d) [",
-			 CONST_VECTOR_NPATTERNS (in_rtx));
-	      m_indent += 2;
-	    }
-
 	  print_rtx (XVECEXP (in_rtx, idx, j));
-	  int limit = MIN (barrier, XVECLEN (in_rtx, idx));
-	  for (j1 = j + 1; j1 < limit; j1++)
+	  for (j1 = j + 1; j1 < XVECLEN (in_rtx, idx); j1++)
 	    if (XVECEXP (in_rtx, idx, j) != XVECEXP (in_rtx, idx, j1))
 	      break;
 
@@ -417,12 +383,6 @@ rtx_writer::print_rtx_operand_codes_E_and_V (const_rtx in_rtx, int idx)
 	      fprintf (m_outfile, " repeated x%i", j1 - j);
 	      j = j1 - 1;
 	    }
-	}
-
-      if (barrier < XVECLEN (in_rtx, idx))
-	{
-	  m_indent -= 2;
-	  fprintf (m_outfile, "\n%s%*s]", print_rtx_head, m_indent * 2, "");
 	}
 
       m_indent -= 2;
@@ -1269,7 +1229,7 @@ print_rtx_insn_vec (FILE *file, const vec<rtx_insn *> &vec)
   unsigned int len = vec.length ();
   for (unsigned int i = 0; i < len; i++)
     {
-      print_rtl_single (file, vec[i]);
+      print_rtl (file, vec[i]);
       if (i < len - 1)
 	fputs (", ", file);
     }
@@ -1291,6 +1251,9 @@ print_rtx_insn_vec (FILE *file, const vec<rtx_insn *> &vec)
 
    It is also possible to obtain a string for a single pattern as a string
    pointer, via str_pattern_slim, but this usage is discouraged.  */
+
+/* For insns we print patterns, and for some patterns we print insns...  */
+static void print_insn_with_notes (pretty_printer *, const rtx_insn *);
 
 /* This recognizes rtx'en classified as expressions.  These are always
    represent some action on values or results of other expression, that
@@ -1715,9 +1678,7 @@ print_value (pretty_printer *pp, const_rtx x, int verbose)
       pp_string (pp, tmp);
       break;
     case CONST_STRING:
-      pp_string (pp, "\"");
-      pretty_print_string (pp, XSTR (x, 0), strlen (XSTR (x, 0)));
-      pp_string (pp, "\"");
+      pp_printf (pp, "\"%s\"", XSTR (x, 0));
       break;
     case SYMBOL_REF:
       pp_printf (pp, "`%s'", XSTR (x, 0));
@@ -1750,6 +1711,7 @@ print_value (pretty_printer *pp, const_rtx x, int verbose)
       pp_wide_integer (pp, SUBREG_BYTE (x));
       break;
     case SCRATCH:
+    case CC0:
     case PC:
       pp_string (pp, GET_RTX_NAME (GET_CODE (x)));
       break;
@@ -1794,6 +1756,7 @@ print_pattern (pretty_printer *pp, const_rtx x, int verbose)
       print_exp (pp, x, verbose);
       break;
     case CLOBBER:
+    case CLOBBER_HIGH:
     case USE:
       pp_printf (pp, "%s ", GET_RTX_NAME (GET_CODE (x)));
       print_value (pp, XEXP (x, 0), verbose);
@@ -1845,7 +1808,7 @@ print_pattern (pretty_printer *pp, const_rtx x, int verbose)
 	    gcc_assert (strlen (print_rtx_head) < sizeof (indented_print_rtx_head) - 4);
 	    snprintf (indented_print_rtx_head,
 		      sizeof (indented_print_rtx_head),
-		      "%s    ", print_rtx_head);
+		      "%s     ", print_rtx_head);
 	    print_rtx_head = indented_print_rtx_head;
 	    for (int i = 0; i < seq->len (); i++)
 	      print_insn_with_notes (pp, seq->insn (i));
@@ -2039,7 +2002,7 @@ print_insn (pretty_printer *pp, const rtx_insn *x, int verbose)
 /* Pretty-print a slim dump of X (an insn) to PP, including any register
    note attached to the instruction.  */
 
-void
+static void
 print_insn_with_notes (pretty_printer *pp, const rtx_insn *x)
 {
   pp_string (pp, print_rtx_head);
@@ -2167,7 +2130,7 @@ extern void debug_bb_slim (basic_block);
 DEBUG_FUNCTION void
 debug_bb_slim (basic_block bb)
 {
-  debug_bb (bb, TDF_SLIM | TDF_BLOCKS);
+  dump_bb (stderr, bb, 0, TDF_SLIM | TDF_BLOCKS);
 }
 
 extern void debug_bb_n_slim (int);
@@ -2178,8 +2141,4 @@ debug_bb_n_slim (int n)
   debug_bb_slim (bb);
 }
 
-#endif
-
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic pop
 #endif

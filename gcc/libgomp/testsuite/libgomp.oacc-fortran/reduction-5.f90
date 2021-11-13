@@ -1,7 +1,5 @@
 ! { dg-do run }
-
-! { dg-additional-options "-Wopenacc-parallelism" } for testing/documenting
-! aspects of that functionality.
+! { dg-additional-options "-w" }
 
 ! subroutine reduction
 
@@ -48,7 +46,6 @@ subroutine redsub_worker(sum, n, c)
   sum = 0
 
   !$acc parallel copyin (n, c) num_workers(4) vector_length (32) copy(sum)
-  ! { dg-warning "region is vector partitioned but does not contain vector partitioned code" "" { target *-*-* } .-1 }
   !$acc loop reduction(+:sum) worker
   do i = 1, n
      sum = sum + c

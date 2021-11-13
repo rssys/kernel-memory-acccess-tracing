@@ -1,5 +1,5 @@
 // Example from P0732
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 template<class T, T p> class X {
   /* ... */

@@ -1,7 +1,8 @@
 /* { dg-do compile } */
 
 typedef char * ptr_t;
-struct __jmp_buf_tag { int mask; };
+struct __jmp_buf_tag   {
+};
 typedef struct __jmp_buf_tag sigjmp_buf[1];
 sigjmp_buf GC_jmp_buf;
 int __sigsetjmp (sigjmp_buf, int);

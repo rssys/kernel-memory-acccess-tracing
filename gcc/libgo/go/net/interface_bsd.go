@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 // +build darwin dragonfly freebsd netbsd openbsd
 
 package net
@@ -10,7 +9,7 @@ package net
 import (
 	"syscall"
 
-	"golang.org/x/net/route"
+	"internal/x/net/route"
 )
 
 // If the ifindex is zero, interfaceTable returns mappings of all

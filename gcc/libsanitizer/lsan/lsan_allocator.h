@@ -1,8 +1,7 @@
 //=-- lsan_allocator.h ----------------------------------------------------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -50,36 +49,30 @@ struct ChunkMetadata {
 };
 
 #if defined(__mips64) || defined(__aarch64__) || defined(__i386__) || \
-    defined(__arm__) || SANITIZER_RISCV64 || defined(__hexagon__)
-template <typename AddressSpaceViewTy>
+    defined(__arm__)
+static const uptr kRegionSizeLog = 20;
+static const uptr kNumRegions = SANITIZER_MMAP_RANGE_SIZE >> kRegionSizeLog;
+typedef TwoLevelByteMap<(kNumRegions >> 12), 1 << 12> ByteMap;
+
 struct AP32 {
   static const uptr kSpaceBeg = 0;
   static const u64 kSpaceSize = SANITIZER_MMAP_RANGE_SIZE;
   static const uptr kMetadataSize = sizeof(ChunkMetadata);
   typedef __sanitizer::CompactSizeClassMap SizeClassMap;
-  static const uptr kRegionSizeLog = 20;
-  using AddressSpaceView = AddressSpaceViewTy;
+  static const uptr kRegionSizeLog = __lsan::kRegionSizeLog;
+  typedef __lsan::ByteMap ByteMap;
   typedef NoOpMapUnmapCallback MapUnmapCallback;
   static const uptr kFlags = 0;
 };
-template <typename AddressSpaceView>
-using PrimaryAllocatorASVT = SizeClassAllocator32<AP32<AddressSpaceView>>;
-using PrimaryAllocator = PrimaryAllocatorASVT<LocalAddressSpaceView>;
-#elif defined(__x86_64__) || defined(__powerpc64__) || defined(__s390x__)
-# if SANITIZER_FUCHSIA
-const uptr kAllocatorSpace = ~(uptr)0;
-const uptr kAllocatorSize  =  0x40000000000ULL;  // 4T.
-# elif defined(__powerpc64__)
+typedef SizeClassAllocator32<AP32> PrimaryAllocator;
+#elif defined(__x86_64__) || defined(__powerpc64__)
+# if defined(__powerpc64__)
 const uptr kAllocatorSpace = 0xa0000000000ULL;
 const uptr kAllocatorSize  = 0x20000000000ULL;  // 2T.
-#elif defined(__s390x__)
-const uptr kAllocatorSpace = 0x40000000000ULL;
-const uptr kAllocatorSize = 0x40000000000ULL;  // 4T.
 # else
 const uptr kAllocatorSpace = 0x600000000000ULL;
 const uptr kAllocatorSize  = 0x40000000000ULL;  // 4T.
 # endif
-template <typename AddressSpaceViewTy>
 struct AP64 {  // Allocator64 parameters. Deliberately using a short name.
   static const uptr kSpaceBeg = kAllocatorSpace;
   static const uptr kSpaceSize = kAllocatorSize;
@@ -87,20 +80,13 @@ struct AP64 {  // Allocator64 parameters. Deliberately using a short name.
   typedef DefaultSizeClassMap SizeClassMap;
   typedef NoOpMapUnmapCallback MapUnmapCallback;
   static const uptr kFlags = 0;
-  using AddressSpaceView = AddressSpaceViewTy;
 };
 
-template <typename AddressSpaceView>
-using PrimaryAllocatorASVT = SizeClassAllocator64<AP64<AddressSpaceView>>;
-using PrimaryAllocator = PrimaryAllocatorASVT<LocalAddressSpaceView>;
+typedef SizeClassAllocator64<AP64> PrimaryAllocator;
 #endif
+typedef SizeClassAllocatorLocalCache<PrimaryAllocator> AllocatorCache;
 
-template <typename AddressSpaceView>
-using AllocatorASVT = CombinedAllocator<PrimaryAllocatorASVT<AddressSpaceView>>;
-using Allocator = AllocatorASVT<LocalAddressSpaceView>;
-using AllocatorCache = Allocator::AllocatorCache;
-
-Allocator::AllocatorCache *GetAllocatorCache();
+AllocatorCache *GetAllocatorCache();
 
 int lsan_posix_memalign(void **memptr, uptr alignment, uptr size,
                         const StackTrace &stack);
@@ -109,8 +95,6 @@ void *lsan_memalign(uptr alignment, uptr size, const StackTrace &stack);
 void *lsan_malloc(uptr size, const StackTrace &stack);
 void lsan_free(void *p);
 void *lsan_realloc(void *p, uptr size, const StackTrace &stack);
-void *lsan_reallocarray(void *p, uptr nmemb, uptr size,
-                        const StackTrace &stack);
 void *lsan_calloc(uptr nmemb, uptr size, const StackTrace &stack);
 void *lsan_valloc(uptr size, const StackTrace &stack);
 void *lsan_pvalloc(uptr size, const StackTrace &stack);

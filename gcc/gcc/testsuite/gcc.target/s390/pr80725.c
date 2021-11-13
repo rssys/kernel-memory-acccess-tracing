@@ -18,7 +18,7 @@ foo (int x, int y)
     while (a < x)
       {
 	if (y)
-	  goto *(void *)d;
+	  goto *d;
 	g = b | b + g;
 	bar (g);
 	c = (char) (long) foo;

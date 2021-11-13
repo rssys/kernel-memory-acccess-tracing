@@ -1,5 +1,5 @@
 /* Implementation of selftests.
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -27,7 +27,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "options.h"
 #include "stringpool.h"
 #include "attribs.h"
-#include "analyzer/analyzer-selftests.h"
 
 /* This function needed to be split out from selftest.c as it references
    tests from the whole source tree, and so is within
@@ -73,13 +72,10 @@ selftest::run_tests ()
   typed_splay_tree_c_tests ();
   unique_ptr_tests_cc_tests ();
   opt_proposer_c_tests ();
-  opts_c_tests ();
   json_cc_tests ();
   cgraph_c_tests ();
   optinfo_emit_json_cc_tests ();
   opt_problem_cc_tests ();
-  ordered_hash_map_tests_cc_tests ();
-  splay_tree_cc_tests ();
 
   /* Mid-level data structures.  */
   input_c_tests ();
@@ -89,21 +85,16 @@ selftest::run_tests ()
   gimple_c_tests ();
   rtl_tests_c_tests ();
   read_rtl_function_c_tests ();
-  digraph_cc_tests ();
-  tristate_cc_tests ();
-  ipa_modref_tree_c_tests ();
 
   /* Higher-level tests, or for components that other selftests don't
      rely on.  */
   diagnostic_show_locus_c_tests ();
   diagnostic_c_tests ();
-  diagnostic_format_json_cc_tests ();
   edit_context_c_tests ();
   fold_const_c_tests ();
   spellcheck_c_tests ();
   spellcheck_tree_c_tests ();
   tree_cfg_c_tests ();
-  tree_diagnostic_path_cc_tests ();
   attribute_c_tests ();
 
   /* This one relies on most of the above.  */
@@ -116,19 +107,15 @@ selftest::run_tests ()
   store_merging_c_tests ();
   predict_c_tests ();
   simplify_rtx_c_tests ();
-  dbgcnt_c_tests ();
 
   /* Run any lang-specific selftests.  */
   lang_hooks.run_lang_selftests ();
-
-  /* Run the analyzer selftests (if enabled).  */
-  ana::selftest::run_analyzer_selftests ();
 
   /* Force a GC at the end of the selftests, to shake out GC-related
      issues.  For example, if any GC-managed items have buggy (or missing)
      finalizers, this last collection will ensure that things that were
      failed to be finalized can be detected by valgrind.  */
-  ggc_collect (GGC_COLLECT_FORCE);
+  forcibly_ggc_collect ();
 
   /* Finished running tests; the test_runner dtor will print a summary.  */
 }

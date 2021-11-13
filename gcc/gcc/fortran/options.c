@@ -1,5 +1,5 @@
 /* Parse and display command line options.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -74,9 +74,6 @@ set_dec_flags (int value)
   SET_BITFLAG (flag_dec_static, value, value);
   SET_BITFLAG (flag_dec_math, value, value);
   SET_BITFLAG (flag_dec_include, value, value);
-  SET_BITFLAG (flag_dec_format_defaults, value, value);
-  SET_BITFLAG (flag_dec_blank_format_item, value, value);
-  SET_BITFLAG (flag_dec_char_conversions, value, value);
 }
 
 /* Finalize DEC flags.  */
@@ -159,7 +156,14 @@ gfc_init_options (unsigned int decoded_options_count,
 			   | GFC_FPE_UNDERFLOW;
   gfc_option.rtcheck = 0;
 
+  /* ??? Wmissing-include-dirs is disabled by default in C/C++ but
+     enabled by default in Fortran.  Ideally, we should express this
+     in .opt, but that is not supported yet.  */
+  if (!global_options_set.x_cpp_warn_missing_include_dirs)
+    global_options.x_cpp_warn_missing_include_dirs = 1;
+
   set_dec_flags (0);
+
   set_default_std_flags ();
 
   /* Initialize cpp-related options.  */
@@ -251,32 +255,16 @@ gfc_post_options (const char **pfilename)
 {
   const char *filename = *pfilename, *canon_source_file = NULL;
   char *source_path;
-  bool verbose_missing_dir_warn;
   int i;
-
-  /* This needs to be after the commandline has been processed.
-     In Fortran, the options is by default enabled, in C/C++
-     by default disabled.
-     If not enabled explicitly by the user, only warn for -I
-     and -J, otherwise warn for all include paths.  */
-  verbose_missing_dir_warn
-    = (OPTION_SET_P (cpp_warn_missing_include_dirs)
-       && global_options.x_cpp_warn_missing_include_dirs);
-  SET_OPTION_IF_UNSET (&global_options, &global_options_set,
-		       cpp_warn_missing_include_dirs, 1);
-  gfc_check_include_dirs (verbose_missing_dir_warn);
 
   /* Finalize DEC flags.  */
   post_dec_flags (flag_dec);
 
   /* Excess precision other than "fast" requires front-end
      support.  */
-  if (flag_excess_precision == EXCESS_PRECISION_STANDARD)
+  if (flag_excess_precision_cmdline == EXCESS_PRECISION_STANDARD)
     sorry ("%<-fexcess-precision=standard%> for Fortran");
-  else if (flag_excess_precision == EXCESS_PRECISION_FLOAT16)
-    sorry ("%<-fexcess-precision=16%> for Fortran");
-
-  flag_excess_precision = EXCESS_PRECISION_FAST;
+  flag_excess_precision_cmdline = EXCESS_PRECISION_FAST;
 
   /* Fortran allows associative math - but we cannot reassociate if
      we want traps or signed zeros. Cf. also flag_protect_parens.  */
@@ -309,7 +297,7 @@ gfc_post_options (const char **pfilename)
     flag_dump_fortran_original = 0;
 
   /* Make -fmax-errors visible to gfortran's diagnostic machinery.  */
-  if (OPTION_SET_P (flag_max_errors))
+  if (global_options_set.x_flag_max_errors)
     gfc_option.max_errors = flag_max_errors;
 
   /* Verify the input file name.  */
@@ -345,13 +333,10 @@ gfc_post_options (const char **pfilename)
       source_path = (char *) alloca (i + 1);
       memcpy (source_path, canon_source_file, i);
       source_path[i] = 0;
-      /* Only warn if the directory is different from the input file as
-	 if that one is not found, already an error is shown.  */
-      bool warn = gfc_option.flag_preprocessed && gfc_source_file != filename;
-      gfc_add_include_path (source_path, true, true, warn, false);
+      gfc_add_include_path (source_path, true, true, true);
     }
   else
-    gfc_add_include_path (".", true, true, false, false);
+    gfc_add_include_path (".", true, true, true);
 
   if (canon_source_file != gfc_source_file)
     free (CONST_CAST (char *, canon_source_file));
@@ -388,7 +373,7 @@ gfc_post_options (const char **pfilename)
 
       /* Enable -Werror=line-truncation when -Werror and -Wno-error have
 	 not been set.  */
-      if (warn_line_truncation && !OPTION_SET_P (warnings_are_errors)
+      if (warn_line_truncation && !global_options_set.x_warnings_are_errors
 	  && (global_dc->classify_diagnostic[OPT_Wline_truncation] ==
 	      DK_UNSPECIFIED))
 	diagnostic_classify_diagnostic (global_dc, OPT_Wline_truncation,
@@ -422,26 +407,23 @@ gfc_post_options (const char **pfilename)
     gfc_warning_now (0, "Flag %<-fno-automatic%> overwrites %<-fmax-stack-var-size=%d%>",
 		     flag_max_stack_var_size);
   else if (!flag_automatic && flag_recursive)
-    gfc_warning_now (OPT_Woverwrite_recursive, "Flag %<-fno-automatic%> "
-		     "overwrites %<-frecursive%>");
-  else if (!flag_automatic && (flag_openmp || flag_openacc))
-    gfc_warning_now (0, "Flag %<-fno-automatic%> overwrites %<-frecursive%> "
-		     "implied by %qs", flag_openmp ? "-fopenmp" : "-fopenacc");
+    gfc_warning_now (0, "Flag %<-fno-automatic%> overwrites %<-frecursive%>");
+  else if (!flag_automatic && flag_openmp)
+    gfc_warning_now (0, "Flag %<-fno-automatic%> overwrites %<-frecursive%> implied by "
+		     "%<-fopenmp%>");
   else if (flag_max_stack_var_size != -2 && flag_recursive)
     gfc_warning_now (0, "Flag %<-frecursive%> overwrites %<-fmax-stack-var-size=%d%>",
 		     flag_max_stack_var_size);
-  else if (flag_max_stack_var_size != -2 && (flag_openmp || flag_openacc))
-    gfc_warning_now (0, "Flag %<-fmax-stack-var-size=%d%> overwrites "
-		     "%<-frecursive%> implied by %qs", flag_max_stack_var_size,
-		     flag_openmp ? "-fopenmp" : "-fopenacc");
+  else if (flag_max_stack_var_size != -2 && flag_openmp)
+    gfc_warning_now (0, "Flag %<-fmax-stack-var-size=%d%> overwrites %<-frecursive%> "
+		     "implied by %<-fopenmp%>", flag_max_stack_var_size);
 
   /* Implement -frecursive as -fmax-stack-var-size=-1.  */
   if (flag_recursive)
     flag_max_stack_var_size = -1;
 
   /* Implied -frecursive; implemented as -fmax-stack-var-size=-1.  */
-  if (flag_max_stack_var_size == -2 && flag_automatic
-      && (flag_openmp || flag_openacc))
+  if (flag_max_stack_var_size == -2 && flag_openmp && flag_automatic)
     {
       flag_recursive = 1;
       flag_max_stack_var_size = -1;
@@ -453,7 +435,7 @@ gfc_post_options (const char **pfilename)
 
   /* Set default.  */
   if (flag_max_stack_var_size == -2)
-    flag_max_stack_var_size = 65536;
+    flag_max_stack_var_size = 32768;
 
   /* Implement -fno-automatic as -fmax-stack-var-size=0.  */
   if (!flag_automatic)
@@ -481,11 +463,6 @@ gfc_post_options (const char **pfilename)
   if (flag_frontend_loop_interchange == -1)
     flag_frontend_loop_interchange = optimize;
 
-  /* Do inline packing by default if optimizing, but not if
-     optimizing for size.  */
-  if (flag_inline_arg_packing == -1)
-    flag_inline_arg_packing = optimize && !optimize_size;
-
   if (flag_max_array_constructor < 65535)
     flag_max_array_constructor = 65535;
 
@@ -499,7 +476,7 @@ gfc_post_options (const char **pfilename)
     gfc_fatal_error ("Maximum subrecord length cannot exceed %d",
 		     MAX_SUBRECORD_LENGTH);
 
-  gfc_cpp_post_options (verbose_missing_dir_warn);
+  gfc_cpp_post_options ();
 
   if (gfc_option.allow_std & GFC_STD_F2008)
     lang_hooks.name = "GNU Fortran2008";
@@ -520,7 +497,7 @@ gfc_handle_module_path_options (const char *arg)
   gfc_option.module_dir = XCNEWVEC (char, strlen (arg) + 2);
   strcpy (gfc_option.module_dir, arg);
 
-  gfc_add_include_path (gfc_option.module_dir, true, false, true, true);
+  gfc_add_include_path (gfc_option.module_dir, true, false, true);
 
   strcat (gfc_option.module_dir, "/");
 }
@@ -601,12 +578,12 @@ gfc_handle_runtime_check_option (const char *arg)
   int result, pos = 0, n;
   static const char * const optname[] = { "all", "bounds", "array-temps",
 					  "recursion", "do", "pointer",
-					  "mem", "bits", NULL };
+					  "mem", NULL };
   static const int optmask[] = { GFC_RTCHECK_ALL, GFC_RTCHECK_BOUNDS,
 				 GFC_RTCHECK_ARRAY_TEMPS,
 				 GFC_RTCHECK_RECURSION, GFC_RTCHECK_DO,
 				 GFC_RTCHECK_POINTER, GFC_RTCHECK_MEM,
-				 GFC_RTCHECK_BITS, 0 };
+				 0 };
  
   while (*arg)
     {
@@ -627,7 +604,7 @@ gfc_handle_runtime_check_option (const char *arg)
 	      result = 1;
 	      break;
 	    }
-	  else if (optname[n] && pos > 3 && startswith (arg, "no-")
+	  else if (optname[n] && pos > 3 && gfc_str_startswith (arg, "no-")
 		   && strncmp (optname[n], arg+3, pos-3) == 0)
 	    {
 	      gfc_option.rtcheck &= ~optmask[n];
@@ -699,7 +676,7 @@ gfc_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
 	 with intrinsic modules.  Do no warn because during testing
 	 without an installed compiler, we would get lots of bogus
 	 warnings for a missing include directory.  */
-      gfc_add_include_path (arg, false, false, false, true);
+      gfc_add_include_path (arg, false, false, false);
 
       gfc_add_intrinsic_modules_path (arg);
       break;
@@ -746,7 +723,7 @@ gfc_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_I:
-      gfc_add_include_path (arg, true, false, true, true);
+      gfc_add_include_path (arg, true, false, true);
       break;
 
     case OPT_J:
@@ -852,8 +829,8 @@ gfc_get_option_string (void)
         case OPT_o:
         case OPT_d:
         case OPT_dumpbase:
-        case OPT_dumpbase_ext:
         case OPT_dumpdir:
+        case OPT_auxbase:
         case OPT_quiet:
         case OPT_version:
         case OPT_fintrinsic_modules_path:
@@ -878,8 +855,8 @@ gfc_get_option_string (void)
         case OPT_o:
         case OPT_d:
         case OPT_dumpbase:
-        case OPT_dumpbase_ext:
         case OPT_dumpdir:
+        case OPT_auxbase:
         case OPT_quiet:
         case OPT_version:
         case OPT_fintrinsic_modules_path:

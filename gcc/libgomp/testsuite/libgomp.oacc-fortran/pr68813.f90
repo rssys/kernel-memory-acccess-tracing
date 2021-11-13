@@ -1,5 +1,3 @@
-! { dg-do run }
-!
 program foo
   implicit none
   integer, parameter :: n = 100

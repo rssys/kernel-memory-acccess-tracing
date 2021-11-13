@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // This program generates bits_tables.go.
@@ -14,8 +13,8 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"io/ioutil"
 	"log"
-	"os"
 )
 
 var header = []byte(`// Copyright 2017 The Go Authors. All rights reserved.
@@ -41,22 +40,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = os.WriteFile("bits_tables.go", out, 0666)
+	err = ioutil.WriteFile("bits_tables.go", out, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func gen(w io.Writer, name string, f func(uint8) uint8) {
-	// Use a const string to allow the compiler to constant-evaluate lookups at constant index.
-	fmt.Fprintf(w, "const %s = \"\"+\n\"", name)
+	fmt.Fprintf(w, "var %s = [256]uint8{", name)
 	for i := 0; i < 256; i++ {
-		fmt.Fprintf(w, "\\x%02x", f(uint8(i)))
-		if i%16 == 15 && i != 255 {
-			fmt.Fprint(w, "\"+\n\"")
+		if i%16 == 0 {
+			fmt.Fprint(w, "\n\t")
+		} else {
+			fmt.Fprint(w, " ")
 		}
+		fmt.Fprintf(w, "%#02x,", f(uint8(i)))
 	}
-	fmt.Fprint(w, "\"\n\n")
+	fmt.Fprint(w, "\n}\n\n")
 }
 
 func ntz8(x uint8) (n uint8) {

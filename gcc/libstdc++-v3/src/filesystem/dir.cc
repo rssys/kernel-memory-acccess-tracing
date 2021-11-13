@@ -1,6 +1,6 @@
 // Class filesystem::directory_entry etc. -*- C++ -*-
 
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -187,35 +187,31 @@ struct fs::recursive_directory_iterator::_Dir_stack : std::stack<_Dir>
 
 fs::recursive_directory_iterator::
 recursive_directory_iterator(const path& p, directory_options options,
-                             error_code* ecptr)
+                             error_code* ec)
 : _M_options(options), _M_pending(true)
 {
+  if (ec)
+    ec->clear();
   if (posix::DIR* dirp = posix::opendir(p.c_str()))
     {
-      if (ecptr)
-	ecptr->clear();
       auto sp = std::make_shared<_Dir_stack>();
       sp->push(_Dir{ dirp, p });
-      if (ecptr ? sp->top().advance(*ecptr) : sp->top().advance())
+      if (sp->top().advance(ec))
 	_M_dirs.swap(sp);
     }
   else
     {
       const int err = errno;
-      if (std::filesystem::is_permission_denied_error(err)
+      if (err == EACCES
 	  && is_set(options, fs::directory_options::skip_permission_denied))
-	{
-	  if (ecptr)
-	    ecptr->clear();
-	  return;
-	}
+	return;
 
-      if (!ecptr)
+      if (!ec)
 	_GLIBCXX_THROW_OR_ABORT(filesystem_error(
 	      "recursive directory iterator cannot open directory", p,
 	      std::error_code(err, std::generic_category())));
 
-      ecptr->assign(err, std::generic_category());
+      ec->assign(err, std::generic_category());
     }
 }
 

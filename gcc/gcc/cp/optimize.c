@@ -1,5 +1,5 @@
 /* Perform optimizations on tree structure.
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2019 Free Software Foundation, Inc.
    Written by Mark Michell (mark@codesourcery.com).
 
 This file is part of GCC.
@@ -58,7 +58,7 @@ update_cloned_parm (tree parm, tree cloned_parm, bool first)
   DECL_SOURCE_LOCATION (cloned_parm) = DECL_SOURCE_LOCATION (parm);
   TREE_TYPE (cloned_parm) = TREE_TYPE (parm);
 
-  DECL_NOT_GIMPLE_REG_P (cloned_parm) = DECL_NOT_GIMPLE_REG_P (parm);
+  DECL_GIMPLE_REG_P (cloned_parm) = DECL_GIMPLE_REG_P (parm);
 }
 
 /* Like copy_decl_no_change, but handle DECL_OMP_PRIVATIZED_MEMBER
@@ -223,6 +223,9 @@ can_alias_cdtor (tree fn)
   /* We can't use an alias if there are virtual bases.  */
   if (CLASSTYPE_VBASECLASSES (DECL_CONTEXT (fn)))
     return false;
+  /* ??? Why not use aliases with -frepo?  */
+  if (flag_use_repository)
+    return false;
   gcc_assert (DECL_MAYBE_IN_CHARGE_CDTOR_P (fn));
   /* Don't use aliases for weak/linkonce definitions unless we can put both
      symbols in the same COMDAT group.  */
@@ -244,6 +247,8 @@ populate_clone_array (tree fn, tree *fns)
   fns[1] = NULL_TREE;
   fns[2] = NULL_TREE;
 
+  /* Look for the complete destructor which may be used to build the
+     delete destructor.  */
   FOR_EACH_CLONE (clone, fn)
     if (DECL_NAME (clone) == complete_dtor_identifier
 	|| DECL_NAME (clone) == complete_ctor_identifier)
@@ -512,7 +517,7 @@ maybe_clone_body (tree fn)
       DECL_DLLIMPORT_P (clone) = DECL_DLLIMPORT_P (fn);
       DECL_ATTRIBUTES (clone) = copy_list (DECL_ATTRIBUTES (fn));
       DECL_DISREGARD_INLINE_LIMITS (clone) = DECL_DISREGARD_INLINE_LIMITS (fn);
-      set_decl_section_name (clone, fn);
+      set_decl_section_name (clone, DECL_SECTION_NAME (fn));
 
       /* Adjust the parameter names and locations.  */
       parm = DECL_ARGUMENTS (fn);

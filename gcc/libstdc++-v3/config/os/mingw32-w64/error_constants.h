@@ -1,6 +1,6 @@
 // Specific definitions for mingw32 platform  -*- C++ -*-
 
-// Copyright (C) 2007-2021 Free Software Foundation, Inc.
+// Copyright (C) 2007-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -49,7 +49,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       argument_out_of_domain = 			EDOM,
       bad_address = 				EFAULT,
       bad_file_descriptor = 			EBADF,
-#ifdef EBADMSG
+#ifdef _GLIBCXX_HAVE_EBADMSG
       bad_message = 				EBADMSG,
 #endif
       broken_pipe = 				EPIPE,
@@ -67,7 +67,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       filename_too_long = 			ENAMETOOLONG,
       function_not_supported = 			ENOSYS,
       host_unreachable = 			EHOSTUNREACH,
-#ifdef EIDRM
+#ifdef _GLIBCXX_HAVE_EIDRM
       identifier_removed = 			EIDRM,
 #endif
       illegal_byte_sequence = 			EILSEQ,
@@ -82,24 +82,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       network_reset = 				ENETRESET,
       network_unreachable = 			ENETUNREACH,
       no_buffer_space = 			ENOBUFS,
-#ifdef ECHILD
+#ifdef _GLIBCXX_HAVE_ECHILD
       no_child_process = 			ECHILD,
 #endif
-#ifdef ENOLINK
+#ifdef _GLIBCXX_HAVE_ENOLINK
       no_link = 				ENOLINK,
 #endif
       no_lock_available = 			ENOLCK,
-#ifdef ENODATA
+#ifdef _GLIBCXX_HAVE_ENODATA
       no_message_available = 			ENODATA,
 #endif
-#ifdef ENOMSG
+#ifdef _GLIBCXX_HAVE_ENOMSG
       no_message = 				ENOMSG,
 #endif
       no_protocol_option = 			ENOPROTOOPT,
-#ifdef ENOSPC
+#ifdef _GLIBCXX_HAVE_ENOSPC
       no_space_on_device = 			ENOSPC,
 #endif
-#ifdef ENOSR
+#ifdef _GLIBCXX_HAVE_ENOSR
       no_stream_resources = 			ENOSR,
 #endif
       no_such_device_or_address = 		ENXIO,
@@ -108,24 +108,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       no_such_process = 			ESRCH,
       not_a_directory = 			ENOTDIR,
       not_a_socket = 				ENOTSOCK,
-#ifdef ENOSTR
+#ifdef _GLIBCXX_HAVE_ENOSTR
       not_a_stream = 				ENOSTR,
 #endif
       not_connected = 				ENOTCONN,
       not_enough_memory = 			ENOMEM,
-#ifdef ENOTSUP
+#ifdef _GLIBCXX_HAVE_ENOTSUP
       not_supported = 				ENOTSUP,
 #endif
       operation_canceled = 			ECANCELED,
       operation_in_progress = 			EINPROGRESS,
-#ifdef EPERM
+#ifdef _GLIBCXX_HAVE_EPERM
       operation_not_permitted = 		EPERM,
 #endif
       operation_not_supported = 		EOPNOTSUPP,
-#ifdef EWOULDBLOCK
+#ifdef _GLIBCXX_HAVE_EWOULDBLOCK
       operation_would_block = 			EWOULDBLOCK,
 #endif
-#ifdef EOWNERDEAD
+#ifdef _GLIBCXX_HAVE_EOWNERDEAD
       owner_dead = 				EOWNERDEAD,
 #endif
       permission_denied = 			EACCES,
@@ -135,23 +135,23 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       resource_deadlock_would_occur = 		EDEADLK,
       resource_unavailable_try_again = 		EAGAIN,
       result_out_of_range = 			ERANGE,
-#ifdef ENOTRECOVERABLE
+#ifdef _GLIBCXX_HAVE_ENOTRECOVERABLE
       state_not_recoverable = 			ENOTRECOVERABLE,
 #endif
-#ifdef ETIME
+#ifdef _GLIBCXX_HAVE_ETIME
       stream_timeout = 				ETIME,
 #endif
-#ifdef ETXTBSY
+#ifdef _GLIBCXX_HAVE_ETXTBSY
       text_file_busy = 				ETXTBSY,
 #endif
-#ifdef ETIMEDOUT
+#ifdef _GLIBCXX_HAVE_ETIMEDOUT
       timed_out = 				ETIMEDOUT,
 #endif
       too_many_files_open_in_system = 		ENFILE,
       too_many_files_open = 			EMFILE,
       too_many_links = 				EMLINK,
       too_many_symbolic_link_levels = 		ELOOP,
-#ifdef EOVERFLOW
+#ifdef _GLIBCXX_HAVE_EOVERFLOW
       value_too_large = 			EOVERFLOW,
 #endif
       wrong_protocol_type = 			EPROTOTYPE

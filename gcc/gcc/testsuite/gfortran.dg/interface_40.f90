@@ -3,6 +3,6 @@
 ! Code contributed by Gerhard Steinmetz
 program p
    class(*) :: x  ! { dg-error " must be dummy, allocatable or pointer" }
-   print *, f(x) ! { dg-error "Explicit interface required" }
+   print *, f(x)
 end
 

@@ -1,7 +1,6 @@
 // PR c++/17042
 // { dg-do assemble }
 /* { dg-require-weak "" } */
-// { dg-require-effective-target cxa_atexit }
 // { dg-options "-fuse-cxa-atexit" }
 
 struct A

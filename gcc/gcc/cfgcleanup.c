@@ -1,5 +1,5 @@
 /* Control flow optimization code for GNU compiler.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -43,6 +43,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "insn-config.h"
 #include "emit-rtl.h"
 #include "cselib.h"
+#include "params.h"
 #include "tree-pass.h"
 #include "cfgloop.h"
 #include "cfgrtl.h"
@@ -53,7 +54,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "dbgcnt.h"
 #include "rtl-iter.h"
 #include "regs.h"
-#include "function-abi.h"
 
 #define FORWARDER_BLOCK_P(BB) ((BB)->flags & BB_FORWARDER_BLOCK)
 
@@ -1230,7 +1230,12 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx_insn *i1, rtx_insn *i2)
 	    }
 	}
 
-      if (insn_callee_abi (i1) != insn_callee_abi (i2))
+      HARD_REG_SET i1_used, i2_used;
+
+      get_call_reg_set_usage (i1, &i1_used, call_used_reg_set);
+      get_call_reg_set_usage (i2, &i2_used, call_used_reg_set);
+
+      if (!hard_reg_set_equal_p (i1_used, i2_used))
         return dir_none;
     }
 
@@ -1264,7 +1269,7 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx_insn *i1, rtx_insn *i2)
 	if (REG_NOTE_KIND (note) == REG_DEAD && STACK_REG_P (XEXP (note, 0)))
 	  SET_HARD_REG_BIT (i2_regset, REGNO (XEXP (note, 0)));
 
-      if (i1_regset != i2_regset)
+      if (!hard_reg_set_equal_p (i1_regset, i2_regset))
 	return dir_none;
     }
 #endif
@@ -1449,6 +1454,12 @@ flow_find_cross_jump (basic_block bb1, basic_block bb2, rtx_insn **f1,
       i2 = PREV_INSN (i2);
     }
 
+  /* Don't allow the insn after a compare to be shared by
+     cross-jumping unless the compare is also shared.  */
+  if (HAVE_cc0 && ninsns && reg_mentioned_p (cc0_rtx, last1)
+      && ! sets_cc0_p (last1))
+    last1 = afterlast1, last2 = afterlast2, last_dir = afterlast_dir, ninsns--;
+
   /* Include preceding notes and labels in the cross-jump.  One,
      this may bring us to the head of the blocks as requested above.
      Two, it keeps line number notes as matched as may be.  */
@@ -1564,6 +1575,12 @@ flow_find_head_matching_sequence (basic_block bb1, basic_block bb2, rtx_insn **f
       i1 = NEXT_INSN (i1);
       i2 = NEXT_INSN (i2);
     }
+
+  /* Don't allow a compare to be shared by cross-jumping unless the insn
+     after the compare is also shared.  */
+  if (HAVE_cc0 && ninsns && reg_mentioned_p (cc0_rtx, last1)
+      && sets_cc0_p (last1))
+    last1 = beforelast1, last2 = beforelast2, ninsns--;
 
   if (ninsns)
     {
@@ -1873,8 +1890,8 @@ outgoing_edges_match (int mode, basic_block bb1, basic_block bb2)
 
   /* Ensure the same EH region.  */
   {
-    rtx n1 = find_reg_note (last1, REG_EH_REGION, 0);
-    rtx n2 = find_reg_note (last2, REG_EH_REGION, 0);
+    rtx n1 = find_reg_note (BB_END (bb1), REG_EH_REGION, 0);
+    rtx n2 = find_reg_note (BB_END (bb2), REG_EH_REGION, 0);
 
     if (!n1 && n2)
       return false;
@@ -2009,7 +2026,7 @@ try_crossjump_to_edge (int mode, edge e1, edge e2,
      of matching instructions or the 'from' block was totally matched
      (such that its predecessors will hopefully be redirected and the
      block removed).  */
-  if ((nmatch < param_min_crossjump_insns)
+  if ((nmatch < PARAM_VALUE (PARAM_MIN_CROSSJUMP_INSNS))
       && (newpos1 != BB_HEAD (src1)))
     return false;
 
@@ -2145,11 +2162,7 @@ try_crossjump_to_edge (int mode, edge e1, edge e2,
   if (NOTE_INSN_BASIC_BLOCK_P (newpos1))
     newpos1 = NEXT_INSN (newpos1);
 
-  /* Skip also prologue and function markers.  */
-  while (DEBUG_INSN_P (newpos1)
-	 || (NOTE_P (newpos1)
-	     && (NOTE_KIND (newpos1) == NOTE_INSN_PROLOGUE_END
-		 || NOTE_KIND (newpos1) == NOTE_INSN_FUNCTION_BEG)))
+  while (DEBUG_INSN_P (newpos1))
     newpos1 = NEXT_INSN (newpos1);
 
   redirect_from = split_block (src1, PREV_INSN (newpos1))->src;
@@ -2206,7 +2219,7 @@ try_crossjump_bb (int mode, basic_block bb)
      a block that falls through into BB, as that adds no branches to the
      program.  We'll try that combination first.  */
   fallthru = NULL;
-  max = param_max_crossjump_edges;
+  max = PARAM_VALUE (PARAM_MAX_CROSSJUMP_EDGES);
 
   if (EDGE_COUNT (bb->preds) > max)
     return false;
@@ -2332,7 +2345,12 @@ try_head_merge_bb (basic_block bb)
 
   cond = get_condition (jump, &move_before, true, false);
   if (cond == NULL_RTX)
-    move_before = jump;
+    {
+      if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, jump))
+	move_before = prev_nonnote_nondebug_insn (jump);
+      else
+	move_before = jump;
+    }
 
   for (ix = 0; ix < nedges; ix++)
     if (EDGE_SUCC (bb, ix)->dest == EXIT_BLOCK_PTR_FOR_FN (cfun))
@@ -2492,7 +2510,12 @@ try_head_merge_bb (basic_block bb)
       jump = BB_END (final_dest_bb);
       cond = get_condition (jump, &move_before, true, false);
       if (cond == NULL_RTX)
-	move_before = jump;
+	{
+	  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, jump))
+	    move_before = prev_nonnote_nondebug_insn (jump);
+	  else
+	    move_before = jump;
+	}
     }
 
   do
@@ -2508,6 +2531,11 @@ try_head_merge_bb (basic_block bb)
 
 	  /* Try again, using a different insertion point.  */
 	  move_before = jump;
+
+	  /* Don't try moving before a cc0 user, as that may invalidate
+	     the cc0.  */
+	  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, jump))
+	    break;
 
 	  continue;
 	}
@@ -2561,6 +2589,11 @@ try_head_merge_bb (basic_block bb)
 
 	  /* For the unmerged insns, try a different insertion point.  */
 	  move_before = jump;
+
+	  /* Don't try moving before a cc0 user, as that may invalidate
+	     the cc0.  */
+	  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, jump))
+	    break;
 
 	  for (ix = 0; ix < nedges; ix++)
 	    currptr[ix] = headptr[ix] = nextptr[ix];
@@ -3027,7 +3060,7 @@ delete_unreachable_blocks (void)
 		delete_basic_block (b);
 	      else
 		{
-		  auto_vec<basic_block> h
+		  vec<basic_block> h
 		    = get_all_dominated_blocks (CDI_DOMINATORS, b);
 
 		  while (h.length ())
@@ -3040,6 +3073,8 @@ delete_unreachable_blocks (void)
 
 		      delete_basic_block (b);
 		    }
+
+		  h.release ();
 		}
 
 	      changed = true;
@@ -3162,10 +3197,7 @@ cleanup_cfg (int mode)
 	      && !delete_trivially_dead_insns (get_insns (), max_reg_num ()))
 	    break;
 	  if ((mode & CLEANUP_CROSSJUMP) && crossjumps_occurred)
-	    {
-	      run_fast_dce ();
-	      mode &= ~CLEANUP_FORCE_FAST_DCE;
-	    }
+	    run_fast_dce ();
 	}
       else
 	break;
@@ -3173,9 +3205,6 @@ cleanup_cfg (int mode)
 
   if (mode & CLEANUP_CROSSJUMP)
     remove_fake_exit_edges ();
-
-  if (mode & CLEANUP_FORCE_FAST_DCE)
-    run_fast_dce ();
 
   /* Don't call delete_dead_jumptables in cfglayout mode, because
      that function assumes that jump tables are in the insns stream.
@@ -3239,8 +3268,7 @@ pass_jump::execute (function *)
   if (dump_file)
     dump_flow_info (dump_file, dump_flags);
   cleanup_cfg ((optimize ? CLEANUP_EXPENSIVE : 0)
-	       | (flag_thread_jumps && flag_expensive_optimizations
-		  ? CLEANUP_THREADING : 0));
+	       | (flag_thread_jumps ? CLEANUP_THREADING : 0));
   return 0;
 }
 
@@ -3275,10 +3303,7 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *)
-  {
-    return flag_thread_jumps && flag_expensive_optimizations;
-  }
+  virtual bool gate (function *) { return flag_thread_jumps; }
   virtual unsigned int execute (function *);
 
 }; // class pass_jump_after_combine

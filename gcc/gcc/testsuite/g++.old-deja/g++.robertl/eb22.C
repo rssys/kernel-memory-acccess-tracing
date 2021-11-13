@@ -11,17 +11,18 @@ public:
         operator int() const {return 2;}
 };
 
-bool operator==(const MyInt& a, const int& b) // { dg-message "operator==" "" { target c++17_down } }
+bool operator==(const MyInt& a, const int& b)   // { dg-message "operator==" } candidate
 {
         return (int)a == b;
 }
 
-bool operator==(const MyInt& a, const MyInt& b) // { dg-message "operator==" "" { target c++17_down } }
+bool operator==(const MyInt& a, const MyInt& b) // { dg-message "operator==" } candidate
 {
         return (int)a == (int)b;
 }
 
 bool f()
 {
-  return 3 == MyInt();	// { dg-error "ambiguous" "err" { target c++17_down } }
+  return 3 == MyInt();                          // { dg-error "ambiguous" "err" } 
+  // { dg-message "operator==" "match candidate text" { target *-*-* } .-1 }
 }

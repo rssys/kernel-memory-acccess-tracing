@@ -1,7 +1,4 @@
 /* Extracted from the sdm module in perl.  */
-
-/* { dg-require-stack-size "12*2+8+1024+8" } */
-
 typedef struct {
 	char *dptr;
 	int dsize;

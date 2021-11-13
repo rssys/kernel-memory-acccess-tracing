@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -765,18 +765,12 @@ package System.Tasking is
    Environment_Task_Level : constant Master_Level := 1;
    Independent_Task_Level : constant Master_Level := 2;
    Library_Task_Level     : constant Master_Level := 3;
-   --  Note that the value of Library_Task_Level is also hard coded in the
-   --  compiler, see Rtsfind.Library_Task_Level. The two should be kept in
-   --  sync.
 
    -------------------
    -- Priority info --
    -------------------
 
-   Unspecified_Priority : constant Integer := -1;
-   --  Indicates that a task has an unspecified priority. This is hardcoded as
-   --  -1 rather than System.Priority'First - 1 as the value needs to be used
-   --  in init.c to specify that the main task has no specified priority.
+   Unspecified_Priority : constant Integer := System.Priority'First - 1;
 
    Priority_Not_Boosted : constant Integer := System.Priority'First - 1;
    --  Definition of Priority actually has to come from the RTS configuration

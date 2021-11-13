@@ -1,5 +1,5 @@
 /* Register to Stack convert for GNU compiler.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -174,7 +174,6 @@
 #include "reload.h"
 #include "tree-pass.h"
 #include "rtl-iter.h"
-#include "function-abi.h"
 
 #ifdef STACK_REGS
 
@@ -319,7 +318,7 @@ stack_regs_mentioned (const_rtx insn)
       /* Allocate some extra size to avoid too many reallocs, but
 	 do not grow too quickly.  */
       max = uid + uid / 20 + 1;
-      stack_regs_mentioned_data.safe_grow_cleared (max, true);
+      stack_regs_mentioned_data.safe_grow_cleared (max);
     }
 
   test = stack_regs_mentioned_data[uid];
@@ -369,7 +368,7 @@ straighten_stack (rtx_insn *insn, stack_ptr regstack)
   if (regstack->top <= 0)
     return;
 
-  temp_stack.reg_set = regstack->reg_set;
+  COPY_HARD_REG_SET (temp_stack.reg_set, regstack->reg_set);
 
   for (top = temp_stack.top = regstack->top; top >= 0; top--)
     temp_stack.reg[top] = FIRST_STACK_REG + temp_stack.top - top;
@@ -485,6 +484,7 @@ check_asm_stack_operands (rtx_insn *insn)
 
   if (which_alternative < 0)
     {
+      malformed_asm = 1;
       /* Avoid further trouble with this insn.  */
       PATTERN (insn) = gen_rtx_USE (VOIDmode, const0_rtx);
       return 0;
@@ -545,8 +545,7 @@ check_asm_stack_operands (rtx_insn *insn)
 	    for (j = 0; j < n_clobbers; j++)
 	      if (REGNO (recog_data.operand[i]) == REGNO (clobber_reg[j]))
 		{
-		  error_for_asm (insn, "output constraint %d cannot be "
-				 "specified together with %qs clobber",
+		  error_for_asm (insn, "output constraint %d cannot be specified together with \"%s\" clobber",
 				 i, reg_names [REGNO (clobber_reg[j])]);
 		  malformed_asm = 1;
 		  break;
@@ -569,7 +568,7 @@ check_asm_stack_operands (rtx_insn *insn)
 
   if (i != LAST_STACK_REG + 1)
     {
-      error_for_asm (insn, "output registers must be grouped at top of stack");
+      error_for_asm (insn, "output regs must be grouped at top of stack");
       malformed_asm = 1;
     }
 
@@ -609,8 +608,7 @@ check_asm_stack_operands (rtx_insn *insn)
   if (i != LAST_STACK_REG + 1)
     {
       error_for_asm (insn,
-		     "implicitly popped registers must be grouped "
-		     "at top of stack");
+		     "implicitly popped regs must be grouped at top of stack");
       malformed_asm = 1;
     }
 
@@ -627,8 +625,7 @@ check_asm_stack_operands (rtx_insn *insn)
   if (i != LAST_STACK_REG + 1)
     {
       error_for_asm (insn,
-		     "explicitly used registers must be grouped "
-		     "at top of stack");
+		     "explicitly used regs must be grouped at top of stack");
       malformed_asm = 1;
     }
 
@@ -1252,7 +1249,7 @@ swap_rtx_condition (rtx_insn *insn)
 {
   rtx pat = PATTERN (insn);
 
-  /* We're looking for a single set to an HImode temporary.  */
+  /* We're looking for a single set to cc0 or an HImode temporary.  */
 
   if (GET_CODE (pat) == SET
       && REG_P (SET_DEST (pat))
@@ -1299,7 +1296,7 @@ swap_rtx_condition (rtx_insn *insn)
 	  || ! dead_or_set_p (insn, dest))
 	return 0;
 
-      /* Now we are prepared to handle this.  */
+      /* Now we are prepared to handle this as a normal cc0 setter.  */
       insn = next_flags_user (insn);
       if (insn == NULL_RTX)
 	return 0;
@@ -1587,7 +1584,9 @@ subst_stack_regs_pat (rtx_insn *insn, stack_ptr regstack, rtx pat)
 	    break;
 
 	  case REG:
-	    gcc_unreachable ();
+	    /* This is a `tstM2' case.  */
+	    gcc_assert (*dest == cc0_rtx);
+	    src1 = src;
 
 	    /* Fall through.  */
 
@@ -1595,7 +1594,8 @@ subst_stack_regs_pat (rtx_insn *insn, stack_ptr regstack, rtx pat)
 	  case SQRT:
 	  case ABS:
 	  case NEG:
-	    /* These insns only operate on the top of the stack.  It's
+	    /* These insns only operate on the top of the stack. DEST might
+	       be cc0_rtx if we're processing a tstM pattern. Also, it's
 	       possible that the tstM case results in a REG_DEAD note on the
 	       source.  */
 
@@ -1815,7 +1815,6 @@ subst_stack_regs_pat (rtx_insn *insn, stack_ptr regstack, rtx pat)
 	      case UNSPEC_FRNDINT:
 	      case UNSPEC_F2XM1:
 
-	      case UNSPEC_FRNDINT_ROUNDEVEN:
 	      case UNSPEC_FRNDINT_FLOOR:
 	      case UNSPEC_FRNDINT_CEIL:
 	      case UNSPEC_FRNDINT_TRUNC:
@@ -2369,18 +2368,6 @@ subst_asm_stack_regs (rtx_insn *insn, stack_ptr regstack)
 	    }
       }
 }
-
-/* Return true if a function call is allowed to alter some or all bits
-   of any stack reg.  */
-static bool
-callee_clobbers_any_stack_reg (const function_abi & callee_abi)
-{
-  for (unsigned regno = FIRST_STACK_REG; regno <= LAST_STACK_REG; regno++)
-    if (callee_abi.clobbers_at_least_part_of_reg_p (regno))
-      return true;
-  return false;
-}
-
 
 /* Substitute stack hard reg numbers for stack virtual registers in
    INSN.  Non-stack register numbers are not changed.  REGSTACK is the
@@ -2395,10 +2382,7 @@ subst_stack_regs (rtx_insn *insn, stack_ptr regstack)
   bool control_flow_insn_deleted = false;
   int i;
 
-  /* If the target of the call doesn't clobber any stack registers,
-     Don't clear the arguments.  */
-  if (CALL_P (insn)
-      && callee_clobbers_any_stack_reg (insn_callee_abi (insn)))
+  if (CALL_P (insn))
     {
       int top = regstack->top;
 
@@ -2656,7 +2640,7 @@ change_stack (rtx_insn *insn, stack_ptr old, stack_ptr new_stack,
       /* By now, the only difference should be the order of the stack,
 	 not their depth or liveliness.  */
 
-      gcc_assert (old->reg_set == new_stack->reg_set);
+      gcc_assert (hard_reg_set_equal_p (old->reg_set, new_stack->reg_set));
       gcc_assert (old->top == new_stack->top);
 
       /* If the stack is not empty (new_stack->top != -1), loop here emitting
@@ -2943,7 +2927,6 @@ compensate_edge (edge e)
       seq = get_insns ();
       end_sequence ();
 
-      set_insn_locations (seq, e->goto_locus);
       insert_insn_on_edge (seq, e);
       return true;
     }
@@ -3171,7 +3154,8 @@ convert_regs_1 (basic_block block)
      asms, we zapped the instruction itself, but that didn't produce the
      same pattern of register kills as before.  */
 
-  gcc_assert (regstack.reg_set == bi->out_reg_set || any_malformed_asm);
+  gcc_assert (hard_reg_set_equal_p (regstack.reg_set, bi->out_reg_set)
+	      || any_malformed_asm);
   bi->stack_out = regstack;
   bi->done = true;
 
@@ -3439,8 +3423,7 @@ static unsigned int
 rest_of_handle_stack_regs (void)
 {
 #ifdef STACK_REGS
-  if (reg_to_stack ())
-    df_insn_rescan_all ();
+  reg_to_stack ();
   regstack_completed = 1;
 #endif
   return 0;

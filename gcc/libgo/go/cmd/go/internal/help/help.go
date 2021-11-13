@@ -17,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"cmd/go/internal/base"
-	"cmd/go/internal/modload"
 )
 
 // Help implements the 'help' command.
@@ -36,10 +35,8 @@ func Help(w io.Writer, args []string) {
 		usage := &base.Command{Long: buf.String()}
 		cmds := []*base.Command{usage}
 		for _, cmd := range base.Go.Commands {
-			// Avoid duplication of the "get" documentation.
-			if cmd.UsageLine == "module-get" && modload.Enabled() {
-				continue
-			} else if cmd.UsageLine == "gopath-get" && !modload.Enabled() {
+			if cmd.UsageLine == "gopath-get" {
+				// Avoid duplication of the "get" documentation.
 				continue
 			}
 			cmds = append(cmds, cmd)
@@ -63,7 +60,7 @@ Args:
 		// helpSuccess is the help command using as many args as possible that would succeed.
 		helpSuccess := "go help"
 		if i > 0 {
-			helpSuccess += " " + strings.Join(args[:i], " ")
+			helpSuccess = " " + strings.Join(args[:i], " ")
 		}
 		fmt.Fprintf(os.Stderr, "go help %s: unknown help topic. Run '%s'.\n", strings.Join(args, " "), helpSuccess)
 		base.SetExitStatus(2) // failed at 'go help cmd'
@@ -93,7 +90,7 @@ Use "go help{{with .LongName}} {{.}}{{end}} <command>" for more information abou
 {{if eq (.UsageLine) "go"}}
 Additional help topics:
 {{range .Commands}}{{if and (not .Runnable) (not .Commands)}}
-	{{.Name | printf "%-15s"}} {{.Short}}{{end}}{{end}}
+	{{.Name | printf "%-11s"}} {{.Short}}{{end}}{{end}}
 
 Use "go help{{with .LongName}} {{.}}{{end}} <topic>" for more information about that topic.
 {{end}}

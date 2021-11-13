@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -45,15 +46,12 @@ func ExampleGet() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	body, err := io.ReadAll(res.Body)
+	robots, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode > 299 {
-		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
-	}
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%s", body)
+	fmt.Printf("%s", robots)
 }
 
 func ExampleFileServer() {
@@ -134,7 +132,7 @@ func ExampleServer_Shutdown() {
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
+		log.Printf("HTTP server ListenAndServe: %v", err)
 	}
 
 	<-idleConnsClosed

@@ -15,11 +15,8 @@ CALC (double *src1, double *src2, double *dst)
 
   for (i = 0; i < SIZE; i++)
     {
-      union U { double d; long long l; } u1, u2;
-      u1.d = src1[i];
-      u2.d = src2[i];
-      u1.l ^= u2.l;
-      dst[i] = u1.d;
+      long long tmp = (*(long long *) &src1[i]) ^ (*(long long *) &src2[i]);
+      dst[i] = *(double *) &tmp;
     }
 }
 

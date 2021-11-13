@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !windows && !plan9 && !js
-// +build !windows,!plan9,!js
+// +build !windows,!nacl,!plan9,!js
 
 package syslog
 
@@ -11,6 +10,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -51,7 +51,12 @@ func testableNetwork(network string) bool {
 	switch network {
 	case "unix", "unixgram":
 		switch runtime.GOOS {
-		case "ios", "android":
+		case "darwin":
+			switch runtime.GOARCH {
+			case "arm", "arm64":
+				return false
+			}
+		case "android":
 			return false
 		}
 	}
@@ -88,8 +93,8 @@ func startServer(n, la string, done chan<- string) (addr string, sock io.Closer,
 	} else {
 		// unix and unixgram: choose an address if none given
 		if la == "" {
-			// use os.CreateTemp to get a name that is unique
-			f, err := os.CreateTemp("", "syslogtest")
+			// use ioutil.TempFile to get a name that is unique
+			f, err := ioutil.TempFile("", "syslogtest")
 			if err != nil {
 				log.Fatal("TempFile: ", err)
 			}
@@ -154,7 +159,7 @@ func TestWithSimulated(t *testing.T) {
 		if err != nil {
 			t.Fatalf("log failed: %v", err)
 		}
-		check(t, msg, <-done, tr)
+		check(t, msg, <-done)
 		s.Close()
 	}
 }
@@ -180,7 +185,7 @@ func TestFlap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("log failed: %v", err)
 	}
-	check(t, msg, <-done, net)
+	check(t, msg, <-done)
 
 	// restart the server
 	_, sock2, srvWG2 := startServer(net, addr, done)
@@ -193,7 +198,7 @@ func TestFlap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("log failed: %v", err)
 	}
-	check(t, msg, <-done, net)
+	check(t, msg, <-done)
 
 	s.Close()
 }
@@ -253,31 +258,16 @@ func TestDial(t *testing.T) {
 	l.Close()
 }
 
-func check(t *testing.T, in, out, transport string) {
-	hostname, err := os.Hostname()
-	if err != nil {
+func check(t *testing.T, in, out string) {
+	tmpl := fmt.Sprintf("<%d>%%s %%s syslog_test[%%d]: %s\n", LOG_USER+LOG_INFO, in)
+	if hostname, err := os.Hostname(); err != nil {
 		t.Error("Error retrieving hostname")
-		return
-	}
-
-	if transport == "unixgram" || transport == "unix" {
-		var month, date, ts string
+	} else {
+		var parsedHostname, timestamp string
 		var pid int
-		tmpl := fmt.Sprintf("<%d>%%s %%s %%s syslog_test[%%d]: %s\n", LOG_USER+LOG_INFO, in)
-		n, err := fmt.Sscanf(out, tmpl, &month, &date, &ts, &pid)
-		if n != 4 || err != nil {
+		if n, err := fmt.Sscanf(out, tmpl, &timestamp, &parsedHostname, &pid); n != 3 || err != nil || hostname != parsedHostname {
 			t.Errorf("Got %q, does not match template %q (%d %s)", out, tmpl, n, err)
 		}
-		return
-	}
-
-	// Non-UNIX domain transports.
-	var parsedHostname, timestamp string
-	var pid int
-	tmpl := fmt.Sprintf("<%d>%%s %%s syslog_test[%%d]: %s\n", LOG_USER+LOG_INFO, in)
-	n, err := fmt.Sscanf(out, tmpl, &timestamp, &parsedHostname, &pid)
-	if n != 3 || err != nil || hostname != parsedHostname {
-		t.Errorf("Got %q, does not match template %q (%d %s)", out, tmpl, n, err)
 	}
 }
 
@@ -366,7 +356,7 @@ func TestConcurrentReconnect(t *testing.T) {
 	}
 
 	// count all the messages arriving
-	count := make(chan int, 1)
+	count := make(chan int)
 	go func() {
 		ct := 0
 		for range done {

@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -83,7 +83,6 @@ public:
     TemplateParameters *parseTemplateParameterList(int flag = 0);
     Dsymbol *parseMixin();
     Objects *parseTemplateArguments();
-    RootObject *parseTypeOrAssignExp(TOK endtoken = TOKreserved);
     Objects *parseTemplateArgumentList();
     Objects *parseTemplateSingleArgument();
     StaticAssert *parseStaticAssert();
@@ -104,7 +103,7 @@ public:
     Dsymbol *parseUnitTest(PrefixAttributes *pAttrs);
     Dsymbol *parseNew(PrefixAttributes *pAttrs);
     Dsymbol *parseDelete(PrefixAttributes *pAttrs);
-    Parameters *parseParameters(VarArg *pvarargs, TemplateParameters **tpl = NULL);
+    Parameters *parseParameters(int *pvarargs, TemplateParameters **tpl = NULL);
     EnumDeclaration *parseEnum();
     Dsymbol *parseAggregate();
     BaseClasses *parseBaseClasses();
@@ -121,9 +120,6 @@ public:
     FuncDeclaration *parseContracts(FuncDeclaration *f);
     void checkDanglingElse(Loc elseloc);
     void checkCstyleTypeSyntax(Loc loc, Type *t, int alt, Identifier *ident);
-    Statement *parseForeach(Loc loc, bool *isRange, bool isDecl);
-    Dsymbol *parseForeachStaticDecl(Loc loc, Dsymbol **pLastDecl);
-    Statement *parseForeachStatic(Loc loc);
     /** endPtr used for documented unittests */
     Statement *parseStatement(int flags, const utf8_t** endPtr = NULL, Loc *pEndloc = NULL);
     Initializer *parseInitializer();

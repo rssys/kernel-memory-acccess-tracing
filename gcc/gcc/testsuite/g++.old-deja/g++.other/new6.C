@@ -5,10 +5,8 @@
 using namespace std;
 extern "C" void *malloc (size_t);
 
-typedef int int32_t __attribute__((mode (__SI__)));
-
-int32_t special;
-int32_t space = 0xdeadbeef;
+int special;
+int space = 0xdeadbeef;
 
 void *operator new (size_t size)
 #if __cplusplus <= 199711L
@@ -23,7 +21,7 @@ void *operator new (size_t size)
 int main ()
 {
   special = 1;
-  int32_t *p = new int32_t();
+  int *p = new int();
   special = 0;
   return *p != 0;
 }

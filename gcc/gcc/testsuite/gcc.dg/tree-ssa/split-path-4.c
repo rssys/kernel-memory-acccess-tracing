@@ -1,7 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fsplit-paths -fdump-tree-split-paths-details -w -fdisable-tree-thread1 -fdisable-tree-thread2" } */
-
-/* Note: Threader causes the infinite loop in val & 1 sooner.  */
+/* { dg-options "-O2 -fsplit-paths -fdump-tree-split-paths-details -w" } */
 
 powi_cost (long n)
 {

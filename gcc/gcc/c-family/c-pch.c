@@ -1,5 +1,5 @@
 /* Precompiled header implementation for the C languages.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -52,7 +52,7 @@ enum {
 
 struct c_pch_validity
 {
-  uint32_t pch_write_symbols;
+  unsigned char debug_info_type;
   signed char match[MATCH_SIZE];
   void (*pch_init) (void);
   size_t target_data_length;
@@ -103,12 +103,12 @@ pch_init (void)
 
   f = fopen (pch_file, "w+b");
   if (f == NULL)
-    fatal_error (input_location, "cannot create precompiled header %s: %m",
+    fatal_error (input_location, "can%'t create precompiled header %s: %m",
 		 pch_file);
   pch_outfile = f;
 
   memset (&v, '\0', sizeof (v));
-  v.pch_write_symbols = write_symbols;
+  v.debug_info_type = write_symbols;
   {
     size_t i;
     for (i = 0; i < MATCH_SIZE; i++)
@@ -124,7 +124,7 @@ pch_init (void)
       || fwrite (executable_checksum, 16, 1, f) != 1
       || fwrite (&v, sizeof (v), 1, f) != 1
       || fwrite (target_validity, v.target_data_length, 1, f) != 1)
-    fatal_error (input_location, "cannot write to %s: %m", pch_file);
+    fatal_error (input_location, "can%'t write to %s: %m", pch_file);
 
   /* Let the debugging format deal with the PCHness.  */
   (*debug_hooks->handle_pch) (0);
@@ -182,7 +182,7 @@ c_common_write_pch (void)
 
   if (fseek (pch_outfile, 0, SEEK_SET) != 0
       || fwrite (get_ident (), IDENT_LENGTH, 1, pch_outfile) != 1)
-    fatal_error (input_location, "cannot write %s: %m", pch_file);
+    fatal_error (input_location, "can%'t write %s: %m", pch_file);
 
   fclose (pch_outfile);
 
@@ -206,16 +206,13 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
   /* Perform a quick test of whether this is a valid
      precompiled header for the current language.  */
 
-  /* C++ modules and PCH don't play together.  */
-  if (flag_modules)
-    return 2;
-
   sizeread = read (fd, ident, IDENT_LENGTH + 16);
   if (sizeread == -1)
-    fatal_error (input_location, "cannot read %s: %m", name);
+    fatal_error (input_location, "can%'t read %s: %m", name);
   else if (sizeread != IDENT_LENGTH + 16)
     {
-      cpp_warning (pfile, CPP_W_INVALID_PCH, "%s: too short to be a PCH file",
+      if (cpp_get_options (pfile)->warn_invalid_pch)
+	cpp_error (pfile, CPP_DL_WARNING, "%s: too short to be a PCH file",
 		   name);
       return 2;
     }
@@ -223,22 +220,27 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
   pch_ident = get_ident();
   if (memcmp (ident, pch_ident, IDENT_LENGTH) != 0)
     {
-	if (memcmp (ident, pch_ident, 5) == 0)
-	  /* It's a PCH, for the right language, but has the wrong version.  */
-	  cpp_warning (pfile, CPP_W_INVALID_PCH,
+      if (cpp_get_options (pfile)->warn_invalid_pch)
+	{
+	  if (memcmp (ident, pch_ident, 5) == 0)
+	    /* It's a PCH, for the right language, but has the wrong version.
+	     */
+	    cpp_error (pfile, CPP_DL_WARNING,
 		       "%s: not compatible with this GCC version", name);
-	else if (memcmp (ident, pch_ident, 4) == 0)
-	  /* It's a PCH for the wrong language.  */
-	  cpp_warning (pfile, CPP_W_INVALID_PCH, "%s: not for %s", name,
+	  else if (memcmp (ident, pch_ident, 4) == 0)
+	    /* It's a PCH for the wrong language.  */
+	    cpp_error (pfile, CPP_DL_WARNING, "%s: not for %s", name,
 		       lang_hooks.name);
-	else
-	  /* Not any kind of PCH.  */
-	  cpp_warning (pfile, CPP_W_INVALID_PCH, "%s: not a PCH file", name);
+	  else
+	    /* Not any kind of PCH.  */
+	    cpp_error (pfile, CPP_DL_WARNING, "%s: not a PCH file", name);
+	}
       return 2;
     }
   if (memcmp (ident + IDENT_LENGTH, executable_checksum, 16) != 0)
     {
-      cpp_warning (pfile, CPP_W_INVALID_PCH,
+      if (cpp_get_options (pfile)->warn_invalid_pch)
+	cpp_error (pfile, CPP_DL_WARNING,
 		   "%s: created by a different GCC executable", name);
       return 2;
     }
@@ -247,21 +249,19 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
      executable, so it ought to be long enough that we can read a
      c_pch_validity structure.  */
   if (read (fd, &v, sizeof (v)) != sizeof (v))
-    fatal_error (input_location, "cannot read %s: %m", name);
+    fatal_error (input_location, "can%'t read %s: %m", name);
 
   /* The allowable debug info combinations are that either the PCH file
      was built with the same as is being used now, or the PCH file was
      built for some kind of debug info but now none is in use.  */
-  if (v.pch_write_symbols != write_symbols
+  if (v.debug_info_type != write_symbols
       && write_symbols != NO_DEBUG)
     {
-      char *created_str = xstrdup (debug_set_names (v.pch_write_symbols));
-      char *used_str = xstrdup (debug_set_names (write_symbols));
-      cpp_warning (pfile, CPP_W_INVALID_PCH,
-		   "%s: created with '%s' debug info, but used with '%s'", name,
-		   created_str, used_str);
-      free (created_str);
-      free (used_str);
+      if (cpp_get_options (pfile)->warn_invalid_pch)
+	cpp_error (pfile, CPP_DL_WARNING,
+		   "%s: created with -g%s, but used with -g%s", name,
+		   debug_type_names[v.debug_info_type],
+		   debug_type_names[write_symbols]);
       return 2;
     }
 
@@ -271,7 +271,8 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
     for (i = 0; i < MATCH_SIZE; i++)
       if (*pch_matching[i].flag_var != v.match[i])
 	{
-	  cpp_warning (pfile, CPP_W_INVALID_PCH,
+	  if (cpp_get_options (pfile)->warn_invalid_pch)
+	    cpp_error (pfile, CPP_DL_WARNING,
 		       "%s: settings for %s do not match", name,
 		       pch_matching[i].flag_name);
 	  return 2;
@@ -286,7 +287,8 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
      check one function.  */
   if (v.pch_init != &pch_init)
     {
-      cpp_warning (pfile, CPP_W_INVALID_PCH,
+      if (cpp_get_options (pfile)->warn_invalid_pch)
+	cpp_error (pfile, CPP_DL_WARNING,
 		   "%s: had text segment at different address", name);
       return 2;
     }
@@ -298,12 +300,13 @@ c_common_valid_pch (cpp_reader *pfile, const char *name, int fd)
 
     if ((size_t) read (fd, this_file_data, v.target_data_length)
 	!= v.target_data_length)
-      fatal_error (input_location, "cannot read %s: %m", name);
+      fatal_error (input_location, "can%'t read %s: %m", name);
     msg = targetm.pch_valid_p (this_file_data, v.target_data_length);
     free (this_file_data);
     if (msg != NULL)
       {
-	cpp_warning (pfile, CPP_W_INVALID_PCH, "%s: %s", name, msg);
+	if (cpp_get_options (pfile)->warn_invalid_pch)
+	  cpp_error (pfile, CPP_DL_WARNING, "%s: %s", name, msg);
 	return 2;
       }
   }
@@ -403,9 +406,9 @@ c_common_pch_pragma (cpp_reader *pfile, const char *name)
 
   if (!cpp_get_options (pfile)->preprocessed)
     {
-      error ("%<pch_preprocess%> pragma should only be used "
+      error ("pch_preprocess pragma should only be used "
 	     "with %<-fpreprocessed%>");
-      inform (input_location, "use %<#include%> instead");
+      inform (input_location, "use #include instead");
       return;
     }
 

@@ -1,5 +1,5 @@
 /* Internals of libgccjit: implementation of gcc_jit_result
-   Copyright (C) 2013-2021 Free Software Foundation, Inc.
+   Copyright (C) 2013-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -27,17 +27,13 @@ along with GCC; see the file COPYING3.  If not see
 #include "jit-result.h"
 #include "jit-tempdir.h"
 
-#ifdef _WIN32
-#include "jit-w32.h"
-#endif
-
 namespace gcc {
 namespace jit {
 
 /* Constructor for gcc::jit::result.  */
 
 result::
-result(logger *logger, handle dso_handle, tempdir *tempdir_) :
+result(logger *logger, void *dso_handle, tempdir *tempdir_) :
   log_user (logger),
   m_dso_handle (dso_handle),
   m_tempdir (tempdir_)
@@ -53,11 +49,8 @@ result::~result()
 {
   JIT_LOG_SCOPE (get_logger ());
 
-#ifdef _WIN32
-  FreeLibrary(m_dso_handle);
-#else
   dlclose (m_dso_handle);
-#endif
+
   /* Responsibility for cleaning up the tempdir (including "fake.so" within
      the filesystem) might have been handed to us by the playback::context,
      so that the cleanup can be delayed (see PR jit/64206).
@@ -79,17 +72,8 @@ get_code (const char *funcname)
   JIT_LOG_SCOPE (get_logger ());
 
   void *code;
-
-#ifdef _WIN32
-  /* Clear any existing error.  */
-  SetLastError(0);
-
-  code = (void *)GetProcAddress(m_dso_handle, funcname);
-  if (GetLastError() != 0)  {
-    print_last_error ();
-  }
-#else
   const char *error;
+
   /* Clear any existing error.  */
   dlerror ();
 
@@ -98,7 +82,6 @@ get_code (const char *funcname)
   if ((error = dlerror()) != NULL)  {
     fprintf(stderr, "%s\n", error);
   }
-#endif
 
   return code;
 }
@@ -116,17 +99,8 @@ get_global (const char *name)
   JIT_LOG_SCOPE (get_logger ());
 
   void *global;
-
-#ifdef _WIN32
-  /* Clear any existing error.  */
-  SetLastError(0);
-
-  global = (void *)GetProcAddress(m_dso_handle, name);
-  if (GetLastError() != 0)  {
-    print_last_error ();
-  }
-#else
   const char *error;
+
   /* Clear any existing error.  */
   dlerror ();
 
@@ -135,7 +109,6 @@ get_global (const char *name)
   if ((error = dlerror()) != NULL)  {
     fprintf(stderr, "%s\n", error);
   }
-#endif
 
   return global;
 }

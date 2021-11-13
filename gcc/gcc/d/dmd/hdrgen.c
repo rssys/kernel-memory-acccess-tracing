@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Dave Fladebo
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -58,7 +58,7 @@ void genhdrfile(Module *m)
     toCBuffer(m, &buf, &hgs);
 
     // Transfer image to file
-    m->hdrfile->setbuffer(buf.slice().ptr, buf.length());
+    m->hdrfile->setbuffer(buf.data, buf.offset);
     buf.extractData();
 
     ensurePathToNameExists(Loc(), m->hdrfile->toChars());
@@ -122,7 +122,7 @@ public:
     void visit(CompileStatement *s)
     {
         buf->writestring("mixin(");
-        argsToBuffer(s->exps);
+        s->exp->accept(this);
         buf->writestring(");");
         if (!hgs->forStmtInit)
             buf->writenl();
@@ -130,7 +130,7 @@ public:
 
     void visit(CompoundStatement *s)
     {
-        for (size_t i = 0; i < s->statements->length; i++)
+        for (size_t i = 0; i < s->statements->dim; i++)
         {
             Statement *sx = (*s->statements)[i];
             if (sx)
@@ -141,7 +141,7 @@ public:
     void visit(CompoundDeclarationStatement *s)
     {
         bool anywritten = false;
-        for (size_t i = 0; i < s->statements->length; i++)
+        for (size_t i = 0; i < s->statements->dim; i++)
         {
             Statement *sx = (*s->statements)[i];
             ExpStatement *ds = sx ? sx->isExpStatement() : NULL;
@@ -167,7 +167,7 @@ public:
         buf->writenl();
         buf->level++;
 
-        for (size_t i = 0; i < s->statements->length; i++)
+        for (size_t i = 0; i < s->statements->dim; i++)
         {
             Statement *sx = (*s->statements)[i];
             if (sx)
@@ -249,11 +249,11 @@ public:
         buf->writenl();
     }
 
-    void foreachWithoutBody(ForeachStatement *s)
+    void visit(ForeachStatement *s)
     {
         buf->writestring(Token::toChars(s->op));
         buf->writestring(" (");
-        for (size_t i = 0; i < s->parameters->length; i++)
+        for (size_t i = 0; i < s->parameters->dim; i++)
         {
             Parameter *p = (*s->parameters)[i];
             if (i)
@@ -269,11 +269,6 @@ public:
         s->aggr->accept(this);
         buf->writeByte(')');
         buf->writenl();
-    }
-
-    void visit(ForeachStatement *s)
-    {
-        foreachWithoutBody(s);
         buf->writeByte('{');
         buf->writenl();
         buf->level++;
@@ -284,7 +279,7 @@ public:
         buf->writenl();
     }
 
-    void foreachRangeWithoutBody(ForeachRangeStatement *s)
+    void visit(ForeachRangeStatement *s)
     {
         buf->writestring(Token::toChars(s->op));
         buf->writestring(" (");
@@ -302,31 +297,12 @@ public:
         buf->writenl();
         buf->writeByte('{');
         buf->writenl();
-    }
-
-    void visit(ForeachRangeStatement *s)
-    {
-        foreachRangeWithoutBody(s);
         buf->level++;
         if (s->_body)
             s->_body->accept(this);
         buf->level--;
         buf->writeByte('}');
         buf->writenl();
-    }
-
-    void visit(StaticForeachStatement *s)
-    {
-        buf->writestring("static ");
-        if (s->sfe->aggrfe)
-        {
-            visit(s->sfe->aggrfe);
-        }
-        else
-        {
-            assert(s->sfe->rangefe);
-            visit(s->sfe->rangefe);
-        }
     }
 
     void visit(IfStatement *s)
@@ -412,7 +388,7 @@ public:
     {
         buf->writestring("pragma (");
         buf->writestring(s->ident->toChars());
-        if (s->args && s->args->length)
+        if (s->args && s->args->dim)
         {
             buf->writestring(", ");
             argsToBuffer(s->args);
@@ -584,7 +560,7 @@ public:
         buf->writenl();
         if (s->_body)
             s->_body->accept(this);
-        for (size_t i = 0; i < s->catches->length; i++)
+        for (size_t i = 0; i < s->catches->dim; i++)
         {
             Catch *c = (*s->catches)[i];
             visit(c);
@@ -618,7 +594,7 @@ public:
         buf->writenl();
     }
 
-    void visit(ScopeGuardStatement *s)
+    void visit(OnScopeStatement *s)
     {
         buf->writestring(Token::toChars(s->tok));
         buf->writeByte(' ');
@@ -686,7 +662,7 @@ public:
 
     void visit(ImportStatement *s)
     {
-        for (size_t i = 0; i < s->imports->length; i++)
+        for (size_t i = 0; i < s->imports->dim; i++)
         {
             Dsymbol *imp = (*s->imports)[i];
             imp->accept(this);
@@ -789,12 +765,6 @@ public:
     {
         //printf("TypeBasic::toCBuffer2(t->mod = %d)\n", t->mod);
         buf->writestring(t->dstring);
-    }
-
-    void visit(TypeTraits *t)
-    {
-        //printf("TypeBasic::toCBuffer2(t.mod = %d)\n", t.mod);
-        t->exp->accept(this);
     }
 
     void visit(TypeVector *t)
@@ -918,7 +888,7 @@ public:
         if (ident)
             buf->writestring(ident);
 
-        parametersToBuffer(t->parameterList.parameters, t->parameterList.varargs);
+        parametersToBuffer(t->parameters, t->varargs);
 
         /* Use postfix style for attributes
          */
@@ -979,7 +949,7 @@ public:
         if (td)
         {
             buf->writeByte('(');
-            for (size_t i = 0; i < td->origParameters->length; i++)
+            for (size_t i = 0; i < td->origParameters->dim; i++)
             {
                 TemplateParameter *p = (*td->origParameters)[i];
                 if (i)
@@ -988,7 +958,7 @@ public:
             }
             buf->writeByte(')');
         }
-        parametersToBuffer(t->parameterList.parameters, t->parameterList.varargs);
+        parametersToBuffer(t->parameters, t->varargs);
 
         t->inuse--;
     }
@@ -1000,7 +970,7 @@ public:
 
     void visitTypeQualifiedHelper(TypeQualified *t)
     {
-        for (size_t i = 0; i < t->idents.length; i++)
+        for (size_t i = 0; i < t->idents.dim; i++)
         {
             RootObject *id = t->idents[i];
 
@@ -1104,18 +1074,6 @@ public:
         buf->writestring("typeof(null)");
     }
 
-    void visit(TypeMixin *t)
-    {
-        buf->writestring("mixin(");
-        argsToBuffer(t->exps);
-        buf->writeByte(')');
-    }
-
-    void visit(TypeNoreturn *)
-    {
-        buf->writestring("noreturn");
-    }
-
     ////////////////////////////////////////////////////////////////////////////
 
     void visit(Dsymbol *s)
@@ -1184,19 +1142,19 @@ public:
         {
             buf->printf("%s = ", imp->aliasId->toChars());
         }
-        if (imp->packages && imp->packages->length)
+        if (imp->packages && imp->packages->dim)
         {
-            for (size_t i = 0; i < imp->packages->length; i++)
+            for (size_t i = 0; i < imp->packages->dim; i++)
             {
                 Identifier *pid = (*imp->packages)[i];
                 buf->printf("%s.", pid->toChars());
             }
         }
         buf->printf("%s", imp->id->toChars());
-        if (imp->names.length)
+        if (imp->names.dim)
         {
             buf->writestring(" : ");
-            for (size_t i = 0; i < imp->names.length; i++)
+            for (size_t i = 0; i < imp->names.dim; i++)
             {
                 if (i)
                     buf->writestring(", ");
@@ -1229,14 +1187,14 @@ public:
             return;
         }
 
-        if (d->decl->length == 0)
+        if (d->decl->dim == 0)
             buf->writestring("{}");
-        else if (hgs->hdrgen && d->decl->length == 1 && (*d->decl)[0]->isUnitTestDeclaration())
+        else if (hgs->hdrgen && d->decl->dim == 1 && (*d->decl)[0]->isUnitTestDeclaration())
         {
             // hack for bugzilla 8081
             buf->writestring("{}");
         }
-        else if (d->decl->length == 1)
+        else if (d->decl->dim == 1)
         {
             ((*d->decl)[0])->accept(this);
             return;
@@ -1247,7 +1205,7 @@ public:
             buf->writeByte('{');
             buf->writenl();
             buf->level++;
-            for (size_t i = 0; i < d->decl->length; i++)
+            for (size_t i = 0; i < d->decl->dim; i++)
             {
                 Dsymbol *de = (*d->decl)[i];
                 de->accept(this);
@@ -1283,6 +1241,7 @@ public:
             case LINKc:             p = "C";                break;
             case LINKcpp:           p = "C++";              break;
             case LINKwindows:       p = "Windows";          break;
+            case LINKpascal:        p = "Pascal";           break;
             case LINKobjc:          p = "Objective-C";      break;
             default:
                 assert(0);
@@ -1337,7 +1296,7 @@ public:
         buf->level++;
         if (d->decl)
         {
-            for (size_t i = 0; i < d->decl->length; i++)
+            for (size_t i = 0; i < d->decl->dim; i++)
             {
                 Dsymbol *de = (*d->decl)[i];
                 de->accept(this);
@@ -1351,7 +1310,7 @@ public:
     void visit(PragmaDeclaration *d)
     {
         buf->printf("pragma (%s", d->ident->toChars());
-        if (d->args && d->args->length)
+        if (d->args && d->args->dim)
         {
             buf->writestring(", ");
             argsToBuffer(d->args);
@@ -1371,7 +1330,7 @@ public:
             buf->level++;
             if (d->decl)
             {
-                for (size_t i = 0; i < d->decl->length; i++)
+                for (size_t i = 0; i < d->decl->dim; i++)
                 {
                     Dsymbol *de = (*d->decl)[i];
                     de->accept(this);
@@ -1387,7 +1346,7 @@ public:
                 buf->writeByte('{');
                 buf->writenl();
                 buf->level++;
-                for (size_t i = 0; i < d->elsedecl->length; i++)
+                for (size_t i = 0; i < d->elsedecl->dim; i++)
                 {
                     Dsymbol *de = (*d->elsedecl)[i];
                     de->accept(this);
@@ -1401,36 +1360,10 @@ public:
         buf->writenl();
     }
 
-    void visit(ForwardingStatement *s)
-    {
-        s->statement->accept(this);
-    }
-
-    void visit(StaticForeachDeclaration *s)
-    {
-        buf->writestring("static ");
-        if (s->sfe->aggrfe)
-        {
-            foreachWithoutBody(s->sfe->aggrfe);
-        }
-        else
-        {
-            assert(s->sfe->rangefe);
-            foreachRangeWithoutBody(s->sfe->rangefe);
-        }
-        buf->writeByte('{');
-        buf->writenl();
-        buf->level++;
-        visit((AttribDeclaration *)s);
-        buf->level--;
-        buf->writeByte('}');
-        buf->writenl();
-    }
-
     void visit(CompileDeclaration *d)
     {
         buf->writestring("mixin(");
-        argsToBuffer(d->exps);
+        d->exp->accept(this);
         buf->writestring(");");
         buf->writenl();
     }
@@ -1466,7 +1399,7 @@ public:
             buf->writeByte('{');
             buf->writenl();
             buf->level++;
-            for (size_t i = 0; i < d->members->length; i++)
+            for (size_t i = 0; i < d->members->dim; i++)
             {
                 Dsymbol *s = (*d->members)[i];
                 s->accept(this);
@@ -1480,7 +1413,7 @@ public:
 
     bool visitEponymousMember(TemplateDeclaration *d)
     {
-        if (!d->members || d->members->length != 1)
+        if (!d->members || d->members->dim != 1)
             return false;
 
         Dsymbol *onemember = (*d->members)[0];
@@ -1518,7 +1451,7 @@ public:
                 buf->writeByte('{');
                 buf->writenl();
                 buf->level++;
-                for (size_t i = 0; i < ad->members->length; i++)
+                for (size_t i = 0; i < ad->members->dim; i++)
                 {
                     Dsymbol *s = (*ad->members)[i];
                     s->accept(this);
@@ -1566,9 +1499,9 @@ public:
     }
     void visitTemplateParameters(TemplateParameters *parameters)
     {
-        if (!parameters || !parameters->length)
+        if (!parameters || !parameters->dim)
             return;
-        for (size_t i = 0; i < parameters->length; i++)
+        for (size_t i = 0; i < parameters->dim; i++)
         {
             TemplateParameter *p = (*parameters)[i];
             if (i)
@@ -1632,7 +1565,7 @@ public:
             return;
         }
 
-        if (ti->tiargs->length == 1)
+        if (ti->tiargs->dim == 1)
         {
             RootObject *oarg = (*ti->tiargs)[0];
             if (Type *t = isType(oarg))
@@ -1642,7 +1575,7 @@ public:
                     t->equals(Type::tdstring) ||
                     (t->mod == 0 &&
                      (t->isTypeBasic() ||
-                      (t->ty == Tident && ((TypeIdentifier *)t)->idents.length == 0))))
+                      (t->ty == Tident && ((TypeIdentifier *)t)->idents.dim == 0))))
                 {
                     buf->writestring(t->toChars());
                     return;
@@ -1663,7 +1596,7 @@ public:
         }
         buf->writeByte('(');
         ti->nest++;
-        for (size_t i = 0; i < ti->tiargs->length; i++)
+        for (size_t i = 0; i < ti->tiargs->dim; i++)
         {
             RootObject *arg = (*ti->tiargs)[i];
             if (i)
@@ -1706,17 +1639,13 @@ public:
         else if (Tuple *v = isTuple(oarg))
         {
             Objects *args = &v->objects;
-            for (size_t i = 0; i < args->length; i++)
+            for (size_t i = 0; i < args->dim; i++)
             {
                 RootObject *arg = (*args)[i];
                 if (i)
                     buf->writestring(", ");
                 objectToBuffer(arg);
             }
-        }
-        else if (Parameter *p = isParameter(oarg))
-        {
-            p->accept(this);
         }
         else if (!oarg)
         {
@@ -1754,7 +1683,7 @@ public:
         buf->writeByte('{');
         buf->writenl();
         buf->level++;
-        for (size_t i = 0; i < d->members->length; i++)
+        for (size_t i = 0; i < d->members->dim; i++)
         {
             EnumMember *em = (*d->members)[i]->isEnumMember();
             if (!em)
@@ -1778,7 +1707,7 @@ public:
         buf->writeByte('{');
         buf->writenl();
         buf->level++;
-        for (size_t i = 0; i < d->members->length; i++)
+        for (size_t i = 0; i < d->members->dim; i++)
         {
             Dsymbol *s = (*d->members)[i];
             s->accept(this);
@@ -1803,7 +1732,7 @@ public:
         buf->writeByte('{');
         buf->writenl();
         buf->level++;
-        for (size_t i = 0; i < d->members->length; i++)
+        for (size_t i = 0; i < d->members->dim; i++)
         {
             Dsymbol *s = (*d->members)[i];
             s->accept(this);
@@ -1828,7 +1757,7 @@ public:
             buf->writeByte('{');
             buf->writenl();
             buf->level++;
-            for (size_t i = 0; i < d->members->length; i++)
+            for (size_t i = 0; i < d->members->dim; i++)
             {
                 Dsymbol *s = (*d->members)[i];
                 s->accept(this);
@@ -1843,11 +1772,11 @@ public:
 
     void visitBaseClasses(ClassDeclaration *d)
     {
-        if (!d || !d->baseclasses->length)
+        if (!d || !d->baseclasses->dim)
             return;
 
         buf->writestring(" : ");
-        for (size_t i = 0; i < d->baseclasses->length; i++)
+        for (size_t i = 0; i < d->baseclasses->dim; i++)
         {
             if (i)
                 buf->writestring(", ");
@@ -1858,8 +1787,6 @@ public:
 
     void visit(AliasDeclaration *d)
     {
-        if (d->storage_class & STClocal)
-            return;
         buf->writestring("alias ");
         if (d->aliassym)
         {
@@ -1891,8 +1818,6 @@ public:
 
     void visit(VarDeclaration *d)
     {
-        if (d->storage_class & STClocal)
-            return;
         visitVarDecl(d, false);
         buf->writeByte(';');
         buf->writenl();
@@ -1966,70 +1891,32 @@ public:
         int saveauto = hgs->autoMember;
         hgs->tpltMember = 0;
         hgs->autoMember = 0;
+
         buf->writenl();
-        bool requireDo = false;
+
         // in{}
-        if (f->frequires)
+        if (f->frequire)
         {
-            for (size_t i = 0; i < f->frequires->length; i++)
-            {
-                Statement *frequire = (*f->frequires)[i];
-                buf->writestring("in");
-                if (ExpStatement *es = frequire->isExpStatement())
-                {
-                    assert(es->exp && es->exp->op == TOKassert);
-                    buf->writestring(" (");
-                    ((AssertExp *)es->exp)->e1->accept(this);
-                    buf->writeByte(')');
-                    buf->writenl();
-                    requireDo = false;
-                }
-                else
-                {
-                    buf->writenl();
-                    frequire->accept(this);
-                    requireDo = true;
-                }
-            }
+            buf->writestring("in");
+            buf->writenl();
+            f->frequire->accept(this);
         }
 
         // out{}
-        if (f->fensures)
+        if (f->fensure)
         {
-            for (size_t i = 0; i < f->fensures->length; i++)
+            buf->writestring("out");
+            if (f->outId)
             {
-                Ensure fensure = (*f->fensures)[i];
-                buf->writestring("out");
-                if (ExpStatement *es = fensure.ensure->isExpStatement())
-                {
-                    assert(es->exp && es->exp->op == TOKassert);
-                    buf->writestring(" (");
-                    if (fensure.id)
-                    {
-                        buf->writestring(fensure.id->toChars());
-                    }
-                    buf->writestring("; ");
-                    ((AssertExp *)es->exp)->e1->accept(this);
-                    buf->writeByte(')');
-                    buf->writenl();
-                    requireDo = false;
-                }
-                else
-                {
-                    if (fensure.id)
-                    {
-                        buf->writeByte('(');
-                        buf->writestring(fensure.id->toChars());
-                        buf->writeByte(')');
-                    }
-                    buf->writenl();
-                    fensure.ensure->accept(this);
-                    requireDo = true;
-                }
+                buf->writeByte('(');
+                buf->writestring(f->outId->toChars());
+                buf->writeByte(')');
             }
+            buf->writenl();
+            f->fensure->accept(this);
         }
 
-        if (requireDo)
+        if (f->frequire || f->fensure)
         {
             buf->writestring("body");
             buf->writenl();
@@ -2065,13 +1952,13 @@ public:
         // Don't print tf->mod, tf->trust, and tf->linkage
         if (!f->inferRetType && tf->next)
             typeToBuffer(tf->next, NULL);
-        parametersToBuffer(tf->parameterList.parameters, tf->parameterList.varargs);
+        parametersToBuffer(tf->parameters, tf->varargs);
 
         CompoundStatement *cs = f->fbody->isCompoundStatement();
         Statement *s1;
         if (f->semanticRun >= PASSsemantic3done && cs)
         {
-            s1 = (*cs->statements)[cs->statements->length - 1];
+            s1 = (*cs->statements)[cs->statements->dim - 1];
         }
         else
             s1 = !cs ? f->fbody : NULL;
@@ -2147,18 +2034,7 @@ public:
         if (stcToBuffer(buf, d->storage_class))
             buf->writeByte(' ');
         buf->writestring("invariant");
-        if (ExpStatement *es = d->fbody->isExpStatement())
-        {
-            assert(es->exp && es->exp->op == TOKassert);
-            buf->writestring(" (");
-            ((AssertExp *)es->exp)->e1->accept(this);
-            buf->writestring(");");
-            buf->writenl();
-        }
-        else
-        {
-            bodyToBuffer(d);
-        }
+        bodyToBuffer(d);
     }
 
     void visit(UnitTestDeclaration *d)
@@ -2205,7 +2081,7 @@ public:
     {
         //printf("StructInitializer::toCBuffer()\n");
         buf->writeByte('{');
-        for (size_t i = 0; i < si->field.length; i++)
+        for (size_t i = 0; i < si->field.dim; i++)
         {
             if (i)
                 buf->writestring(", ");
@@ -2223,7 +2099,7 @@ public:
     void visit(ArrayInitializer *ai)
     {
         buf->writeByte('[');
-        for (size_t i = 0; i < ai->index.length; i++)
+        for (size_t i = 0; i < ai->index.dim; i++)
         {
             if (i)
                 buf->writestring(", ");
@@ -2250,10 +2126,10 @@ public:
      */
     void argsToBuffer(Expressions *expressions, Expression *basis = NULL)
     {
-        if (!expressions || !expressions->length)
+        if (!expressions || !expressions->dim)
             return;
 
-        for (size_t i = 0; i < expressions->length; i++)
+        for (size_t i = 0; i < expressions->dim; i++)
         {
             Expression *el = (*expressions)[i];
             if (i)
@@ -2276,12 +2152,10 @@ public:
             if ((sinteger_t)uval >= 0)
             {
                 dinteger_t sizemax;
-                if (target.ptrsize == 8)
-                    sizemax = 0xFFFFFFFFFFFFFFFFULL;
-                else if (target.ptrsize == 4)
+                if (Target::ptrsize == 4)
                     sizemax = 0xFFFFFFFFUL;
-                else if (target.ptrsize == 2)
-                    sizemax = 0xFFFFUL;
+                else if (Target::ptrsize == 8)
+                    sizemax = 0xFFFFFFFFFFFFFFFFULL;
                 else
                     assert(0);
                 if (uval <= sizemax && uval <= 0x7FFFFFFFFFFFFFFFULL)
@@ -2341,7 +2215,7 @@ public:
                         EnumDeclaration *sym = te->sym;
                         if (inEnumDecl != sym)
                         {
-                            for (size_t i = 0; i < sym->members->length; i++)
+                            for (size_t i = 0; i < sym->members->dim; i++)
                             {
                                 EnumMember *em = (EnumMember *)(*sym->members)[i];
                                 if (em->value()->toInteger() == v)
@@ -2367,7 +2241,7 @@ public:
                     /* fall through */
                 case Tchar:
                 {
-                    size_t o = buf->length();
+                    size_t o = buf->offset;
                     if (v == '\'')
                         buf->writestring("'\\''");
                     else if (isprint((int)v) && v != '\\')
@@ -2422,17 +2296,12 @@ public:
                     buf->writestring("cast(");
                     buf->writestring(t->toChars());
                     buf->writeByte(')');
-                    if (target.ptrsize == 8)
-                        goto L4;
-                    else if (target.ptrsize == 4 ||
-                             target.ptrsize == 2)
+                    if (Target::ptrsize == 4)
                         goto L3;
+                    else if (Target::ptrsize == 8)
+                        goto L4;
                     else
                         assert(0);
-
-                case Tvoid:
-                    buf->writestring("cast(void)0");
-                    break;
 
                 default:
                     /* This can happen if errors, such as
@@ -2549,7 +2418,7 @@ public:
     void visit(StringExp *e)
     {
         buf->writeByte('"');
-        size_t o = buf->length();
+        size_t o = buf->offset;
         for (size_t i = 0; i < e->len; i++)
         {
             unsigned c = e->charAt(i);
@@ -2592,7 +2461,7 @@ public:
     void visit(AssocArrayLiteralExp *e)
     {
         buf->writeByte('[');
-        for (size_t i = 0; i < e->keys->length; i++)
+        for (size_t i = 0; i < e->keys->dim; i++)
         {
             Expression *key = (*e->keys)[i];
             Expression *value = (*e->values)[i];
@@ -2669,14 +2538,14 @@ public:
             buf->writeByte('.');
         }
         buf->writestring("new ");
-        if (e->newargs && e->newargs->length)
+        if (e->newargs && e->newargs->dim)
         {
             buf->writeByte('(');
             argsToBuffer(e->newargs);
             buf->writeByte(')');
         }
         typeToBuffer(e->newtype, NULL);
-        if (e->arguments && e->arguments->length)
+        if (e->arguments && e->arguments->dim)
         {
             buf->writeByte('(');
             argsToBuffer(e->arguments);
@@ -2692,14 +2561,14 @@ public:
             buf->writeByte('.');
         }
         buf->writestring("new");
-        if (e->newargs && e->newargs->length)
+        if (e->newargs && e->newargs->dim)
         {
             buf->writeByte('(');
             argsToBuffer(e->newargs);
             buf->writeByte(')');
         }
         buf->writestring(" class ");
-        if (e->arguments && e->arguments->length)
+        if (e->arguments && e->arguments->dim)
         {
             buf->writeByte('(');
             argsToBuffer(e->arguments);
@@ -2784,11 +2653,10 @@ public:
     void visit(TraitsExp *e)
     {
         buf->writestring("__traits(");
-        if (e->ident)
-            buf->writestring(e->ident->toChars());
+        buf->writestring(e->ident->toChars());
         if (e->args)
         {
-            for (size_t i = 0; i < e->args->length; i++)
+            for (size_t i = 0; i < e->args->dim; i++)
             {
                 RootObject *arg = (*e->args)[i];
                 buf->writestring(", ");
@@ -2819,7 +2687,7 @@ public:
                 buf->writestring(" == ");
             typeToBuffer(e->tspec, NULL);
         }
-        if (e->parameters && e->parameters->length)
+        if (e->parameters && e->parameters->dim)
         {
             buf->writestring(", ");
             visitTemplateParameters(e->parameters);
@@ -2845,7 +2713,7 @@ public:
     void visit(CompileExp *e)
     {
         buf->writestring("mixin(");
-        argsToBuffer(e->exps);
+        expToBuffer(e->e1, PREC_assign);
         buf->writeByte(')');
     }
 
@@ -3169,18 +3037,6 @@ public:
 
     void visit(Parameter *p)
     {
-        if (p->userAttribDecl)
-        {
-            buf->writestring("@");
-            bool isAnonymous = p->userAttribDecl->atts->length > 0
-                && (*p->userAttribDecl->atts)[0]->op != TOKcall;
-            if (isAnonymous)
-                buf->writestring("(");
-            argsToBuffer(p->userAttribDecl->atts);
-            if (isAnonymous)
-                buf->writestring(")");
-            buf->writestring(" ");
-        }
         if (p->storageClass & STCauto)
             buf->writestring("auto ");
 
@@ -3241,7 +3097,7 @@ public:
             }
             if (varargs)
             {
-                if (parameters->length && varargs == 1)
+                if (parameters->dim && varargs == 1)
                     buf->writestring(", ");
                 buf->writestring("...");
             }
@@ -3277,7 +3133,7 @@ public:
             buf->writeByte(';');
             buf->writenl();
         }
-        for (size_t i = 0; i < m->members->length; i++)
+        for (size_t i = 0; i < m->members->dim; i++)
         {
             Dsymbol *s = (*m->members)[i];
             s->accept(this);
@@ -3385,7 +3241,6 @@ const char *stcToChars(StorageClass& stc)
         { STCsystem,       TOKat,       "@system" },
         { STCdisable,      TOKat,       "@disable" },
         { STCfuture,       TOKat,       "@__future" },
-        { STClocal,        TOKat,       "__local" },
         { 0,               TOKreserved, NULL }
     };
 
@@ -3450,6 +3305,7 @@ const char *linkageToChars(LINK linkage)
         case LINKc:         return "C";
         case LINKcpp:       return "C++";
         case LINKwindows:   return "Windows";
+        case LINKpascal:    return "Pascal";
         case LINKobjc:      return "Objective-C";
         case LINKsystem:    return "System";
         default:            assert(0);
@@ -3463,7 +3319,7 @@ void protectionToBuffer(OutBuffer *buf, Prot prot)
     if (p)
         buf->writestring(p);
 
-    if (prot.kind == Prot::package_ && prot.pkg)
+    if (prot.kind == PROTpackage && prot.pkg)
     {
         buf->writeByte('(');
         buf->writestring(prot.pkg->toPrettyChars(true));
@@ -3471,17 +3327,17 @@ void protectionToBuffer(OutBuffer *buf, Prot prot)
     }
 }
 
-const char *protectionToChars(Prot::Kind kind)
+const char *protectionToChars(PROTKIND kind)
 {
     switch (kind)
     {
-        case Prot::undefined: return NULL;
-        case Prot::none:      return "none";
-        case Prot::private_:   return "private";
-        case Prot::package_:   return "package";
-        case Prot::protected_: return "protected";
-        case Prot::public_:    return "public";
-        case Prot::export_:    return "export";
+        case PROTundefined: return NULL;
+        case PROTnone:      return "none";
+        case PROTprivate:   return "private";
+        case PROTpackage:   return "package";
+        case PROTprotected: return "protected";
+        case PROTpublic:    return "public";
+        case PROTexport:    return "export";
         default:            assert(0);
     }
     return NULL;    // never reached
@@ -3515,12 +3371,12 @@ void toCBuffer(Expression *e, OutBuffer *buf, HdrGenState *hgs)
  */
 void argExpTypesToCBuffer(OutBuffer *buf, Expressions *arguments)
 {
-    if (!arguments || !arguments->length)
+    if (!arguments || !arguments->dim)
         return;
 
     HdrGenState hgs;
     PrettyPrintVisitor v(buf, &hgs);
-    for (size_t i = 0; i < arguments->length; i++)
+    for (size_t i = 0; i < arguments->dim; i++)
     {
         Expression *arg = (*arguments)[i];
         if (i)
@@ -3537,12 +3393,12 @@ void toCBuffer(TemplateParameter *tp, OutBuffer *buf, HdrGenState *hgs)
 
 void arrayObjectsToBuffer(OutBuffer *buf, Objects *objects)
 {
-    if (!objects || !objects->length)
+    if (!objects || !objects->dim)
         return;
 
     HdrGenState hgs;
     PrettyPrintVisitor v(buf, &hgs);
-    for (size_t i = 0; i < objects->length; i++)
+    for (size_t i = 0; i < objects->dim; i++)
     {
         RootObject *o = (*objects)[i];
         if (i)
@@ -3551,41 +3407,11 @@ void arrayObjectsToBuffer(OutBuffer *buf, Objects *objects)
     }
 }
 
-/*************************************************************
- * Pretty print function parameters.
- * Params:
- *  parameters = parameters to print, such as TypeFunction.parameters.
- *  varargs = kind of varargs, see TypeFunction.varargs.
- * Returns: Null-terminated string representing parameters.
- */
-const char *parametersTypeToChars(ParameterList pl)
+const char *parametersTypeToChars(Parameters *parameters, int varargs)
 {
     OutBuffer buf;
     HdrGenState hgs;
     PrettyPrintVisitor v(&buf, &hgs);
-    v.parametersToBuffer(pl.parameters, pl.varargs);
-    return buf.extractChars();
-}
-
-/*************************************************************
- * Pretty print function parameter.
- * Params:
- *  parameter = parameter to print.
- *  tf = TypeFunction which holds parameter.
- *  fullQual = whether to fully qualify types.
- * Returns: Null-terminated string representing parameters.
- */
-const char *parameterToChars(Parameter *parameter, TypeFunction *tf, bool fullQual)
-{
-    OutBuffer buf;
-    HdrGenState hgs;
-    hgs.fullQual = fullQual;
-    PrettyPrintVisitor v(&buf, &hgs);
-
-    parameter->accept(&v);
-    if (tf->parameterList.varargs == 2 && parameter == tf->parameterList[tf->parameterList.parameters->length - 1])
-    {
-        buf.writestring("...");
-    }
-    return buf.extractChars();
+    v.parametersToBuffer(parameters, varargs);
+    return buf.extractString();
 }

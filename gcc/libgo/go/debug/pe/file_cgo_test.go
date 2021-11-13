@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build cgo
 // +build cgo
 
 package pe
 
 import (
 	"os/exec"
-	"runtime"
 	"testing"
 )
 
@@ -25,9 +23,6 @@ func TestDefaultLinkerDWARF(t *testing.T) {
 }
 
 func TestInternalLinkerDWARF(t *testing.T) {
-	if runtime.GOARCH == "arm64" {
-		t.Skip("internal linker disabled on windows/arm64")
-	}
 	testCgoDWARF(t, linkCgoInternal)
 }
 

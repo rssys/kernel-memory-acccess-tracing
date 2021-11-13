@@ -1,5 +1,5 @@
 /* "Bag-of-pages" garbage collector for the GNU compiler.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -30,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "flags.h"
 #include "ggc-internal.h"
 #include "timevar.h"
+#include "params.h"
 #include "cgraph.h"
 #include "cfgloop.h"
 #include "plugin.h"
@@ -199,7 +200,7 @@ static const size_t extra_order_size_table[] = {
   sizeof (struct function),
   sizeof (struct basic_block_def),
   sizeof (struct cgraph_node),
-  sizeof (class loop),
+  sizeof (struct loop),
 };
 
 /* The total number of orders.  */
@@ -528,6 +529,7 @@ static void clear_page_group_in_use (page_group *, char *);
 #endif
 static struct page_entry * alloc_page (unsigned);
 static void free_page (struct page_entry *);
+static void release_pages (void);
 static void clear_marks (void);
 static void sweep_pages (void);
 static void ggc_recalculate_in_use_p (page_entry *);
@@ -941,8 +943,8 @@ alloc_page (unsigned order)
   if (GGC_DEBUG_LEVEL >= 2)
     fprintf (G.debug_file,
 	     "Allocating page at %p, object size=%lu, data %p-%p\n",
-	     (void *) entry, (unsigned long) OBJECT_SIZE (order),
-	     (void *) page, (void *) (page + entry_size - 1));
+	     (void *) entry, (unsigned long) OBJECT_SIZE (order), page,
+	     page + entry_size - 1);
 
   return entry;
 }
@@ -975,7 +977,7 @@ free_page (page_entry *entry)
   if (GGC_DEBUG_LEVEL >= 2)
     fprintf (G.debug_file,
 	     "Deallocating page at %p, data %p-%p\n", (void *) entry,
-	     (void *) entry->page, (void *) (entry->page + entry->bytes - 1));
+	     entry->page, entry->page + entry->bytes - 1);
 
   /* Mark the page as inaccessible.  Discard the handle to avoid handle
      leak.  */
@@ -1164,9 +1166,9 @@ release_pages (void)
     {
       fprintf (stderr, " {GC");
       if (n1)
-	fprintf (stderr, " released " PRsa (0), SIZE_AMOUNT (n1));
+	fprintf (stderr, " released %luk", (unsigned long)(n1 / 1024));
       if (n2)
-	fprintf (stderr, " madv_dontneed " PRsa (0), SIZE_AMOUNT (n2));
+	fprintf (stderr, " madv_dontneed %luk", (unsigned long)(n2 / 1024));
       fprintf (stderr, "}");
     }
 }
@@ -1513,12 +1515,6 @@ gt_ggc_m_S (const void *p)
 
 void
 gt_ggc_mx (const char *& x)
-{
-  gt_ggc_m_S (x);
-}
-
-void
-gt_ggc_mx (char *& x)
 {
   gt_ggc_m_S (x);
 }
@@ -2184,20 +2180,16 @@ validate_free_objects (void)
 /* Top level mark-and-sweep routine.  */
 
 void
-ggc_collect (enum ggc_collect mode)
+ggc_collect (void)
 {
   /* Avoid frequent unnecessary work by skipping collection if the
      total allocations haven't expanded much since the last
      collection.  */
   float allocated_last_gc =
-    MAX (G.allocated_last_gc, (size_t)param_ggc_min_heapsize * ONE_K);
+    MAX (G.allocated_last_gc, (size_t)PARAM_VALUE (GGC_MIN_HEAPSIZE) * 1024);
 
-  /* It is also good time to get memory block pool into limits.  */
-  memory_block_pool::trim ();
-
-  float min_expand = allocated_last_gc * param_ggc_min_expand / 100;
-  if (mode == GGC_COLLECT_HEURISTIC
-      && G.allocated < allocated_last_gc + min_expand)
+  float min_expand = allocated_last_gc * PARAM_VALUE (GGC_MIN_EXPAND) / 100;
+  if (G.allocated < allocated_last_gc + min_expand && !ggc_force_collect)
     return;
 
   timevar_push (TV_GC);
@@ -2215,7 +2207,7 @@ ggc_collect (enum ggc_collect mode)
 
   /* Output this later so we do not interfere with release_pages.  */
   if (!quiet_flag)
-    fprintf (stderr, " {GC " PRsa (0) " -> ", SIZE_AMOUNT (allocated));
+    fprintf (stderr, " {GC %luk -> ", (unsigned long) allocated / 1024);
 
   /* Indicate that we've seen collections at this context depth.  */
   G.context_depth_collections = ((unsigned long)1 << (G.context_depth + 1)) - 1;
@@ -2242,7 +2234,7 @@ ggc_collect (enum ggc_collect mode)
   timevar_pop (TV_GC);
 
   if (!quiet_flag)
-    fprintf (stderr, PRsa (0) "}", SIZE_AMOUNT (G.allocated));
+    fprintf (stderr, "%luk}", (unsigned long) G.allocated / 1024);
   if (GGC_DEBUG_LEVEL >= 2)
     fprintf (G.debug_file, "END COLLECTING\n");
 }
@@ -2257,8 +2249,9 @@ ggc_trim ()
   sweep_pages ();
   release_pages ();
   if (!quiet_flag)
-    fprintf (stderr, " {GC trimmed to " PRsa (0) ", " PRsa (0) " mapped}",
-	     SIZE_AMOUNT (G.allocated), SIZE_AMOUNT (G.bytes_mapped));
+    fprintf (stderr, " {GC trimmed to %luk, %luk mapped}",
+	     (unsigned long) G.allocated / 1024,
+	     (unsigned long) G.bytes_mapped / 1024);
   timevar_pop (TV_GC);
 }
 
@@ -2275,7 +2268,7 @@ ggc_grow (void)
   else
     ggc_collect ();
   if (!quiet_flag)
-    fprintf (stderr, " {GC " PRsa (0) "} ", SIZE_AMOUNT (G.allocated));
+    fprintf (stderr, " {GC start %luk} ", (unsigned long) G.allocated / 1024);
 }
 
 void
@@ -2496,7 +2489,7 @@ ggc_pch_write_object (struct ggc_pch_data *d,
     }
 
   if (fwrite (x, size, 1, f) != 1)
-    fatal_error (input_location, "cannot write PCH file: %m");
+    fatal_error (input_location, "can%'t write PCH file: %m");
 
   /* If SIZE is not the same as OBJECT_SIZE(order), then we need to pad the
      object out to OBJECT_SIZE(order).  This happens for strings.  */
@@ -2512,13 +2505,13 @@ ggc_pch_write_object (struct ggc_pch_data *d,
       if (padding <= sizeof (emptyBytes))
         {
           if (fwrite (emptyBytes, 1, padding, f) != padding)
-	    fatal_error (input_location, "cannot write PCH file");
+            fatal_error (input_location, "can%'t write PCH file");
         }
       else
         {
           /* Larger than our buffer?  Just default to fseek.  */
           if (fseek (f, padding, SEEK_CUR) != 0)
-	    fatal_error (input_location, "cannot write PCH file");
+            fatal_error (input_location, "can%'t write PCH file");
         }
     }
 
@@ -2527,14 +2520,14 @@ ggc_pch_write_object (struct ggc_pch_data *d,
       && fseek (f, ROUND_UP_VALUE (d->d.totals[order] * OBJECT_SIZE (order),
 				   G.pagesize),
 		SEEK_CUR) != 0)
-    fatal_error (input_location, "cannot write PCH file: %m");
+    fatal_error (input_location, "can%'t write PCH file: %m");
 }
 
 void
 ggc_pch_finish (struct ggc_pch_data *d, FILE *f)
 {
   if (fwrite (&d->d, sizeof (d->d), 1, f) != 1)
-    fatal_error (input_location, "cannot write PCH file: %m");
+    fatal_error (input_location, "can%'t write PCH file: %m");
   free (d);
 }
 

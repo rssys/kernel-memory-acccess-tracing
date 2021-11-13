@@ -1,5 +1,5 @@
 /* toplev.h - Various declarations for functions found in toplev.c
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -23,7 +23,6 @@ along with GCC; see the file COPYING3.  If not see
 /* Decoded options, and number of such options.  */
 extern struct cl_decoded_option *save_decoded_options;
 extern unsigned int save_decoded_options_count;
-extern vec<cl_decoded_option> *save_opt_decoded_options;
 
 class timer;
 
@@ -67,8 +66,7 @@ extern bool wrapup_global_declarations (tree *, int);
 
 extern void global_decl_processing (void);
 
-extern void
-dump_memory_report (const char *);
+extern void dump_memory_report (bool);
 extern void dump_profile_report (void);
 
 extern void target_reinit (void);
@@ -94,6 +92,11 @@ extern bool set_src_pwd		       (const char *);
 
 extern HOST_WIDE_INT get_random_seed (bool);
 extern void set_random_seed (const char *);
+
+extern unsigned int min_align_loops_log;
+extern unsigned int min_align_jumps_log;
+extern unsigned int min_align_labels_log;
+extern unsigned int min_align_functions_log;
 
 extern void parse_alignment_opts (void);
 

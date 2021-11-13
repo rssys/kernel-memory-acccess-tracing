@@ -1,5 +1,3 @@
-/* { dg-require-effective-target indirect_calls } */
-
 int owner();
 int clear();
 

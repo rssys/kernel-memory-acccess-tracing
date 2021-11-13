@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build ignore
+
 package quotedprintable_test
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"mime/quotedprintable"
 	"os"
 	"strings"
@@ -18,7 +20,7 @@ func ExampleNewReader() {
 		`invalid escape: <b style="font-size: 200%">hello</b>`,
 		"Hello, Gophers! This symbol will be unescaped: =3D and this will be written in =\r\none line.",
 	} {
-		b, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(s)))
+		b, err := ioutil.ReadAll(quotedprintable.NewReader(strings.NewReader(s)))
 		fmt.Printf("%s %v\n", b, err)
 	}
 	// Output:

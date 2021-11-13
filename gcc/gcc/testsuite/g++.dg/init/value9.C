@@ -1,8 +1,6 @@
 // PR c++/50793
 // { dg-do run }
 
-typedef int int32_t __attribute__((mode (__SI__)));
-
 struct NonTrivial
 {
   NonTrivial() { }
@@ -11,7 +9,7 @@ struct NonTrivial
 struct S
 {
   NonTrivial nt;
-  int32_t i;
+  int i;
 };
 
 int f(S s)

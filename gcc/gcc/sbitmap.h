@@ -1,5 +1,5 @@
 /* Simple bitmaps.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -114,7 +114,7 @@ bitmap_check_sizes (const_sbitmap a, const_sbitmap b)
 }
 
 /* Test if bit number bitno in the bitmap is set.  */
-static inline bool
+static inline SBITMAP_ELT_TYPE
 bitmap_bit_p (const_sbitmap map, int bitno)
 {
   bitmap_check_index (map, bitno);
@@ -124,36 +124,26 @@ bitmap_bit_p (const_sbitmap map, int bitno)
   return (map->elms[i] >> s) & (SBITMAP_ELT_TYPE) 1;
 }
 
-/* Set bit number BITNO in the sbitmap MAP.
-   Return true if the bit changed.  */
+/* Set bit number BITNO in the sbitmap MAP.  */
 
-static inline bool
+static inline void
 bitmap_set_bit (sbitmap map, int bitno)
 {
   bitmap_check_index (map, bitno);
 
-  size_t i = bitno / SBITMAP_ELT_BITS;
-  unsigned int s = bitno % SBITMAP_ELT_BITS;
-  if (map->elms[i] & ((SBITMAP_ELT_TYPE) 1 << s))
-    return false;
-  map->elms[i] |= (SBITMAP_ELT_TYPE) 1 << s;
-  return true;
+  map->elms[bitno / SBITMAP_ELT_BITS]
+    |= (SBITMAP_ELT_TYPE) 1 << (bitno) % SBITMAP_ELT_BITS;
 }
 
-/* Reset bit number BITNO in the sbitmap MAP.
-   Return true if the bit changed.  */
+/* Reset bit number BITNO in the sbitmap MAP.  */
 
-static inline bool
+static inline void
 bitmap_clear_bit (sbitmap map, int bitno)
 {
   bitmap_check_index (map, bitno);
 
-  size_t i = bitno / SBITMAP_ELT_BITS;
-  unsigned int s = bitno % SBITMAP_ELT_BITS;
-  if (!(map->elms[i] & ((SBITMAP_ELT_TYPE) 1 << s)))
-    return false;
-  map->elms[i] &= ~((SBITMAP_ELT_TYPE) 1 << s);
-  return true;
+  map->elms[bitno / SBITMAP_ELT_BITS]
+    &= ~((SBITMAP_ELT_TYPE) 1 << (bitno) % SBITMAP_ELT_BITS);
 }
 
 /* The iterator for sbitmap.  */
@@ -305,14 +295,15 @@ public:
 
   /* Allow calling sbitmap functions on our bitmap.  */
   operator sbitmap () { return m_bitmap; }
-  operator const_sbitmap () const { return m_bitmap; }
 
 private:
   /* Prevent making a copy that refers to our sbitmap.  */
   auto_sbitmap (const auto_sbitmap &);
   auto_sbitmap &operator = (const auto_sbitmap &);
+#if __cplusplus >= 201103L
   auto_sbitmap (auto_sbitmap &&);
   auto_sbitmap &operator = (auto_sbitmap &&);
+#endif
 
   /* The bitmap we are managing.  */
   sbitmap m_bitmap;

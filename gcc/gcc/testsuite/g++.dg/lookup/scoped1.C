@@ -4,12 +4,12 @@
 struct A
 {
   static int i1;
-  int i2; 
+  int i2; // { dg-message "declared" }
   static void f1 ();
   void f2 ();
 };
 
-struct B: private A { }; // { dg-message "declared" }
+struct B: private A { };
 struct C: public B
 {
   void g ()

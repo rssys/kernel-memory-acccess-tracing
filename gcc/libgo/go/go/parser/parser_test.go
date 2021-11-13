@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,23 +40,7 @@ func nameFilter(filename string) bool {
 	return false
 }
 
-func dirFilter(f fs.FileInfo) bool { return nameFilter(f.Name()) }
-
-func TestParseFile(t *testing.T) {
-	src := "package p\nvar _=s[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]"
-	_, err := ParseFile(token.NewFileSet(), "", src, 0)
-	if err == nil {
-		t.Errorf("ParseFile(%s) succeeded unexpectedly", src)
-	}
-}
-
-func TestParseExprFrom(t *testing.T) {
-	src := "s[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]+\ns[::]"
-	_, err := ParseExprFrom(token.NewFileSet(), "", src, 0)
-	if err == nil {
-		t.Errorf("ParseExprFrom(%s) succeeded unexpectedly", src)
-	}
-}
+func dirFilter(f os.FileInfo) bool { return nameFilter(f.Name()) }
 
 func TestParseDir(t *testing.T) {
 	path := "."
@@ -79,14 +63,6 @@ func TestParseDir(t *testing.T) {
 		if !nameFilter(filename) {
 			t.Errorf("unexpected package file: %s", filename)
 		}
-	}
-}
-
-func TestIssue42951(t *testing.T) {
-	path := "./testdata/issue42951"
-	_, err := ParseDir(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		t.Errorf("ParseDir(%s): %v", path, err)
 	}
 }
 
@@ -116,15 +92,8 @@ func TestParseExpr(t *testing.T) {
 
 	// an invalid expression
 	src = "a + *"
-	x, err = ParseExpr(src)
-	if err == nil {
+	if _, err := ParseExpr(src); err == nil {
 		t.Errorf("ParseExpr(%q): got no error", src)
-	}
-	if x == nil {
-		t.Errorf("ParseExpr(%q): got no (partial) result", src)
-	}
-	if _, ok := x.(*ast.BinaryExpr); !ok {
-		t.Errorf("ParseExpr(%q): got %T, want *ast.BinaryExpr", src, x)
 	}
 
 	// a valid expression followed by extra tokens is invalid

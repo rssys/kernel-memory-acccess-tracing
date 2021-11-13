@@ -9,23 +9,24 @@ MODULE testmod
 
   TYPE t
     INTEGER :: x
-  CONTAINS ! { dg-error "Fortran 2003: CONTAINS block in derived type definition" }
-    PROCEDURE proc1 ! { dg-error "Fortran 2003: PROCEDURE statement" }
-    PROCEDURE :: proc2 => p2 ! { dg-error "Fortran 2003: PROCEDURE statement" }
-  END TYPE t                 ! { dg-error "Fortran 2008: Derived type definition at .1. with empty CONTAINS section" }
+  CONTAINS ! { dg-error "Fortran 2003" }
+    PROCEDURE proc1 ! { dg-error "Fortran 2003" }
+    PROCEDURE :: proc2 => p2 ! { dg-error "Fortran 2003" }
+  END TYPE t
 
 CONTAINS
   
-  SUBROUTINE proc1 (me) ! { dg-error "no IMPLICIT type" }
+  SUBROUTINE proc1 (me)
     IMPLICIT NONE
-    TYPE(t1) :: me     ! { dg-error "being used before it is defined" }
+    TYPE(t1) :: me
   END SUBROUTINE proc1
 
-  REAL FUNCTION proc2 (me, x) ! { dg-error "no IMPLICIT type" }
+  REAL FUNCTION proc2 (me, x)
     IMPLICIT NONE
-    TYPE(t1) :: me     ! { dg-error "being used before it is defined" }
+    TYPE(t1) :: me
     REAL :: x
     proc2 = x / 2
   END FUNCTION proc2
 
 END MODULE testmod
+! { dg-excess-errors "no IMPLICIT type" }

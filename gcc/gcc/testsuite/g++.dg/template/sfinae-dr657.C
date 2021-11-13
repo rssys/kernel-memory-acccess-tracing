@@ -1,7 +1,6 @@
-// DR 657 SUPERSEDED BY DR 1646
-// Test that a return or parameter type with abstract class type DOES NOT cause
-// a deduction failure, but there is no implicit conversion sequence for
-// a parameter of abstract class type.
+// DR 657
+// Test that a return or parameter type with abstract class type causes a
+// deduction failure.
 
 struct A
 {
@@ -18,6 +17,6 @@ template<class T> int arg(...);
 
 int main()
 {
-  int i = declval<A>();		// { dg-error "ambiguous" }
+  int i = declval<A>();
   i = arg<A>(1);
 }

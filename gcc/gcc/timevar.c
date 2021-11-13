@@ -1,5 +1,5 @@
 /* Timing variables for measuring compiler performance.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Alex Samuel <samuel@codesourcery.com>
 
 This file is part of GCC.
@@ -198,8 +198,10 @@ timer::named_items::pop ()
 void
 timer::named_items::print (FILE *fp, const timevar_time_def *total)
 {
+  unsigned int i;
+  const char *item_name;
   fprintf (fp, "Client items:\n");
-  for (const char *item_name : m_names)
+  FOR_EACH_VEC_ELT (m_names, i, item_name)
     {
       timer::timevar_def *def = m_hash_map.get (item_name);
       gcc_assert (def);
@@ -598,7 +600,7 @@ timer::validate_phases (FILE *fp) const
       if (!tv->used)
 	continue;
 
-      if (startswith (tv->name, phase_prefix))
+      if (strncmp (tv->name, phase_prefix, sizeof phase_prefix - 1) == 0)
 	{
 	  phase_user += tv->elapsed.user;
 	  phase_sys += tv->elapsed.sys;
@@ -659,8 +661,8 @@ timer::print_row (FILE *fp,
 #endif /* HAVE_WALL_TIME */
 
   /* Print the amount of ggc memory allocated.  */
-  fprintf (fp, PRsa (6) " (%3.0f%%)",
-	   SIZE_AMOUNT (elapsed.ggc_mem),
+  fprintf (fp, "%8u kB (%3.0f%%)",
+	   (unsigned) (elapsed.ggc_mem >> 10),
 	   (total->ggc_mem == 0
 	    ? 0
 	    : (float) elapsed.ggc_mem / total->ggc_mem) * 100);
@@ -710,7 +712,7 @@ timer::print (FILE *fp)
      TIMEVAR.  */
   m_start_time = now;
 
-  fprintf (fp, "\n%-35s%16s%14s%14s%14s\n", "Time variable", "usr", "sys",
+  fprintf (fp, "\n%-35s%16s%14s%14s%18s\n", "Time variable", "usr", "sys",
 	   "wall", "GGC");
   if (m_jit_client_items)
     fputs ("GCC items:\n", fp);
@@ -774,7 +776,7 @@ timer::print (FILE *fp)
 #ifdef HAVE_WALL_TIME
   fprintf (fp, "%8.2f      ", total->wall);
 #endif
-  fprintf (fp, PRsa (7) "\n", SIZE_AMOUNT (total->ggc_mem));
+  fprintf (fp, "%9u kB\n", (unsigned) (total->ggc_mem >> 10));
 
   if (CHECKING_P || flag_checking)
     fprintf (fp, "Extra diagnostic checks enabled; compiler may run slowly.\n");

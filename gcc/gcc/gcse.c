@@ -1,5 +1,5 @@
 /* Partial redundancy elimination / Hoisting for RTL.
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -154,12 +154,12 @@ along with GCC; see the file COPYING3.  If not see
 #include "lcm.h"
 #include "cfgcleanup.h"
 #include "expr.h"
+#include "params.h"
 #include "intl.h"
 #include "tree-pass.h"
 #include "dbgcnt.h"
 #include "gcse.h"
 #include "gcse-common.h"
-#include "function-abi.h"
 
 /* We support GCSE via Partial Redundancy Elimination.  PRE optimizations
    are a superset of those done by classic GCSE.
@@ -798,10 +798,10 @@ want_to_gcse_p (rtx x, machine_mode mode, HOST_WIDE_INT *max_distance_ptr)
 		      && optimize_function_for_size_p (cfun));
 	  cost = set_src_cost (x, mode, 0);
 
-	  if (cost < COSTS_N_INSNS (param_gcse_unrestricted_cost))
+	  if (cost < COSTS_N_INSNS (GCSE_UNRESTRICTED_COST))
 	    {
 	      max_distance
-		= ((HOST_WIDE_INT)param_gcse_cost_distance_ratio * cost) / 10;
+		= ((HOST_WIDE_INT)GCSE_COST_DISTANCE_RATIO * cost) / 10;
 	      if (max_distance == 0)
 		return 0;
 
@@ -926,6 +926,7 @@ oprs_unchanged_p (const_rtx x, const rtx_insn *insn, int avail_p)
       return 0;
 
     case PC:
+    case CC0: /*FIXME*/
     case CONST:
     CASE_CONST_ANY:
     case SYMBOL_REF:
@@ -1048,7 +1049,7 @@ load_killed_in_block_p (const_basic_block bb, int uid_limit, const_rtx x,
 	 note_stores to examine each hunk of memory that is modified.  */
       mci.mem = x;
       mci.conflict = false;
-      note_stores (setter, mems_conflict_for_gcse_p, &mci);
+      note_stores (PATTERN (setter), mems_conflict_for_gcse_p, &mci);
       if (mci.conflict)
 	return 1;
     }
@@ -1527,22 +1528,16 @@ compute_hash_table_work (struct gcse_hash_table_d *table)
 	  if (CALL_P (insn))
 	    {
 	      hard_reg_set_iterator hrsi;
-
-	      /* We don't track modes of hard registers, so we need
-		 to be conservative and assume that partial kills
-		 are full kills.  */
-	      HARD_REG_SET callee_clobbers
-		= insn_callee_abi (insn).full_and_partial_reg_clobbers ();
-	      EXECUTE_IF_SET_IN_HARD_REG_SET (callee_clobbers, 0, regno, hrsi)
+	      EXECUTE_IF_SET_IN_HARD_REG_SET (regs_invalidated_by_call,
+					      0, regno, hrsi)
 		record_last_reg_set_info (insn, regno);
 
 	      if (! RTL_CONST_OR_PURE_CALL_P (insn)
-		  || RTL_LOOPING_CONST_OR_PURE_CALL_P (insn)
-		  || can_throw_external (insn))
+		  || RTL_LOOPING_CONST_OR_PURE_CALL_P (insn))
 		record_last_mem_set_info (insn);
 	    }
 
-	  note_stores (insn, record_last_set_info, insn);
+	  note_stores (PATTERN (insn), record_last_set_info, insn);
 	}
 
       /* The next pass builds the hash table.  */
@@ -1843,7 +1838,7 @@ prune_insertions_deletions (int n_elems)
      PRUNE_EXPRS.  */
   for (j = 0; j < (unsigned) n_elems; j++)
     if (deletions[j]
-	&& (insertions[j] / deletions[j]) > param_max_gcse_insertion_ratio)
+	&& ((unsigned) insertions[j] / deletions[j]) > MAX_GCSE_INSERTION_RATIO)
       bitmap_set_bit (prune_exprs, j);
 
   /* Now prune PRE_INSERT_MAP and PRE_DELETE_MAP based on PRUNE_EXPRS.  */
@@ -2031,15 +2026,33 @@ insert_insn_end_basic_block (struct gcse_expr *expr, basic_block bb)
   while (NEXT_INSN (pat_end) != NULL_RTX)
     pat_end = NEXT_INSN (pat_end);
 
-  /* If the last insn is a jump, insert EXPR in front.  Similarly we need to
-     take care of trapping instructions in presence of non-call exceptions.  */
+  /* If the last insn is a jump, insert EXPR in front [taking care to
+     handle cc0, etc. properly].  Similarly we need to care trapping
+     instructions in presence of non-call exceptions.  */
 
   if (JUMP_P (insn)
       || (NONJUMP_INSN_P (insn)
 	  && (!single_succ_p (bb)
 	      || single_succ_edge (bb)->flags & EDGE_ABNORMAL)))
     {
-      /* FIXME: What if something in jump uses value set in new insn?  */
+      /* FIXME: 'twould be nice to call prev_cc0_setter here but it aborts
+	 if cc0 isn't set.  */
+      if (HAVE_cc0)
+	{
+	  rtx note = find_reg_note (insn, REG_CC_SETTER, NULL_RTX);
+	  if (note)
+	    insn = safe_as_a <rtx_insn *> (XEXP (note, 0));
+	  else
+	    {
+	      rtx_insn *maybe_cc0_setter = prev_nonnote_insn (insn);
+	      if (maybe_cc0_setter
+		  && INSN_P (maybe_cc0_setter)
+		  && sets_cc0_p (PATTERN (maybe_cc0_setter)))
+		insn = maybe_cc0_setter;
+	    }
+	}
+
+      /* FIXME: What if something in cc0/jump uses value set in new insn?  */
       new_insn = emit_insn_before_noloc (pat, insn, bb);
     }
 
@@ -2402,7 +2415,7 @@ single_set_gcse (rtx_insn *insn)
 
   s.insn = insn;
   s.nsets = 0;
-  note_pattern_stores (pattern, record_set_data, &s);
+  note_stores (pattern, record_set_data, &s);
 
   /* Considered invariant insns have exactly one set.  */
   gcc_assert (s.nsets == 1);
@@ -3051,7 +3064,9 @@ static int
 hoist_code (void)
 {
   basic_block bb, dominated;
+  vec<basic_block> dom_tree_walk;
   unsigned int dom_tree_walk_index;
+  vec<basic_block> domby;
   unsigned int i, j, k;
   struct gcse_expr **index_map;
   struct gcse_expr *expr;
@@ -3105,16 +3120,14 @@ hoist_code (void)
   if (flag_ira_hoist_pressure)
     hoisted_bbs = BITMAP_ALLOC (NULL);
 
-  auto_vec<basic_block> dom_tree_walk
-  = get_all_dominated_blocks (CDI_DOMINATORS,
-			      ENTRY_BLOCK_PTR_FOR_FN (cfun)->next_bb);
+  dom_tree_walk = get_all_dominated_blocks (CDI_DOMINATORS,
+					    ENTRY_BLOCK_PTR_FOR_FN (cfun)->next_bb);
 
   /* Walk over each basic block looking for potentially hoistable
      expressions, nothing gets hoisted from the entry block.  */
   FOR_EACH_VEC_ELT (dom_tree_walk, dom_tree_walk_index, bb)
     {
-      auto_vec<basic_block> domby
-	= get_dominated_to_depth (CDI_DOMINATORS, bb, param_max_hoist_depth);
+      domby = get_dominated_to_depth (CDI_DOMINATORS, bb, MAX_HOIST_DEPTH);
 
       if (domby.length () == 0)
 	continue;
@@ -3315,8 +3328,10 @@ hoist_code (void)
 	      bitmap_clear (from_bbs);
 	    }
 	}
+      domby.release ();
     }
 
+  dom_tree_walk.release ();
   BITMAP_FREE (from_bbs);
   if (flag_ira_hoist_pressure)
     BITMAP_FREE (hoisted_bbs);
@@ -3961,9 +3976,9 @@ update_ld_motion_stores (struct gcse_expr * expr)
 bool
 gcse_or_cprop_is_too_expensive (const char *pass)
 {
-  unsigned HOST_WIDE_INT memory_request
-    = ((unsigned HOST_WIDE_INT)n_basic_blocks_for_fn (cfun)
-       * SBITMAP_SET_SIZE (max_reg_num ()) * sizeof (SBITMAP_ELT_TYPE));
+  unsigned int memory_request = (n_basic_blocks_for_fn (cfun)
+				 * SBITMAP_SET_SIZE (max_reg_num ())
+				 * sizeof (SBITMAP_ELT_TYPE));
   
   /* Trying to perform global optimizations on flow graphs which have
      a high connectivity will take a long time and is unlikely to be
@@ -3986,13 +4001,12 @@ gcse_or_cprop_is_too_expensive (const char *pass)
 
   /* If allocating memory for the dataflow bitmaps would take up too much
      storage it's better just to disable the optimization.  */
-  if (memory_request / 1024 > (unsigned HOST_WIDE_INT)param_max_gcse_memory)
+  if (memory_request > MAX_GCSE_MEMORY)
     {
       warning (OPT_Wdisabled_optimization,
-	       "%s: %d basic blocks and %d registers; "
-	       "increase %<--param max-gcse-memory%> above %wu",
+	       "%s: %d basic blocks and %d registers; increase --param max-gcse-memory above %d",
 	       pass, n_basic_blocks_for_fn (cfun), max_reg_num (),
-	       memory_request / 1024);
+	       memory_request);
 
       return true;
     }

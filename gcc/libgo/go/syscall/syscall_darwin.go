@@ -4,10 +4,7 @@
 
 package syscall
 
-import (
-	"internal/abi"
-	"unsafe"
-)
+import "unsafe"
 
 func direntIno(buf []byte) (uint64, bool) {
 	return readInt(buf, unsafe.Offsetof(Dirent{}.Ino), unsafe.Sizeof(Dirent{}.Ino))

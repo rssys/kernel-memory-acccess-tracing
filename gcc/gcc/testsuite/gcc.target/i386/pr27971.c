@@ -1,6 +1,5 @@
 /* { dg-do compile } */
 /* { dg-options "-O2 -mno-tbm" } */
-/* { dg-additional-options "-mdynamic-no-pic" { target { *-*-darwin* && ia32 } } } */
 
 unsigned array[4];
 
@@ -17,4 +16,3 @@ unsigned foo(TYPE x)
 
 /* { dg-final { scan-assembler-not "shr\[^\\n\]*2" } } */
 /* { dg-final { scan-assembler "and\[^\\n\]*12" } } */
- 

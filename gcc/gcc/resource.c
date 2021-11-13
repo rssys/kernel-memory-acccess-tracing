@@ -1,5 +1,5 @@
 /* Definitions for computing resource usage of specific insns.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,7 +21,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "system.h"
 #include "coretypes.h"
 #include "backend.h"
-#include "target.h"
 #include "rtl.h"
 #include "df.h"
 #include "memmodel.h"
@@ -30,7 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "emit-rtl.h"
 #include "resource.h"
 #include "insn-attr.h"
-#include "function-abi.h"
+#include "params.h"
 
 /* This structure is used to record liveness information at the targets or
    fallthrough insns of branches.  We will most likely need the information
@@ -109,6 +108,11 @@ update_live_status (rtx dest, const_rtx x, void *data ATTRIBUTE_UNUSED)
   if (GET_CODE (x) == CLOBBER)
     for (i = first_regno; i < last_regno; i++)
       CLEAR_HARD_REG_BIT (current_live_regs, i);
+  else if (GET_CODE (x) == CLOBBER_HIGH)
+    /* No current target supports both branch delay slots and CLOBBER_HIGH.
+       We'd need more elaborate liveness tracking to handle that
+       combination.  */
+    gcc_unreachable ();
   else
     for (i = first_regno; i < last_regno; i++)
       {
@@ -246,6 +250,10 @@ mark_referenced_resources (rtx x, struct resources *res,
       mark_referenced_resources (XEXP (x, 0), res, false);
       return;
 
+    case CC0:
+      res->cc = 1;
+      return;
+
     case UNSPEC_VOLATILE:
     case TRAP_IF:
     case ASM_INPUT:
@@ -290,6 +298,7 @@ mark_referenced_resources (rtx x, struct resources *res,
       return;
 
     case CLOBBER:
+    case CLOBBER_HIGH:
       return;
 
     case CALL_INSN:
@@ -441,8 +450,8 @@ find_dead_or_set_registers (rtx_insn *target, struct resources *res,
 	case CODE_LABEL:
 	  /* After a label, any pending dead registers that weren't yet
 	     used can be made dead.  */
-	  pending_dead_regs &= ~needed.regs;
-	  res->regs &= ~pending_dead_regs;
+	  AND_COMPL_HARD_REG_SET (pending_dead_regs, needed.regs);
+	  AND_COMPL_HARD_REG_SET (res->regs, pending_dead_regs);
 	  CLEAR_HARD_REG_SET (pending_dead_regs);
 
 	  continue;
@@ -556,12 +565,14 @@ find_dead_or_set_registers (rtx_insn *target, struct resources *res,
 		    }
 
 		  target_res = *res;
-		  scratch = target_set.regs & ~needed.regs;
-		  target_res.regs &= ~scratch;
+		  COPY_HARD_REG_SET (scratch, target_set.regs);
+		  AND_COMPL_HARD_REG_SET (scratch, needed.regs);
+		  AND_COMPL_HARD_REG_SET (target_res.regs, scratch);
 
 		  fallthrough_res = *res;
-		  scratch = set.regs & ~needed.regs;
-		  fallthrough_res.regs &= ~scratch;
+		  COPY_HARD_REG_SET (scratch, set.regs);
+		  AND_COMPL_HARD_REG_SET (scratch, needed.regs);
+		  AND_COMPL_HARD_REG_SET (fallthrough_res.regs, scratch);
 
 		  if (!ANY_RETURN_P (this_jump_insn->jump_label ()))
 		    find_dead_or_set_registers
@@ -570,8 +581,8 @@ find_dead_or_set_registers (rtx_insn *target, struct resources *res,
 		  find_dead_or_set_registers (next_insn,
 					      &fallthrough_res, 0, jump_count,
 					      set, needed);
-		  fallthrough_res.regs |= target_res.regs;
-		  res->regs &= fallthrough_res.regs;
+		  IOR_HARD_REG_SET (fallthrough_res.regs, target_res.regs);
+		  AND_HARD_REG_SET (res->regs, fallthrough_res.regs);
 		  break;
 		}
 	      else
@@ -590,8 +601,9 @@ find_dead_or_set_registers (rtx_insn *target, struct resources *res,
       mark_referenced_resources (insn, &needed, true);
       mark_set_resources (insn, &set, 0, MARK_SRC_DEST_CALL);
 
-      scratch = set.regs & ~needed.regs;
-      res->regs &= ~scratch;
+      COPY_HARD_REG_SET (scratch, set.regs);
+      AND_COMPL_HARD_REG_SET (scratch, needed.regs);
+      AND_COMPL_HARD_REG_SET (res->regs, scratch);
     }
 
   return jump_insn;
@@ -603,7 +615,13 @@ find_dead_or_set_registers (rtx_insn *target, struct resources *res,
    set by the called routine.
 
    If IN_DEST is nonzero, it means we are inside a SET.  Otherwise,
-   objects are being referenced instead of set.  */
+   objects are being referenced instead of set.
+
+   We never mark the insn as modifying the condition code unless it explicitly
+   SETs CC0 even though this is not totally correct.  The reason for this is
+   that we require a SET of CC0 to immediately precede the reference to CC0.
+   So if some other insn sets CC0 as a side-effect, we know it cannot affect
+   our computation and thus may be placed in a delay slot.  */
 
 void
 mark_set_resources (rtx x, struct resources *res, int in_dest,
@@ -633,6 +651,11 @@ mark_set_resources (rtx x, struct resources *res, int in_dest,
       /* These don't set any resources.  */
       return;
 
+    case CC0:
+      if (in_dest)
+	res->cc = 1;
+      return;
+
     case CALL_INSN:
       /* Called routine modifies the condition code, memory, any registers
 	 that aren't saved across calls, global registers and anything
@@ -642,16 +665,24 @@ mark_set_resources (rtx x, struct resources *res, int in_dest,
 	{
 	  rtx_call_insn *call_insn = as_a <rtx_call_insn *> (x);
 	  rtx link;
+	  HARD_REG_SET regs;
 
 	  res->cc = res->memory = 1;
 
-	  res->regs |= insn_callee_abi (call_insn).full_reg_clobbers ();
+	  get_call_reg_set_usage (call_insn, &regs, regs_invalidated_by_call);
+	  IOR_HARD_REG_SET (res->regs, regs);
 
 	  for (link = CALL_INSN_FUNCTION_USAGE (call_insn);
 	       link; link = XEXP (link, 1))
-	    if (GET_CODE (XEXP (link, 0)) == CLOBBER)
-	      mark_set_resources (SET_DEST (XEXP (link, 0)), res, 1,
-				  MARK_SRC_DEST);
+	    {
+	      /* We could support CLOBBER_HIGH and treat it in the same way as
+		 HARD_REGNO_CALL_PART_CLOBBERED, but no port needs that
+		 yet.  */
+	      gcc_assert (GET_CODE (XEXP (link, 0)) != CLOBBER_HIGH);
+	      if (GET_CODE (XEXP (link, 0)) == CLOBBER)
+		mark_set_resources (SET_DEST (XEXP (link, 0)), res, 1,
+				    MARK_SRC_DEST);
+	    }
 
 	  /* Check for a REG_SETJMP.  If it exists, then we must
 	     assume that this call can clobber any register.  */
@@ -693,6 +724,12 @@ mark_set_resources (rtx x, struct resources *res, int in_dest,
     case CLOBBER:
       mark_set_resources (XEXP (x, 0), res, 1, MARK_SRC_DEST);
       return;
+
+    case CLOBBER_HIGH:
+      /* No current target supports both branch delay slots and CLOBBER_HIGH.
+	 We'd need more elaborate liveness tracking to handle that
+	 combination.  */
+      gcc_unreachable ();
 
     case SEQUENCE:
       {
@@ -913,7 +950,7 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
     }
 
   if (b == -1)
-    b = find_basic_block (target, param_max_delay_slot_live_search);
+    b = find_basic_block (target, MAX_DELAY_SLOT_LIVE_SEARCH);
 
   if (target_hash_table != NULL)
     {
@@ -923,7 +960,7 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 	     update it below.  */
 	  if (b == tinfo->block && b != -1 && tinfo->bb_tick == bb_ticks[b])
 	    {
-	      res->regs = tinfo->live_regs;
+	      COPY_HARD_REG_SET (res->regs, tinfo->live_regs);
 	      return;
 	    }
 	}
@@ -1004,12 +1041,15 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 		 predicated instruction, or if the CALL is NORETURN.  */
 	      if (GET_CODE (PATTERN (real_insn)) != COND_EXEC)
 		{
-		  HARD_REG_SET regs_invalidated_by_this_call
-		    = insn_callee_abi (real_insn).full_reg_clobbers ();
+		  HARD_REG_SET regs_invalidated_by_this_call;
+		  get_call_reg_set_usage (real_insn,
+					  &regs_invalidated_by_this_call,
+					  regs_invalidated_by_call);
 		  /* CALL clobbers all call-used regs that aren't fixed except
 		     sp, ap, and fp.  Do this before setting the result of the
 		     call live.  */
-		  current_live_regs &= ~regs_invalidated_by_this_call;
+		  AND_COMPL_HARD_REG_SET (current_live_regs,
+					  regs_invalidated_by_this_call);
 		}
 
 	      /* A CALL_INSN sets any global register live, since it may
@@ -1038,7 +1078,7 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 				      GET_MODE (XEXP (link, 0)),
 				      REGNO (XEXP (link, 0)));
 
-	      note_stores (real_insn, update_live_status, NULL);
+	      note_stores (PATTERN (real_insn), update_live_status, NULL);
 
 	      /* If any registers were unused after this insn, kill them.
 		 These notes will always be accurate.  */
@@ -1057,7 +1097,7 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 
 	      /* A label clobbers the pending dead registers since neither
 		 reload nor jump will propagate a value across a label.  */
-	      current_live_regs &= ~pending_dead_regs;
+	      AND_COMPL_HARD_REG_SET (current_live_regs, pending_dead_regs);
 	      CLEAR_HARD_REG_SET (pending_dead_regs);
 
 	      /* We must conservatively assume that all registers that used
@@ -1069,7 +1109,7 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 		  HARD_REG_SET extra_live;
 
 		  REG_SET_TO_HARD_REG_SET (extra_live, DF_LR_IN (bb));
-		  current_live_regs |= extra_live;
+		  IOR_HARD_REG_SET (current_live_regs, extra_live);
 		}
 	    }
 
@@ -1078,10 +1118,10 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 	     are implicitly required at that point.  */
 	  else if (NOTE_P (real_insn)
 		   && NOTE_KIND (real_insn) == NOTE_INSN_EPILOGUE_BEG)
-	    current_live_regs |= start_of_epilogue_needs.regs;
+	    IOR_HARD_REG_SET (current_live_regs, start_of_epilogue_needs.regs);
 	}
 
-      res->regs = current_live_regs;
+      COPY_HARD_REG_SET (res->regs, current_live_regs);
       if (tinfo != NULL)
 	{
 	  tinfo->block = b;
@@ -1120,17 +1160,20 @@ mark_target_live_regs (rtx_insn *insns, rtx target_maybe_return, struct resource
 	{
 	  mark_referenced_resources (insn, &needed, true);
 
-	  scratch = needed.regs & ~set.regs;
-	  new_resources.regs |= scratch;
+	  COPY_HARD_REG_SET (scratch, needed.regs);
+	  AND_COMPL_HARD_REG_SET (scratch, set.regs);
+	  IOR_HARD_REG_SET (new_resources.regs, scratch);
 
 	  mark_set_resources (insn, &set, 0, MARK_SRC_DEST_CALL);
 	}
 
-      res->regs |= new_resources.regs;
+      IOR_HARD_REG_SET (res->regs, new_resources.regs);
     }
 
   if (tinfo != NULL)
-    tinfo->live_regs = res->regs;
+    {
+      COPY_HARD_REG_SET (tinfo->live_regs, res->regs);
+    }
 }
 
 /* Initialize the resources required by mark_target_live_regs ().
@@ -1171,7 +1214,7 @@ init_resource_info (rtx_insn *epilogue_insn)
 			       &end_of_function_needs, true);
 
   for (i = 0; i < FIRST_PSEUDO_REGISTER; i++)
-    if (global_regs[i] || df_epilogue_uses_p (i))
+    if (global_regs[i] || EPILOGUE_USES (i))
       SET_HARD_REG_BIT (end_of_function_needs.regs, i);
 
   /* The registers required to be live at the end of the function are
@@ -1200,11 +1243,6 @@ init_resource_info (rtx_insn *epilogue_insn)
       if (return_insn_p (epilogue_insn))
 	break;
     }
-
-  /* Filter-out the flags register from those additionally required
-     registers. */
-  if (targetm.flags_regnum != INVALID_REGNUM)
-    CLEAR_HARD_REG_BIT (end_of_function_needs.regs, targetm.flags_regnum);
 
   /* Allocate and initialize the tables used by mark_target_live_regs.  */
   target_hash_table = XCNEWVEC (struct target_info *, TARGET_HASH_PRIME);
@@ -1273,32 +1311,13 @@ clear_hashed_info_for_insn (rtx_insn *insn)
 	tinfo->block = -1;
     }
 }
-
-/* Clear any hashed information that we have stored for instructions
-   between INSN and the next BARRIER that follow a JUMP or a LABEL.  */
-
-void
-clear_hashed_info_until_next_barrier (rtx_insn *insn)
-{
-  while (insn && !BARRIER_P (insn))
-    {
-      if (JUMP_P (insn) || LABEL_P (insn))
-	{
-	  rtx_insn *next = next_active_insn (insn);
-	  if (next)
-	    clear_hashed_info_for_insn (next);
-	}
-
-      insn = next_nonnote_insn (insn);
-    }
-}
-
+
 /* Increment the tick count for the basic block that contains INSN.  */
 
 void
 incr_ticks_for_insn (rtx_insn *insn)
 {
-  int b = find_basic_block (insn, param_max_delay_slot_live_search);
+  int b = find_basic_block (insn, MAX_DELAY_SLOT_LIVE_SEARCH);
 
   if (b != -1)
     bb_ticks[b]++;

@@ -1,6 +1,6 @@
 // Filesystem declarations -*- C++ -*-
 
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,24 +34,26 @@
 
 #include <system_error>
 #include <cstdint>
-#include <bits/chrono.h>
+#include <chrono>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
-/// ISO C++ 2017 namespace for File System library
 namespace filesystem
 {
 #if _GLIBCXX_USE_CXX11_ABI
-/// @cond undocumented
 inline namespace __cxx11 __attribute__((__abi_tag__ ("cxx11"))) { }
-/// @endcond
 #endif
 
-/** @addtogroup filesystem
- *  @{
- */
+  /**
+   * @defgroup filesystem Filesystem
+   *
+   * Utilities for performing operations on file systems and their components,
+   * such as paths, regular files, and directories.
+   *
+   * @{
+   */
 
   class file_status;
 _GLIBCXX_BEGIN_NAMESPACE_CXX11
@@ -62,25 +64,19 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   class recursive_directory_iterator;
 _GLIBCXX_END_NAMESPACE_CXX11
 
-  /// Information about free space on a disk
   struct space_info
   {
     uintmax_t capacity;
     uintmax_t free;
     uintmax_t available;
-
-#if __cpp_impl_three_way_comparison >= 201907L
-    friend bool operator==(const space_info&, const space_info&) = default;
-#endif
   };
 
-  /// Enumerated type representing the type of a file
   enum class file_type : signed char {
       none = 0, not_found = -1, regular = 1, directory = 2, symlink = 3,
       block = 4, character = 5, fifo = 6, socket = 7, unknown = 8
   };
 
-  /// Bitmask type controlling effects of `filesystem::copy`
+  /// Bitmask type
   enum class copy_options : unsigned short {
       none = 0,
       skip_existing = 1, overwrite_existing = 2, update_existing = 4,
@@ -89,8 +85,6 @@ _GLIBCXX_END_NAMESPACE_CXX11
       directories_only = 64, create_symlinks = 128, create_hard_links = 256
   };
 
-  /// @{
-  /// @relates copy_options
   constexpr copy_options
   operator&(copy_options __x, copy_options __y) noexcept
   {
@@ -133,10 +127,9 @@ _GLIBCXX_END_NAMESPACE_CXX11
   inline copy_options&
   operator^=(copy_options& __x, copy_options __y) noexcept
   { return __x = __x ^ __y; }
-  /// @}
 
 
-  /// Bitmask type representing file access permissions
+  /// Bitmask type
   enum class perms : unsigned {
       none		=  0,
       owner_read	=  0400,
@@ -159,8 +152,6 @@ _GLIBCXX_END_NAMESPACE_CXX11
       unknown		=  0xFFFF,
   };
 
-  /// @{
-  /// @relates perm_options
   constexpr perms
   operator&(perms __x, perms __y) noexcept
   {
@@ -203,9 +194,8 @@ _GLIBCXX_END_NAMESPACE_CXX11
   inline perms&
   operator^=(perms& __x, perms __y) noexcept
   { return __x = __x ^ __y; }
-  /// @}
 
-  /// Bitmask type controlling changes to permissions
+  /// Bitmask type
   enum class perm_options : unsigned {
       replace	= 0x1,
       add	= 0x2,
@@ -213,8 +203,6 @@ _GLIBCXX_END_NAMESPACE_CXX11
       nofollow	= 0x8
   };
 
-  /// @{
-  /// @relates perm_options
   constexpr perm_options
   operator&(perm_options __x, perm_options __y) noexcept
   {
@@ -257,15 +245,12 @@ _GLIBCXX_END_NAMESPACE_CXX11
   inline perm_options&
   operator^=(perm_options& __x, perm_options __y) noexcept
   { return __x = __x ^ __y; }
-  /// @}
 
-  /// Bitmask type controlling directory iteration
+  // Bitmask type
   enum class directory_options : unsigned char {
       none = 0, follow_directory_symlink = 1, skip_permission_denied = 2
   };
 
-  /// @{
-  /// @relates directory_options
   constexpr directory_options
   operator&(directory_options __x, directory_options __y) noexcept
   {
@@ -308,9 +293,49 @@ _GLIBCXX_END_NAMESPACE_CXX11
   inline directory_options&
   operator^=(directory_options& __x, directory_options __y) noexcept
   { return __x = __x ^ __y; }
-  /// @}
 
-  /// The type used for file timestamps
+  struct __file_clock
+  {
+    using duration                  = chrono::nanoseconds;
+    using rep                       = duration::rep;
+    using period                    = duration::period;
+    using time_point                = chrono::time_point<__file_clock>;
+    static constexpr bool is_steady = false;
+
+    static time_point
+    now() noexcept
+    { return _S_from_sys(chrono::system_clock::now()); }
+
+  private:
+    using __sys_clock = chrono::system_clock;
+
+    // This clock's (unspecified) epoch is 2174-01-01 00:00:00 UTC.
+    // A signed 64-bit duration with nanosecond resolution gives roughly
+    // +/- 292 years, which covers the 1901-2446 date range for ext4.
+    static constexpr chrono::seconds _S_epoch_diff{6437664000};
+
+  protected:
+    // For internal use only
+    template<typename _Dur>
+      static
+      chrono::time_point<__file_clock, _Dur>
+      _S_from_sys(const chrono::time_point<__sys_clock, _Dur>& __t) noexcept
+      {
+	using __file_time = chrono::time_point<__file_clock, _Dur>;
+	return __file_time{__t.time_since_epoch()} - _S_epoch_diff;
+      }
+
+    // For internal use only
+    template<typename _Dur>
+      static
+      chrono::time_point<__sys_clock, _Dur>
+      _S_to_sys(const chrono::time_point<__file_clock, _Dur>& __t) noexcept
+      {
+	using __sys_time = chrono::time_point<__sys_clock, _Dur>;
+	return __sys_time{__t.time_since_epoch()} + _S_epoch_diff;
+      }
+  };
+
   using file_time_type = __file_clock::time_point;
 
   // operational functions
@@ -354,9 +379,12 @@ _GLIBCXX_END_NAMESPACE_CXX11
   bool is_regular_file(file_status) noexcept;
   bool is_symlink(file_status) noexcept;
 
-/// @}
+  // @} group filesystem
 } // namespace filesystem
+
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
+
 #endif // C++17
+
 #endif // _GLIBCXX_FS_FWD_H

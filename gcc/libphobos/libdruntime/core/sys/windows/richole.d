@@ -8,11 +8,10 @@
  */
 module core.sys.windows.richole;
 version (Windows):
-@system:
 
-import core.sys.windows.objfwd, core.sys.windows.objidl, core.sys.windows.ole2, core.sys.windows.unknwn,
+private import core.sys.windows.objfwd, core.sys.windows.objidl, core.sys.windows.ole2, core.sys.windows.unknwn,
   core.sys.windows.windef;
-import core.sys.windows.richedit; // for CHARRANGE
+private import core.sys.windows.richedit; // for CHARRANGE
 
 //align(4):
 
@@ -84,7 +83,7 @@ interface IRichEditOle : IUnknown {
     HRESULT ContextSensitiveHelp(BOOL);
     HRESULT GetClipboardData(CHARRANGE*, DWORD, LPDATAOBJECT*);
     HRESULT ImportDataObject(LPDATAOBJECT, CLIPFORMAT, HGLOBAL);
-}
+};
 alias IRichEditOle LPRICHEDITOLE;
 
 interface IRichEditOleCallback : IUnknown {
@@ -98,5 +97,5 @@ interface IRichEditOleCallback : IUnknown {
     HRESULT GetClipboardData(CHARRANGE*, DWORD, LPDATAOBJECT*);
     HRESULT GetDragDropEffect(BOOL, DWORD, PDWORD);
     HRESULT GetContextMenu(WORD, LPOLEOBJECT, CHARRANGE*, HMENU*);
-}
+};
 alias IRichEditOleCallback LPRICHEDITOLECALLBACK;

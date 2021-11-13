@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -35,6 +35,9 @@ with Interfaces.C_Streams;         use Interfaces.C_Streams;
 with System.WCh_Con;               use System.WCh_Con;
 
 package body Ada.Wide_Text_IO.Enumeration_Aux is
+
+   subtype TFT is Ada.Wide_Text_IO.File_Type;
+   --  File type required for calls to routines in Aux
 
    -----------------------
    -- Local Subprograms --
@@ -66,8 +69,8 @@ package body Ada.Wide_Text_IO.Enumeration_Aux is
 
    begin
       Buflen := 0;
-      Load_Skip (File);
-      ch := Nextc (File);
+      Load_Skip (TFT (File));
+      ch := Nextc (TFT (File));
 
       --  Character literal case. If the initial character is a quote, then
       --  we read as far as we can without backup (see ACVC test CE3905L)
@@ -76,7 +79,7 @@ package body Ada.Wide_Text_IO.Enumeration_Aux is
          Get (File, WC);
          Store_Char (WC, Buf, Buflen);
 
-         ch := Nextc (File);
+         ch := Nextc (TFT (File));
 
          if ch = LM or else ch = EOF then
             return;
@@ -85,7 +88,7 @@ package body Ada.Wide_Text_IO.Enumeration_Aux is
          Get (File, WC);
          Store_Char (WC, Buf, Buflen);
 
-         ch := Nextc (File);
+         ch := Nextc (TFT (File));
 
          if ch /= Character'Pos (''') then
             return;
@@ -114,7 +117,7 @@ package body Ada.Wide_Text_IO.Enumeration_Aux is
             Get (File, WC);
             Store_Char (WC, Buf, Buflen);
 
-            ch := Nextc (File);
+            ch := Nextc (TFT (File));
 
             exit when ch = EOF;
 
@@ -152,7 +155,7 @@ package body Ada.Wide_Text_IO.Enumeration_Aux is
         Integer'Max (Integer (Width), Item'Length);
 
    begin
-      Check_On_One_Line (File, Actual_Width);
+      Check_On_One_Line (TFT (File), Actual_Width);
 
       if Set = Lower_Case and then Item (Item'First) /= ''' then
          declare

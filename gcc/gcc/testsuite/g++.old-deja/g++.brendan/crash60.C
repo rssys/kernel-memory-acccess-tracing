@@ -9,4 +9,4 @@ public:
 
 // Note that we mistakenly initialize the array data member as if it
 // was scalar
-X::X () : f (0) {}// { dg-error "" "" { target { ! c++20 } } }
+X::X () : f (0) {}// { dg-error "" } .*

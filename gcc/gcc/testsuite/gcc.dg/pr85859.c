@@ -15,6 +15,6 @@ int
 main (void)
 {
   b = (unsigned char) __builtin_parity (d);
-  e ? foo (0) : (__INTPTR_TYPE__) &c;
+  e ? foo (0) : (long) &c;
   return 0;
 }

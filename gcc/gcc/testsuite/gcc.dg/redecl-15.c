@@ -7,7 +7,7 @@
 void
 f (void)
 {
-  g(); /* { dg-message "note: previous implicit declaration of 'g'" } */
+  g(); /* { dg-message "note: previous implicit declaration of 'g' was here" } */
   {
     void g(); /* { dg-warning "conflicting types for 'g'" } */
   }

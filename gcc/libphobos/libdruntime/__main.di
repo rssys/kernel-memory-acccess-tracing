@@ -1,5 +1,5 @@
 /* GDC -- D front-end for GCC
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2019 Free Software Foundation, Inc.
 
    GCC is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free
@@ -20,17 +20,7 @@
 
 module __main;
 
-version (D_BetterC)
+int main(char[][])
 {
-    extern (C) int main(int, char**)
-    {
-        return 0;
-    }
-}
-else
-{
-    int main(char[][])
-    {
-        return 0;
-    }
+    return 0;
 }

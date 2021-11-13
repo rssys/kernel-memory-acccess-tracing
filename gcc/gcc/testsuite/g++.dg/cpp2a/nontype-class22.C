@@ -1,5 +1,5 @@
 // PR c++/90100
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 template<typename T>
 inline constexpr bool is_nontype_list = false;

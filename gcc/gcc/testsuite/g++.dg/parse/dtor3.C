@@ -4,13 +4,13 @@
 //  destructor call.
 
 struct Y { 
-  ~Y() {}      // { dg-bogus "note" "implemented DR272" }  
+  ~Y() {}      // { dg-bogus "note" "implemented DR272" { xfail *-*-* } }  
 };
 
 struct X : Y { 
-  ~X() {}      // { dg-bogus "note" "implemented DR272" }  
+  ~X() {}      // { dg-bogus "note" "implemented DR272" { xfail *-*-* } }  
   void f() { 
-    X::~X();   // { dg-bogus "" "implemented DR272" }  
-    Y::~Y();   // { dg-bogus "" "implemented DR272" }  
+    X::~X();   // { dg-bogus "" "implemented DR272" { xfail *-*-* } }  
+    Y::~Y();   // { dg-bogus "" "implemented DR272" { xfail *-*-* } }  
   } 
 };

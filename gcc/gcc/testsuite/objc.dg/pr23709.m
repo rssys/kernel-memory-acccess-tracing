@@ -1,5 +1,4 @@
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 @interface A
 +(void)method: (int)parameter {} /* { dg-error "expected" } */

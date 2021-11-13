@@ -1,5 +1,5 @@
 /* Implement classes and message passing for Objective C.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
    Contributed by Steve Naroff.
 
 This file is part of GCC.
@@ -458,7 +458,7 @@ objc_write_global_declarations (void)
 	  char * const dumpname = concat (dump_base_name, ".decl", NULL);
 	  gen_declaration_file = fopen (dumpname, "w");
 	  if (gen_declaration_file == 0)
-	    fatal_error (input_location, "cannot open %s: %m", dumpname);
+	    fatal_error (input_location, "can%'t open %s: %m", dumpname);
 	  free (dumpname);
 	}
 
@@ -571,11 +571,11 @@ lookup_protocol_in_reflist (tree rproto_list, tree lproto)
 }
 
 void
-objc_start_class_interface (tree klass, location_t name_loc, tree super_class,
+objc_start_class_interface (tree klass, tree super_class,
 			    tree protos, tree attributes)
 {
   if (flag_objc1_only && attributes)
-    error_at (name_loc, "class attributes are not available in Objective-C 1.0");
+    error_at (input_location, "class attributes are not available in Objective-C 1.0");
 
   objc_interface_context
     = objc_ivar_context
@@ -804,81 +804,119 @@ lookup_property (tree interface_type, tree property)
   return inter;
 }
 
-/* This routine returns a PROPERTY_KIND for the front end RID code supplied.  */
-
-enum objc_property_attribute_kind
-objc_prop_attr_kind_for_rid (enum rid prop_rid)
-{
-  switch (prop_rid)
-    {
-      default:			return OBJC_PROPERTY_ATTR_UNKNOWN;
-      case RID_GETTER:		return OBJC_PROPERTY_ATTR_GETTER;
-      case RID_SETTER:		return OBJC_PROPERTY_ATTR_SETTER;
-
-      case RID_READONLY:	return OBJC_PROPERTY_ATTR_READONLY;
-      case RID_READWRITE:	return OBJC_PROPERTY_ATTR_READWRITE;
-
-      case RID_ASSIGN:		return OBJC_PROPERTY_ATTR_ASSIGN;
-      case RID_RETAIN:		return OBJC_PROPERTY_ATTR_RETAIN;
-      case RID_COPY:		return OBJC_PROPERTY_ATTR_COPY;
-
-      case RID_PROPATOMIC:	return OBJC_PROPERTY_ATTR_ATOMIC;
-      case RID_NONATOMIC:	return OBJC_PROPERTY_ATTR_NONATOMIC;
-
-      case RID_NULL_UNSPECIFIED:return OBJC_PROPERTY_ATTR_NULL_UNSPECIFIED;
-      case RID_NULLABLE:	return OBJC_PROPERTY_ATTR_NULLABLE;
-      case RID_NONNULL:		return OBJC_PROPERTY_ATTR_NONNULL;
-      case RID_NULL_RESETTABLE:	return OBJC_PROPERTY_ATTR_NULL_RESETTABLE;
-
-      case RID_CLASS:		return OBJC_PROPERTY_ATTR_CLASS;
-    }
-}
-
 /* This routine is called by the parser when a
    @property... declaration is found.  'decl' is the declaration of
    the property (type/identifier), and the other arguments represent
    property attributes that may have been specified in the Objective-C
    declaration.  'parsed_property_readonly' is 'true' if the attribute
    'readonly' was specified, and 'false' if not; similarly for the
-   other bool parameters.  'property_getter_ident' is NULL_TREE
+   other bool parameters.  'parsed_property_getter_ident' is NULL_TREE
    if the attribute 'getter' was not specified, and is the identifier
    corresponding to the specified getter if it was; similarly for
-   'property_setter_ident'.  */
+   'parsed_property_setter_ident'.  */
 void
 objc_add_property_declaration (location_t location, tree decl,
-			       vec<property_attribute_info *>& prop_attr_list)
+			       bool parsed_property_readonly, bool parsed_property_readwrite,
+			       bool parsed_property_assign, bool parsed_property_retain,
+			       bool parsed_property_copy, bool parsed_property_nonatomic,
+			       tree parsed_property_getter_ident, tree parsed_property_setter_ident)
 {
-  if (flag_objc1_only)
-    /* FIXME: we probably ought to bail out at this point.  */
-    error_at (location, "%<@property%> is not available in Objective-C 1.0");
+  tree property_decl;
+  tree x;
+  /* 'property_readonly' and 'property_assign_semantics' are the final
+     attributes of the property after all parsed attributes have been
+     considered (eg, if we parsed no 'readonly' and no 'readwrite', ie
+     parsed_property_readonly = false and parsed_property_readwrite =
+     false, then property_readonly will be false because the default
+     is readwrite).  */
+  bool property_readonly = false;
+  objc_property_assign_semantics property_assign_semantics = OBJC_PROPERTY_ASSIGN;
+  bool property_extension_in_class_extension = false;
 
-  /* We must be in an interface, category, or protocol.  */
+  if (flag_objc1_only)
+    error_at (input_location, "%<@property%> is not available in Objective-C 1.0");
+
+  if (parsed_property_readonly && parsed_property_readwrite)
+    {
+      error_at (location, "%<readonly%> attribute conflicts with %<readwrite%> attribute");
+      /* In case of conflicting attributes (here and below), after
+	 producing an error, we pick one of the attributes and keep
+	 going.  */
+      property_readonly = false;
+    }
+  else
+    {
+      if (parsed_property_readonly)
+	property_readonly = true;
+
+      if (parsed_property_readwrite)
+	property_readonly = false;
+    }
+
+  if (parsed_property_readonly && parsed_property_setter_ident)
+    {
+      error_at (location, "%<readonly%> attribute conflicts with %<setter%> attribute");
+      property_readonly = false;
+    }
+
+  if (parsed_property_assign && parsed_property_retain)
+    {
+      error_at (location, "%<assign%> attribute conflicts with %<retain%> attribute");
+      property_assign_semantics = OBJC_PROPERTY_RETAIN;
+    }
+  else if (parsed_property_assign && parsed_property_copy)
+    {
+      error_at (location, "%<assign%> attribute conflicts with %<copy%> attribute");
+      property_assign_semantics = OBJC_PROPERTY_COPY;
+    }
+  else if (parsed_property_retain && parsed_property_copy)
+    {
+      error_at (location, "%<retain%> attribute conflicts with %<copy%> attribute");
+      property_assign_semantics = OBJC_PROPERTY_COPY;
+    }
+  else
+    {
+      if (parsed_property_assign)
+	property_assign_semantics = OBJC_PROPERTY_ASSIGN;
+
+      if (parsed_property_retain)
+	property_assign_semantics = OBJC_PROPERTY_RETAIN;
+
+      if (parsed_property_copy)
+	property_assign_semantics = OBJC_PROPERTY_COPY;
+    }
+
   if (!objc_interface_context)
     {
-      error_at (location, "property declaration not in %<@interface%>,"
-			  " %<@protocol%> or %<category%> context");
+      error_at (location, "property declaration not in @interface or @protocol context");
       return;
     }
 
-  /* Do some spot-checks for the most obvious invalid cases.  */
+  /* At this point we know that we are either in an interface, a
+     category, or a protocol.  */
 
-  gcc_checking_assert (decl && TREE_CODE (decl) == FIELD_DECL);
-
-  if (decl && !DECL_NAME (decl))
+  /* We expect a FIELD_DECL from the parser.  Make sure we didn't get
+     something else, as that would confuse the checks below.  */
+  if (TREE_CODE (decl) != FIELD_DECL)
     {
-      error_at (location, "properties must be named");
+      error_at (location, "invalid property declaration");
       return;
     }
 
-  location_t decl_loc = DECL_SOURCE_LOCATION (decl);
-  decl_loc = make_location (decl_loc, location, decl_loc);
+  /* Do some spot-checks for the most obvious invalid types.  */
+
   if (TREE_CODE (TREE_TYPE (decl)) == ARRAY_TYPE)
     {
-      error_at (decl_loc, "property cannot be an array");
+      error_at (location, "property cannot be an array");
       return;
     }
 
-  if (DECL_C_BIT_FIELD (decl))
+  /* The C++/ObjC++ parser seems to reject the ':' for a bitfield when
+     parsing, while the C/ObjC parser accepts it and gives us a
+     FIELD_DECL with a DECL_INITIAL set.  So we use the DECL_INITIAL
+     to check for a bitfield when doing ObjC.  */
+#ifndef OBJCPLUS
+  if (DECL_INITIAL (decl))
     {
       /* A @property is not an actual variable, but it is a way to
 	 describe a pair of accessor methods, so its type (which is
@@ -887,139 +925,10 @@ objc_add_property_declaration (location_t location, tree decl,
 	 and arguments of functions cannot be bitfields).  The
 	 underlying instance variable could be a bitfield, but that is
 	 a different matter.  */
-      error_at (decl_loc, "property cannot be a bit-field");
+      error_at (location, "property cannot be a bit-field");
       return;
     }
-
-  /* The final results of parsing the (growing number) of property
-     attributes.  */
-  property_attribute_info *attrs[OBJC_PROPATTR_GROUP_MAX] = { nullptr };
-
-  tree property_getter_ident = NULL_TREE;
-  tree property_setter_ident = NULL_TREE;
-  for (unsigned pn = 0; pn < prop_attr_list.length (); ++pn)
-    {
-      if (prop_attr_list[pn]->parse_error)
-	continue; /* Ignore attributes known to be wrongly parsed.  */
-
-      switch (int g = (int) prop_attr_list[pn]->group())
-	{
-	case OBJC_PROPATTR_GROUP_UNKNOWN:
-	  continue;
-	case OBJC_PROPATTR_GROUP_SETTER:
-	case OBJC_PROPATTR_GROUP_GETTER:
-	  if (attrs[g])
-	    {
-	      warning_at (prop_attr_list[pn]->prop_loc, OPT_Wattributes,
-			  "multiple property %qE methods specified, the latest"
-			  " one will be used", attrs[g]->name);
-	      inform (attrs[g]->prop_loc, "previous specification");
-	    }
-	  attrs[g] = prop_attr_list[pn];
-	  if (g == OBJC_PROPATTR_GROUP_SETTER)
-	    property_setter_ident = attrs[g]->ident;
-	  else
-	    property_getter_ident = attrs[g]->ident;
-	  continue;
-	default:
-	  {
-	    if (!attrs[g])
-	      ;
-	    else if (attrs[g]->prop_kind != prop_attr_list[pn]->prop_kind)
-	      {
-		error_at (prop_attr_list[pn]->prop_loc,
-			  "%qE attribute conflicts with %qE attribute",
-			  prop_attr_list[pn]->name, attrs[g]->name);
-		inform (attrs[g]->prop_loc, "%qE specified here",
-			attrs[g]->name );
-	      }
-	    else
-	      {
-		warning_at (prop_attr_list[pn]->prop_loc, OPT_Wattributes,
-			    "duplicate %qE attribute", attrs[g]->name);
-		inform (attrs[g]->prop_loc, "first specified here");
-	      }
-	    attrs[g] = prop_attr_list[pn];
-	  }
-	  continue;
-	}
-    }
-
-  /* The defaults for atomicity (atomic) and write-ability (readwrite) apply
-     even if the user provides no specified attributes.  */
-  bool property_nonatomic = false;
-  bool property_readonly = false;
-
-  /* Set the values from any specified by the user; these are easy, only two
-     states.  */
-  if (attrs[OBJC_PROPATTR_GROUP_ATOMIC])
-    property_nonatomic = attrs[OBJC_PROPATTR_GROUP_ATOMIC]->prop_kind
-			 == OBJC_PROPERTY_ATTR_NONATOMIC;
-
-  if (attrs[OBJC_PROPATTR_GROUP_READWRITE])
-    property_readonly = attrs[OBJC_PROPATTR_GROUP_READWRITE]->prop_kind
-			 == OBJC_PROPERTY_ATTR_READONLY;
-
-  /* One can't set a readonly value; we issue an error, but force the property
-     to readwrite as well.  */
-  if (property_readonly && property_setter_ident)
-    {
-      error_at (attrs[OBJC_PROPATTR_GROUP_READWRITE]->prop_loc, "%<readonly%>"
-		" attribute conflicts with %<setter%> attribute");
-      gcc_checking_assert (attrs[OBJC_PROPATTR_GROUP_SETTER]);
-      inform (attrs[OBJC_PROPATTR_GROUP_SETTER]->prop_loc, "%<setter%>"
-	      " specified here");
-      property_readonly = false;
-    }
-
-  /* Assign semantics is a tri-state property, and also needs some further
-     checking against the object type.  */
-  objc_property_assign_semantics property_assign_semantics
-    = OBJC_PROPERTY_ASSIGN;
-
-  if (attrs[OBJC_PROPATTR_GROUP_ASSIGN])
-    {
-      if (attrs[OBJC_PROPATTR_GROUP_ASSIGN]->prop_kind
-	  == OBJC_PROPERTY_ATTR_ASSIGN)
-	property_assign_semantics = OBJC_PROPERTY_ASSIGN;
-      else if (attrs[OBJC_PROPATTR_GROUP_ASSIGN]->prop_kind
-	       == OBJC_PROPERTY_ATTR_RETAIN)
-	property_assign_semantics = OBJC_PROPERTY_RETAIN;
-      else if (attrs[OBJC_PROPATTR_GROUP_ASSIGN]->prop_kind
-	       == OBJC_PROPERTY_ATTR_COPY)
-	property_assign_semantics = OBJC_PROPERTY_COPY;
-      else
-	gcc_unreachable ();
-    }
-
-  /* An attribute that indicates this property manipulates a class variable.
-     In this case, both the variable and the getter/setter must be provided
-     by the user.  */
-  bool property_class = false;
-  if (attrs[OBJC_PROPATTR_GROUP_CLASS])
-    property_nonatomic = attrs[OBJC_PROPATTR_GROUP_CLASS]->prop_kind
-			 == OBJC_PROPERTY_ATTR_CLASS;
-
-  /* Nullability specifications for the property.  */
-  enum objc_property_nullability property_nullability
-    =  OBJC_PROPERTY_NULL_UNSET;
-  if (attrs[OBJC_PROPATTR_GROUP_NULLABLE])
-    {
-      if (attrs[OBJC_PROPATTR_GROUP_NULLABLE]->prop_kind
-	  == OBJC_PROPERTY_ATTR_NULL_UNSPECIFIED)
-	property_nullability = OBJC_PROPERTY_NULL_UNSPECIFIED;
-      else if (attrs[OBJC_PROPATTR_GROUP_NULLABLE]->prop_kind
-	  == OBJC_PROPERTY_ATTR_NULLABLE)
-	property_nullability = OBJC_PROPERTY_NULLABLE;
-      else if (attrs[OBJC_PROPATTR_GROUP_NULLABLE]->prop_kind
-	  == OBJC_PROPERTY_ATTR_NONNULL)
-	property_nullability = OBJC_PROPERTY_NONNULL;
-      else if (attrs[OBJC_PROPATTR_GROUP_NULLABLE]->prop_kind
-	  == OBJC_PROPERTY_ATTR_NULL_RESETTABLE)
-	property_nullability = OBJC_PROPERTY_NULL_RESETTABLE;
-      else
-	gcc_unreachable ();
-    }
+#endif
 
   /* TODO: Check that the property type is an Objective-C object or a
      "POD".  */
@@ -1041,77 +950,69 @@ objc_add_property_declaration (location_t location, tree decl,
 	 for non-{Objective-C objects}, and to 'retain' for
 	 Objective-C objects.  But that would break compatibility with
 	 other compilers.  */
-      if (!attrs[OBJC_PROPATTR_GROUP_ASSIGN])
+      if (!parsed_property_assign && !parsed_property_retain && !parsed_property_copy)
 	{
 	  /* Use 'false' so we do not warn for Class objects.  */
 	  if (objc_type_valid_for_messaging (TREE_TYPE (decl), false))
 	    {
-	      warning_at (decl_loc, 0, "object property %qD has no %<assign%>,"
-			  " %<retain%> or %<copy%> attribute; assuming"
-			  " %<assign%>", decl);
-	      inform (decl_loc, "%<assign%> can be unsafe for Objective-C"
-		      " objects; please state explicitly if you need it");
+	      warning_at (location,
+			  0,
+			  "object property %qD has no %<assign%>, %<retain%> or %<copy%> attribute; assuming %<assign%>",
+			  decl);
+	      inform (location,
+		      "%<assign%> can be unsafe for Objective-C objects; please state explicitly if you need it");
 	    }
 	}
     }
 
-  /* Some attributes make no sense unless applied to an Objective-C object.  */
-  bool prop_objc_object_p
-    = objc_type_valid_for_messaging (TREE_TYPE (decl), true);
-  if (!prop_objc_object_p)
-    {
-      tree p_name = NULL_TREE;
-      if (property_assign_semantics == OBJC_PROPERTY_RETAIN
-	  || property_assign_semantics == OBJC_PROPERTY_COPY)
-	p_name = attrs[OBJC_PROPATTR_GROUP_ASSIGN]->name;
+  if (property_assign_semantics == OBJC_PROPERTY_RETAIN
+      && !objc_type_valid_for_messaging (TREE_TYPE (decl), true))
+    error_at (location, "%<retain%> attribute is only valid for Objective-C objects");
 
-      if (p_name)
-	error_at (decl_loc, "%qE attribute is only valid for Objective-C"
-		  " objects", p_name);
-    }
+  if (property_assign_semantics == OBJC_PROPERTY_COPY
+      && !objc_type_valid_for_messaging (TREE_TYPE (decl), true))
+    error_at (location, "%<copy%> attribute is only valid for Objective-C objects");
 
   /* Now determine the final property getter and setter names.  They
      will be stored in the PROPERTY_DECL, from which they'll always be
      extracted and used.  */
 
   /* Adjust, or fill in, setter and getter names.  We overwrite the
-     property_setter_ident and property_getter_ident
+     parsed_property_setter_ident and parsed_property_getter_ident
      with the final setter and getter identifiers that will be
      used.  */
-  if (property_setter_ident)
+  if (parsed_property_setter_ident)
     {
       /* The setter should be terminated by ':', but the parser only
 	 gives us an identifier without ':'.  So, we need to add ':'
 	 at the end.  */
-      const char *parsed_setter = IDENTIFIER_POINTER (property_setter_ident);
+      const char *parsed_setter = IDENTIFIER_POINTER (parsed_property_setter_ident);
       size_t length = strlen (parsed_setter);
       char *final_setter = (char *)alloca (length + 2);
 
       sprintf (final_setter, "%s:", parsed_setter);
-      property_setter_ident = get_identifier (final_setter);
+      parsed_property_setter_ident = get_identifier (final_setter);
     }
   else
     {
       if (!property_readonly)
-	property_setter_ident = get_identifier (objc_build_property_setter_name
+	parsed_property_setter_ident = get_identifier (objc_build_property_setter_name
 						       (DECL_NAME (decl)));
     }
 
-  if (!property_getter_ident)
-    property_getter_ident = DECL_NAME (decl);
+  if (!parsed_property_getter_ident)
+    parsed_property_getter_ident = DECL_NAME (decl);
 
   /* Check for duplicate property declarations.  We first check the
      immediate context for a property with the same name.  Any such
      declarations are an error, unless this is a class extension and
      we are extending a property from readonly to readwrite.  */
-  bool property_extension_in_class_extension = false;
-  tree x = NULL_TREE;
   for (x = CLASS_PROPERTY_DECL (objc_interface_context); x; x = TREE_CHAIN (x))
     {
       if (PROPERTY_NAME (x) == DECL_NAME (decl))
 	{
 	  if (objc_in_class_extension
-	      && !property_readonly
+	      && property_readonly == 0
 	      && PROPERTY_READONLY (x) == 1)
 	    {
 	      /* This is a class extension, and we are extending an
@@ -1186,7 +1087,7 @@ objc_add_property_declaration (location_t location, tree decl,
 	 types, or it is compatible.  */
       location_t original_location = DECL_SOURCE_LOCATION (x);
 
-      if (PROPERTY_NONATOMIC (x) != property_nonatomic)
+      if (PROPERTY_NONATOMIC (x) != parsed_property_nonatomic)
 	{
 	  warning_at (location, 0,
 		      "%<nonatomic%> attribute of property %qD conflicts with "
@@ -1197,7 +1098,7 @@ objc_add_property_declaration (location_t location, tree decl,
 	  return;
 	}
 
-      if (PROPERTY_GETTER_NAME (x) != property_getter_ident)
+      if (PROPERTY_GETTER_NAME (x) != parsed_property_getter_ident)
 	{
 	  warning_at (location, 0,
 		      "%<getter%> attribute of property %qD conflicts with "
@@ -1211,7 +1112,7 @@ objc_add_property_declaration (location_t location, tree decl,
       /* We can only compare the setter names if both the old and new property have a setter.  */
       if (!property_readonly  &&  !PROPERTY_READONLY(x))
 	{
-	  if (PROPERTY_SETTER_NAME (x) != property_setter_ident)
+	  if (PROPERTY_SETTER_NAME (x) != parsed_property_setter_ident)
 	    {
 	      warning_at (location, 0,
 			  "%<setter%> attribute of property %qD conflicts with "
@@ -1289,53 +1190,28 @@ objc_add_property_declaration (location_t location, tree decl,
       if (property_extension_in_class_extension)
 	{
 	  PROPERTY_READONLY (x) = 0;
-	  PROPERTY_SETTER_NAME (x) = property_setter_ident;
+	  PROPERTY_SETTER_NAME (x) = parsed_property_setter_ident;
 	  return;
 	}
     }
 
   /* Create a PROPERTY_DECL node.  */
-  tree property_decl = make_node (PROPERTY_DECL);
+  property_decl = make_node (PROPERTY_DECL);
 
   /* Copy the basic information from the original decl.  */
-  tree p_type = TREE_TYPE (decl);
-  TREE_TYPE (property_decl) = p_type;
+  TREE_TYPE (property_decl) = TREE_TYPE (decl);
   DECL_SOURCE_LOCATION (property_decl) = DECL_SOURCE_LOCATION (decl);
   TREE_DEPRECATED (property_decl) = TREE_DEPRECATED (decl);
-  TREE_UNAVAILABLE (property_decl) = TREE_UNAVAILABLE (decl);
 
   /* Add property-specific information.  */
   PROPERTY_NAME (property_decl) = DECL_NAME (decl);
-  PROPERTY_GETTER_NAME (property_decl) = property_getter_ident;
-  PROPERTY_SETTER_NAME (property_decl) = property_setter_ident;
+  PROPERTY_GETTER_NAME (property_decl) = parsed_property_getter_ident;
+  PROPERTY_SETTER_NAME (property_decl) = parsed_property_setter_ident;
   PROPERTY_READONLY (property_decl) = property_readonly;
-  PROPERTY_NONATOMIC (property_decl) = property_nonatomic;
-  PROPERTY_CLASS (property_decl) = property_class;
+  PROPERTY_NONATOMIC (property_decl) = parsed_property_nonatomic;
   PROPERTY_ASSIGN_SEMANTICS (property_decl) = property_assign_semantics;
   PROPERTY_IVAR_NAME (property_decl) = NULL_TREE;
   PROPERTY_DYNAMIC (property_decl) = 0;
-
-  /* FIXME: We seem to drop any existing DECL_ATTRIBUTES on the floor.  */
-  if (property_nullability != OBJC_PROPERTY_NULL_UNSET)
-    {
-      if (p_type && !POINTER_TYPE_P (p_type))
-	error_at (decl_loc, "nullability specifier %qE cannot be applied to"
-		  " non-pointer type %qT",
-		  attrs[OBJC_PROPATTR_GROUP_NULLABLE]->name, p_type);
-      else if (p_type && POINTER_TYPE_P (p_type) && TREE_TYPE (p_type)
-	       && POINTER_TYPE_P (TREE_TYPE (p_type)))
-	error_at (decl_loc, "nullability specifier %qE cannot be applied to"
-		  " multi-level pointer type %qT",
-		  attrs[OBJC_PROPATTR_GROUP_NULLABLE]->name, p_type);
-      else
-	{
-	  tree attr_name = get_identifier ("objc_nullability");
-	  tree attr_value = build_int_cst (unsigned_type_node,
-				       (unsigned)property_nullability);
-	  tree nulla = build_tree_list (attr_name, attr_value);
-	  DECL_ATTRIBUTES (property_decl) = nulla;
-	}
-    }
 
   /* Remember the fact that the property was found in the @optional
      section in a @protocol, or not.  */
@@ -1440,7 +1316,6 @@ maybe_make_artificial_property_decl (tree interface, tree implementation,
       TREE_TYPE (property_decl) = type;
       DECL_SOURCE_LOCATION (property_decl) = input_location;
       TREE_DEPRECATED (property_decl) = 0;
-      TREE_UNAVAILABLE (property_decl) = 0;
       DECL_ARTIFICIAL (property_decl) = 1;
 
       /* Add property-specific information.  Note that one of
@@ -1719,7 +1594,7 @@ objc_maybe_build_component_ref (tree object, tree property_ident)
     {
       tree expression;
       tree getter_call;
-      tree method_prototype_avail = NULL_TREE;
+      tree deprecated_method_prototype = NULL_TREE;
 
       /* We have an additional nasty problem here; if this
 	 PROPERTY_REF needs to become a 'getter', then the conversion
@@ -1753,10 +1628,10 @@ objc_maybe_build_component_ref (tree object, tree property_ident)
 	      is deprecated, but record the fact that the getter is
 	      deprecated by setting PROPERTY_REF_DEPRECATED_GETTER to
 	      the method prototype.  */
-	   &method_prototype_avail);
+	   &deprecated_method_prototype);
 
       expression = build4 (PROPERTY_REF, TREE_TYPE(x), object, x, getter_call,
-			   method_prototype_avail);
+			   deprecated_method_prototype);
       SET_EXPR_LOCATION (expression, input_location);
       TREE_SIDE_EFFECTS (expression) = 1;
 
@@ -1806,9 +1681,7 @@ objc_build_class_component_ref (tree class_name, tree property_ident)
     }
   else
     {
-      if (TREE_UNAVAILABLE (rtype))
-	error ("class %qE is unavailable", class_name);
-      else if (TREE_DEPRECATED (rtype))
+      if (TREE_DEPRECATED (rtype))
 	warning (OPT_Wdeprecated_declarations, "class %qE is deprecated", class_name);
     }
 
@@ -1820,17 +1693,17 @@ objc_build_class_component_ref (tree class_name, tree property_ident)
     {
       tree expression;
       tree getter_call;
-      tree method_prototype_avail = NULL_TREE;
+      tree deprecated_method_prototype = NULL_TREE;
 
       if (PROPERTY_HAS_NO_GETTER (x))
 	getter_call = NULL_TREE;
       else
 	getter_call = objc_finish_message_expr
 	  (object, PROPERTY_GETTER_NAME (x), NULL_TREE,
-	   &method_prototype_avail);
+	   &deprecated_method_prototype);
 
       expression = build4 (PROPERTY_REF, TREE_TYPE(x), object, x, getter_call,
-			   method_prototype_avail);
+			   deprecated_method_prototype);
       SET_EXPR_LOCATION (expression, input_location);
       TREE_SIDE_EFFECTS (expression) = 1;
 
@@ -1847,6 +1720,7 @@ objc_build_class_component_ref (tree class_name, tree property_ident)
 }
 
 
+
 /* This is used because we don't want to expose PROPERTY_REF to the
    C/C++ frontends.  Maybe we should!  */
 bool
@@ -1856,21 +1730,6 @@ objc_is_property_ref (tree node)
     return true;
   else
     return false;
-}
-
-/* We use this to report tree codes that are known to be invalid in const-
-   expression contexts.  */
-bool
-objc_non_constant_expr_p (tree node)
-{
-  switch (TREE_CODE (node))
-    {
-      default:
-	return false;
-      case MESSAGE_SEND_EXPR:
-      case PROPERTY_REF:
-	return true;
-    }
 }
 
 /* This function builds a setter call for a PROPERTY_REF (real, for a
@@ -1888,7 +1747,7 @@ objc_build_setter_call (tree lhs, tree rhs)
 
   if (PROPERTY_READONLY (property_decl))
     {
-      error ("%qs property cannot be set", "readonly");
+      error ("readonly property cannot be set");
       return error_mark_node;
     }
   else
@@ -2011,7 +1870,7 @@ objc_maybe_build_modify_expr (tree lhs, tree rhs)
 	 correct (maybe a more sophisticated implementation could
 	 avoid generating the compound expression if not needed), but
 	 we need to turn it off.  */
-      suppress_warning (compound_expr, OPT_Wunused);
+      TREE_NO_WARNING (compound_expr) = 1;
       return compound_expr;
     }
   else
@@ -2133,7 +1992,7 @@ objc_build_incr_expr_for_property_ref (location_t location,
 
   /* Prevent C++ from warning with -Wall that "right operand of comma
      operator has no effect".  */
-  suppress_warning (compound_expr, OPT_Wunused);
+  TREE_NO_WARNING (compound_expr) = 1;
   return compound_expr;
 }
 
@@ -2191,8 +2050,10 @@ objc_start_method_definition (bool is_class_method, tree decl, tree attributes,
     return false;
 
 #ifndef OBJCPLUS
-  /* Indicate no valid break/continue context.  */
-  in_statement = 0;
+  /* Indicate no valid break/continue context by setting these variables
+     to some non-null, non-label value.  We'll notice and emit the proper
+     error message in c_finish_bc_stmt.  */
+  c_break_label = c_cont_label = size_zero_node;
 #endif
 
   if (attributes)
@@ -2266,9 +2127,8 @@ objc_build_struct (tree klass, tree fields, tree super_name)
       DECL_FIELD_IS_BASE (base) = 1;
 
       if (fields)
-	/* Suppress C++ ABI warnings: we are following the ObjC ABI here.  */
-	suppress_warning (fields, OPT_Wabi);
-#endif
+	TREE_NO_WARNING (fields) = 1;	/* Suppress C++ ABI warnings -- we   */
+#endif					/* are following the ObjC ABI here.  */
       DECL_CHAIN (base) = fields;
       fields = base;
     }
@@ -2541,14 +2401,9 @@ objc_compare_types (tree ltyp, tree rtyp, int argno, tree callee)
   if (!POINTER_TYPE_P (ltyp) || !POINTER_TYPE_P (rtyp))
     return false;
 
-  tree ltyp_attr, rtyp_attr;
   do
     {
-      /* Remove indirections, but keep the type attributes from the innermost
-	 pointer type, to check for NSObject.  */
-      ltyp_attr = TYPE_ATTRIBUTES (ltyp);
-      ltyp = TREE_TYPE (ltyp);
-      rtyp_attr = TYPE_ATTRIBUTES (rtyp);
+      ltyp = TREE_TYPE (ltyp);  /* Remove indirections.  */
       rtyp = TREE_TYPE (rtyp);
     }
   while (POINTER_TYPE_P (ltyp) && POINTER_TYPE_P (rtyp));
@@ -2593,23 +2448,17 @@ objc_compare_types (tree ltyp, tree rtyp, int argno, tree callee)
       return true;
     }
 
-  /* We might have void * with NSObject type attr.  */
-  bool l_NSObject_p = ltyp_attr && lookup_attribute ("NSObject", ltyp_attr);
-  bool r_NSObject_p = rtyp_attr && lookup_attribute ("NSObject", rtyp_attr);
-
   /* Past this point, we are only interested in ObjC class instances,
-     or 'id' or 'Class' (except if the user applied the NSObject type
-     attribute).  */
-  if ((TREE_CODE (ltyp) != RECORD_TYPE && !l_NSObject_p)
-      || (TREE_CODE (rtyp) != RECORD_TYPE && !r_NSObject_p))
+     or 'id' or 'Class'.  */
+  if (TREE_CODE (ltyp) != RECORD_TYPE || TREE_CODE (rtyp) != RECORD_TYPE)
     return false;
 
   if (!objc_is_object_id (ltyp) && !objc_is_class_id (ltyp)
-      && !TYPE_HAS_OBJC_INFO (ltyp) && !l_NSObject_p)
+      && !TYPE_HAS_OBJC_INFO (ltyp))
     return false;
 
   if (!objc_is_object_id (rtyp) && !objc_is_class_id (rtyp)
-      && !TYPE_HAS_OBJC_INFO (rtyp) && !r_NSObject_p)
+      && !TYPE_HAS_OBJC_INFO (rtyp))
     return false;
 
   /* Past this point, we are committed to returning 'true' to the caller
@@ -2643,14 +2492,11 @@ objc_compare_types (tree ltyp, tree rtyp, int argno, tree callee)
     rcls = NULL_TREE;
 
   /* If either type is an unqualified 'id', we're done.  This is because
-     an 'id' can be assigned to or from any type with no warnings.  When
-     the pointer has NSObject attribute, consider that to be equivalent.  */
+     an 'id' can be assigned to or from any type with no warnings.  */
   if (argno != -5)
     {
       if ((!lproto && objc_is_object_id (ltyp))
 	  || (!rproto && objc_is_object_id (rtyp)))
-	return true;
-      if (l_NSObject_p || r_NSObject_p)
 	return true;
     }
   else
@@ -2659,7 +2505,7 @@ objc_compare_types (tree ltyp, tree rtyp, int argno, tree callee)
 	 general type of object, hence if you try to specialize an
 	 'NSArray *' (ltyp) property with an 'id' (rtyp) one, we need
 	 to warn.  */
-      if (!lproto && (objc_is_object_id (ltyp) || l_NSObject_p))
+      if (!lproto && objc_is_object_id (ltyp))
 	return true;
     }
 
@@ -3083,7 +2929,7 @@ static void
 synth_module_prologue (void)
 {
   tree type;
-  uint32_t save_write_symbols = write_symbols;
+  enum debug_info_type save_write_symbols = write_symbols;
   const struct gcc_debug_hooks *const save_hooks = debug_hooks;
 
   /* Suppress outputting debug symbols, because
@@ -3110,26 +2956,25 @@ synth_module_prologue (void)
   objc_object_name = get_identifier (OBJECT_TYPEDEF_NAME);
   objc_instancetype_name = get_identifier (INSTANCE_TYPEDEF_NAME);
   objc_class_name = get_identifier (CLASS_TYPEDEF_NAME);
-  objc_selector_name = get_identifier (SEL_TYPEDEF_NAME);
 
   /* Declare the 'id', 'instancetype' and 'Class' typedefs.  */
   type = lang_hooks.decls.pushdecl (build_decl (input_location,
 						TYPE_DECL,
 						objc_object_name,
 						objc_object_type));
-  suppress_warning (type);
+  TREE_NO_WARNING (type) = 1;
 
   type = lang_hooks.decls.pushdecl (build_decl (input_location,
 						TYPE_DECL,
 						objc_instancetype_name,
 						objc_instancetype_type));
-  suppress_warning (type);
+  TREE_NO_WARNING (type) = 1;
 
   type = lang_hooks.decls.pushdecl (build_decl (input_location,
 						TYPE_DECL,
 						objc_class_name,
 						objc_class_type));
-  suppress_warning (type);
+  TREE_NO_WARNING (type) = 1;
 
   /* Forward-declare '@interface Protocol'.  */
   type = get_identifier (PROTOCOL_OBJECT_CLASS_NAME);
@@ -3381,10 +3226,8 @@ objc_build_string_object (tree string)
   return addr;
 }
 
-/* Build a static constant CONSTRUCTOR with type TYPE and elements ELTS.
-   We might be presented with a NULL for ELTS, which means 'empty ctor'
-   which will subsequently be converted into a zero initializer in the
-   middle end.  */
+/* Build a static constant CONSTRUCTOR
+   with type TYPE and elements ELTS.  */
 
 tree
 objc_build_constructor (tree type, vec<constructor_elt, va_gc> *elts)
@@ -3396,10 +3239,12 @@ objc_build_constructor (tree type, vec<constructor_elt, va_gc> *elts)
   TREE_READONLY (constructor) = 1;
 
 #ifdef OBJCPLUS
-  /* If we know the initializer, then set the type to what C++ expects.  */
-  if (elts && !(*elts)[0].index)
+  /* Adjust for impedance mismatch.  We should figure out how to build
+     CONSTRUCTORs that consistently please both the C and C++ gods.  */
+  if (!(*elts)[0].index)
     TREE_TYPE (constructor) = init_list_type_node;
 #endif
+
   return constructor;
 }
 
@@ -4371,13 +4216,13 @@ objc_begin_catch_clause (tree decl)
     }
   else if (!objc_type_valid_for_messaging (type, false))
     {
-      error ("%<@catch%> parameter is not a known Objective-C class type");
+      error ("@catch parameter is not a known Objective-C class type");
       type = error_mark_node;
     }
   else if (TYPE_HAS_OBJC_INFO (TREE_TYPE (type))
 	   && TYPE_OBJC_PROTOCOL_LIST (TREE_TYPE (type)))
     {
-      error ("%<@catch%> parameter cannot be protocol-qualified");
+      error ("@catch parameter cannot be protocol-qualified");
       type = error_mark_node;
     }
   else if (POINTER_TYPE_P (type) && objc_is_object_id (TREE_TYPE (type)))
@@ -4499,8 +4344,7 @@ objc_build_throw_stmt (location_t loc, tree throw_expr)
       if (cur_try_context == NULL
           || cur_try_context->current_catch == NULL)
 	{
-	  error_at (loc,
-		    "%<@throw%> (rethrow) used outside of a %<@catch%> block");
+	  error_at (loc, "%<@throw%> (rethrow) used outside of a @catch block");
 	  return error_mark_node;
 	}
 
@@ -4602,8 +4446,6 @@ build_private_template (tree klass)
       /* Copy the attributes from the class to the type.  */
       if (TREE_DEPRECATED (klass))
 	TREE_DEPRECATED (record) = 1;
-      if (TREE_UNAVAILABLE (klass))
-	TREE_UNAVAILABLE (record) = 1;
     }
 }
 
@@ -5029,7 +4871,6 @@ objc_decl_method_attributes (tree *node, tree attributes, int flags)
 	  tree name = TREE_PURPOSE (attribute);
 
 	  if (is_attribute_p  ("deprecated", name)
-	      || is_attribute_p ("unavailable", name)
 	      || is_attribute_p ("sentinel", name)
 	      || is_attribute_p ("noreturn", name))
 	    {
@@ -5495,9 +5336,9 @@ lookup_method_in_hash_lists (tree sel_name, int is_class)
    C++ template functions, it is called from 'build_expr_from_tree'
    (in decl2.c) after RECEIVER and METHOD_PARAMS have been expanded.
 
-   If the method_prototype_avail argument is NULL, then we warn
+   If the DEPRECATED_METHOD_PROTOTYPE argument is NULL, then we warn
    if the method being used is deprecated.  If it is not NULL, instead
-   of deprecating, we set *method_prototype_avail to the method
+   of deprecating, we set *DEPRECATED_METHOD_PROTOTYPE to the method
    prototype that was used and is deprecated.  This is useful for
    getter calls that are always generated when compiling dot-syntax
    expressions, even if they may not be used.  In that case, we don't
@@ -5506,7 +5347,7 @@ lookup_method_in_hash_lists (tree sel_name, int is_class)
    used.  */
 tree
 objc_finish_message_expr (tree receiver, tree sel_name, tree method_params,
-			  tree *method_prototype_avail)
+			  tree *deprecated_method_prototype)
 {
   tree method_prototype = NULL_TREE, rprotos = NULL_TREE, rtype;
   tree retval, class_tree;
@@ -5578,8 +5419,7 @@ objc_finish_message_expr (tree receiver, tree sel_name, tree method_params,
 		 prototype.  Emit a warning, then keep going (this
 		 will use any method with a matching name, as if the
 		 receiver was of type 'Class').  */
-	      warning (0, "%<@interface%> of class %qE not found",
-		       class_tree);
+	      warning (0, "@interface of class %qE not found", class_tree);
 	    }
 	}
       /* Handle `self' and `super'.  */
@@ -5713,7 +5553,7 @@ objc_finish_message_expr (tree receiver, tree sel_name, tree method_params,
 		     warning, either include an @interface for the
 		     class, or cast the receiver to 'id'.  Note that
 		     rtype is an IDENTIFIER_NODE at this point.  */
-		  warning (0, "%<@interface%> of class %qE not found", rtype);
+		  warning (0, "@interface of class %qE not found", rtype);
 		}
 	    }
 
@@ -5796,9 +5636,11 @@ objc_finish_message_expr (tree receiver, tree sel_name, tree method_params,
       if (!warn_missing_methods)
 	{
 	  warning_at (input_location,
-		      0, "(messages without a matching method signature "
-		      "will be assumed to return %<id%> and accept "
-		      "%<...%> as arguments)");
+		      0, "(Messages without a matching method signature");
+	  warning_at (input_location,
+		      0, "will be assumed to return %<id%> and accept");
+	  warning_at (input_location,
+		      0, "%<...%> as arguments.)");
 	  warn_missing_methods = true;
 	}
     }
@@ -5818,17 +5660,10 @@ objc_finish_message_expr (tree receiver, tree sel_name, tree method_params,
 	 In practice this makes sense since casting an object to 'id'
 	 is often used precisely to turn off warnings associated with
 	 the object being of a particular class.  */
-      if (TREE_UNAVAILABLE (method_prototype) && rtype != NULL_TREE)
+      if (TREE_DEPRECATED (method_prototype) && rtype != NULL_TREE)
 	{
-	  if (method_prototype_avail)
-	    *method_prototype_avail = method_prototype;
-	  else
-	    error_unavailable_use (method_prototype, NULL_TREE);
-	}
-      else if (TREE_DEPRECATED (method_prototype) && rtype != NULL_TREE)
-	{
-	  if (method_prototype_avail)
-	    *method_prototype_avail = method_prototype;
+	  if (deprecated_method_prototype)
+	    *deprecated_method_prototype = method_prototype;
 	  else
 	    warn_deprecated_use (method_prototype, NULL_TREE);
 	}
@@ -7000,9 +6835,7 @@ start_class (enum tree_code code, tree class_name, tree super_name,
 	}
       else
 	{
-	  if (TREE_UNAVAILABLE (super_interface))
-	    error ("class %qE is not available", super);
-	  else if (TREE_DEPRECATED (super_interface))
+	  if (TREE_DEPRECATED (super_interface))
 	    warning (OPT_Wdeprecated_declarations, "class %qE is deprecated",
 		     super);
 	  super_name = super;
@@ -7080,12 +6913,6 @@ start_class (enum tree_code code, tree class_name, tree super_name,
 	  CLASS_SUPER_NAME (objc_implementation_context)
 	    = CLASS_SUPER_NAME (implementation_template);
 	}
-
-      if (!CLASS_SUPER_NAME (objc_implementation_context)
-	  && !lookup_attribute ("objc_root_class",
-				TYPE_ATTRIBUTES (implementation_template)))
-	  warning (OPT_Wobjc_root_class, "class %qE defined without"
-		      " specifying a base class", class_name);
       break;
 
     case CLASS_INTERFACE_TYPE:
@@ -7110,18 +6937,12 @@ start_class (enum tree_code code, tree class_name, tree super_name,
 	      tree name = TREE_PURPOSE (attribute);
 
 	      /* TODO: Document what the objc_exception attribute is/does.  */
-	      /* We handle the 'deprecated', 'visibility' and (undocumented)
-		 'objc_exception' attributes.  */
-	      if (is_attribute_p  ("unavailable", name))
-		TREE_UNAVAILABLE (klass) = 1;
-	      else if (is_attribute_p  ("deprecated", name))
+	      /* We handle the 'deprecated' and (undocumented) 'objc_exception'
+		 attributes.  */
+	      if (is_attribute_p  ("deprecated", name))
 		TREE_DEPRECATED (klass) = 1;
 	      else if (is_attribute_p  ("objc_exception", name))
 		CLASS_HAS_EXCEPTION_ATTR (klass) = 1;
-	      else if (is_attribute_p  ("objc_root_class", name))
-		;
-	      else if (is_attribute_p  ("visibility", name))
-		;
 	      else
 		/* Warn about and ignore all others for now, but store them.  */
 		warning (OPT_Wattributes, "%qE attribute directive ignored", name);
@@ -7145,9 +6966,7 @@ start_class (enum tree_code code, tree class_name, tree super_name,
 	  }
 	else
 	  {
-	    if (TREE_UNAVAILABLE (class_category_is_assoc_with))
-	      error ("class %qE is unavailable", class_name);
-	    else if (TREE_DEPRECATED (class_category_is_assoc_with))
+	    if (TREE_DEPRECATED (class_category_is_assoc_with))
 	      warning (OPT_Wdeprecated_declarations, "class %qE is deprecated",
 		       class_name);
 
@@ -8174,7 +7993,6 @@ finish_class (tree klass)
 		else
 		  objc_add_method (objc_interface_context, getter_decl, false, false);
 		TREE_DEPRECATED (getter_decl) = TREE_DEPRECATED (x);
-		TREE_UNAVAILABLE (getter_decl) = TREE_UNAVAILABLE (x);
 		METHOD_PROPERTY_CONTEXT (getter_decl) = x;
 	      }
 
@@ -8219,7 +8037,6 @@ finish_class (tree klass)
 		    else
 		      objc_add_method (objc_interface_context, setter_decl, false, false);
 		    TREE_DEPRECATED (setter_decl) = TREE_DEPRECATED (x);
-		    TREE_UNAVAILABLE (setter_decl) = TREE_UNAVAILABLE (x);
 		    METHOD_PROPERTY_CONTEXT (setter_decl) = x;
 		  }
 	      }
@@ -8273,9 +8090,7 @@ lookup_protocol (tree ident, bool warn_if_deprecated, bool definition_required)
   for (chain = protocol_chain; chain; chain = TREE_CHAIN (chain))
     if (ident == PROTOCOL_NAME (chain))
       {
-	if (TREE_UNAVAILABLE (chain))
-	  error ("protocol %qE is unavailable", PROTOCOL_NAME (chain));
-	else if (warn_if_deprecated && TREE_DEPRECATED (chain))
+	if (warn_if_deprecated && TREE_DEPRECATED (chain))
 	  {
 	    /* It would be nice to use warn_deprecated_use() here, but
 	       we are using TREE_CHAIN (which is supposed to be the
@@ -8300,7 +8115,6 @@ void
 objc_declare_protocol (tree name, tree attributes)
 {
   bool deprecated = false;
-  bool unavailable = false;
 
 #ifdef OBJCPLUS
   if (current_namespace != global_namespace) {
@@ -8319,8 +8133,6 @@ objc_declare_protocol (tree name, tree attributes)
 
 	  if (is_attribute_p  ("deprecated", name))
 	    deprecated = true;
-	  else if (is_attribute_p  ("unavailable", name))
-	    unavailable = true;
 	  else
 	    warning (OPT_Wattributes, "%qE attribute directive ignored", name);
 	}
@@ -8345,8 +8157,6 @@ objc_declare_protocol (tree name, tree attributes)
 	  TYPE_ATTRIBUTES (protocol) = attributes;
 	  if (deprecated)
 	    TREE_DEPRECATED (protocol) = 1;
-	  if (unavailable)
-	    TREE_UNAVAILABLE (protocol) = 1;
 	}
     }
 }
@@ -8356,7 +8166,6 @@ start_protocol (enum tree_code code, tree name, tree list, tree attributes)
 {
   tree protocol;
   bool deprecated = false;
-  bool unavailable = false;
 
 #ifdef OBJCPLUS
   if (current_namespace != global_namespace) {
@@ -8375,8 +8184,6 @@ start_protocol (enum tree_code code, tree name, tree list, tree attributes)
 
 	  if (is_attribute_p  ("deprecated", name))
 	    deprecated = true;
-	  else if (is_attribute_p  ("unavailable", name))
-	    unavailable = true;
 	  else
 	    warning (OPT_Wattributes, "%qE attribute directive ignored", name);
 	}
@@ -8416,8 +8223,6 @@ start_protocol (enum tree_code code, tree name, tree list, tree attributes)
       TYPE_ATTRIBUTES (protocol) = attributes;
       if (deprecated)
 	TREE_DEPRECATED (protocol) = 1;
-      if (unavailable)
-	TREE_UNAVAILABLE (protocol) = 1;
     }
 
   return protocol;
@@ -8776,18 +8581,10 @@ objc_type_valid_for_messaging (tree type, bool accept_classes)
   if (!POINTER_TYPE_P (type))
     return false;
 
-  /* We will check for an NSObject type attribute  on the pointer if other
-     tests fail.  */
-  tree type_attr = TYPE_ATTRIBUTES (type);
-
   /* Remove the pointer indirection; don't remove more than one
      otherwise we'd consider "NSObject **" a valid type for messaging,
      which it isn't.  */
   type = TREE_TYPE (type);
-
-  /* We allow void * to have an NSObject type attr.  */
-  if (VOID_TYPE_P (type) && type_attr)
-    return lookup_attribute ("NSObject", type_attr) != NULL_TREE;
 
   if (TREE_CODE (type) != RECORD_TYPE)
     return false;
@@ -8800,9 +8597,6 @@ objc_type_valid_for_messaging (tree type, bool accept_classes)
 
   if (TYPE_HAS_OBJC_INFO (type))
     return true;
-
-  if (type_attr)
-    return lookup_attribute ("NSObject", type_attr) != NULL_TREE;
 
   return false;
 }
@@ -8947,8 +8741,6 @@ really_start_method (tree method,
 		 warnings are produced), but just in case.  */
 	      if (TREE_DEPRECATED (proto))
 		TREE_DEPRECATED (method) = 1;
-	      if (TREE_UNAVAILABLE (proto))
-		TREE_UNAVAILABLE (method) = 1;
 
 	      /* If the method in the @interface was marked as
 		 'noreturn', mark the function implementing the method
@@ -9064,7 +8856,7 @@ get_super_receiver (void)
     }
   else
     {
-      error ("%<[super ...]%> must appear in a method context");
+      error ("[super ...] must appear in a method context");
       return error_mark_node;
     }
 }
@@ -9680,17 +9472,12 @@ objc_gimplify_property_ref (tree *expr_p)
       return;
     }
 
-  /* FIXME, this should be a label indicating availability in general.  */
   if (PROPERTY_REF_DEPRECATED_GETTER (*expr_p))
     {
-      if (TREE_UNAVAILABLE (PROPERTY_REF_DEPRECATED_GETTER (*expr_p)))
-	error_unavailable_use (PROPERTY_REF_DEPRECATED_GETTER (*expr_p),
-			       NULL_TREE);
-      else
-	/* PROPERTY_REF_DEPRECATED_GETTER contains the method prototype
+      /* PROPERTY_REF_DEPRECATED_GETTER contains the method prototype
 	 that is deprecated.  */
-	warn_deprecated_use (PROPERTY_REF_DEPRECATED_GETTER (*expr_p),
-			     NULL_TREE);
+      warn_deprecated_use (PROPERTY_REF_DEPRECATED_GETTER (*expr_p),
+			   NULL_TREE);
     }
 
   call_exp = getter;
@@ -9705,9 +9492,7 @@ objc_gimplify_property_ref (tree *expr_p)
       call_exp = TREE_OPERAND (getter, 1);
     }
 #endif
-  gcc_checking_assert ((flag_objc_nilcheck
-			&& TREE_CODE (call_exp) == COND_EXPR)
-		       || TREE_CODE (call_exp) == CALL_EXPR);
+  gcc_assert (TREE_CODE (call_exp) == CALL_EXPR);
 
   *expr_p = call_exp;
 }
@@ -10319,7 +10104,7 @@ objc_string_ref_type_p (tree strp)
   return (tmv
 	  && TREE_CODE (tmv) == IDENTIFIER_NODE
 	  && IDENTIFIER_POINTER (tmv)
-	  && startswith (IDENTIFIER_POINTER (tmv), "NSString"));
+	  && !strncmp (IDENTIFIER_POINTER (tmv), "NSString", 8));
 }
 
 /* At present the behavior of this is undefined and it does nothing.  */

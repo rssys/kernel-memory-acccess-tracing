@@ -2,7 +2,6 @@
 /* { dg-do compile } */
 /* { dg-prune-output ".*internal compiler error.*" } */
 /* { dg-options "-O3" } */
-// { dg-additional-options "-Wno-objc-root-class" }
 
 @class NSString;
 @protocol NSObject

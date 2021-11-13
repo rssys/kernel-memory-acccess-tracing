@@ -70,7 +70,7 @@ template class TC6<int>::TC7;  // Valid explicit instantiation, no warning
 
 
 // Verify that friend declarations, also easy to confuse with forward
-// declarations, are similarly not warned about.
+// declrations, are similarly not warned about.
 class C8 {
  public:
   class C9 { };
@@ -79,10 +79,3 @@ class C10 {
  public:
   friend class C8::C9;         // Valid friend declaration, no warning
 };
-
-#if __cplusplus >= 201103L
-// Verify that alias-declarations using an elaborated-type-specifier and
-// nested-name-specifier are not warned about (PR c++/66159).
-struct C11;
-using A1 = struct ::C11; // Valid alias-decl, no warning
-#endif

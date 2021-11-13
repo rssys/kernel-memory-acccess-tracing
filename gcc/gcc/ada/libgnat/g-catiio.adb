@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 1999-2021, AdaCore                     --
+--                     Copyright (C) 1999-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,6 +29,7 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
+with Ada.Calendar;            use Ada.Calendar;
 with Ada.Characters.Handling;
 with Ada.Strings.Unbounded;   use Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -69,14 +70,6 @@ package body GNAT.Calendar.Time_IO is
    -- Local Subprograms --
    -----------------------
 
-   function Image_Helper
-     (Date      : Ada.Calendar.Time;
-      Picture   : Picture_String;
-      Time_Zone : Time_Zones.Time_Offset) return String;
-   --  This is called by the two exported Image functions. It uses the local
-   --  time zone for its computations, but uses Time_Zone when interpreting the
-   --  "%:::z" tag.
-
    function Am_Pm (H : Natural) return String;
    --  Return AM or PM depending on the hour H
 
@@ -100,14 +93,19 @@ package body GNAT.Calendar.Time_IO is
       Length  : Natural := 0) return String;
    --  As above with N provided in Integer format
 
-   procedure Parse_ISO_8601
+   procedure Parse_ISO_8861_UTC
       (Date    : String;
        Time    : out Ada.Calendar.Time;
        Success : out Boolean);
    --  Subsidiary of function Value. It parses the string Date, interpreted as
-   --  an ISO 8601 time representation, and returns corresponding Time value.
-   --  Success is set to False when the string is not a supported ISO 8601
-   --  date.
+   --  an ISO 8861 time representation, and returns corresponding Time value.
+   --  Success is set to False when the string is not a supported ISO 8861
+   --  date. The following regular expression defines the supported format:
+   --
+   --    (yyyymmdd | yyyy'-'mm'-'dd)'T'(hhmmss | hh':'mm':'ss)
+   --      [ ('Z' | ('.' | ',') s{s} | ('+'|'-')hh':'mm) ]
+   --
+   --  Trailing characters (in particular spaces) are not allowed.
    --
    --  Examples:
    --
@@ -176,10 +174,6 @@ package body GNAT.Calendar.Time_IO is
       return Image (Sec_Number (N), Padding, Length);
    end Image;
 
-   -----------
-   -- Image --
-   -----------
-
    function Image
      (N       : Sec_Number;
       Padding : Padding_Mode := Zero;
@@ -220,45 +214,8 @@ package body GNAT.Calendar.Time_IO is
    -----------
 
    function Image
-     (Date      : Ada.Calendar.Time;
-      Picture   : Picture_String;
-      Time_Zone : Time_Zones.Time_Offset) return String
-   is
-      --  We subtract off the local time zone, and add in the requested
-      --  Time_Zone, and then pass it on to Image_Helper, which uses the
-      --  local time zone.
-
-      use Time_Zones;
-      Local_TZ : constant Time_Offset := Local_Time_Offset (Date);
-      Minute_Offset : constant Integer := Integer (Time_Zone - Local_TZ);
-      Second_Offset : constant Integer := Minute_Offset * 60;
-   begin
-      return Image_Helper
-        (Date + Duration (Second_Offset), Picture, Time_Zone);
-   end Image;
-
-   -----------
-   -- Image --
-   -----------
-
-   function Image
      (Date    : Ada.Calendar.Time;
       Picture : Picture_String) return String
-   is
-      use Time_Zones;
-      Local_TZ : constant Time_Offset := Local_Time_Offset (Date);
-   begin
-      return Image_Helper (Date, Picture, Local_TZ);
-   end Image;
-
-   ------------------
-   -- Image_Helper --
-   ------------------
-
-   function Image_Helper
-     (Date      : Ada.Calendar.Time;
-      Picture   : Picture_String;
-      Time_Zone : Time_Zones.Time_Offset) return String
    is
       Padding : Padding_Mode := Zero;
       --  Padding is set for one directive
@@ -452,43 +409,6 @@ package body GNAT.Calendar.Time_IO is
                     Image (Minute, Padding, Length => 2) & ':' &
                     Image (Second, Padding, Length => 2);
 
-               --  Time zone. Append "+hh", "-hh", "+hh:mm", or "-hh:mm", as
-               --  appropriate.
-
-               when ':' =>
-                  declare
-                     use type Time_Zones.Time_Offset;
-                     TZ_Form : constant Picture_String := "%:::z";
-                     TZ : constant Natural := Natural (abs Time_Zone);
-                  begin
-                     if P + TZ_Form'Length - 1 <= Picture'Last
-                       and then Picture (P .. P + TZ_Form'Length - 1) = "%:::z"
-                     then
-                        if Time_Zone >= 0 then
-                           Result := Result & "+";
-                        else
-                           Result := Result & "-";
-                        end if;
-
-                        Result := Result &
-                          Image (Integer (TZ / 60), Padding, Length => 2);
-
-                        if TZ mod 60 /= 0 then
-                           Result := Result & ":";
-                           Result := Result &
-                             Image (TZ mod 60, Padding, Length => 2);
-                        end if;
-
-                        P := P + TZ_Form'Length - 2; -- will add 2 below
-
-                     --  We do not support any of the other standard GNU
-                     --  time-zone formats (%z, %:z, %::z, %Z).
-
-                     else
-                        raise Picture_Error with "unsupported picture format";
-                     end if;
-                  end;
-
                --  Locale's abbreviated weekday name (Sun..Sat)
 
                when 'a' =>
@@ -615,7 +535,7 @@ package body GNAT.Calendar.Time_IO is
       end loop;
 
       return To_String (Result);
-   end Image_Helper;
+   end Image;
 
    --------------------------
    -- Month_Name_To_Number --
@@ -645,29 +565,26 @@ package body GNAT.Calendar.Time_IO is
       return Abbrev_Upper_Month_Names'First;
    end Month_Name_To_Number;
 
-   --------------------
-   -- Parse_ISO_8601 --
-   --------------------
+   ------------------------
+   -- Parse_ISO_8861_UTC --
+   ------------------------
 
-   procedure Parse_ISO_8601
+   procedure Parse_ISO_8861_UTC
       (Date    : String;
        Time    : out Ada.Calendar.Time;
        Success : out Boolean)
    is
-      pragma Unsuppress (All_Checks);
-      --  This is necessary because the run-time library is usually compiled
-      --  with checks suppressed, and we are relying on constraint checks in
-      --  this code to catch syntax errors in the Date string (e.g. out of
-      --  bounds slices).
-
       Index : Positive := Date'First;
       --  The current character scan index. After a call to Advance, Index
       --  points to the next character.
 
+      End_Of_Source_Reached : exception;
+      --  An exception used to signal that the scan pointer has reached the
+      --  end of the source string.
+
       Wrong_Syntax : exception;
       --  An exception used to signal that the scan pointer has reached an
-      --  unexpected character in the source string, or if premature
-      --  end-of-source was reached.
+      --  unexpected character in the source string.
 
       procedure Advance;
       pragma Inline (Advance);
@@ -725,12 +642,13 @@ package body GNAT.Calendar.Time_IO is
 
       procedure Advance is
       begin
-         --  Signal the end of the source string. This stops a complex scan
-         --  by bottoming up any recursive calls till control reaches routine
-         --  Scan, which handles the exception.
+         --  Signal the end of the source string. This stops a complex scan by
+         --  bottoming up any recursive calls till control reaches routine Scan
+         --  which handles the exception. Certain scanning scenarios may handle
+         --  this exception on their own.
 
          if Index > Date'Last then
-            raise Wrong_Syntax;
+            raise End_Of_Source_Reached;
 
          --  Advance the scan pointer as long as there are characters to scan,
          --  in other words, the scan pointer has not passed the end of the
@@ -849,10 +767,17 @@ package body GNAT.Calendar.Time_IO is
       begin
          Advance_Digits (Num_Digits => 1);
 
-         while Index <= Date'Length and then Symbol in '0' .. '9' loop
+         while Symbol in '0' .. '9'
+           and then Index < Date'Length
+         loop
             Advance;
          end loop;
 
+         if Symbol not in '0' .. '9' then
+            raise Wrong_Syntax;
+         end if;
+
+         Advance;
          return Second_Duration'Value ("0." & Date (From .. Index - 1));
       end Scan_Subsecond;
 
@@ -879,7 +804,7 @@ package body GNAT.Calendar.Time_IO is
          --  this exception on their own.
 
          if Index > Date'Last then
-            raise Wrong_Syntax;
+            raise End_Of_Source_Reached;
 
          else
             return Date (Index);
@@ -888,28 +813,24 @@ package body GNAT.Calendar.Time_IO is
 
       --  Local variables
 
-      use Time_Zones;
-
       Date_Separator : constant Character := '-';
       Hour_Separator : constant Character := ':';
 
-      Day    : Day_Number;
-      Month  : Month_Number;
-      Year   : Year_Number;
-      Hour   : Hour_Number     := 0;
-      Minute : Minute_Number   := 0;
-      Second : Second_Number   := 0;
-      Subsec : Second_Duration := 0.0;
+      Day          : Day_Number;
+      Month        : Month_Number;
+      Year         : Year_Number;
+      Hour         : Hour_Number     := 0;
+      Minute       : Minute_Number   := 0;
+      Second       : Second_Number   := 0;
+      Subsec       : Second_Duration := 0.0;
 
-      Time_Zone_Seen   : Boolean := False;
-      Time_Zone_Offset : Time_Offset; -- Valid only if Time_Zone_Seen
+      Local_Hour   : Hour_Number     := 0;
+      Local_Minute : Minute_Number   := 0;
+      Local_Sign   : Character       := ' ';
+      Local_Disp   : Duration;
 
       Sep_Required : Boolean := False;
       --  True if a separator is seen (and therefore required after it!)
-
-      subtype Sign_Type is Character with Predicate => Sign_Type in '+' | '-';
-
-   --  Start of processing for Parse_ISO_8601
 
    begin
       --  Parse date
@@ -935,31 +856,25 @@ package body GNAT.Calendar.Time_IO is
 
          Second := Scan_Second;
 
-         --  [ ('.' | ',') s{s} ]
+         --  [('Z' | ('.' | ',') s{s} | ('+'|'-')hh:mm)]
 
          if Index <= Date'Last then
+
+            --  Suffix 'Z' just confirms that this is an UTC time. No further
+            --  action needed.
+
+            if Symbol = 'Z' then
+               Advance;
+
             --  A decimal fraction shall have at least one digit, and has as
             --  many digits as supported by the underlying implementation.
             --  The valid decimal separators are those specified in ISO 31-0,
             --  i.e. the comma [,] or full stop [.]. Of these, the comma is
-            --  the preferred separator of ISO-8601.
+            --  the preferred separator of ISO-8861.
 
-            if Symbol = ',' or else Symbol = '.' then
+            elsif Symbol = ',' or else Symbol = '.' then
                Advance; --  past decimal separator
                Subsec := Scan_Subsecond;
-            end if;
-         end if;
-
-         --  [ ('Z' | ('+'|'-')hh':'mm) ]
-
-         if Index <= Date'Last then
-            Time_Zone_Seen := Symbol in 'Z' | Sign_Type;
-
-            --  Suffix 'Z' signifies that this is UTC time (time zone 0)
-
-            if Symbol = 'Z' then
-               Time_Zone_Offset := 0;
-               Advance;
 
             --  Difference between local time and UTC: It shall be expressed
             --  as positive (i.e. with the leading plus sign [+]) if the local
@@ -969,57 +884,62 @@ package body GNAT.Calendar.Time_IO is
             --  if the difference between the time scales is exactly an
             --  integral number of hours.
 
-            elsif Symbol in Sign_Type then
-               declare
-                  Time_Zone_Sign   : constant Sign_Type := Symbol;
-                  Time_Zone_Hour   : Hour_Number;
-                  Time_Zone_Minute : Minute_Number;
-               begin
+            elsif Symbol = '+' or else Symbol = '-' then
+               Local_Sign := Symbol;
+               Advance;
+               Local_Hour := Scan_Hour;
+
+               --  Past ':'
+
+               if Index < Date'Last and then Symbol = Hour_Separator then
                   Advance;
-                  Time_Zone_Hour := Scan_Hour;
+                  Local_Minute := Scan_Minute;
+               end if;
 
-                  --  Past ':'
+               --  Compute local displacement
 
-                  if Index < Date'Last and then Symbol = Hour_Separator then
-                     Advance;
-                     Time_Zone_Minute := Scan_Minute;
-                  else
-                     Time_Zone_Minute := 0;
-                  end if;
-
-                  --  Compute Time_Zone_Offset
-
-                  Time_Zone_Offset :=
-                    Time_Offset (Time_Zone_Hour * 60 + Time_Zone_Minute);
-
-                  case Time_Zone_Sign is
-                     when '+' => null;
-                     when '-' => Time_Zone_Offset := -Time_Zone_Offset;
-                  end case;
-               end;
+               Local_Disp := Local_Hour * 3600.0 + Local_Minute * 60.0;
             else
                raise Wrong_Syntax;
             end if;
          end if;
       end if;
 
-      --  Check for trailing characters
+      --  Sanity checks. The check on Index ensures that there are no trailing
+      --  characters.
 
-      if Index /= Date'Length + 1 then
+      if Index /= Date'Length + 1
+        or else not Year'Valid
+        or else not Month'Valid
+        or else not Day'Valid
+        or else not Hour'Valid
+        or else not Minute'Valid
+        or else not Second'Valid
+        or else not Subsec'Valid
+        or else not Local_Hour'Valid
+        or else not Local_Minute'Valid
+      then
          raise Wrong_Syntax;
       end if;
 
-      --  If a time zone was specified, use Ada.Calendar.Formatting.Time_Of,
-      --  and specify the time zone. Otherwise, call GNAT.Calendar.Time_Of,
-      --  which uses local time.
+      --  Compute time without local displacement
 
-      if Time_Zone_Seen then
-         Time := Ada.Calendar.Formatting.Time_Of
-           (Year, Month, Day, Hour, Minute, Second, Subsec,
-            Time_Zone => Time_Zone_Offset);
-      else
-         Time := GNAT.Calendar.Time_Of
-           (Year, Month, Day, Hour, Minute, Second, Subsec);
+      if Local_Sign = ' ' then
+         Time := Time_Of (Year, Month, Day, Hour, Minute, Second, Subsec);
+
+      --  Compute time with positive local displacement
+
+      elsif Local_Sign = '+' then
+         Time :=
+           Time_Of (Year, Month, Day, Hour, Minute, Second, Subsec) -
+             Local_Disp;
+
+      --  Compute time with negative local displacement
+
+      elsif Local_Sign = '-' then
+         Time :=
+           Time_Of (Year, Month, Day, Hour, Minute, Second, Subsec) +
+             Local_Disp;
       end if;
 
       --  Notify that the input string was successfully parsed
@@ -1027,22 +947,17 @@ package body GNAT.Calendar.Time_IO is
       Success := True;
 
    exception
-      when Wrong_Syntax | Constraint_Error =>
-         --  If constraint check fails, we want to behave the same as
-         --  Wrong_Syntax; we want the caller (Value) to try other
-         --  allowed syntaxes.
-         Time :=
-           Time_Of (Year_Number'First, Month_Number'First, Day_Number'First);
+      when End_Of_Source_Reached
+         | Wrong_Syntax
+      =>
          Success := False;
-   end Parse_ISO_8601;
+   end Parse_ISO_8861_UTC;
 
    -----------
    -- Value --
    -----------
 
    function Value (Date : String) return Ada.Calendar.Time is
-      pragma Unsuppress (All_Checks); -- see comment in Parse_ISO_8601
-
       D          : String (1 .. 21);
       D_Length   : constant Natural := Date'Length;
 
@@ -1257,10 +1172,10 @@ package body GNAT.Calendar.Time_IO is
    --  Start of processing for Value
 
    begin
-      --  Let's try parsing Date as a supported ISO-8601 format. If we do not
+      --  Let's try parsing Date as a supported ISO-8861 format. If we do not
       --  succeed, then retry using all the other GNAT supported formats.
 
-      Parse_ISO_8601 (Date, Time, Success);
+      Parse_ISO_8861_UTC (Date, Time, Success);
 
       if Success then
          return Time;
@@ -1268,7 +1183,15 @@ package body GNAT.Calendar.Time_IO is
 
       --  Length checks
 
-      if D_Length not in 8 | 10 | 11 | 12 | 17 | 19 | 20 | 21 then
+      if D_Length /= 8
+        and then D_Length /= 10
+        and then D_Length /= 11
+        and then D_Length /= 12
+        and then D_Length /= 17
+        and then D_Length /= 19
+        and then D_Length /= 20
+        and then D_Length /= 21
+      then
          raise Constraint_Error;
       end if;
 
@@ -1290,6 +1213,18 @@ package body GNAT.Calendar.Time_IO is
          end;
 
          Extract_Time (1, Hour, Minute, Second, Check_Space => False);
+      end if;
+
+      --  Sanity checks
+
+      if not Year'Valid
+        or else not Month'Valid
+        or else not Day'Valid
+        or else not Hour'Valid
+        or else not Minute'Valid
+        or else not Second'Valid
+      then
+         raise Constraint_Error;
       end if;
 
       return Time_Of (Year, Month, Day, Hour, Minute, Second);

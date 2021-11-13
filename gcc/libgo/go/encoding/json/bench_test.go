@@ -15,7 +15,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"internal/testenv"
-	"io"
+	"io/ioutil"
 	"os"
 	"reflect"
 	"runtime"
@@ -52,7 +52,7 @@ func codeInit() {
 	if err != nil {
 		panic(err)
 	}
-	data, err := io.ReadAll(gz)
+	data, err := ioutil.ReadAll(gz)
 	if err != nil {
 		panic(err)
 	}
@@ -82,14 +82,13 @@ func codeInit() {
 }
 
 func BenchmarkCodeEncoder(b *testing.B) {
-	b.ReportAllocs()
 	if codeJSON == nil {
 		b.StopTimer()
 		codeInit()
 		b.StartTimer()
 	}
 	b.RunParallel(func(pb *testing.PB) {
-		enc := NewEncoder(io.Discard)
+		enc := NewEncoder(ioutil.Discard)
 		for pb.Next() {
 			if err := enc.Encode(&codeStruct); err != nil {
 				b.Fatal("Encode:", err)
@@ -100,7 +99,6 @@ func BenchmarkCodeEncoder(b *testing.B) {
 }
 
 func BenchmarkCodeMarshal(b *testing.B) {
-	b.ReportAllocs()
 	if codeJSON == nil {
 		b.StopTimer()
 		codeInit()
@@ -135,7 +133,6 @@ func benchMarshalBytes(n int) func(*testing.B) {
 }
 
 func BenchmarkMarshalBytes(b *testing.B) {
-	b.ReportAllocs()
 	// 32 fits within encodeState.scratch.
 	b.Run("32", benchMarshalBytes(32))
 	// 256 doesn't fit in encodeState.scratch, but is small enough to
@@ -146,7 +143,6 @@ func BenchmarkMarshalBytes(b *testing.B) {
 }
 
 func BenchmarkCodeDecoder(b *testing.B) {
-	b.ReportAllocs()
 	if codeJSON == nil {
 		b.StopTimer()
 		codeInit()
@@ -171,7 +167,6 @@ func BenchmarkCodeDecoder(b *testing.B) {
 }
 
 func BenchmarkUnicodeDecoder(b *testing.B) {
-	b.ReportAllocs()
 	j := []byte(`"\uD83D\uDE01"`)
 	b.SetBytes(int64(len(j)))
 	r := bytes.NewReader(j)
@@ -187,7 +182,6 @@ func BenchmarkUnicodeDecoder(b *testing.B) {
 }
 
 func BenchmarkDecoderStream(b *testing.B) {
-	b.ReportAllocs()
 	b.StopTimer()
 	var buf bytes.Buffer
 	dec := NewDecoder(&buf)
@@ -210,7 +204,6 @@ func BenchmarkDecoderStream(b *testing.B) {
 }
 
 func BenchmarkCodeUnmarshal(b *testing.B) {
-	b.ReportAllocs()
 	if codeJSON == nil {
 		b.StopTimer()
 		codeInit()
@@ -228,7 +221,6 @@ func BenchmarkCodeUnmarshal(b *testing.B) {
 }
 
 func BenchmarkCodeUnmarshalReuse(b *testing.B) {
-	b.ReportAllocs()
 	if codeJSON == nil {
 		b.StopTimer()
 		codeInit()
@@ -242,11 +234,10 @@ func BenchmarkCodeUnmarshalReuse(b *testing.B) {
 			}
 		}
 	})
-	b.SetBytes(int64(len(codeJSON)))
+	// TODO(bcmills): Is there a missing b.SetBytes here?
 }
 
 func BenchmarkUnmarshalString(b *testing.B) {
-	b.ReportAllocs()
 	data := []byte(`"hello, world"`)
 	b.RunParallel(func(pb *testing.PB) {
 		var s string
@@ -259,7 +250,6 @@ func BenchmarkUnmarshalString(b *testing.B) {
 }
 
 func BenchmarkUnmarshalFloat64(b *testing.B) {
-	b.ReportAllocs()
 	data := []byte(`3.14`)
 	b.RunParallel(func(pb *testing.PB) {
 		var f float64
@@ -272,7 +262,6 @@ func BenchmarkUnmarshalFloat64(b *testing.B) {
 }
 
 func BenchmarkUnmarshalInt64(b *testing.B) {
-	b.ReportAllocs()
 	data := []byte(`3`)
 	b.RunParallel(func(pb *testing.PB) {
 		var x int64
@@ -297,22 +286,6 @@ func BenchmarkIssue10335(b *testing.B) {
 	})
 }
 
-func BenchmarkIssue34127(b *testing.B) {
-	b.ReportAllocs()
-	j := struct {
-		Bar string `json:"bar,string"`
-	}{
-		Bar: `foobar`,
-	}
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			if _, err := Marshal(&j); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-}
-
 func BenchmarkUnmapped(b *testing.B) {
 	b.ReportAllocs()
 	j := []byte(`{"s": "hello", "y": 2, "o": {"x": 0}, "a": [1, 99, {"x": 1}]}`)
@@ -327,7 +300,6 @@ func BenchmarkUnmapped(b *testing.B) {
 }
 
 func BenchmarkTypeFieldsCache(b *testing.B) {
-	b.ReportAllocs()
 	var maxTypes int = 1e6
 	if testenv.Builder() != "" {
 		maxTypes = 1e3 // restrict cache sizes on builders
@@ -388,23 +360,4 @@ func BenchmarkTypeFieldsCache(b *testing.B) {
 			})
 		})
 	}
-}
-
-func BenchmarkEncodeMarshaler(b *testing.B) {
-	b.ReportAllocs()
-
-	m := struct {
-		A int
-		B RawMessage
-	}{}
-
-	b.RunParallel(func(pb *testing.PB) {
-		enc := NewEncoder(io.Discard)
-
-		for pb.Next() {
-			if err := enc.Encode(&m); err != nil {
-				b.Fatal("Encode:", err)
-			}
-		}
-	})
 }

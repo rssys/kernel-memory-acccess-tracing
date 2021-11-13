@@ -1,5 +1,5 @@
 # Process this file with autoreconf to produce a configure script.
-#  Copyright (C) 2012-2021 Free Software Foundation, Inc.
+#  Copyright (C) 2012-2019 Free Software Foundation, Inc.
 #
 #  This file is part of the GNU Atomic Library (libatomic).
 #
@@ -84,8 +84,6 @@ target_alias=${target_alias-$host_alias}
 AM_INIT_AUTOMAKE([1.9.0 foreign no-dist -Wall -Wno-portability -Wno-override])
 AM_ENABLE_MULTILIB(, ..)
 
-GCC_WITH_TOOLEXECLIBDIR
-
 # Calculate toolexeclibdir
 # Also toolexecdir, though it's only used in toolexeclibdir
 case ${enable_version_specific_runtime_libs} in
@@ -101,14 +99,7 @@ case ${enable_version_specific_runtime_libs} in
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_alias)'
-      case ${with_toolexeclibdir} in
-	no)
-	  toolexeclibdir='$(toolexecdir)/lib'
-	  ;;
-	*)
-	  toolexeclibdir=${with_toolexeclibdir}
-	  ;;
-      esac
+      toolexeclibdir='$(toolexecdir)/lib'
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_alias)'
       toolexeclibdir='$(libdir)'
@@ -268,19 +259,6 @@ AC_SUBST(XLDFLAGS)
 AC_SUBST(LIBS)
 AC_SUBST(SIZES)
 
-# Conditionalize the makefile for this target machine.
-tmake_file_=
-for f in ${tmake_file}
-do
-	if test -f ${srcdir}/config/$f
-	then
-		tmake_file_="${tmake_file_} \$(srcdir)/config/$f"
-	fi
-done
-tmake_file="${tmake_file_}"
-AC_SUBST(tmake_file)
-
-
 AM_CONDITIONAL(HAVE_IFUNC, test x$libat_cv_have_ifunc = xyes)
 AM_CONDITIONAL(ARCH_AARCH64_LINUX,
 	       [expr "$config_path" : ".* linux/aarch64 .*" > /dev/null])
@@ -301,5 +279,4 @@ else
 fi
 
 AC_CONFIG_FILES(Makefile testsuite/Makefile)
-AC_CONFIG_FILES(testsuite/libatomic-site-extra.exp)
 AC_OUTPUT

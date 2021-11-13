@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1997-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1997-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,9 +30,25 @@ with Types; use Types;
 
 package Sem_Elab is
 
-   -----------
-   -- Types --
-   -----------
+   procedure Build_Call_Marker (N : Node_Id);
+   --  Create a call marker for call or requeue statement N and record it for
+   --  later processing by the ABE mechanism.
+
+   procedure Build_Variable_Reference_Marker
+     (N     : Node_Id;
+      Read  : Boolean;
+      Write : Boolean);
+   --  Create a variable reference marker for arbitrary node N if it mentions a
+   --  variable, and record it for later processing by the ABE mechanism. Flag
+   --  Read should be set when the reference denotes a read. Flag Write should
+   --  be set when the reference denotes a write.
+
+   procedure Check_Elaboration_Scenarios;
+   --  Examine each scenario recorded during analysis/resolution and apply the
+   --  Ada or SPARK elaboration rules taking into account the model in effect.
+   --  This processing detects and diagnoses ABE issues, installs conditional
+   --  ABE checks or guaranteed ABE failures, and ensures the elaboration of
+   --  units.
 
    --  The following type classifies the various enclosing levels used in ABE
    --  diagnostics.
@@ -48,9 +64,9 @@ package Sem_Elab is
       --          package Nested is              --  enclosing package ignored
       --             X ...                       --  at declaration level
 
-      Generic_Spec_Level,
-      Generic_Body_Level,
-      --  A construct is at the "generic level" when it appears in a
+      Generic_Package_Spec,
+      Generic_Package_Body,
+      --  A construct is at the "generic library level" when it appears in a
       --  generic package library unit, ignoring enclosing packages. Example:
 
       --    generic
@@ -58,14 +74,14 @@ package Sem_Elab is
       --       package Nested is                 --  enclosing package ignored
       --          X ...                          --  at generic library level
 
-      Instantiation_Level,
+      Instantiation,
       --  A construct is at the "instantiation library level" when it appears
       --  in a library unit which is also an instantiation. Example:
 
       --    package Inst is new Gen;             --  at instantiation level
 
-      Library_Spec_Level,
-      Library_Body_Level,
+      Package_Spec,
+      Package_Body,
       --  A construct is at the "library level" when it appears in a package
       --  library unit, ignoring enclosing packages. Example:
 
@@ -77,46 +93,26 @@ package Sem_Elab is
       --  This value is used to indicate that none of the levels above are in
       --  effect.
 
-   subtype Generic_Level is Enclosing_Level_Kind range
-     Generic_Spec_Level ..
-     Generic_Body_Level;
+   subtype Any_Library_Level is Enclosing_Level_Kind range
+     Generic_Package_Spec ..
+     Package_Body;
+
+   subtype Generic_Library_Level is Enclosing_Level_Kind range
+     Generic_Package_Spec ..
+     Generic_Package_Body;
 
    subtype Library_Level is Enclosing_Level_Kind range
-     Library_Spec_Level ..
-     Library_Body_Level;
+     Package_Spec ..
+     Package_Body;
 
    subtype Library_Or_Instantiation_Level is Enclosing_Level_Kind range
-     Instantiation_Level ..
-     Library_Body_Level;
-
-   procedure Build_Call_Marker (N : Node_Id);
-   pragma Inline (Build_Call_Marker);
-   --  Create a call marker for call or requeue statement N and record it for
-   --  later processing by the ABE mechanism.
-
-   procedure Build_Variable_Reference_Marker
-     (N     : Node_Id;
-      Read  : Boolean;
-      Write : Boolean);
-   pragma Inline (Build_Variable_Reference_Marker);
-   --  Create a variable reference marker for arbitrary node N if it mentions a
-   --  variable, and record it for later processing by the ABE mechanism. Flag
-   --  Read should be set when the reference denotes a read. Flag Write should
-   --  be set when the reference denotes a write.
-
-   procedure Check_Elaboration_Scenarios;
-   --  Examine each scenario recorded during analysis/resolution and apply the
-   --  Ada or SPARK elaboration rules taking into account the model in effect.
-   --  This processing detects and diagnoses ABE issues, installs conditional
-   --  ABE checks or guaranteed ABE failures, and ensures the elaboration of
-   --  units.
+     Instantiation ..
+     Package_Body;
 
    function Find_Enclosing_Level (N : Node_Id) return Enclosing_Level_Kind;
-   pragma Inline (Find_Enclosing_Level);
    --  Determine the enclosing level of arbitrary node N
 
    procedure Initialize;
-   pragma Inline (Initialize);
    --  Initialize the internal structures of this unit
 
    procedure Kill_Elaboration_Scenario (N : Node_Id);
@@ -125,10 +121,9 @@ package Sem_Elab is
    --  dead code.
 
    procedure Record_Elaboration_Scenario (N : Node_Id);
-   pragma Inline (Record_Elaboration_Scenario);
    --  Determine whether atribtray node N denotes a scenario which requires
-   --  ABE diagnostics or runtime checks. If this is the case, store N for
-   --  later processing.
+   --  ABE diagnostics or runtime checks. If this is the case, store N into
+   --  a table for later processing.
 
    ---------------------------------------------------------------------------
    --                                                                       --

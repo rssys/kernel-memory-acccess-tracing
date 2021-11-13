@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func requireOvercommit(t *testing.T) {
 
 	overcommit.Once.Do(func() {
 		var out []byte
-		out, overcommit.err = os.ReadFile("/proc/sys/vm/overcommit_memory")
+		out, overcommit.err = ioutil.ReadFile("/proc/sys/vm/overcommit_memory")
 		if overcommit.err != nil {
 			return
 		}
@@ -312,14 +313,14 @@ int main() {
 `)
 
 func (c *config) checkCSanitizer() (skip bool, err error) {
-	dir, err := os.MkdirTemp("", c.sanitizer)
+	dir, err := ioutil.TempDir("", c.sanitizer)
 	if err != nil {
 		return false, fmt.Errorf("failed to create temp directory: %v", err)
 	}
 	defer os.RemoveAll(dir)
 
 	src := filepath.Join(dir, "return0.c")
-	if err := os.WriteFile(src, cMain, 0600); err != nil {
+	if err := ioutil.WriteFile(src, cMain, 0600); err != nil {
 		return false, fmt.Errorf("failed to write C source file: %v", err)
 	}
 
@@ -393,7 +394,7 @@ func (c *config) checkRuntime() (skip bool, err error) {
 
 // srcPath returns the path to the given file relative to this test's source tree.
 func srcPath(path string) string {
-	return filepath.Join("testdata", path)
+	return filepath.Join("src", path)
 }
 
 // A tempDir manages a temporary directory within a test.
@@ -417,7 +418,7 @@ func (d *tempDir) Join(name string) string {
 
 func newTempDir(t *testing.T) *tempDir {
 	t.Helper()
-	dir, err := os.MkdirTemp("", filepath.Dir(t.Name()))
+	dir, err := ioutil.TempDir("", filepath.Dir(t.Name()))
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -438,15 +439,4 @@ func hangProneCmd(name string, arg ...string) *exec.Cmd {
 		Pdeathsig: syscall.SIGKILL,
 	}
 	return cmd
-}
-
-// mSanSupported is a copy of the function cmd/internal/sys.MSanSupported,
-// because the internal pacakage can't be used here.
-func mSanSupported(goos, goarch string) bool {
-	switch goos {
-	case "linux":
-		return goarch == "amd64" || goarch == "arm64"
-	default:
-		return false
-	}
 }

@@ -217,13 +217,6 @@ var aesGCMTests = []struct {
 		"2b9680b886b3efb7c6354b38c63b5373",
 		"e2b7e5ed5ff27fc8664148f5a628a46dcbf2015184fffb82f2651c36",
 	},
-	{
-		"11754cd72aec309bf52f7687212e8957",
-		"",
-		"",
-		"",
-		"250327c674aaf477aef2675748cf6971",
-	},
 }
 
 func TestAESGCM(t *testing.T) {
@@ -241,22 +234,14 @@ func TestAESGCM(t *testing.T) {
 
 		var aesgcm cipher.AEAD
 		switch {
-		// Handle non-standard tag sizes
+		// Handle non-standard nonce sizes
 		case tagSize != 16:
 			aesgcm, err = cipher.NewGCMWithTagSize(aes, tagSize)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-		// Handle 0 nonce size (expect error and continue)
-		case len(nonce) == 0:
-			aesgcm, err = cipher.NewGCMWithNonceSize(aes, 0)
-			if err == nil {
-				t.Fatal("expected error for zero nonce size")
-			}
-			continue
-
-		// Handle non-standard nonce sizes
+		// Handle non-standard tag sizes
 		case len(nonce) != 12:
 			aesgcm, err = cipher.NewGCMWithNonceSize(aes, len(nonce))
 			if err != nil {

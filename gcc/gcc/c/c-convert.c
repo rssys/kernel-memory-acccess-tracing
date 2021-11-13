@@ -1,5 +1,5 @@
 /* Language-level data type conversion for GNU C.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -60,13 +60,10 @@ along with GCC; see the file COPYING3.  If not see
    converted to type TYPE.  The TREE_TYPE of the value
    is always TYPE.  This function implements all reasonable
    conversions; callers should filter out those that are
-   not permitted by the language being compiled.
-   INIT_CONST is true if the conversion is for arithmetic types for a static
-   initializer and folding must apply accordingly (discarding floating-point
-   exceptions and assuming the default rounding mode is in effect).  */
+   not permitted by the language being compiled.  */
 
-static tree
-c_convert (tree type, tree expr, bool init_const)
+tree
+convert (tree type, tree expr)
 {
   tree e = expr;
   enum tree_code code = TREE_CODE (type);
@@ -118,7 +115,7 @@ c_convert (tree type, tree expr, bool init_const)
 	  && COMPLETE_TYPE_P (type))
 	{
 	  expr = save_expr (expr);
-	  expr = c_fully_fold (expr, init_const, NULL);
+	  expr = c_fully_fold (expr, false, NULL);
 	  tree check = ubsan_instrument_float_cast (loc, type, expr);
 	  expr = fold_build1 (FIX_TRUNC_EXPR, type, expr);
 	  if (check == NULL_TREE)
@@ -150,20 +147,8 @@ c_convert (tree type, tree expr, bool init_const)
       goto maybe_fold;
 
     case VECTOR_TYPE:
-      if (gnu_vector_type_p (type)
-	  || gnu_vector_type_p (TREE_TYPE (e))
-	  /* Allow conversions between compatible non-GNU vector types
-	     when -flax-vector-conversions is passed.  The whole purpose
-	     of the option is to bend the normal type rules and accept
-	     nonconforming code.  */
-	  || (flag_lax_vector_conversions
-	      && VECTOR_TYPE_P (TREE_TYPE (e))
-	      && vector_types_convertible_p (type, TREE_TYPE (e), false)))
-	{
-	  ret = convert_to_vector (type, e);
-	  goto maybe_fold;
-	}
-      break;
+      ret = convert_to_vector (type, e);
+      goto maybe_fold;
 
     case RECORD_TYPE:
     case UNION_TYPE:
@@ -176,32 +161,10 @@ c_convert (tree type, tree expr, bool init_const)
 
     maybe_fold:
       if (TREE_CODE (ret) != C_MAYBE_CONST_EXPR)
-	ret = init_const ? fold_init (ret) : fold (ret);
+	ret = fold (ret);
       return ret;
     }
 
   error ("conversion to non-scalar type requested");
   return error_mark_node;
-}
-
-/* Create an expression whose value is that of EXPR, converted to type TYPE.
-   The TREE_TYPE of the value is always TYPE.  This function implements all
-   reasonable conversions; callers should filter out those that are not
-   permitted by the language being compiled.  */
-
-tree
-convert (tree type, tree expr)
-{
-  return c_convert (type, expr, false);
-}
-
-/* Create an expression whose value is that of EXPR, converted to type TYPE, in
-   a static initializer.  The TREE_TYPE of the value is always TYPE.  This
-   function implements all reasonable conversions; callers should filter out
-   those that are not permitted by the language being compiled.  */
-
-tree
-convert_init (tree type, tree expr)
-{
-  return c_convert (type, expr, true);
 }

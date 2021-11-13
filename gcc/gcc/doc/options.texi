@@ -1,4 +1,4 @@
-@c Copyright (C) 2003-2021 Free Software Foundation, Inc.
+@c Copyright (C) 2003-2019 Free Software Foundation, Inc.
 @c This is part of the GCC manual.
 @c For copying conditions, see the file gcc.texi.
 
@@ -223,8 +223,8 @@ propagate through the @code{Negative} property of the option to be
 turned off.  The driver will prune options, removing those that are
 turned off by some later option.  This pruning is not done for options
 with @code{Joined} or @code{JoinedOrMissing} properties, unless the
-options have both the @code{RejectNegative} property and the @code{Negative}
-property mentions itself.
+options have either @code{RejectNegative} property or the @code{Negative}
+property mentions an option other than itself.
 
 As a consequence, if you have a group of mutually-exclusive
 options, their @code{Negative} properties should form a circular chain.
@@ -314,9 +314,9 @@ The state of this option should be stored in variable @var{var}
 (actually a macro for @code{global_options.x_@var{var}}).
 The way that the state is stored depends on the type of option:
 
-@item WarnRemoved
-The option is removed and every usage of such option will
-result in a warning.  We use it option backward compatibility.
+@item Deprecated
+The option is deprecated and every usage of such option will
+result in a warning.
 
 @item Var(@var{var}, @var{set})
 The option controls an integer variable @var{var} and is active when
@@ -454,6 +454,9 @@ operands, which is passed to the @samp{warning} function.  If an alias
 is marked @code{Warn}, the target of the alias must not also be marked
 @code{Warn}.
 
+@item Report
+The state of the option should be printed by @option{-fverbose-asm}.
+
 @item Warning
 This is a warning option and should be shown as such in
 @option{--help} output.  This flag does not currently affect anything
@@ -471,9 +474,6 @@ This is an option that can be overridden on a per-function basis.
 affect executable code generation may use this flag instead, so that the
 option is not taken into account in ways that might affect executable
 code generation.
-
-@item Param
-This is an option that is a parameter.
 
 @item Undocumented
 The option is deliberately missing documentation and should not

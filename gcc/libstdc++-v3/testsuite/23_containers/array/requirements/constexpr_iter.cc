@@ -1,6 +1,7 @@
-// { dg-do compile { target c++17 } }
+// { dg-options "-std=gnu++2a" }
+// { dg-do compile { target c++2a } }
 //
-// Copyright (C) 2019-2021 Free Software Foundation, Inc.
+// Copyright (C) 2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -18,15 +19,6 @@
 // <http://www.gnu.org/licenses/>.
 
 #include <array>
-
-#ifndef __cpp_lib_array_constexpr
-# error "Feature test macro for array constexpr is missing in <array>"
-#elif __cpp_lib_array_constexpr < 201803L
-# error "Feature test macro for array constexpr has wrong value in <array>"
-#endif
-
-// This test is compiled as C++17 because array::iterator is just a pointer,
-// so always meets the C++20 constexpr iterator requirements, even in C++17.
 
 constexpr int
 test()

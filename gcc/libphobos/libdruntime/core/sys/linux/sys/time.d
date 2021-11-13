@@ -13,7 +13,7 @@
  */
 module core.sys.linux.sys.time;
 
-import core.sys.linux.config;
+private import core.sys.linux.config;
 public import core.sys.posix.sys.time;  // timeval
 
 version (linux):

@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // REQUIRED_ARGS:
 
 module test;

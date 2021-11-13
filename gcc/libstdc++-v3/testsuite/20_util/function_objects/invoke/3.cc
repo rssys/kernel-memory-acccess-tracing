@@ -1,4 +1,4 @@
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,15 +15,10 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
+// { dg-options "-std=gnu++17" }
 // { dg-do compile { target c++17 } }
 
 #include <functional>
-
-#ifndef __cpp_lib_invoke
-# error Feature-test macro for invoke is missing in <functional>
-#elif __cpp_lib_invoke < 201411L
-# error Feature-test macro for invoke has the wrong value in <functional>
-#endif
 
 struct abstract {
   virtual ~abstract() = 0;
@@ -34,10 +29,6 @@ static_assert( noexcept(std::__invoke(std::declval<abstract>())),
     "It should be possible to use abstract types with INVOKE" );
 static_assert( noexcept(std::invoke(std::declval<abstract>())),
     "It should be possible to use abstract types with INVOKE" );
-
-// The std::__invoke_r extension only has a noexcept-specifier for >= C++17.
-static_assert( noexcept(std::__invoke_r<void>(std::declval<abstract>())),
-    "It should be possible to use abstract types with INVOKE<R>" );
 
 struct F {
   void operator()() &;
@@ -56,12 +47,3 @@ static_assert( !noexcept(std::invoke(std::declval<F&>())), "" );
 static_assert( noexcept(std::invoke(std::declval<F>())), "" );
 static_assert( !noexcept(std::invoke(std::declval<F>(), 1)), "" );
 static_assert( noexcept(std::invoke(std::declval<F>(), 1, 2)), "" );
-
-static_assert( !noexcept(std::__invoke_r<void>(std::declval<F&>())), "" );
-static_assert( noexcept(std::__invoke_r<void>(std::declval<F>())), "" );
-static_assert( !noexcept(std::__invoke_r<int>(std::declval<F>(), 1)), "" );
-static_assert( !noexcept(std::__invoke_r<void>(std::declval<F>(), 1)), "" );
-static_assert( !noexcept(std::__invoke_r<long>(std::declval<F>(), 1)), "" );
-static_assert( noexcept(std::__invoke_r<void>(std::declval<F>(), 1, 2)), "" );
-static_assert( noexcept(std::__invoke_r<void*>(std::declval<F>(), 1, 2)), "" );
-static_assert( !noexcept(std::__invoke_r<D>(std::declval<F>(), 1, 2)), "" );

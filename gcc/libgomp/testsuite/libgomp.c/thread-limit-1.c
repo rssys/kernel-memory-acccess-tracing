@@ -1,6 +1,5 @@
 /* { dg-do run } */
 /* { dg-set-target-env-var OMP_THREAD_LIMIT "6" } */
-/* { dg-additional-options "-Wno-deprecated-declarations" } */
 
 #include <stdlib.h>
 #include <unistd.h>

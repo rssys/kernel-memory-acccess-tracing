@@ -10,12 +10,11 @@
 PROGRAM random_seed_1
   IMPLICIT NONE
 
-  ! Should match sizeof(master_state) in
-  ! libgfortran/intrinsics/random.c
-  INTEGER, PARAMETER :: nbytes = 32
+  INTEGER, PARAMETER :: nbytes = 128
 
+  ! +1 due to the special 'p' value in xorshift1024*
   ! '+1' to avoid out-of-bounds warnings
-  INTEGER, PARAMETER    :: n = nbytes / KIND(n) + 1
+  INTEGER, PARAMETER    :: n = nbytes / KIND(n) + 2
   INTEGER, DIMENSION(n) :: seed
 
   ! Get seed, array too small

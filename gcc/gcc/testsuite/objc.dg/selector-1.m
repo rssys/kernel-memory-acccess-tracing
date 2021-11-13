@@ -3,7 +3,6 @@
 /* { dg-options "-Wselector" } */
 /* { dg-do compile } */
 /* { dg-skip-if "" { *-*-* } { "-fgnu-runtime" } { "" } } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 typedef struct objc_object { struct objc_class *class_pointer; } *id;
 typedef struct objc_selector    *SEL;

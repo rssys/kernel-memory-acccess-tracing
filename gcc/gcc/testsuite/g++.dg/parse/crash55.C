@@ -1,8 +1,8 @@
 // PR c++/42038
 
-extern int __cxa_begin_catch;	// { dg-message "previous declaration" }
+extern int __cxa_begin_catch;	// { dg-error "declared incorrectly" }
 
 void f(void)
 {
-  try { } catch (int) { }  // { dg-error "redeclared"  }
+  try { } catch (int) { }
 }

@@ -1,4 +1,4 @@
-/* { dg-lto-options { {-fcommon -w} {-fcommon} } } */
+/* { dg-lto-options "-w" } */
 
 double i;
 int j;

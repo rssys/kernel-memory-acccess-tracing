@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2013-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2013-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -55,7 +55,6 @@ package body Set_Targ is
    S_Float_Words_BE             : constant Str := "Float_Words_BE";
    S_Int_Size                   : constant Str := "Int_Size";
    S_Long_Double_Size           : constant Str := "Long_Double_Size";
-   S_Long_Long_Long_Size        : constant Str := "Long_Long_Long_Size";
    S_Long_Long_Size             : constant Str := "Long_Long_Size";
    S_Long_Size                  : constant Str := "Long_Size";
    S_Maximum_Alignment          : constant Str := "Maximum_Alignment";
@@ -85,7 +84,6 @@ package body Set_Targ is
           S_Float_Words_BE             'Unrestricted_Access,
           S_Int_Size                   'Unrestricted_Access,
           S_Long_Double_Size           'Unrestricted_Access,
-          S_Long_Long_Long_Size        'Unrestricted_Access,
           S_Long_Long_Size             'Unrestricted_Access,
           S_Long_Size                  'Unrestricted_Access,
           S_Maximum_Alignment          'Unrestricted_Access,
@@ -113,7 +111,6 @@ package body Set_Targ is
           Float_Words_BE             'Address,
           Int_Size                   'Address,
           Long_Double_Size           'Address,
-          Long_Long_Long_Size        'Address,
           Long_Long_Size             'Address,
           Long_Size                  'Address,
           Maximum_Alignment          'Address,
@@ -309,6 +306,7 @@ package body Set_Targ is
             Write_Str ("pragma Float_Representation (");
 
             case Float_Rep is
+               when AAMP        => Write_Str ("AAMP");
                when IEEE_Binary => Write_Str ("IEEE");
             end case;
 
@@ -531,6 +529,7 @@ package body Set_Targ is
             AddC (' ');
 
             case E.FLOAT_REP is
+               when AAMP        => AddC ('A');
                when IEEE_Binary => AddC ('I');
             end case;
 
@@ -746,15 +745,8 @@ package body Set_Targ is
 
       for J in DTR'Range loop
          if not DTR (J) then
-            --  Make an exception for Long_Long_Long_Size???
-
-            if DTN (J) = S_Long_Long_Long_Size'Unrestricted_Access then
-               Long_Long_Long_Size := Long_Long_Size;
-
-            else
-               Fail ("missing entry for " & DTN (J).all & " in file "
-                     & File_Name);
-            end if;
+            Fail ("missing entry for " & DTN (J).all & " in file "
+                  & File_Name);
          end if;
       end loop;
 
@@ -792,6 +784,9 @@ package body Set_Targ is
             case Buffer (N) is
                when 'I'    =>
                   E.FLOAT_REP := IEEE_Binary;
+
+               when 'A'    =>
+                  E.FLOAT_REP := AAMP;
 
                when others =>
                   FailN ("bad float rep field for");
@@ -875,7 +870,7 @@ begin
          argv := save_argv;
          argc := save_argc;
       else
-         --  Case of a non-GCC compiler, e.g. gnat2why or gnat2scil
+         --  Case of a non gcc compiler, e.g. gnat2why or gnat2scil
          argv := gnat_argv;
          argc := gnat_argc;
       end if;
@@ -939,7 +934,6 @@ begin
             Double_Scalar_Alignment    := Get_Double_Scalar_Alignment;
             Float_Words_BE             := Get_Float_Words_BE;
             Int_Size                   := Get_Int_Size;
-            Long_Long_Long_Size        := Get_Long_Long_Long_Size;
             Long_Long_Size             := Get_Long_Long_Size;
             Long_Size                  := Get_Long_Size;
             Maximum_Alignment          := Get_Maximum_Alignment;

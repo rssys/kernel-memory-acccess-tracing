@@ -1,5 +1,5 @@
 /* { dg-do compile }  */
-/* { dg-options "-O2 -fno-delayed-branch" }  */
+/* { dg-options "-O2" }  */
 /* In this test we want to verify that combine canonicalizes the
    MULT into an ASHIFT which in turn allows postreload-gcse to
    find the common subexpression.
@@ -8,9 +8,8 @@
    for parsing here, so we count the shadd insns.  More is not
    necessarily better in this test.  If this test is too fragile
    over time we'll have to revisit the combine and/or postreload
-   dumps.  Note we have disabled delay slot filling to improve
-   test stability.  */
-/* { dg-final { scan-assembler-times "sh.add" 4 } }  */
+   dumps.  */
+/* { dg-final { scan-assembler-times "sh.add" 5 } }  */
 
 extern void oof (void);
 typedef struct simple_bitmap_def *sbitmap;

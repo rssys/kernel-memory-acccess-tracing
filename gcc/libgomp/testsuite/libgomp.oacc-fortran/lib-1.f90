@@ -1,5 +1,3 @@
-! { dg-do run }
-!
 use openacc
 
 if (acc_get_num_devices (acc_device_host) .ne. 1) STOP 1

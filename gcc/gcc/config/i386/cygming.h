@@ -1,6 +1,6 @@
 /* Operating system specific defines to be used when targeting GCC for
    hosting on Windows32, using a Unix style C library and tools.
-   Copyright (C) 1995-2021 Free Software Foundation, Inc.
+   Copyright (C) 1995-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -18,10 +18,17 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
+#define DBX_DEBUGGING_INFO 1
+#if TARGET_64BIT_DEFAULT || defined (HAVE_GAS_PE_SECREL32_RELOC)
 #define DWARF2_DEBUGGING_INFO 1
+#endif
 
 #undef PREFERRED_DEBUGGING_TYPE
+#if (DWARF2_DEBUGGING_INFO)
 #define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
+#else
+#define PREFERRED_DEBUGGING_TYPE DBX_DEBUG
+#endif
 
 #undef TARGET_SEH
 #define TARGET_SEH  (TARGET_64BIT_MS_ABI && flag_unwind_tables)
@@ -75,7 +82,7 @@ along with GCC; see the file COPYING3.  If not see
 #undef DBX_REGISTER_NUMBER
 #define DBX_REGISTER_NUMBER(n)				\
   (TARGET_64BIT ? dbx64_register_map[n]			\
-   : (dwarf_debuginfo_p ()				\
+   : (write_symbols == DWARF2_DEBUG			\
       ? svr4_dbx_register_map[n] : dbx_register_map[n]))
 
 /* Map gcc register number to DWARF 2 CFA column number. For 32 bit
@@ -90,6 +97,7 @@ along with GCC; see the file COPYING3.  If not see
 #undef DWARF_FRAME_REGISTERS
 #define DWARF_FRAME_REGISTERS (TARGET_64BIT ? 33 : 17)
 
+#ifdef HAVE_GAS_PE_SECREL32_RELOC
 /* Use section relative relocations for debugging offsets.  Unlike
    other targets that fake this by putting the section VMA at 0, PE
    won't allow it.  */
@@ -121,6 +129,7 @@ along with GCC; see the file COPYING3.  If not see
 	gcc_unreachable ();					\
       }								\
   } while (0)
+#endif
 
 #define TARGET_EXECUTABLE_SUFFIX ".exe"
 
@@ -375,6 +384,14 @@ do {						\
 		     gen_rtx_SYMBOL_REF (Pmode, "_monstartup")),	\
 	const0_rtx));							\
     }
+
+/* Java Native Interface (JNI) methods on Win32 are invoked using the
+   stdcall calling convention.  */
+#undef MODIFY_JNI_METHOD_CALL
+#define MODIFY_JNI_METHOD_CALL(MDECL)					      \
+  build_type_attribute_variant ((MDECL),				      \
+			       build_tree_list (get_identifier ("stdcall"),   \
+						NULL))
 
 /* For Win32 ABI compatibility */
 #undef DEFAULT_PCC_STRUCT_RETURN

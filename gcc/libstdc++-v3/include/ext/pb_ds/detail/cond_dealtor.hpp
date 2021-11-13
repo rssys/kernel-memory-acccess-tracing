@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -41,8 +41,6 @@
 #ifndef PB_DS_COND_DEALTOR_HPP
 #define PB_DS_COND_DEALTOR_HPP
 
-#include <ext/pb_ds/detail/types_traits.hpp>
-
 namespace __gnu_pbds
 {
   namespace detail
@@ -51,11 +49,11 @@ namespace __gnu_pbds
     template<typename Entry, typename _Alloc>
       class cond_dealtor
       {
-	typedef rebind_traits<_Alloc, Entry>	alloc_traits;
+	typedef typename _Alloc::template rebind<Entry>	__rebind_e;
 
       public:
-	typedef typename alloc_traits::allocator_type entry_allocator;
-	typedef typename alloc_traits::pointer	      entry_pointer;
+	typedef typename __rebind_e::other 		entry_allocator;
+	typedef typename entry_allocator::pointer 	entry_pointer;
 
 	cond_dealtor(entry_pointer p_e)
 	: m_p_e(p_e), m_no_action_destructor(false) { }

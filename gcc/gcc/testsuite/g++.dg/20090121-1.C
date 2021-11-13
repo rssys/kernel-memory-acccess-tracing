@@ -7,7 +7,7 @@ private:
   int y;
 
 public:
-  A () { int x; y = x + 1; } /* { dg-warning "'x' is used uninitialized" }  */
+  A () { int x; y = x + 1; } /* { dg-warning "'x' is used uninitialized in this function" }  */
   int get_y () { return y; }
 };
 

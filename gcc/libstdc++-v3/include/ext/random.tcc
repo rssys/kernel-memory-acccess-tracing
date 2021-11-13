@@ -1,6 +1,6 @@
 // Random number extensions -*- C++ -*-
 
-// Copyright (C) 2012-2021 Free Software Foundation, Inc.
+// Copyright (C) 2012-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -581,7 +581,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    __sum = *__varcovbegin++ - __sum;
 	    if (__builtin_expect(__sum <= _RealType(0), 0))
 	      std::__throw_runtime_error(__N("normal_mv_distribution::"
-					     "param_type::_M_init_lower"));
+					     "param_type::_M_init_full"));
 	    *__w++ = std::sqrt(__sum);
 	  }
       }
@@ -709,11 +709,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       __is >> __x._M_nd;
 
-      // The param_type temporary is built with a private constructor,
-      // to skip the Cholesky decomposition that would be performed
-      // otherwise.
       __x.param(typename normal_mv_distribution<_Dimen, _RealType>::
-		param_type(__mean, __varcov));
+		param_type(__mean.begin(), __mean.end(),
+			   __varcov.begin(), __varcov.end()));
 
       __is.flags(__flags);
       return __is;

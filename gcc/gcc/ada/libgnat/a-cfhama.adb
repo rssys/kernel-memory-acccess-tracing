@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -109,21 +109,20 @@ is
          ENode : Count_Type;
 
       begin
-         Node := First (Left).Node;
+         Node := Left.First.Node;
          while Node /= 0 loop
             ENode :=
               Find
                 (Container => Right,
-                 Key       => Left.Content.Nodes (Node).Key).Node;
+                 Key       => Left.Nodes (Node).Key).Node;
 
             if ENode = 0 or else
-              Right.Content.Nodes (ENode).Element /=
-              Left.Content.Nodes (Node).Element
+              Right.Nodes (ENode).Element /= Left.Nodes (Node).Element
             then
                return False;
             end if;
 
-            Node := HT_Ops.Next (Left.Content, Node);
+            Node := HT_Ops.Next (Left, Node);
          end loop;
 
          return True;
@@ -146,7 +145,7 @@ is
       --------------------
 
       procedure Insert_Element (Source_Node : Count_Type) is
-         N : Node_Type renames Source.Content.Nodes (Source_Node);
+         N : Node_Type renames Source.Nodes (Source_Node);
       begin
          Insert (Target, N.Key, N.Element);
       end Insert_Element;
@@ -165,7 +164,7 @@ is
 
       Clear (Target);
 
-      Insert_Elements (Source.Content);
+      Insert_Elements (Source);
    end Assign;
 
    --------------
@@ -174,7 +173,7 @@ is
 
    function Capacity (Container : Map) return Count_Type is
    begin
-      return Container.Content.Nodes'Length;
+      return Container.Nodes'Length;
    end Capacity;
 
    -----------
@@ -183,43 +182,8 @@ is
 
    procedure Clear (Container : in out Map) is
    begin
-      HT_Ops.Clear (Container.Content);
+      HT_Ops.Clear (Container);
    end Clear;
-
-   ------------------------
-   -- Constant_Reference --
-   ------------------------
-
-   function Constant_Reference
-     (Container : aliased Map;
-      Position  : Cursor) return not null access constant Element_Type
-   is
-   begin
-      if not Has_Element (Container, Position) then
-         raise Constraint_Error with "Position cursor has no element";
-      end if;
-
-      pragma Assert
-        (Vet (Container, Position),
-         "bad cursor in function Constant_Reference");
-
-      return Container.Content.Nodes (Position.Node).Element'Access;
-   end Constant_Reference;
-
-   function Constant_Reference
-     (Container : aliased Map;
-      Key       : Key_Type) return not null access constant Element_Type
-   is
-      Node : constant Count_Type := Find (Container, Key).Node;
-
-   begin
-      if Node = 0 then
-         raise Constraint_Error with
-           "no element available because key not in map";
-      end if;
-
-      return Container.Content.Nodes (Node).Element'Access;
-   end Constant_Reference;
 
    --------------
    -- Contains --
@@ -250,18 +214,18 @@ is
          raise Capacity_Error;
       end if;
 
-      Target.Content.Length := Source.Content.Length;
-      Target.Content.Free := Source.Content.Free;
+      Target.Length := Source.Length;
+      Target.Free := Source.Free;
 
       H := 1;
       while H <= Source.Modulus loop
-         Target.Content.Buckets (H) := Source.Content.Buckets (H);
+         Target.Buckets (H) := Source.Buckets (H);
          H := H + 1;
       end loop;
 
       N := 1;
       while N <= Source.Capacity loop
-         Target.Content.Nodes (N) := Source.Content.Nodes (N);
+         Target.Nodes (N) := Source.Nodes (N);
          N := N + 1;
       end loop;
 
@@ -291,7 +255,7 @@ is
       X : Count_Type;
 
    begin
-      Key_Ops.Delete_Key_Sans_Free (Container.Content, Key, X);
+      Key_Ops.Delete_Key_Sans_Free (Container, Key, X);
 
       if X = 0 then
          raise Constraint_Error with "attempt to delete key not in map";
@@ -309,7 +273,7 @@ is
 
       pragma Assert (Vet (Container, Position), "bad cursor in Delete");
 
-      HT_Ops.Delete_Node_Sans_Free (Container.Content, Position.Node);
+      HT_Ops.Delete_Node_Sans_Free (Container, Position.Node);
 
       Free (Container, Position.Node);
       Position := No_Element;
@@ -328,7 +292,7 @@ is
            "no element available because key not in map";
       end if;
 
-      return Container.Content.Nodes (Node).Element;
+      return Container.Nodes (Node).Element;
    end Element;
 
    function Element (Container : Map; Position : Cursor) return Element_Type is
@@ -340,7 +304,7 @@ is
       pragma Assert
         (Vet (Container, Position), "bad cursor in function Element");
 
-      return Container.Content.Nodes (Position.Node).Element;
+      return Container.Nodes (Position.Node).Element;
    end Element;
 
    ---------------------
@@ -362,7 +326,7 @@ is
    procedure Exclude (Container : in out Map; Key : Key_Type) is
       X : Count_Type;
    begin
-      Key_Ops.Delete_Key_Sans_Free (Container.Content, Key, X);
+      Key_Ops.Delete_Key_Sans_Free (Container, Key, X);
       Free (Container, X);
    end Exclude;
 
@@ -371,7 +335,7 @@ is
    ----------
 
    function Find (Container : Map; Key : Key_Type) return Cursor is
-      Node : constant Count_Type := Key_Ops.Find (Container.Content, Key);
+      Node : constant Count_Type := Key_Ops.Find (Container, Key);
 
    begin
       if Node = 0 then
@@ -386,7 +350,7 @@ is
    -----------
 
    function First (Container : Map) return Cursor is
-      Node : constant Count_Type := HT_Ops.First (Container.Content);
+      Node : constant Count_Type := HT_Ops.First (Container);
 
    begin
       if Node = 0 then
@@ -443,7 +407,7 @@ is
       ----------
 
       function Keys (Container : Map) return K.Sequence is
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : K.Sequence;
 
       begin
@@ -451,8 +415,8 @@ is
          --  for their postconditions.
 
          while Position /= 0 loop
-            R := K.Add (R, Container.Content.Nodes (Position).Key);
-            Position := HT_Ops.Next (Container.Content, Position);
+            R := K.Add (R, Container.Nodes (Position).Key);
+            Position := HT_Ops.Next (Container, Position);
          end loop;
 
          return R;
@@ -494,7 +458,7 @@ is
       -----------
 
       function Model (Container : Map) return M.Map is
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : M.Map;
 
       begin
@@ -505,10 +469,10 @@ is
             R :=
               M.Add
                 (Container => R,
-                 New_Key   => Container.Content.Nodes (Position).Key,
-                 New_Item  => Container.Content.Nodes (Position).Element);
+                 New_Key   => Container.Nodes (Position).Key,
+                 New_Item  => Container.Nodes (Position).Element);
 
-            Position := HT_Ops.Next (Container.Content, Position);
+            Position := HT_Ops.Next (Container, Position);
          end loop;
 
          return R;
@@ -520,7 +484,7 @@ is
 
       function Positions (Container : Map) return P.Map is
          I        : Count_Type := 1;
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : P.Map;
 
       begin
@@ -530,7 +494,7 @@ is
          while Position /= 0 loop
             R := P.Add (R, (Node => Position), I);
             pragma Assert (P.Length (R) = I);
-            Position := HT_Ops.Next (Container.Content, Position);
+            Position := HT_Ops.Next (Container, Position);
             I := I + 1;
          end loop;
 
@@ -545,11 +509,8 @@ is
 
    procedure Free (HT : in out Map; X : Count_Type) is
    begin
-      if X /= 0 then
-         pragma Assert (X <= HT.Capacity);
-         HT.Content.Nodes (X).Has_Element := False;
-         HT_Ops.Free (HT.Content, X);
-      end if;
+      HT.Nodes (X).Has_Element := False;
+      HT_Ops.Free (HT, X);
    end Free;
 
    ----------------------
@@ -561,8 +522,8 @@ is
         new HT_Ops.Generic_Allocate (Set_Element);
 
    begin
-      Allocate (HT.Content, Node);
-      HT.Content.Nodes (Node).Has_Element := True;
+      Allocate (HT, Node);
+      HT.Nodes (Node).Has_Element := True;
    end Generic_Allocate;
 
    -----------------
@@ -572,7 +533,7 @@ is
    function Has_Element (Container : Map; Position : Cursor) return Boolean is
    begin
       if Position.Node = 0
-        or else not Container.Content.Nodes (Position.Node).Has_Element
+        or else not Container.Nodes (Position.Node).Has_Element
       then
          return False;
       else
@@ -606,7 +567,7 @@ is
 
       if not Inserted then
          declare
-            N : Node_Type renames Container.Content.Nodes (Position.Node);
+            N : Node_Type renames Container.Nodes (Position.Node);
          begin
             N.Key := Key;
             N.Element := New_Item;
@@ -661,7 +622,7 @@ is
    --  Start of processing for Insert
 
    begin
-      Local_Insert (Container.Content, Key, Position.Node, Inserted);
+      Local_Insert (Container, Key, Position.Node, Inserted);
    end Insert;
 
    procedure Insert
@@ -704,7 +665,7 @@ is
 
       pragma Assert (Vet (Container, Position), "bad cursor in function Key");
 
-      return Container.Content.Nodes (Position.Node).Key;
+      return Container.Nodes (Position.Node).Key;
    end Key;
 
    ------------
@@ -713,7 +674,7 @@ is
 
    function Length (Container : Map) return Count_Type is
    begin
-      return Container.Content.Length;
+      return Container.Length;
    end Length;
 
    ----------
@@ -724,7 +685,7 @@ is
      (Target : in out Map;
       Source : in out Map)
    is
-      NN : HT_Types.Nodes_Type renames Source.Content.Nodes;
+      NN : HT_Types.Nodes_Type renames Source.Nodes;
       X  : Count_Type;
       Y  : Count_Type;
 
@@ -740,17 +701,17 @@ is
 
       Clear (Target);
 
-      if Source.Content.Length = 0 then
+      if Source.Length = 0 then
          return;
       end if;
 
-      X := HT_Ops.First (Source.Content);
+      X := HT_Ops.First (Source);
       while X /= 0 loop
          Insert (Target, NN (X).Key, NN (X).Element);  -- optimize???
 
-         Y := HT_Ops.Next (Source.Content, X);
+         Y := HT_Ops.Next (Source, X);
 
-         HT_Ops.Delete_Node_Sans_Free (Source.Content, X);
+         HT_Ops.Delete_Node_Sans_Free (Source, X);
          Free (Source, X);
 
          X := Y;
@@ -779,8 +740,7 @@ is
       pragma Assert (Vet (Container, Position), "bad cursor in function Next");
 
       declare
-         Node : constant Count_Type :=
-           HT_Ops.Next (Container.Content, Position.Node);
+         Node : constant Count_Type := HT_Ops.Next (Container, Position.Node);
 
       begin
          if Node = 0 then
@@ -796,40 +756,6 @@ is
       Position := Next (Container, Position);
    end Next;
 
-   ---------------
-   -- Reference --
-   ---------------
-
-   function Reference
-     (Container : not null access Map;
-      Position  : Cursor) return not null access Element_Type
-   is
-   begin
-      if not Has_Element (Container.all, Position) then
-         raise Constraint_Error with "Position cursor has no element";
-      end if;
-
-      pragma Assert
-        (Vet (Container.all, Position), "bad cursor in function Reference");
-
-      return Container.Content.Nodes (Position.Node).Element'Access;
-   end Reference;
-
-   function Reference
-     (Container : not null access Map;
-      Key       : Key_Type) return not null access Element_Type
-   is
-      Node : constant Count_Type := Find (Container.all, Key).Node;
-
-   begin
-      if Node = 0 then
-         raise Constraint_Error with
-           "no element available because key not in map";
-      end if;
-
-      return Container.Content.Nodes (Node).Element'Access;
-   end Reference;
-
    -------------
    -- Replace --
    -------------
@@ -839,7 +765,7 @@ is
       Key       : Key_Type;
       New_Item  : Element_Type)
    is
-      Node : constant Count_Type := Key_Ops.Find (Container.Content, Key);
+      Node : constant Count_Type := Key_Ops.Find (Container, Key);
 
    begin
       if Node = 0 then
@@ -847,7 +773,7 @@ is
       end if;
 
       declare
-         N : Node_Type renames Container.Content.Nodes (Node);
+         N : Node_Type renames Container.Nodes (Node);
       begin
          N.Key := Key;
          N.Element := New_Item;
@@ -872,7 +798,7 @@ is
       pragma Assert
         (Vet (Container, Position), "bad cursor in Replace_Element");
 
-      Container.Content.Nodes (Position.Node).Element := New_Item;
+      Container.Nodes (Position.Node).Element := New_Item;
    end Replace_Element;
 
    ----------------------
@@ -912,7 +838,7 @@ is
          X : Count_Type;
 
       begin
-         if Container.Content.Length = 0 then
+         if Container.Length = 0 then
             return False;
          end if;
 
@@ -920,7 +846,7 @@ is
             return False;
          end if;
 
-         if Container.Content.Buckets'Length = 0 then
+         if Container.Buckets'Length = 0 then
             return False;
          end if;
 
@@ -928,17 +854,15 @@ is
             return False;
          end if;
 
-         if Container.Content.Nodes (Position.Node).Next = Position.Node then
+         if Container.Nodes (Position.Node).Next = Position.Node then
             return False;
          end if;
 
          X :=
-           Container.Content.Buckets
-             (Key_Ops.Index
-                (Container.Content,
-                 Container.Content.Nodes (Position.Node).Key));
+           Container.Buckets
+             (Key_Ops.Index (Container, Container.Nodes (Position.Node).Key));
 
-         for J in 1 .. Container.Content.Length loop
+         for J in 1 .. Container.Length loop
             if X = Position.Node then
                return True;
             end if;
@@ -947,14 +871,14 @@ is
                return False;
             end if;
 
-            if X = Container.Content.Nodes (X).Next then
+            if X = Container.Nodes (X).Next then
 
                --  Prevent unnecessary looping
 
                return False;
             end if;
 
-            X := Container.Content.Nodes (X).Next;
+            X := Container.Nodes (X).Next;
          end loop;
 
          return False;

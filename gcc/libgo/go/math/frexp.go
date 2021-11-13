@@ -14,9 +14,6 @@ package math
 //	Frexp(±Inf) = ±Inf, 0
 //	Frexp(NaN) = NaN, 0
 func Frexp(f float64) (frac float64, exp int) {
-	if haveArchFrexp {
-		return archFrexp(f)
-	}
 	return frexp(f)
 }
 

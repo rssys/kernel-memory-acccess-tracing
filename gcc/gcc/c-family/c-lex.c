@@ -1,5 +1,5 @@
 /* Mainly the interface between cpplib and the C front ends.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -27,9 +27,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "stor-layout.h"
 #include "c-pragma.h"
 #include "debug.h"
-#include "flags.h"
 #include "file-prefix-map.h" /* remap_macro_filename()  */
-#include "langhooks.h"
+
 #include "attribs.h"
 
 /* We may keep statistics about how long which files took to compile.  */
@@ -61,6 +60,7 @@ static void cb_undef (cpp_reader *, unsigned int, cpp_hashnode *);
 void
 init_c_lex (void)
 {
+  struct cpp_callbacks *cb;
   struct c_fileinfo *toplevel;
 
   /* The get_fileinfo data structure must be initialized before
@@ -73,7 +73,7 @@ init_c_lex (void)
       toplevel->time = body_time;
     }
 
-  struct cpp_callbacks *cb = cpp_get_callbacks (parse_in);
+  cb = cpp_get_callbacks (parse_in);
 
   cb->line_change = cb_line_change;
   cb->ident = cb_ident;
@@ -81,14 +81,14 @@ init_c_lex (void)
   cb->valid_pch = c_common_valid_pch;
   cb->read_pch = c_common_read_pch;
   cb->has_attribute = c_common_has_attribute;
-  cb->has_builtin = c_common_has_builtin;
   cb->get_source_date_epoch = cb_get_source_date_epoch;
   cb->get_suggestion = cb_get_suggestion;
   cb->remap_filename = remap_macro_filename;
 
   /* Set the debug callbacks if we can use them.  */
   if ((debug_info_level == DINFO_LEVEL_VERBOSE
-       && dwarf_debuginfo_p ())
+       && (write_symbols == DWARF2_DEBUG
+	   || write_symbols == VMS_AND_DWARF2_DEBUG))
       || flag_dump_go_spec != NULL)
     {
       cb->define = cb_define;
@@ -258,7 +258,7 @@ cb_def_pragma (cpp_reader *pfile, location_t loc)
 	    name = cpp_token_as_text (pfile, s);
 	}
 
-      warning_at (fe_loc, OPT_Wunknown_pragmas, "ignoring %<#pragma %s %s%>",
+      warning_at (fe_loc, OPT_Wunknown_pragmas, "ignoring #pragma %s %s",
 		  space, name);
     }
 }
@@ -274,11 +274,9 @@ cb_define (cpp_reader *pfile, location_t loc, cpp_hashnode *node)
 
 /* #undef callback for DWARF and DWARF2 debug info.  */
 static void
-cb_undef (cpp_reader *pfile, location_t loc, cpp_hashnode *node)
+cb_undef (cpp_reader * ARG_UNUSED (pfile), location_t loc,
+	  cpp_hashnode *node)
 {
-  if (lang_hooks.preprocess_undef)
-    lang_hooks.preprocess_undef (pfile, loc, node);
-
   const struct line_map *map = linemap_lookup (line_table, loc);
   (*debug_hooks->undef) (SOURCE_LINE (linemap_check_ordinary (map), loc),
 			 (const char *) NODE_NAME (node));
@@ -302,7 +300,7 @@ get_token_no_padding (cpp_reader *pfile)
 
 /* Callback for has_attribute.  */
 int
-c_common_has_attribute (cpp_reader *pfile, bool std_syntax)
+c_common_has_attribute (cpp_reader *pfile)
 {
   int result = 0;
   tree attr_name = NULL_TREE;
@@ -321,77 +319,52 @@ c_common_has_attribute (cpp_reader *pfile, bool std_syntax)
       attr_name = get_identifier ((const char *)
 				  cpp_token_as_text (pfile, token));
       attr_name = canonicalize_attr_name (attr_name);
-      bool have_scope = false;
-      int idx = 0;
-      const cpp_token *nxt_token;
-      do
-	nxt_token = cpp_peek_token (pfile, idx++);
-      while (nxt_token->type == CPP_PADDING);
-      if (nxt_token->type == CPP_SCOPE)
+      if (c_dialect_cxx ())
 	{
-	  have_scope = true;
-	  get_token_no_padding (pfile); // Eat scope.
-	  nxt_token = get_token_no_padding (pfile);
-	  if (nxt_token->type == CPP_NAME)
+	  int idx = 0;
+	  const cpp_token *nxt_token;
+	  do
+	    nxt_token = cpp_peek_token (pfile, idx++);
+	  while (nxt_token->type == CPP_PADDING);
+	  if (nxt_token->type == CPP_SCOPE)
 	    {
-	      tree attr_ns = attr_name;
-	      tree attr_id
-		= get_identifier ((const char *)
-				  cpp_token_as_text (pfile, nxt_token));
-	      attr_id = canonicalize_attr_name (attr_id);
-	      if (c_dialect_cxx ())
+	      get_token_no_padding (pfile); // Eat scope.
+	      nxt_token = get_token_no_padding (pfile);
+	      if (nxt_token->type == CPP_NAME)
 		{
-		  /* OpenMP attributes need special handling.  */
-		  if ((flag_openmp || flag_openmp_simd)
-		      && is_attribute_p ("omp", attr_ns)
-		      && (is_attribute_p ("directive", attr_id)
-			  || is_attribute_p ("sequence", attr_id)))
-		    result = 1;
+		  tree attr_ns = attr_name;
+		  tree attr_id
+		    = get_identifier ((const char *)
+				      cpp_token_as_text (pfile, nxt_token));
+		  attr_name = build_tree_list (attr_ns, attr_id);
 		}
-	      if (result)
-		attr_name = NULL_TREE;
 	      else
-		attr_name = build_tree_list (attr_ns, attr_id);
+		{
+		  cpp_error (pfile, CPP_DL_ERROR,
+			     "attribute identifier required after scope");
+		  attr_name = NULL_TREE;
+		}
 	    }
 	  else
 	    {
-	      cpp_error (pfile, CPP_DL_ERROR,
-			 "attribute identifier required after scope");
-	      attr_name = NULL_TREE;
-	    }
-	}
-      else
-	{
-	  /* Some standard attributes need special handling.  */
-	  if (c_dialect_cxx ())
-	    {
+	      /* Some standard attributes need special handling.  */
 	      if (is_attribute_p ("noreturn", attr_name))
 		result = 200809;
 	      else if (is_attribute_p ("deprecated", attr_name))
 		result = 201309;
 	      else if (is_attribute_p ("maybe_unused", attr_name)
+		       || is_attribute_p ("nodiscard", attr_name)
 		       || is_attribute_p ("fallthrough", attr_name))
 		result = 201603;
 	      else if (is_attribute_p ("no_unique_address", attr_name)
 		       || is_attribute_p ("likely", attr_name)
 		       || is_attribute_p ("unlikely", attr_name))
 		result = 201803;
-	      else if (is_attribute_p ("nodiscard", attr_name))
-		result = 201907;
+	      if (result)
+		attr_name = NULL_TREE;
 	    }
-	  else
-	    {
-	      if (is_attribute_p ("deprecated", attr_name)
-		  || is_attribute_p ("maybe_unused", attr_name)
-		  || is_attribute_p ("fallthrough", attr_name))
-		result = 201904;
-	      else if (is_attribute_p ("nodiscard", attr_name))
-		result = 202003;
-	    }
-	  if (result)
-	    attr_name = NULL_TREE;
 	}
-      if (attr_name && (have_scope || !std_syntax))
+      if (attr_name)
 	{
 	  init_attributes ();
 	  const struct attribute_spec *attr = lookup_attribute_spec (attr_name);
@@ -412,58 +385,6 @@ c_common_has_attribute (cpp_reader *pfile, bool std_syntax)
 
   return result;
 }
-
-/* Callback for has_builtin.  */
-
-int
-c_common_has_builtin (cpp_reader *pfile)
-{
-  const cpp_token *token = get_token_no_padding (pfile);
-  if (token->type != CPP_OPEN_PAREN)
-    {
-      cpp_error (pfile, CPP_DL_ERROR,
-		 "missing '(' after \"__has_builtin\"");
-      return 0;
-    }
-
-  const char *name = "";
-  token = get_token_no_padding (pfile);
-  if (token->type == CPP_NAME)
-    {
-      name = (const char *) cpp_token_as_text (pfile, token);
-      token = get_token_no_padding (pfile);
-      if (token->type != CPP_CLOSE_PAREN)
-	{
-	  cpp_error (pfile, CPP_DL_ERROR,
-		     "expected ')' after \"%s\"", name);
-	  name = "";
-	}
-    }
-  else
-    {
-      cpp_error (pfile, CPP_DL_ERROR,
-		 "macro \"__has_builtin\" requires an identifier");
-      if (token->type == CPP_CLOSE_PAREN)
-	return 0;
-    }
-
-  /* Consume tokens up to the closing parenthesis, including any nested
-     pairs of parentheses, to avoid confusing redundant errors.  */
-  for (unsigned nparen = 1; ; token = get_token_no_padding (pfile))
-    {
-      if (token->type == CPP_OPEN_PAREN)
-	++nparen;
-      else if (token->type == CPP_CLOSE_PAREN)
-	--nparen;
-      else if (token->type == CPP_EOF)
-	break;
-      if (!nparen)
-	break;
-    }
-
-  return names_builtin_p (name);
-}
-
 
 /* Read a token and return its type.  Fill *VALUE with its value, if
    applicable.  Fill *CPP_FLAGS with the token's flags, if it is
@@ -576,11 +497,7 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
 		     returning a token of type CPP_AT_NAME and rid
 		     code RID_CLASS (not RID_AT_CLASS).  The language
 		     parser needs to convert that to RID_AT_CLASS.
-		     However, we've now spliced the '@' together with the
-		     keyword that follows; Adjust the location so that we
-		     get a source range covering the composite.
 		  */
-	         *loc = make_location (atloc, atloc, newloc);
 		  break;
 		}
 	      /* FALLTHROUGH */
@@ -616,11 +533,7 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
 	else if (ISGRAPH (c))
 	  error_at (*loc, "stray %qc in program", (int) c);
 	else
-	  {
-	    rich_location rich_loc (line_table, *loc);
-	    rich_loc.set_escape_on_output (true);
-	    error_at (&rich_loc, "stray %<\\%o%> in program", (int) c);
-	  }
+	  error_at (*loc, "stray %<\\%o%> in program", (int) c);
       }
       goto retry;
 
@@ -684,11 +597,8 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
       *value = build_int_cst (integer_type_node, tok->val.pragma);
       break;
 
+      /* These tokens should not be visible outside cpplib.  */
     case CPP_HEADER_NAME:
-      *value = build_string (tok->val.str.len, (const char *)tok->val.str.text);
-      break;
-
-      /* This token should not be visible outside cpplib.  */
     case CPP_MACRO_ARG:
       gcc_unreachable ();
 
@@ -851,14 +761,6 @@ interpret_integer (const cpp_token *token, unsigned int flags,
     type = ((flags & CPP_N_UNSIGNED)
 	    ? widest_unsigned_literal_type_node
 	    : widest_integer_literal_type_node);
-  else if (flags & CPP_N_SIZE_T)
-    {
-      /* itk refers to fundamental types not aliased size types.  */
-      if (flags & CPP_N_UNSIGNED)
-	type = size_type_node;
-      else
-	type = signed_size_type_node;
-    }
   else
     {
       type = integer_types[itk];
@@ -909,7 +811,7 @@ interpret_float (const cpp_token *token, unsigned int flags,
       if (((flags & CPP_N_HEX) == 0) && ((flags & CPP_N_IMAGINARY) == 0))
 	{
 	  warning (OPT_Wunsuffixed_float_constants,
-		   "unsuffixed floating constant");
+		   "unsuffixed float constant");
 	  if (float_const_decimal64_p ())
 	    flags |= CPP_N_DFLOAT;
 	}
@@ -921,12 +823,7 @@ interpret_float (const cpp_token *token, unsigned int flags,
 
   /* Decode type based on width and properties. */
   if (flags & CPP_N_DFLOAT)
-    if (!targetm.decimal_float_supported_p ())
-      {
-	error ("decimal floating-point not supported for this target");
-	return error_mark_node;
-      }
-    else if ((flags & CPP_N_WIDTH) == CPP_N_LARGE)
+    if ((flags & CPP_N_WIDTH) == CPP_N_LARGE)
       type = dfloat128_type_node;
     else if ((flags & CPP_N_WIDTH) == CPP_N_SMALL)
       type = dfloat32_type_node;
@@ -1018,7 +915,7 @@ interpret_float (const cpp_token *token, unsigned int flags,
     }
 
   copy = (char *) alloca (copylen + 1);
-  if (c_dialect_cxx () ? cxx_dialect > cxx11 : flag_isoc2x)
+  if (cxx_dialect > cxx11)
     {
       size_t maxlen = 0;
       for (size_t i = 0; i < copylen; ++i)
@@ -1425,9 +1322,7 @@ lex_charconst (const cpp_token *token)
     type = char16_type_node;
   else if (token->type == CPP_UTF8CHAR)
     {
-      if (!c_dialect_cxx ())
-	type = unsigned_char_type_node;
-      else if (flag_char8_t)
+      if (flag_char8_t)
         type = char8_type_node;
       else
         type = char_type_node;

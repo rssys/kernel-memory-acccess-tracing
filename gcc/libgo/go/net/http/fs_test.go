@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
+	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -78,7 +78,7 @@ func TestServeFile(t *testing.T) {
 
 	var err error
 
-	file, err := os.ReadFile(testFile)
+	file, err := ioutil.ReadFile(testFile)
 	if err != nil {
 		t.Fatal("reading file:", err)
 	}
@@ -159,7 +159,7 @@ Cases:
 				if g, w := part.Header.Get("Content-Range"), wantContentRange; g != w {
 					t.Errorf("range=%q: part Content-Range = %q; want %q", rt.r, g, w)
 				}
-				body, err := io.ReadAll(part)
+				body, err := ioutil.ReadAll(part)
 				if err != nil {
 					t.Errorf("range=%q, reading part index %d body: %v", rt.r, ri, err)
 					continue Cases
@@ -204,18 +204,6 @@ func TestServeFile_DotDot(t *testing.T) {
 		if rec.Code != tt.wantStatus {
 			t.Errorf("for request %q, status = %d; want %d", tt.req, rec.Code, tt.wantStatus)
 		}
-	}
-}
-
-// Tests that this doesn't panic. (Issue 30165)
-func TestServeFileDirPanicEmptyPath(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
-	req.URL.Path = ""
-	ServeFile(rec, req, "testdata")
-	res := rec.Result()
-	if res.StatusCode != 301 {
-		t.Errorf("code = %v; want 301", res.Status)
 	}
 }
 
@@ -311,7 +299,7 @@ func TestFileServerEscapesNames(t *testing.T) {
 		if err != nil {
 			t.Fatalf("test %q: Get: %v", test.name, err)
 		}
-		b, err := io.ReadAll(res.Body)
+		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			t.Fatalf("test %q: read Body: %v", test.name, err)
 		}
@@ -359,7 +347,7 @@ func TestFileServerSortsNames(t *testing.T) {
 	}
 	defer res.Body.Close()
 
-	b, err := io.ReadAll(res.Body)
+	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Fatalf("read Body: %v", err)
 	}
@@ -378,8 +366,12 @@ func mustRemoveAll(dir string) {
 
 func TestFileServerImplicitLeadingSlash(t *testing.T) {
 	defer afterTest(t)
-	tempDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tempDir, "foo.txt"), []byte("Hello world"), 0644); err != nil {
+	tempDir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatalf("TempDir: %v", err)
+	}
+	defer mustRemoveAll(tempDir)
+	if err := ioutil.WriteFile(filepath.Join(tempDir, "foo.txt"), []byte("Hello world"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	ts := httptest.NewServer(StripPrefix("/bar/", FileServer(Dir(tempDir))))
@@ -389,7 +381,7 @@ func TestFileServerImplicitLeadingSlash(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get %s: %v", suffix, err)
 		}
-		b, err := io.ReadAll(res.Body)
+		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			t.Fatalf("ReadAll %s: %v", suffix, err)
 		}
@@ -566,43 +558,6 @@ func testServeFileWithContentEncoding(t *testing.T, h2 bool) {
 
 func TestServeIndexHtml(t *testing.T) {
 	defer afterTest(t)
-
-	for i := 0; i < 2; i++ {
-		var h Handler
-		var name string
-		switch i {
-		case 0:
-			h = FileServer(Dir("."))
-			name = "Dir"
-		case 1:
-			h = FileServer(FS(os.DirFS(".")))
-			name = "DirFS"
-		}
-		t.Run(name, func(t *testing.T) {
-			const want = "index.html says hello\n"
-			ts := httptest.NewServer(h)
-			defer ts.Close()
-
-			for _, path := range []string{"/testdata/", "/testdata/index.html"} {
-				res, err := Get(ts.URL + path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				b, err := io.ReadAll(res.Body)
-				if err != nil {
-					t.Fatal("reading Body:", err)
-				}
-				if s := string(b); s != want {
-					t.Errorf("for path %q got %q, want %q", path, s, want)
-				}
-				res.Body.Close()
-			}
-		})
-	}
-}
-
-func TestServeIndexHtmlFS(t *testing.T) {
-	defer afterTest(t)
 	const want = "index.html says hello\n"
 	ts := httptest.NewServer(FileServer(Dir(".")))
 	defer ts.Close()
@@ -612,7 +567,7 @@ func TestServeIndexHtmlFS(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := io.ReadAll(res.Body)
+		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			t.Fatal("reading Body:", err)
 		}
@@ -662,9 +617,9 @@ func (f *fakeFileInfo) Sys() interface{}   { return nil }
 func (f *fakeFileInfo) ModTime() time.Time { return f.modtime }
 func (f *fakeFileInfo) IsDir() bool        { return f.dir }
 func (f *fakeFileInfo) Size() int64        { return int64(len(f.contents)) }
-func (f *fakeFileInfo) Mode() fs.FileMode {
+func (f *fakeFileInfo) Mode() os.FileMode {
 	if f.dir {
-		return 0755 | fs.ModeDir
+		return 0755 | os.ModeDir
 	}
 	return 0644
 }
@@ -677,12 +632,12 @@ type fakeFile struct {
 }
 
 func (f *fakeFile) Close() error               { return nil }
-func (f *fakeFile) Stat() (fs.FileInfo, error) { return f.fi, nil }
-func (f *fakeFile) Readdir(count int) ([]fs.FileInfo, error) {
+func (f *fakeFile) Stat() (os.FileInfo, error) { return f.fi, nil }
+func (f *fakeFile) Readdir(count int) ([]os.FileInfo, error) {
 	if !f.fi.dir {
-		return nil, fs.ErrInvalid
+		return nil, os.ErrInvalid
 	}
-	var fis []fs.FileInfo
+	var fis []os.FileInfo
 
 	limit := f.entpos + count
 	if count <= 0 || limit > len(f.fi.ents) {
@@ -701,11 +656,11 @@ func (f *fakeFile) Readdir(count int) ([]fs.FileInfo, error) {
 
 type fakeFS map[string]*fakeFileInfo
 
-func (fsys fakeFS) Open(name string) (File, error) {
+func (fs fakeFS) Open(name string) (File, error) {
 	name = path.Clean(name)
-	f, ok := fsys[name]
+	f, ok := fs[name]
 	if !ok {
-		return nil, fs.ErrNotExist
+		return nil, os.ErrNotExist
 	}
 	if f.err != nil {
 		return nil, f.err
@@ -740,7 +695,7 @@ func TestDirectoryIfNotModified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := io.ReadAll(res.Body)
+	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +735,7 @@ func TestDirectoryIfNotModified(t *testing.T) {
 	res.Body.Close()
 }
 
-func mustStat(t *testing.T, fileName string) fs.FileInfo {
+func mustStat(t *testing.T, fileName string) os.FileInfo {
 	fi, err := os.Stat(fileName)
 	if err != nil {
 		t.Fatal(err)
@@ -878,15 +833,6 @@ func TestServeContent(t *testing.T) {
 			serveETag: `"foo"`,
 			reqHeader: map[string]string{
 				"If-None-Match": `"Foo"`,
-			},
-			wantStatus:      200,
-			wantContentType: "text/css; charset=utf-8",
-		},
-		"if_none_match_malformed": {
-			file:      "testdata/style.css",
-			serveETag: `"foo"`,
-			reqHeader: map[string]string{
-				"If-None-Match": `,`,
 			},
 			wantStatus:      200,
 			wantContentType: "text/css; charset=utf-8",
@@ -1077,7 +1023,7 @@ func TestServeContent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			io.Copy(io.Discard, res.Body)
+			io.Copy(ioutil.Discard, res.Body)
 			res.Body.Close()
 			if res.StatusCode != tt.wantStatus {
 				t.Errorf("test %q using %q: got status = %d; want %d", testName, method, res.StatusCode, tt.wantStatus)
@@ -1114,7 +1060,7 @@ func (issue12991FS) Open(string) (File, error) { return issue12991File{}, nil }
 
 type issue12991File struct{ File }
 
-func (issue12991File) Stat() (fs.FileInfo, error) { return nil, fs.ErrPermission }
+func (issue12991File) Stat() (os.FileInfo, error) { return nil, os.ErrPermission }
 func (issue12991File) Close() error               { return nil }
 
 func TestServeContentErrorMessages(t *testing.T) {
@@ -1124,7 +1070,7 @@ func TestServeContentErrorMessages(t *testing.T) {
 			err: errors.New("random error"),
 		},
 		"/403": &fakeFileInfo{
-			err: &fs.PathError{Err: fs.ErrPermission},
+			err: &os.PathError{Err: os.ErrPermission},
 		},
 	}
 	ts := httptest.NewServer(FileServer(fs))
@@ -1164,21 +1110,21 @@ func TestLinuxSendfile(t *testing.T) {
 	}
 	defer ln.Close()
 
+	syscalls := "sendfile,sendfile64"
+	switch runtime.GOARCH {
+	case "mips64", "mips64le", "s390x", "alpha":
+		// strace on the above platforms doesn't support sendfile64
+		// and will error out if we specify that with `-e trace='.
+		syscalls = "sendfile"
+	}
+
 	// Attempt to run strace, and skip on failure - this test requires SYS_PTRACE.
-	if err := exec.Command("strace", "-f", "-q", os.Args[0], "-test.run=^$").Run(); err != nil {
+	if err := exec.Command("strace", "-f", "-q", "-e", "trace="+syscalls, os.Args[0], "-test.run=^$").Run(); err != nil {
 		t.Skipf("skipping; failed to run strace: %v", err)
 	}
 
-	filename := fmt.Sprintf("1kb-%d", os.Getpid())
-	filepath := path.Join(os.TempDir(), filename)
-
-	if err := os.WriteFile(filepath, bytes.Repeat([]byte{'a'}, 1<<10), 0755); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(filepath)
-
 	var buf bytes.Buffer
-	child := exec.Command("strace", "-f", "-q", os.Args[0], "-test.run=TestLinuxSendfileChild")
+	child := exec.Command("strace", "-f", "-q", "-e", "trace="+syscalls, os.Args[0], "-test.run=TestLinuxSendfileChild")
 	child.ExtraFiles = append(child.ExtraFiles, lnf)
 	child.Env = append([]string{"GO_WANT_HELPER_PROCESS=1"}, os.Environ()...)
 	child.Stdout = &buf
@@ -1187,11 +1133,11 @@ func TestLinuxSendfile(t *testing.T) {
 		t.Skipf("skipping; failed to start straced child: %v", err)
 	}
 
-	res, err := Get(fmt.Sprintf("http://%s/%s", ln.Addr(), filename))
+	res, err := Get(fmt.Sprintf("http://%s/", ln.Addr()))
 	if err != nil {
 		t.Fatalf("http client error: %v", err)
 	}
-	_, err = io.Copy(io.Discard, res.Body)
+	_, err = io.Copy(ioutil.Discard, res.Body)
 	if err != nil {
 		t.Fatalf("client body read error: %v", err)
 	}
@@ -1201,7 +1147,7 @@ func TestLinuxSendfile(t *testing.T) {
 	Post(fmt.Sprintf("http://%s/quit", ln.Addr()), "", nil)
 	child.Wait()
 
-	rx := regexp.MustCompile(`\b(n64:)?sendfile(64)?\(`)
+	rx := regexp.MustCompile(`sendfile(64)?\(`)
 	out := buf.String()
 	if !rx.MatchString(out) {
 		t.Errorf("no sendfile system call found in:\n%s", out)
@@ -1213,7 +1159,7 @@ func getBody(t *testing.T, testName string, req Request, client *Client) (*Respo
 	if err != nil {
 		t.Fatalf("%s: for URL %q, send error: %v", testName, req.URL.String(), err)
 	}
-	b, err := io.ReadAll(r.Body)
+	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		t.Fatalf("%s: for URL %q, reading body: %v", testName, req.URL.String(), err)
 	}
@@ -1233,7 +1179,7 @@ func TestLinuxSendfileChild(*testing.T) {
 		panic(err)
 	}
 	mux := NewServeMux()
-	mux.Handle("/", FileServer(Dir(os.TempDir())))
+	mux.Handle("/", FileServer(Dir("testdata")))
 	mux.HandleFunc("/quit", func(ResponseWriter, *Request) {
 		os.Exit(0)
 	})
@@ -1265,18 +1211,16 @@ func TestFileServerNotDirError(t *testing.T) {
 			if err == nil {
 				t.Fatal("err == nil; want != nil")
 			}
-			if !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("err = %v; errors.Is(err, fs.ErrNotExist) = %v; want true", err,
-					errors.Is(err, fs.ErrNotExist))
+			if !os.IsNotExist(err) {
+				t.Errorf("err = %v; os.IsNotExist(err) = %v; want true", err, os.IsNotExist(err))
 			}
 
 			_, err = dir.Open("/index.html/not-a-dir/not-a-file")
 			if err == nil {
 				t.Fatal("err == nil; want != nil")
 			}
-			if !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("err = %v; errors.Is(err, fs.ErrNotExist) = %v; want true", err,
-					errors.Is(err, fs.ErrNotExist))
+			if !os.IsNotExist(err) {
+				t.Errorf("err = %v; os.IsNotExist(err) = %v; want true", err, os.IsNotExist(err))
 			}
 		})
 	}
@@ -1324,7 +1268,7 @@ func (d fileServerCleanPathDir) Open(path string) (File, error) {
 		// Just return back something that's a directory.
 		return Dir(".").Open(".")
 	}
-	return nil, fs.ErrNotExist
+	return nil, os.ErrNotExist
 }
 
 type panicOnSeek struct{ io.ReadSeeker }
@@ -1349,63 +1293,5 @@ func Test_scanETag(t *testing.T) {
 		if etag != test.wantETag || remain != test.wantRemain {
 			t.Errorf("scanETag(%q)=%q %q, want %q %q", test.in, etag, remain, test.wantETag, test.wantRemain)
 		}
-	}
-}
-
-// Issue 40940: Ensure that we only accept non-negative suffix-lengths
-// in "Range": "bytes=-N", and should reject "bytes=--2".
-func TestServeFileRejectsInvalidSuffixLengths_h1(t *testing.T) {
-	testServeFileRejectsInvalidSuffixLengths(t, h1Mode)
-}
-func TestServeFileRejectsInvalidSuffixLengths_h2(t *testing.T) {
-	testServeFileRejectsInvalidSuffixLengths(t, h2Mode)
-}
-
-func testServeFileRejectsInvalidSuffixLengths(t *testing.T, h2 bool) {
-	defer afterTest(t)
-	cst := httptest.NewUnstartedServer(FileServer(Dir("testdata")))
-	cst.EnableHTTP2 = h2
-	cst.StartTLS()
-	defer cst.Close()
-
-	tests := []struct {
-		r        string
-		wantCode int
-		wantBody string
-	}{
-		{"bytes=--6", 416, "invalid range\n"},
-		{"bytes=--0", 416, "invalid range\n"},
-		{"bytes=---0", 416, "invalid range\n"},
-		{"bytes=-6", 206, "hello\n"},
-		{"bytes=6-", 206, "html says hello\n"},
-		{"bytes=-6-", 416, "invalid range\n"},
-		{"bytes=-0", 206, ""},
-		{"bytes=", 200, "index.html says hello\n"},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.r, func(t *testing.T) {
-			req, err := NewRequest("GET", cst.URL+"/index.html", nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			req.Header.Set("Range", tt.r)
-			res, err := cst.Client().Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if g, w := res.StatusCode, tt.wantCode; g != w {
-				t.Errorf("StatusCode mismatch: got %d want %d", g, w)
-			}
-			slurp, err := io.ReadAll(res.Body)
-			res.Body.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if g, w := string(slurp), tt.wantBody; g != w {
-				t.Fatalf("Content mismatch:\nGot:  %q\nWant: %q", g, w)
-			}
-		})
 	}
 }

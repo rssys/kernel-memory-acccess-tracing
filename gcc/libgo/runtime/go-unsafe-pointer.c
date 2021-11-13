@@ -7,13 +7,14 @@
 #include <stddef.h>
 
 #include "runtime.h"
+#include "go-type.h"
 
 /* This file provides the type descriptor for the unsafe.Pointer type.
    The unsafe package is defined by the compiler itself, which means
    that there is no package to compile to define the type
    descriptor.  */
 
-extern const struct _type unsafe_Pointer
+extern const struct __go_type_descriptor unsafe_Pointer
   __asm__ (GOSYM_PREFIX "unsafe.Pointer..d");
 
 extern const byte unsafe_Pointer_gc[]
@@ -36,34 +37,36 @@ static const String reflection_string =
 
 const byte unsafe_Pointer_gc[] = { 1 };
 
+extern const FuncVal runtime_pointerhash_descriptor
+  __asm__ (GOSYM_PREFIX "runtime.pointerhash..f");
 extern const FuncVal runtime_pointerequal_descriptor
   __asm__ (GOSYM_PREFIX "runtime.pointerequal..f");
 
-const struct _type unsafe_Pointer =
+const struct __go_type_descriptor unsafe_Pointer =
 {
-  /* size */
+  /* __size */
   sizeof (void *),
-  /* ptrdata */
+  /* __ptrdata */
   sizeof (void *),
-  /* hash */
+  /* __hash */
   78501163U,
-  /* tflag */
-  tflagRegularMemory,
-  /* align */
+  /* __code */
+  GO_UNSAFE_POINTER | GO_DIRECT_IFACE,
+  /* __align */
   __alignof (void *),
-  /* fieldAlign */
+  /* __field_align */
   offsetof (struct field_align, p) - 1,
-  /* kind */
-  kindUnsafePointer | kindDirectIface,
-  /* equal */
+  /* __hashfn */
+  &runtime_pointerhash_descriptor,
+  /* __equalfn */
   &runtime_pointerequal_descriptor,
-  /* gcdata */
+  /* __gcdata */
   unsafe_Pointer_gc,
-  /* _string */
+  /* __reflection */
   &reflection_string,
-  /* uncommontype */
+  /* __uncommon */
   NULL,
-  /* ptrToThis */
+  /* __pointer_to_this */
   NULL
 };
 
@@ -71,8 +74,8 @@ const struct _type unsafe_Pointer =
    since any package which refers to that type descriptor will expect
    it to be defined elsewhere.  */
 
-extern const struct ptrtype pointer_unsafe_Pointer
-  __asm__ (GOSYM_PREFIX "unsafe.Pointer..p");
+extern const struct __go_ptr_type pointer_unsafe_Pointer
+  __asm__ (GOSYM_PREFIX "type...1unsafe.Pointer");
 
 /* The reflection string.  */
 #define PREFLECTION "*unsafe.Pointer"
@@ -83,39 +86,39 @@ static const String preflection_string =
 };
 
 extern const byte pointer_unsafe_Pointer_gc[]
-  __asm__ (GOSYM_PREFIX "unsafe.Pointer..p..g");
+  __asm__ (GOSYM_PREFIX "type...1unsafe.Pointer..g");
 
 const byte pointer_unsafe_Pointer_gc[] = { 1 };
 
-const struct ptrtype pointer_unsafe_Pointer =
+const struct __go_ptr_type pointer_unsafe_Pointer =
 {
-  /* type */
+  /* __common */
   {
-    /* size */
+    /* __size */
     sizeof (void *),
-    /* ptrdata */
+    /* __ptrdata */
     sizeof (void *),
-    /* hash */
+    /* __hash */
     1256018616U,
-    /* tflag */
-    tflagRegularMemory,
-    /* align */
+    /* __code */
+    GO_PTR | GO_DIRECT_IFACE,
+    /* __align */
     __alignof (void *),
-    /* fieldAlign */
+    /* __field_align */
     offsetof (struct field_align, p) - 1,
-    /* kind */
-    kindPtr | kindDirectIface,
-    /* equalfn */
+    /* __hashfn */
+    &runtime_pointerhash_descriptor,
+    /* __equalfn */
     &runtime_pointerequal_descriptor,
-    /* gcdata */
+    /* __gcdata */
     pointer_unsafe_Pointer_gc,
-    /* _string */
+    /* __reflection */
     &preflection_string,
-    /* uncommontype */
+    /* __uncommon */
     NULL,
-    /* ptrToThis */
+    /* __pointer_to_this */
     NULL
   },
-  /* elem */
+  /* __element_type */
   &unsafe_Pointer
 };

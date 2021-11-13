@@ -8,12 +8,11 @@
  */
 module core.sys.windows.lmcons;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.windef;
-import core.sys.windows.lmerr; // for NERR_BASE
+private import core.sys.windows.windef;
+private import core.sys.windows.lmerr; // for NERR_BASE
 
 const TCHAR[]
     MESSAGE_FILENAME = "NETMSG",

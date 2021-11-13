@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,16 +36,13 @@ with Ada.Iterator_Interfaces;
 with Ada.Containers.Helpers;
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type is private;
 
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Multiway_Trees with
-  SPARK_Mode => Off
-is
+package Ada.Containers.Multiway_Trees is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -401,10 +398,7 @@ private
       Root  : aliased Root_Node_Type;
       TC    : aliased Tamper_Counts;
       Count : Count_Type := 0;
-   end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Tree);
+   end record;
 
    overriding procedure Adjust (Container : in out Tree);
 

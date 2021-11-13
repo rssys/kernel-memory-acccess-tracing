@@ -1,5 +1,5 @@
 /* UndefinedBehaviorSanitizer, undefined behavior detector.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Jakub Jelinek <jakub@redhat.com>
 
 This file is part of GCC.
@@ -81,7 +81,7 @@ cp_ubsan_instrument_vptr (location_t loc, tree op, tree type, bool is_addr,
 			      build_zero_cst (TREE_TYPE (op)));
       /* This is a compiler generated comparison, don't emit
 	 e.g. -Wnonnull-compare warning for it.  */
-      suppress_warning (cond, OPT_Wnonnull_compare);
+      TREE_NO_WARNING (cond) = 1;
       vptr = build3_loc (loc, COND_EXPR, uint64_type_node, cond,
 			 vptr, build_int_cst (uint64_type_node, 0));
     }
@@ -118,38 +118,20 @@ cp_ubsan_maybe_instrument_member_call (tree stmt)
 {
   if (call_expr_nargs (stmt) == 0)
     return;
-  tree op, *opp;
-
-  tree fn = CALL_EXPR_FN (stmt);
-  if (fn && TREE_CODE (fn) == OBJ_TYPE_REF)
+  tree *opp = &CALL_EXPR_ARG (stmt, 0);
+  tree op = *opp;
+  if (op == error_mark_node
+      || !INDIRECT_TYPE_P (TREE_TYPE (op)))
+    return;
+  while (TREE_CODE (op) == COMPOUND_EXPR)
     {
-      /* Virtual function call: Sanitize the use of the object pointer in the
-	 OBJ_TYPE_REF, since the vtable reference will SEGV otherwise (95221).
-	 OBJ_TYPE_REF_EXPR is ptr->vptr[N] and OBJ_TYPE_REF_OBJECT is ptr.  But
-	 we can't be sure of finding OBJ_TYPE_REF_OBJECT in OBJ_TYPE_REF_EXPR
-	 if the latter has been optimized, so we use a COMPOUND_EXPR below.  */
-      opp = &OBJ_TYPE_REF_EXPR (fn);
-      op = OBJ_TYPE_REF_OBJECT (fn);
-    }
-  else
-    {
-      /* Non-virtual call: Sanitize the 'this' argument.  */
-      opp = &CALL_EXPR_ARG (stmt, 0);
-      if (*opp == error_mark_node
-	  || !INDIRECT_TYPE_P (TREE_TYPE (*opp)))
-	return;
-      while (TREE_CODE (*opp) == COMPOUND_EXPR)
-	opp = &TREE_OPERAND (*opp, 1);
+      opp = &TREE_OPERAND (op, 1);
       op = *opp;
     }
   op = cp_ubsan_maybe_instrument_vptr (EXPR_LOCATION (stmt), op,
 				       TREE_TYPE (TREE_TYPE (op)),
 				       true, UBSAN_MEMBER_CALL);
-  if (!op)
-    /* No change.  */;
-  else if (fn && TREE_CODE (fn) == OBJ_TYPE_REF)
-    *opp = cp_build_compound_expr (op, *opp, tf_none);
-  else
+  if (op)
     *opp = op;
 }
 

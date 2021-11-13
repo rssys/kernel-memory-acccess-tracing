@@ -5,11 +5,9 @@
 
 // PR 10158. implicit inline template friends ICE'd
 
-typedef int int32_t __attribute__((mode (__SI__)));
-
-template <int32_t N> struct X
+template <int N> struct X
 {
-  template <int32_t M> friend int32_t foo(X const &, X<M> const&)
+  template <int M> friend int foo(X const &, X<M> const&)
   {
     return N * 10000 + M;
   }

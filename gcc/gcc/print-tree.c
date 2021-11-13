@@ -1,5 +1,5 @@
 /* Prints out tree in human readable form - GCC
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -233,15 +233,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     return;
 
   code = TREE_CODE (node);
-
-  /* It is unsafe to look at any other fields of a node with ERROR_MARK or
-     invalid code.  */
-  if (code == ERROR_MARK || code >= MAX_TREE_CODES)
-    {
-      print_node_brief (file, prefix, node, indent);
-      return;
-    }
-
   tclass = TREE_CODE_CLASS (code);
 
   /* Don't get too deep in nesting.  If the user wants to see deeper,
@@ -255,6 +246,13 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     }
 
   if (indent > 8 && (tclass == tcc_type || tclass == tcc_declaration))
+    {
+      print_node_brief (file, prefix, node, indent);
+      return;
+    }
+
+  /* It is unsafe to look at any other fields of an ERROR_MARK node.  */
+  if (code == ERROR_MARK)
     {
       print_node_brief (file, prefix, node, indent);
       return;
@@ -364,8 +362,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     fputs (code == CALL_EXPR ? " must-tail-call" : " static", file);
   if (TREE_DEPRECATED (node))
     fputs (" deprecated", file);
-  if (TREE_UNAVAILABLE (node))
-    fputs (" unavailable", file);
   if (TREE_VISITED (node))
     fputs (" visited", file);
 
@@ -521,11 +517,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	  if (code == FUNCTION_DECL && fndecl_built_in_p (node))
 	    {
 	      if (DECL_BUILT_IN_CLASS (node) == BUILT_IN_MD)
-		fprintf (file, " built-in: BUILT_IN_MD:%d",
-			 DECL_MD_FUNCTION_CODE (node));
-	      else if (DECL_BUILT_IN_CLASS (node) == BUILT_IN_FRONTEND)
-		fprintf (file, " built-in: BUILT_IN_FRONTEND:%d",
-			 DECL_FE_FUNCTION_CODE (node));
+		fprintf (file, " built-in: BUILT_IN_MD:%d", DECL_FUNCTION_CODE (node));
 	      else
 		fprintf (file, " built-in: %s:%s",
 			 built_in_class_names[(int) DECL_BUILT_IN_CLASS (node)],
@@ -607,7 +599,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
       if (TYPE_NO_FORCE_BLK (node))
 	fputs (" no-force-blk", file);
 
-      if (code == ARRAY_TYPE && TYPE_STRING_FLAG (node))
+      if (TYPE_STRING_FLAG (node))
 	fputs (" string-flag", file);
 
       if (TYPE_NEEDS_CONSTRUCTING (node))
@@ -619,11 +611,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	   || code == ARRAY_TYPE)
 	  && TYPE_REVERSE_STORAGE_ORDER (node))
 	fputs (" reverse-storage-order", file);
-
-      if ((code == RECORD_TYPE
-	   || code == UNION_TYPE)
-	  && TYPE_CXX_ODR_P (node))
-	fputs (" cxx-odr-p", file);
 
       /* The transparent-union flag is used for different things in
 	 different nodes.  */
@@ -744,26 +731,20 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	}
       if (code == CALL_EXPR)
 	{
+	  call_expr_arg_iterator iter;
+	  tree arg;
 	  print_node (file, "fn", CALL_EXPR_FN (node), indent + 4);
 	  print_node (file, "static_chain", CALL_EXPR_STATIC_CHAIN (node),
 		      indent + 4);
-
-	  call_expr_arg_iterator iter;
-	  init_call_expr_arg_iterator (node, &iter);
-	  while (more_call_expr_args_p (&iter))
+	  i = 0;
+	  FOR_EACH_CALL_EXPR_ARG (arg, iter, node)
 	    {
 	      /* Buffer big enough to format a 32-bit UINT_MAX into, plus
 		 the text.  */
 	      char temp[15];
-	      sprintf (temp, "arg:%u", iter.i);
-	      tree arg = next_call_expr_arg (&iter);
-	      if (arg)
-		print_node (file, temp, arg, indent + 4);
-	      else
-		{
-		  indent_to (file, indent + 4);
-		  fprintf (file, "%s NULL", temp);
-		}
+	      sprintf (temp, "arg:%u", i);
+	      print_node (file, temp, arg, indent + 4);
+	      i++;
 	    }
 	}
       else
@@ -859,7 +840,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	    char buf[10];
 	    for (unsigned int i = 0; i < NUM_POLY_INT_COEFFS; ++i)
 	      {
-		snprintf (buf, sizeof (buf), "elt%u:", i);
+		snprintf (buf, sizeof (buf), "elt%u: ", i);
 		print_node (file, buf, POLY_INT_CST_COEFF (node, i),
 			    indent + 4);
 	      }
@@ -1041,82 +1022,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     }
 
   fprintf (file, ">");
-}
-
-/* Print the identifier for DECL according to FLAGS.  */
-
-void
-print_decl_identifier (FILE *file, tree decl, int flags)
-{
-  bool needs_colon = false;
-  const char *name;
-  char c;
-
-  if (flags & PRINT_DECL_ORIGIN)
-    {
-      if (DECL_IS_UNDECLARED_BUILTIN (decl))
-	fputs ("<built-in>", file);
-      else
-	{
-	  expanded_location loc
-	    = expand_location (DECL_SOURCE_LOCATION (decl));
-	  fprintf (file, "%s:%d:%d", loc.file, loc.line, loc.column);
-	}
-      needs_colon = true;
-    }
-
-  if (flags & PRINT_DECL_UNIQUE_NAME)
-    {
-      name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
-      if (!TREE_PUBLIC (decl)
-	  || (DECL_WEAK (decl) && !DECL_EXTERNAL (decl)))
-	/* The symbol has internal or weak linkage so its assembler name
-	   is not necessarily unique among the compilation units of the
-	   program.  We therefore have to further mangle it.  But we can't
-	   simply use DECL_SOURCE_FILE because it contains the name of the
-	   file the symbol originates from so, e.g. for function templates
-	   in C++ where the templates are defined in a header file, we can
-	   have symbols with the same assembler name and DECL_SOURCE_FILE.
-	   That's why we use the name of the top-level source file of the
-	   compilation unit.  ??? Unnecessary for Ada.  */
-	name = ACONCAT ((main_input_filename, ":", name, NULL));
-    }
-  else if (flags & PRINT_DECL_NAME)
-    {
-      /* We don't want to print the full qualified name because it can be long,
-	 so we strip the scope prefix, but we may need to deal with the suffix
-	 created by the compiler.  */
-      const char *suffix = strchr (IDENTIFIER_POINTER (DECL_NAME (decl)), '.');
-      name = lang_hooks.decl_printable_name (decl, 2);
-      if (suffix)
-	{
-	  const char *dot = strchr (name, '.');
-	  while (dot && strcasecmp (dot, suffix) != 0)
-	    {
-	      name = dot + 1;
-	      dot = strchr (name, '.');
-	    }
-	}
-      else
-	{
-	  const char *dot = strrchr (name, '.');
-	  if (dot)
-	    name = dot + 1;
-	}
-    }
-  else
-    return;
-
-  if (needs_colon)
-    fputc (':', file);
-
-  while ((c = *name++) != '\0')
-    {
-      /* Strip double-quotes because of VCG.  */
-      if (c == '"')
-	continue;
-      fputc (c, file);
-    }
 }
 
 

@@ -1,6 +1,6 @@
 // Filesystem TS operations -*- C++ -*-
 
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -293,7 +293,7 @@ fs::copy(const path& from, const path& to, copy_options options,
     }
   if (is_other(f) || is_other(t))
     {
-      ec = std::make_error_code(std::errc::invalid_argument);
+      ec = std::make_error_code(std::errc::not_supported);
       return;
     }
   if (is_directory(f) && is_regular_file(t))
@@ -372,7 +372,7 @@ fs::copy_file(const path& from, const path& to, copy_options options,
   return do_copy_file(from.c_str(), to.c_str(), copy_file_options(options),
 		      nullptr, nullptr, ec);
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
   return false;
 #endif
 }
@@ -426,7 +426,7 @@ fs::create_directories(const path& p, error_code& ec) noexcept
       return false;
     }
 
-  file_status st = status(p, ec);
+  file_status st = symlink_status(p, ec);
   if (is_directory(st))
     return false;
   else if (ec && !status_known(st))
@@ -491,7 +491,7 @@ namespace
 	created = true;
       }
 #else
-    ec = std::make_error_code(std::errc::function_not_supported);
+    ec = std::make_error_code(std::errc::not_supported);
 #endif
     return created;
   }
@@ -539,7 +539,7 @@ fs::create_directory(const path& p, const path& attributes,
     }
   return create_dir(p, static_cast<perms>(st.st_mode), ec);
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
   return false;
 #endif
 }
@@ -560,7 +560,7 @@ fs::create_directory_symlink(const path& to, const path& new_symlink,
 			     error_code& ec) noexcept
 {
 #ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #else
   create_symlink(to, new_symlink, ec);
 #endif
@@ -590,9 +590,9 @@ fs::create_hard_link(const path& to, const path& new_hard_link,
   if (CreateHardLinkW(new_hard_link.c_str(), to.c_str(), NULL))
     ec.clear();
   else
-    ec = __last_system_error();
+    ec.assign((int)GetLastError(), generic_category());
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
 }
 
@@ -616,7 +616,7 @@ fs::create_symlink(const path& to, const path& new_symlink,
   else
     ec.clear();
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
 }
 
@@ -683,7 +683,7 @@ fs::current_path(error_code& ec)
     }
 #endif  // __GLIBC__
 #else   // _GLIBCXX_HAVE_UNISTD_H
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
   return p;
 }
@@ -706,7 +706,7 @@ fs::current_path(const path& p, error_code& ec) noexcept
   else
     ec.clear();
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
 }
 
@@ -746,7 +746,7 @@ fs::equivalent(const path& p1, const path& p2, error_code& ec) noexcept
     {
       if (is_other(s1) && is_other(s2))
 	{
-	  ec = std::__unsupported();
+	  ec = std::make_error_code(std::errc::not_supported);
 	  return false;
 	}
       ec.clear();
@@ -762,7 +762,7 @@ fs::equivalent(const path& p1, const path& p2, error_code& ec) noexcept
     ec.clear();
   return false;
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
   return false;
 }
@@ -793,7 +793,7 @@ namespace
       ec.clear();
       return f(st);
 #else
-      ec = std::make_error_code(std::errc::function_not_supported);
+      ec = std::make_error_code(std::errc::not_supported);
       return deflt;
 #endif
     }
@@ -817,7 +817,7 @@ fs::file_size(const path& p, error_code& ec) noexcept
       if (s.type == file_type::directory)
 	ec = std::make_error_code(std::errc::is_a_directory);
       else
-	ec = std::__unsupported();
+	ec = std::make_error_code(std::errc::not_supported);
     }
   return -1;
 }
@@ -920,7 +920,7 @@ fs::last_write_time(const path& p __attribute__((__unused__)),
   else
     ec.clear();
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
 }
 
@@ -967,7 +967,7 @@ fs::permissions(const path& p, perms prms, error_code& ec) noexcept
     err = errno;
 #else
   if (nofollow && is_symlink(st))
-    ec = std::__unsupported();
+    ec = std::make_error_code(std::errc::operation_not_supported);
   else if (posix::chmod(p.c_str(), static_cast<mode_t>(prms)))
     err = errno;
 #endif
@@ -993,17 +993,11 @@ fs::path fs::read_symlink(const path& p [[gnu::unused]], error_code& ec)
   path result;
 #if defined(_GLIBCXX_HAVE_READLINK) && defined(_GLIBCXX_HAVE_SYS_STAT_H)
   stat_type st;
-  if (posix::lstat(p.c_str(), &st))
+  if (::lstat(p.c_str(), &st))
     {
       ec.assign(errno, std::generic_category());
       return result;
     }
-  else if (!fs::is_symlink(make_file_status(st)))
-    {
-      ec.assign(EINVAL, std::generic_category());
-      return result;
-    }
-
   std::string buf(st.st_size ? st.st_size + 1 : 128, '\0');
   do
     {
@@ -1032,7 +1026,7 @@ fs::path fs::read_symlink(const path& p [[gnu::unused]], error_code& ec)
     }
   while (true);
 #else
-  ec = std::make_error_code(std::errc::function_not_supported);
+  ec = std::make_error_code(std::errc::not_supported);
 #endif
   return result;
 }
@@ -1062,7 +1056,7 @@ fs::remove(const path& p, error_code& ec) noexcept
 	  return true;
 	}
       else if (!ec)
-	ec = __last_system_error();
+	ec.assign((int)GetLastError(), generic_category());
     }
   else if (status_known(st))
     ec.clear();
@@ -1153,12 +1147,16 @@ fs::resize_file(const path& p, uintmax_t size)
 void
 fs::resize_file(const path& p, uintmax_t size, error_code& ec) noexcept
 {
-  if (size > static_cast<uintmax_t>(std::numeric_limits<posix::off_t>::max()))
+#ifdef _GLIBCXX_HAVE_UNISTD_H
+  if (size > static_cast<uintmax_t>(std::numeric_limits<off_t>::max()))
     ec.assign(EINVAL, std::generic_category());
   else if (posix::truncate(p.c_str(), size))
     ec.assign(errno, std::generic_category());
   else
     ec.clear();
+#else
+  ec = std::make_error_code(std::errc::not_supported);
+#endif
 }
 
 
@@ -1276,7 +1274,7 @@ fs::system_complete(const path& p, error_code& ec)
       || p.root_name() == base.root_name())
     return absolute(p, base);
   // else TODO
-  ec = std::__unsupported();
+  ec = std::make_error_code(std::errc::not_supported);
   return {};
 #else
   if (ec.value())
@@ -1285,8 +1283,7 @@ fs::system_complete(const path& p, error_code& ec)
 #endif
 }
 
-fs::path
-fs::temp_directory_path()
+fs::path fs::temp_directory_path()
 {
   error_code ec;
   path tmp = temp_directory_path(ec);
@@ -1295,12 +1292,31 @@ fs::temp_directory_path()
   return tmp;
 }
 
-fs::path
-fs::temp_directory_path(error_code& ec)
+fs::path fs::temp_directory_path(error_code& ec)
 {
-  path p = fs::get_temp_directory_from_env(ec);
-  if (ec)
-    return p;
+  path p;
+#ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
+  unsigned len = 1024;
+  std::wstring buf;
+  do
+    {
+      buf.resize(len);
+      len = GetTempPathW(buf.size(), buf.data());
+    } while (len > buf.size());
+
+  if (len == 0)
+    {
+      ec.assign((int)GetLastError(), std::system_category());
+      return p;
+    }
+  buf.resize(len);
+  p = std::move(buf);
+#else
+  const char* tmpdir = nullptr;
+  const char* env[] = { "TMPDIR", "TMP", "TEMP", "TEMPDIR", nullptr };
+  for (auto e = env; tmpdir == nullptr && *e != nullptr; ++e)
+    tmpdir = ::getenv(*e);
+  p = tmpdir ? tmpdir : "/tmp";
   auto st = status(p, ec);
   if (ec)
     p.clear();
@@ -1309,5 +1325,7 @@ fs::temp_directory_path(error_code& ec)
       p.clear();
       ec = std::make_error_code(std::errc::not_a_directory);
     }
+#endif
   return p;
 }
+

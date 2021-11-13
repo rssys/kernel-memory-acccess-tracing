@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,35 +29,11 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Interfaces;
 with Ada.Text_IO.Decimal_Aux;
-with System.Img_Decimal_32;  use System.Img_Decimal_32;
-with System.Img_Decimal_64;  use System.Img_Decimal_64;
-with System.Val_Decimal_32;  use System.Val_Decimal_32;
-with System.Val_Decimal_64;  use System.Val_Decimal_64;
 
 package body Ada.Text_IO.Decimal_IO is
 
-   subtype Int32 is Interfaces.Integer_32;
-   subtype Int64 is Interfaces.Integer_64;
-
-   package Aux32 is new
-     Ada.Text_IO.Decimal_Aux
-       (Int32,
-        Scan_Decimal32,
-        Set_Image_Decimal32);
-
-   package Aux64 is new
-     Ada.Text_IO.Decimal_Aux
-       (Int64,
-        Scan_Decimal64,
-        Set_Image_Decimal64);
-
-   Need64 : constant Boolean := Num'Size > 32;
-   --  Throughout this generic body, we distinguish between the case where type
-   --  Int32 is acceptable and where type Int64 is needed. This Boolean is used
-   --  to test for these cases and since it is a constant, only code for the
-   --  relevant case will be included in the instance.
+   package Aux renames Ada.Text_IO.Decimal_Aux;
 
    Scale : constant Integer := Num'Scale;
 
@@ -73,10 +49,10 @@ package body Ada.Text_IO.Decimal_IO is
       pragma Unsuppress (Range_Check);
 
    begin
-      if Need64 then
-         Item := Num'Fixed_Value (Aux64.Get (File, Width, Scale));
+      if Num'Size > Integer'Size then
+         Item := Num'Fixed_Value (Aux.Get_LLD (File, Width, Scale));
       else
-         Item := Num'Fixed_Value (Aux32.Get (File, Width, Scale));
+         Item := Num'Fixed_Value (Aux.Get_Dec (File, Width, Scale));
       end if;
 
    exception
@@ -99,10 +75,12 @@ package body Ada.Text_IO.Decimal_IO is
       pragma Unsuppress (Range_Check);
 
    begin
-      if Need64 then
-         Item := Num'Fixed_Value (Aux64.Gets (From, Last, Scale));
+      if Num'Size > Integer'Size then
+         Item := Num'Fixed_Value
+                   (Aux.Gets_LLD (From, Last'Unrestricted_Access, Scale));
       else
-         Item := Num'Fixed_Value (Aux32.Gets (From, Last, Scale));
+         Item := Num'Fixed_Value
+                   (Aux.Gets_Dec (From, Last'Unrestricted_Access, Scale));
       end if;
 
    exception
@@ -121,12 +99,13 @@ package body Ada.Text_IO.Decimal_IO is
       Exp  : Field := Default_Exp)
    is
    begin
-      if Need64 then
-         Aux64.Put
-           (File, Int64'Integer_Value (Item), Fore, Aft, Exp, Scale);
+      if Num'Size > Integer'Size then
+         Aux.Put_LLD
+           (File, Long_Long_Integer'Integer_Value (Item),
+            Fore, Aft, Exp, Scale);
       else
-         Aux32.Put
-           (File, Int32'Integer_Value (Item), Fore, Aft, Exp, Scale);
+         Aux.Put_Dec
+           (File, Integer'Integer_Value (Item), Fore, Aft, Exp, Scale);
       end if;
    end Put;
 
@@ -147,10 +126,11 @@ package body Ada.Text_IO.Decimal_IO is
       Exp  : Field := Default_Exp)
    is
    begin
-      if Need64 then
-         Aux64.Puts (To, Int64'Integer_Value (Item), Aft, Exp, Scale);
+      if Num'Size > Integer'Size then
+         Aux.Puts_LLD
+           (To, Long_Long_Integer'Integer_Value (Item), Aft, Exp, Scale);
       else
-         Aux32.Puts (To, Int32'Integer_Value (Item), Aft, Exp, Scale);
+         Aux.Puts_Dec (To, Integer'Integer_Value (Item), Aft, Exp, Scale);
       end if;
    end Put;
 

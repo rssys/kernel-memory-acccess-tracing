@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-ipa-icf-optimized"  } */
+/* { dg-options "-O2 -fdump-ipa-icf"  } */
 
 __attribute__ ((noinline))
 int zero()

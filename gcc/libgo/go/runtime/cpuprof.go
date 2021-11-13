@@ -36,10 +36,9 @@ type cpuProfile struct {
 	// 300 words per second.
 	// Hopefully a normal Go thread will get the profiling
 	// signal at least once every few seconds.
-	extra      [1000]uintptr
-	numExtra   int
-	lostExtra  uint64 // count of frames lost because extra is full
-	lostAtomic uint64 // count of frames lost because of being in atomic64 on mips/arm; updated racily
+	extra     [1000]uintptr
+	numExtra  int
+	lostExtra uint64 // count of frames lost because extra is full
 }
 
 var cpuprof cpuProfile
@@ -95,7 +94,7 @@ func (p *cpuProfile) add(gp *g, stk []uintptr) {
 	}
 
 	if prof.hz != 0 { // implies cpuprof.log != nil
-		if p.numExtra > 0 || p.lostExtra > 0 || p.lostAtomic > 0 {
+		if p.numExtra > 0 || p.lostExtra > 0 {
 			p.addExtra()
 		}
 		hdr := [1]uint64{1}
@@ -103,16 +102,7 @@ func (p *cpuProfile) add(gp *g, stk []uintptr) {
 		// because otherwise its write barrier behavior may not
 		// be correct. See the long comment there before
 		// changing the argument here.
-		//
-		// Note: it can happen on Windows, where we are calling
-		// p.add with a gp that is not the current g, that gp is nil,
-		// meaning we interrupted a system thread with no g.
-		// Avoid faulting in that case.
-		var tagPtr *unsafe.Pointer
-		if gp != nil {
-			tagPtr = &gp.labels
-		}
-		cpuprof.log.write(tagPtr, nanotime(), hdr[:], stk)
+		cpuprof.log.write(&gp.labels, nanotime(), hdr[:], stk)
 	}
 
 	atomic.Store(&prof.signalLock, 0)
@@ -169,20 +159,18 @@ func (p *cpuProfile) addExtra() {
 			_LostExternalCodePC + sys.PCQuantum,
 			_ExternalCodePC + sys.PCQuantum,
 		}
-		p.log.write(nil, 0, hdr[:], lostStk[:])
+		cpuprof.log.write(nil, 0, hdr[:], lostStk[:])
 		p.lostExtra = 0
 	}
+}
 
-	if p.lostAtomic > 0 {
-		hdr := [1]uint64{p.lostAtomic}
-		lostStk := [2]uintptr{
-			_LostSIGPROFDuringAtomic64PC + sys.PCQuantum,
-			_SystemPC + sys.PCQuantum,
-		}
-		p.log.write(nil, 0, hdr[:], lostStk[:])
-		p.lostAtomic = 0
+func (p *cpuProfile) addLostAtomic64(count uint64) {
+	hdr := [1]uint64{count}
+	lostStk := [2]uintptr{
+		_LostSIGPROFDuringAtomic64PC + sys.PCQuantum,
+		_SystemPC + sys.PCQuantum,
 	}
-
+	cpuprof.log.write(nil, 0, hdr[:], lostStk[:])
 }
 
 // CPUProfile panics.
@@ -191,14 +179,14 @@ func (p *cpuProfile) addExtra() {
 // The details of generating that format have changed,
 // so this functionality has been removed.
 //
-// Deprecated: Use the runtime/pprof package,
+// Deprecated: use the runtime/pprof package,
 // or the handlers in the net/http/pprof package,
 // or the testing package's -test.cpuprofile flag instead.
 func CPUProfile() []byte {
 	panic("CPUProfile no longer available")
 }
 
-//go:linkname runtime_pprof_runtime_cyclesPerSecond runtime_1pprof.runtime__cyclesPerSecond
+//go:linkname runtime_pprof_runtime_cyclesPerSecond runtime..z2fpprof.runtime_cyclesPerSecond
 func runtime_pprof_runtime_cyclesPerSecond() int64 {
 	return tickspersecond()
 }
@@ -209,7 +197,7 @@ func runtime_pprof_runtime_cyclesPerSecond() int64 {
 // on has been returned, readProfile returns eof=true.
 // The caller must save the returned data and tags before calling readProfile again.
 //
-//go:linkname runtime_pprof_readProfile runtime_1pprof.readProfile
+//go:linkname runtime_pprof_readProfile runtime..z2fpprof.readProfile
 func runtime_pprof_readProfile() ([]uint64, []unsafe.Pointer, bool) {
 	lock(&cpuprof.lock)
 	log := cpuprof.log

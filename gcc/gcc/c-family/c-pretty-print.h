@@ -1,5 +1,5 @@
 /* Various declarations for the C and C++ pretty-printers.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -36,7 +36,7 @@ enum pp_c_pretty_print_flags
 
 /* The data type used to bundle information necessary for pretty-printing
    a C or C++ entity.  */
-class c_pretty_printer;
+struct c_pretty_printer;
 
 /* The type of a C pretty-printer 'member' function.  */
 typedef void (*c_pretty_print_fn) (c_pretty_printer *, tree);
@@ -47,11 +47,9 @@ typedef void (*c_pretty_print_fn) (c_pretty_printer *, tree);
    facilities provided here.  A derived pretty-printer can override
    any function listed in the vtable below.  See cp/cxx-pretty-print.h
    and cp/cxx-pretty-print.c for an example of derivation.  */
-class c_pretty_printer : public pretty_printer
+struct c_pretty_printer : pretty_printer
 {
-public:
   c_pretty_printer ();
-  pretty_printer *clone () const OVERRIDE;
 
   // Format string, possibly translated.
   void translate_string (const char *);

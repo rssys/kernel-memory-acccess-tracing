@@ -6,6 +6,5 @@ void composite (int const (&) [3]);
 
 int main ()
 {
-  // Not ambiguous since CWG 1307.
-  composite({0,1});
+  composite({0,1});		// { dg-error "ambiguous" }
 }

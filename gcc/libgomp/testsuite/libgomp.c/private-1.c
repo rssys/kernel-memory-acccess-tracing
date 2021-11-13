@@ -20,7 +20,7 @@ f1 (int i, int j, int k)
 }
 
 int v1 = 1, v2 = 2, v5 = 5;
-int e;
+int err;
 
 void
 f2 (void)
@@ -35,11 +35,11 @@ f2 (void)
       #pragma omp parallel num_threads(1) firstprivate(v1, v2, v3, v4)
 	{
 	  if (++v1 != 8 || ++v2 != 3 || ++v3 != 4 || ++v4 != 5 || ++v5 != 6)
-	    e = 1;
+	    err = 1;
 	}
       if (v1 != 7 || v2 != 2 || v3 != 3 || v4 != 4 || v5 != 6)
 	abort ();
-      if (e)
+      if (err)
 	abort ();
     }
   }

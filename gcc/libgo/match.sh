@@ -113,16 +113,11 @@ for f in $gofiles; do
 	"") ;;
 	$goarch) ;;
 	$goos) ;;
-	aix | android | darwin | dragonfly | freebsd | illumos | hurd | ios | js | linux | nacl | netbsd | openbsd | plan9 | solaris | windows | zos)
+	aix | android | darwin | dragonfly | freebsd | hurd | js | linux | nacl | netbsd | openbsd | plan9 | solaris | windows)
 	    tag1=nonmatchingtag
 	    ;;
-	386 | amd64 | amd64p32 | arm | armbe | arm64 | arm64be | alpha | ia64 | m68k | mips | mipsle | mips64 | mips64le | mips64p32 | mips64p32le | nios2 | ppc | ppc64 | ppc64le | riscv | riscv64 | s390 | s390x | sh | shbe | sparc | sparc64 | wasm)
+	386 | amd64 | amd64p32 | arm | armbe | arm64 | arm64be | alpha | ia64 | m68k | mips | mipsle | mips64 | mips64le | mips64p32 | mips64p32le | nios2 | ppc | ppc64 | ppc64le | riscv64 | s390 | s390x | sh | shbe | sparc | sparc64 | wasm)
 	    tag1=nonmatchingtag
-	    ;;
-	*)
-	    # File name like x_amd64_random.go, where tag1=random.
-	    # Don't match based on tag2.
-	    tag2=
 	    ;;
     esac
 
@@ -130,17 +125,17 @@ for f in $gofiles; do
 	"") ;;
 	$goarch) ;;
 	$goos) ;;
-	aix | android | darwin | dragonfly | freebsd | hurd | ios | illumos | js | linux | nacl | netbsd | openbsd | plan9 | solaris | windows | zos)
+	aix | android | darwin | dragonfly | freebsd | hurd | js | linux | nacl | netbsd | openbsd | plan9 | solaris | windows)
 	    tag2=nonmatchingtag
 	    ;;
-	386 | amd64 | amd64p32 | arm | armbe | arm64 | arm64be | alpha | ia64 | m68k | mips | mipsle | mips64 | mips64le | mips64p32 | mips64p32le | nios2 | ppc | ppc64 | ppc64le | riscv | riscv64 | s390 | s390x | sh | shbe | sparc | sparc64 | wasm)
+	386 | amd64 | amd64p32 | arm | armbe | arm64 | arm64be | alpha | ia64 | m68k | mips | mipsle | mips64 | mips64le | mips64p32 | mips64p32le | nios2 | ppc | ppc64 | ppc64le | riscv64 | s390 | s390x | sh | shbe | sparc | sparc64 | wasm)
 	    tag2=nonmatchingtag
 	    ;;
     esac
 
     if test x$tag1 != xnonmatchingtag -a x$tag2 != xnonmatchingtag; then
 	# Pipe through cat so that `set -e` doesn't affect fgrep.
-	tags=`sed '/^package /q' < $f | grep '^// *+build ' | cat`
+	tags=`sed '/^package /q' < $f | grep '^// +build ' | cat`
 	omatch=true
 	first=true
 	match=false
@@ -148,7 +143,7 @@ for f in $gofiles; do
 	    case $tag in
 		"//")
 		    ;;
-		"+build" | "//+build")
+		"+build")
 		    if test "$first" = "true"; then
 			first=false
 		    elif test "$match" = "false"; then
@@ -156,18 +151,18 @@ for f in $gofiles; do
 		    fi
 		    match=false
 		    ;;
-		$goos | $goarch | $cgotag | $cmdlinetag | "gccgo" | "goexperiment.fieldtrack" | go1.[0-9] | go1.[0-9][0-9])
+		$goos | $goarch | $cgotag | $cmdlinetag | "gccgo" | go1.[0-9])
 		    match=true
 		    ;;
-		"!"$goos | "!"$goarch | "!"$cgotag | "!"$cmdlinetag | "!gccgo" | "!goexperiment.fieldtrack" | "!"go1.[0-9] | "!"go1.1[0-7])
+		"!"$goos | "!"$goarch | "!"$cgotag | "!"$cmdlinetag | "!gccgo" | "!"go1.[0-9])
 		    ;;
 		*,*)
 		    cmatch=true
 		    for ctag in `echo $tag | sed -e 's/,/ /g'`; do
 			case $ctag in
-			    $goos | $goarch | $cgotag | $cmdlinetag | "gccgo" | "goexperiment.fieldtrack" | go1.[0-9] | go1.[0-9][0-9])
+			    $goos | $goarch | $cgotag | $cmdlinetag | "gccgo" | go1.[0-9])
 				;;
-			    "!"$goos | "!"$goarch | "!"$cgotag | "!"$cmdlinetag | "!gccgo" | "!goexperiment.fieldtrack" | "!"go1.[0-9] | "!"go1.1[0-7])
+			    "!"$goos | "!"$goarch | "!"$cgotag | "!"$cmdlinetag | "!gccgo" | "!"go1.[0-9])
 				cmatch=false
 				;;
 			    "!"*)

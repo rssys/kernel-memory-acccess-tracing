@@ -1,6 +1,6 @@
 /* Offload image generation tool for PTX.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
 
    Contributed by Nathan Sidwell <nathan@codesourcery.com> and
    Bernd Schmidt <bernds@codesourcery.com>.
@@ -55,7 +55,6 @@ static id_map *var_ids, **vars_tail = &var_ids;
 /* Files to unlink.  */
 static const char *ptx_name;
 static const char *ptx_cfile_name;
-static const char *ptx_dumpbase;
 
 enum offload_abi offload_abi = OFFLOAD_ABI_UNSET;
 
@@ -256,13 +255,13 @@ process (FILE *in, FILE *out)
 	    case '\n':
 	      fprintf (out, "\\n\"\n\t\"");
 	      /* Look for mappings on subsequent lines.  */
-	      while (startswith (input + i, "//:"))
+	      while (strncmp (input + i, "//:", 3) == 0)
 		{
 		  i += 3;
 
-		  if (startswith (input + i, "VAR_MAP "))
+		  if (strncmp (input + i, "VAR_MAP ", 8) == 0)
 		    record_id (input + i + 8, &vars_tail);
-		  else if (startswith (input + i, "FUNC_MAP "))
+		  else if (strncmp (input + i, "FUNC_MAP ", 9) == 0)
 		    record_id (input + i + 9, &funcs_tail);
 		  else
 		    abort ();
@@ -356,8 +355,7 @@ process (FILE *in, FILE *out)
 }
 
 static void
-compile_native (const char *infile, const char *outfile, const char *compiler,
-		bool fPIC, bool fpic)
+compile_native (const char *infile, const char *outfile, const char *compiler)
 {
   const char *collect_gcc_options = getenv ("COLLECT_GCC_OPTIONS");
   if (!collect_gcc_options)
@@ -367,20 +365,10 @@ compile_native (const char *infile, const char *outfile, const char *compiler,
   struct obstack argv_obstack;
   obstack_init (&argv_obstack);
   obstack_ptr_grow (&argv_obstack, compiler);
-  if (fPIC)
-    obstack_ptr_grow (&argv_obstack, "-fPIC");
-  if (fpic)
-    obstack_ptr_grow (&argv_obstack, "-fpic");
   if (save_temps)
     obstack_ptr_grow (&argv_obstack, "-save-temps");
   if (verbose)
     obstack_ptr_grow (&argv_obstack, "-v");
-  obstack_ptr_grow (&argv_obstack, "-dumpdir");
-  obstack_ptr_grow (&argv_obstack, "");
-  obstack_ptr_grow (&argv_obstack, "-dumpbase");
-  obstack_ptr_grow (&argv_obstack, ptx_dumpbase);
-  obstack_ptr_grow (&argv_obstack, "-dumpbase-ext");
-  obstack_ptr_grow (&argv_obstack, ".c");
   switch (offload_abi)
     {
     case OFFLOAD_ABI_LP64:
@@ -399,8 +387,7 @@ compile_native (const char *infile, const char *outfile, const char *compiler,
   obstack_ptr_grow (&argv_obstack, NULL);
 
   const char **new_argv = XOBFINISH (&argv_obstack, const char **);
-  fork_execute (new_argv[0], CONST_CAST (char **, new_argv), true,
-		".gccnative_args");
+  fork_execute (new_argv[0], CONST_CAST (char **, new_argv), true);
   obstack_free (&argv_obstack, NULL);
 }
 
@@ -477,12 +464,10 @@ main (int argc, char **argv)
   /* Scan the argument vector.  */
   bool fopenmp = false;
   bool fopenacc = false;
-  bool fPIC = false;
-  bool fpic = false;
   for (int i = 1; i < argc; i++)
     {
 #define STR "-foffload-abi="
-      if (startswith (argv[i], STR))
+      if (strncmp (argv[i], STR, strlen (STR)) == 0)
 	{
 	  if (strcmp (argv[i] + strlen (STR), "lp64") == 0)
 	    offload_abi = OFFLOAD_ABI_LP64;
@@ -497,17 +482,10 @@ main (int argc, char **argv)
 	fopenmp = true;
       else if (strcmp (argv[i], "-fopenacc") == 0)
 	fopenacc = true;
-      else if (strcmp (argv[i], "-fPIC") == 0)
-	fPIC = true;
-      else if (strcmp (argv[i], "-fpic") == 0)
-	fpic = true;
       else if (strcmp (argv[i], "-save-temps") == 0)
 	save_temps = true;
       else if (strcmp (argv[i], "-v") == 0)
 	verbose = true;
-      else if (strcmp (argv[i], "-dumpbase") == 0
-	       && i + 1 < argc)
-	dumppfx = argv[++i];
     }
   if (!(fopenacc ^ fopenmp))
     fatal_error (input_location, "either %<-fopenacc%> or %<-fopenmp%> "
@@ -543,14 +521,7 @@ main (int argc, char **argv)
 	obstack_ptr_grow (&argv_obstack, argv[ix]);
     }
 
-  if (!dumppfx)
-    dumppfx = outname;
-
-  ptx_dumpbase = concat (dumppfx, ".c", NULL);
-  if (save_temps)
-    ptx_cfile_name = ptx_dumpbase;
-  else
-    ptx_cfile_name = make_temp_file (".c");
+  ptx_cfile_name = make_temp_file (".c");
 
   out = fopen (ptx_cfile_name, "w");
   if (!out)
@@ -560,17 +531,7 @@ main (int argc, char **argv)
      configurations.  */
   if (offload_abi == OFFLOAD_ABI_LP64)
     {
-      char *mko_dumpbase = concat (dumppfx, ".mkoffload", NULL);
-      if (save_temps)
-	ptx_name = mko_dumpbase;
-      else
-	ptx_name = make_temp_file (".mkoffload");
-      obstack_ptr_grow (&argv_obstack, "-dumpdir");
-      obstack_ptr_grow (&argv_obstack, "");
-      obstack_ptr_grow (&argv_obstack, "-dumpbase");
-      obstack_ptr_grow (&argv_obstack, mko_dumpbase);
-      obstack_ptr_grow (&argv_obstack, "-dumpbase-ext");
-      obstack_ptr_grow (&argv_obstack, "");
+      ptx_name = make_temp_file (".mkoffload");
       obstack_ptr_grow (&argv_obstack, "-o");
       obstack_ptr_grow (&argv_obstack, ptx_name);
       obstack_ptr_grow (&argv_obstack, NULL);
@@ -583,8 +544,7 @@ main (int argc, char **argv)
       unsetenv ("COMPILER_PATH");
       unsetenv ("LIBRARY_PATH");
 
-      fork_execute (new_argv[0], CONST_CAST (char **, new_argv), true,
-		    ".gcc_args");
+      fork_execute (new_argv[0], CONST_CAST (char **, new_argv), true);
       obstack_free (&argv_obstack, NULL);
 
       xputenv (concat ("GCC_EXEC_PREFIX=", execpath, NULL));
@@ -596,12 +556,11 @@ main (int argc, char **argv)
 	fatal_error (input_location, "cannot open intermediate ptx file");
 
       process (in, out);
-      fclose (in);
     }
 
   fclose (out);
 
-  compile_native (ptx_cfile_name, outname, collect_gcc, fPIC, fpic);
+  compile_native (ptx_cfile_name, outname, collect_gcc);
 
   return 0;
 }

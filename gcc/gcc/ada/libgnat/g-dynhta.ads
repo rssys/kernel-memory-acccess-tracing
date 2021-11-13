@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---                     Copyright (C) 1995-2021, AdaCore                     --
+--                     Copyright (C) 1995-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -49,12 +49,6 @@
 pragma Compiler_Unit_Warning;
 
 package GNAT.Dynamic_HTables is
-
-   function Hash_Two_Keys
-     (Left  : Bucket_Range_Type;
-      Right : Bucket_Range_Type) return Bucket_Range_Type;
-   pragma Inline (Hash_Two_Keys);
-   --  Obtain the hash value of keys Left and Right
 
    -------------------
    -- Static_HTable --
@@ -264,16 +258,16 @@ package GNAT.Dynamic_HTables is
       Nil : constant Instance := Instance (Tab.Nil);
    end Simple_HTable;
 
-   -------------------------
-   -- Dynamic_Hash_Tables --
-   -------------------------
+   --------------------
+   -- Dynamic_HTable --
+   --------------------
 
    --  The following package offers a hash table abstraction with the following
    --  characteristics:
    --
-   --    * Dynamic resizing based on load factor
-   --    * Creation of multiple instances, of different sizes
-   --    * Iterable keys
+   --    * Dynamic resizing based on load factor.
+   --    * Creation of multiple instances, of different sizes.
+   --    * Iterable keys.
    --
    --  This type of hash table is best used in scenarios where the size of the
    --  key set is not known. The dynamic resizing aspect allows for performance
@@ -281,7 +275,7 @@ package GNAT.Dynamic_HTables is
    --
    --  The following use pattern must be employed when operating this table:
    --
-   --    Table : Dynamic_Hash_Table := Create (<some size>);
+   --    Table : Instance := Create (<some size>);
    --
    --    <various operations>
    --
@@ -333,13 +327,10 @@ package GNAT.Dynamic_HTables is
              (Left  : Key_Type;
               Right : Key_Type) return Boolean;
 
-      with procedure Destroy_Value (Val : in out Value_Type);
-      --  Value destructor
-
       with function Hash (Key : Key_Type) return Bucket_Range_Type;
       --  Map an arbitrary key into the range of buckets
 
-   package Dynamic_Hash_Tables is
+   package Dynamic_HTable is
 
       ----------------------
       -- Table operations --
@@ -348,49 +339,34 @@ package GNAT.Dynamic_HTables is
       --  The following type denotes a hash table handle. Each instance must be
       --  created using routine Create.
 
-      type Dynamic_Hash_Table is private;
-      Nil : constant Dynamic_Hash_Table;
+      type Instance is private;
+      Nil : constant Instance;
 
-      function Contains
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type) return Boolean;
-      --  Determine whether key Key exists in hash table T
-
-      function Create (Initial_Size : Positive) return Dynamic_Hash_Table;
+      function Create (Initial_Size : Positive) return Instance;
       --  Create a new table with bucket capacity Initial_Size. This routine
       --  must be called at the start of a hash table's lifetime.
 
-      procedure Delete
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type);
+      procedure Delete (T : Instance; Key : Key_Type);
       --  Delete the value which corresponds to key Key from hash table T. The
       --  routine has no effect if the value is not present in the hash table.
       --  This action will raise Iterated if the hash table has outstanding
       --  iterators. If the load factor drops below Compression_Threshold, the
       --  size of the buckets is decreased by Copression_Factor.
 
-      procedure Destroy (T : in out Dynamic_Hash_Table);
+      procedure Destroy (T : in out Instance);
       --  Destroy the contents of hash table T, rendering it unusable. This
       --  routine must be called at the end of a hash table's lifetime. This
       --  action will raise Iterated if the hash table has outstanding
       --  iterators.
 
-      function Get
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type) return Value_Type;
+      function Get (T : Instance; Key : Key_Type) return Value_Type;
       --  Obtain the value which corresponds to key Key from hash table T. If
       --  the value does not exist, return No_Value.
 
-      function Is_Empty (T : Dynamic_Hash_Table) return Boolean;
+      function Is_Empty (T : Instance) return Boolean;
       --  Determine whether hash table T is empty
 
-      function Present (T : Dynamic_Hash_Table) return Boolean;
-      --  Determine whether hash table T exists
-
-      procedure Put
-        (T     : Dynamic_Hash_Table;
-         Key   : Key_Type;
-         Value : Value_Type);
+      procedure Put (T : Instance; Key : Key_Type; Value : Value_Type);
       --  Associate value Value with key Key in hash table T. If the table
       --  already contains a mapping of the same key to a previous value, the
       --  previous value is overwritten. This action will raise Iterated if
@@ -398,12 +374,12 @@ package GNAT.Dynamic_HTables is
       --  over Expansion_Threshold, the size of the buckets is increased by
       --  Expansion_Factor.
 
-      procedure Reset (T : Dynamic_Hash_Table);
+      procedure Reset (T : Instance);
       --  Destroy the contents of hash table T, and reset it to its initial
       --  created state. This action will raise Iterated if the hash table
       --  has outstanding iterators.
 
-      function Size (T : Dynamic_Hash_Table) return Natural;
+      function Size (T : Instance) return Natural;
       --  Obtain the number of key-value pairs in hash table T
 
       -------------------------
@@ -425,14 +401,14 @@ package GNAT.Dynamic_HTables is
 
       type Iterator is private;
 
+      function Iterate (T : Instance) return Iterator;
+      --  Obtain an iterator over the keys of hash table T. This action locks
+      --  all mutation functionality of the associated hash table.
+
       function Has_Next (Iter : Iterator) return Boolean;
       --  Determine whether iterator Iter has more keys to examine. If the
       --  iterator has been exhausted, restore all mutation functionality of
       --  the associated hash table.
-
-      function Iterate (T : Dynamic_Hash_Table) return Iterator;
-      --  Obtain an iterator over the keys of hash table T. This action locks
-      --  all mutation functionality of the associated hash table.
 
       procedure Next (Iter : in out Iterator; Key : out Key_Type);
       --  Return the current key referenced by iterator Iter and advance to
@@ -479,7 +455,7 @@ package GNAT.Dynamic_HTables is
 
       --  The following type represents a hash table
 
-      type Dynamic_Hash_Table_Attributes is record
+      type Hash_Table is record
          Buckets : Bucket_Table_Ptr := null;
          --  Reference to the compressing / expanding buckets
 
@@ -493,25 +469,25 @@ package GNAT.Dynamic_HTables is
          --  Number of key-value pairs in the buckets
       end record;
 
-      type Dynamic_Hash_Table is access Dynamic_Hash_Table_Attributes;
-      Nil : constant Dynamic_Hash_Table := null;
+      type Instance is access Hash_Table;
+      Nil : constant Instance := null;
 
       --  The following type represents a key iterator
 
       type Iterator is record
-         Curr_Idx : Bucket_Range_Type := 0;
+         Idx : Bucket_Range_Type := 0;
          --  Index of the current bucket being examined. This index is always
          --  kept within the range of the buckets.
 
-         Curr_Nod : Node_Ptr := null;
+         Nod : Node_Ptr := null;
          --  Reference to the current node being examined within the current
          --  bucket. The invariant of the iterator requires that this field
          --  always point to a valid node. A value of null indicates that the
          --  iterator is exhausted.
 
-         Table : Dynamic_Hash_Table := null;
+         Table : Instance := null;
          --  Reference to the associated hash table
       end record;
-   end Dynamic_Hash_Tables;
+   end Dynamic_HTable;
 
 end GNAT.Dynamic_HTables;

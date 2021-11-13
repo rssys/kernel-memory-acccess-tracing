@@ -59,22 +59,20 @@ void
 rethrowException ()
 {
   struct _Unwind_Exception *hdr;
-  _Unwind_Reason_Code reason;
 
   hdr = (struct _Unwind_Exception *) runtime_g()->exception;
 
 #ifdef __USING_SJLJ_EXCEPTIONS__
-  reason = _Unwind_SjLj_Resume_or_Rethrow (hdr);
+  _Unwind_SjLj_Resume_or_Rethrow (hdr);
 #else
 #if defined(_LIBUNWIND_STD_ABI)
-  reason = _Unwind_RaiseException (hdr);
+  _Unwind_RaiseException (hdr);
 #else
-  reason = _Unwind_Resume_or_Rethrow (hdr);
+  _Unwind_Resume_or_Rethrow (hdr);
 #endif
 #endif
 
   /* Rethrowing the exception should not return.  */
-  runtime_printf ("failed to rethrow unwind exception (reason=%d)\n", reason);
   abort();
 }
 
@@ -107,7 +105,6 @@ throwException ()
 {
   struct _Unwind_Exception *hdr;
   uintptr align;
-  _Unwind_Reason_Code reason;
 
   hdr = (struct _Unwind_Exception *)runtime_g ()->exception;
 
@@ -122,13 +119,12 @@ throwException ()
   hdr->exception_cleanup = NULL;
 
 #ifdef __USING_SJLJ_EXCEPTIONS__
-  reason = _Unwind_SjLj_RaiseException (hdr);
+  _Unwind_SjLj_RaiseException (hdr);
 #else
-  reason = _Unwind_RaiseException (hdr);
+  _Unwind_RaiseException (hdr);
 #endif
 
   /* Raising an exception should not return.  */
-  runtime_printf ("failed to throw unwind exception (reason=%d)\n", reason);
   abort ();
 }
 

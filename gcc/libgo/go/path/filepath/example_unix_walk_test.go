@@ -2,20 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !windows && !plan9
 // +build !windows,!plan9
 
 package filepath_test
 
 import (
 	"fmt"
-	"io/fs"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 func prepareTestDirTree(tree string) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "")
+	tmpDir, err := ioutil.TempDir("", "")
 	if err != nil {
 		return "", fmt.Errorf("error creating temp directory: %v\n", err)
 	}
@@ -41,7 +40,7 @@ func ExampleWalk() {
 	subDirToSkip := "skip"
 
 	fmt.Println("On Unix:")
-	err = filepath.Walk(".", func(path string, info fs.FileInfo, err error) error {
+	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
 			return err

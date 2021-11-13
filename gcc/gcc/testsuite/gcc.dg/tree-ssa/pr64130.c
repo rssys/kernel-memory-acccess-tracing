@@ -1,5 +1,6 @@
+
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-tree-evrp-details" } */
+/* { dg-options "-O2 -fdump-tree-evrp" } */
 
 __extension__ typedef __UINT32_TYPE__ uint32_t;
 

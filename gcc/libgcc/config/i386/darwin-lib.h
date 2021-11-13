@@ -1,5 +1,5 @@
 /* Target definitions for x86 running Darwin, library renames.
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -30,5 +30,3 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define DECLARE_LIBRARY_RENAMES \
   asm(".text; ___divdc3: jmp ___ieee_divdc3 ; .globl ___divdc3");
 #endif
-
-extern void * _darwin10_Unwind_FindEnclosingFunction (void *);

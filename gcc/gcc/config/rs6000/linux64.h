@@ -1,6 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for 64 bit PowerPC linux.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -96,22 +96,109 @@ extern int dot_symbols;
 
 #undef	SUBSUBTARGET_OVERRIDE_OPTIONS
 #define	SUBSUBTARGET_OVERRIDE_OPTIONS				\
-  do rs6000_linux64_override_options (); while (0)
+  do								\
+    {								\
+      if (!global_options_set.x_rs6000_alignment_flags)		\
+	rs6000_alignment_flags = MASK_ALIGN_NATURAL;		\
+      if (rs6000_isa_flags & OPTION_MASK_64BIT)			\
+	{							\
+	  if (DEFAULT_ABI != ABI_AIX)				\
+	    {							\
+	      rs6000_current_abi = ABI_AIX;			\
+	      error (INVALID_64BIT, "call");			\
+	    }							\
+	  dot_symbols = !strcmp (rs6000_abi_name, "aixdesc");	\
+	  if (ELFv2_ABI_CHECK)					\
+	    {							\
+	      rs6000_current_abi = ABI_ELFv2;			\
+	      if (dot_symbols)					\
+		error ("%<-mcall-aixdesc%> incompatible with %<-mabi=elfv2%>"); \
+	    }							\
+	  if (rs6000_isa_flags & OPTION_MASK_RELOCATABLE)	\
+	    {							\
+	      rs6000_isa_flags &= ~OPTION_MASK_RELOCATABLE;	\
+	      error (INVALID_64BIT, "relocatable");		\
+	    }							\
+	  if (rs6000_isa_flags & OPTION_MASK_EABI)		\
+	    {							\
+	      rs6000_isa_flags &= ~OPTION_MASK_EABI;		\
+	      error (INVALID_64BIT, "eabi");			\
+	    }							\
+	  if (TARGET_PROTOTYPE)					\
+	    {							\
+	      target_prototype = 0;				\
+	      error (INVALID_64BIT, "prototype");		\
+	    }							\
+	  if ((rs6000_isa_flags & OPTION_MASK_POWERPC64) == 0)	\
+	    {							\
+	      rs6000_isa_flags |= OPTION_MASK_POWERPC64;	\
+	      error ("%<-m64%> requires a PowerPC64 cpu");		\
+	    }							\
+	  if ((rs6000_isa_flags_explicit			\
+	       & OPTION_MASK_MINIMAL_TOC) != 0)			\
+	    {							\
+	      if (global_options_set.x_rs6000_current_cmodel	\
+		  && rs6000_current_cmodel != CMODEL_SMALL)	\
+		error ("%<-mcmodel incompatible with other toc options%>"); \
+	      SET_CMODEL (CMODEL_SMALL);			\
+	    }							\
+	  else							\
+	    {							\
+	      if (!global_options_set.x_rs6000_current_cmodel)	\
+		SET_CMODEL (CMODEL_MEDIUM);			\
+	      if (rs6000_current_cmodel != CMODEL_SMALL)	\
+		{						\
+		  if (!global_options_set.x_TARGET_NO_FP_IN_TOC) \
+		    TARGET_NO_FP_IN_TOC				\
+		      = rs6000_current_cmodel == CMODEL_MEDIUM;	\
+		  if (!global_options_set.x_TARGET_NO_SUM_IN_TOC) \
+		    TARGET_NO_SUM_IN_TOC = 0;			\
+		}						\
+	    }							\
+	  if (TARGET_PLTSEQ && DEFAULT_ABI != ABI_ELFv2)	\
+	    {							\
+	      if (global_options_set.x_rs6000_pltseq)		\
+		warning (0, "%qs unsupported for this ABI",	\
+			 "-mpltseq");				\
+	      rs6000_pltseq = false;				\
+	    }							\
+	}							\
+      else							\
+	{							\
+	  if (!RS6000_BI_ARCH_P)				\
+	    error (INVALID_32BIT, "32");			\
+	  if (TARGET_PROFILE_KERNEL)				\
+	    {							\
+	      TARGET_PROFILE_KERNEL = 0;			\
+	      error (INVALID_32BIT, "profile-kernel");		\
+	    }							\
+	  if (global_options_set.x_rs6000_current_cmodel)	\
+	    {							\
+	      SET_CMODEL (CMODEL_SMALL);			\
+	      error (INVALID_32BIT, "cmodel");			\
+	    }							\
+	}							\
+    }								\
+  while (0)
 
+#undef	ASM_DEFAULT_SPEC
 #undef	ASM_SPEC
 #undef	LINK_OS_LINUX_SPEC
 #undef	LINK_SECURE_PLT_SPEC
 
 #ifndef	RS6000_BI_ARCH
+#define	ASM_DEFAULT_SPEC "-mppc64"
 #define	ASM_SPEC	 "%(asm_spec64) %(asm_spec_common)"
 #define	LINK_OS_LINUX_SPEC "%(link_os_linux_spec64)"
 #define	LINK_SECURE_PLT_SPEC ""
 #else
 #if DEFAULT_ARCH64_P
+#define	ASM_DEFAULT_SPEC "-mppc%{!m32:64}"
 #define	ASM_SPEC	 "%{m32:%(asm_spec32)}%{!m32:%(asm_spec64)} %(asm_spec_common)"
 #define	LINK_OS_LINUX_SPEC "%{m32:%(link_os_linux_spec32)}%{!m32:%(link_os_linux_spec64)}"
 #define	LINK_SECURE_PLT_SPEC "%{m32: " LINK_SECURE_PLT_DEFAULT_SPEC "}"
 #else
+#define	ASM_DEFAULT_SPEC "-mppc%{m64:64}"
 #define	ASM_SPEC	 "%{!m64:%(asm_spec32)}%{m64:%(asm_spec64)} %(asm_spec_common)"
 #define	LINK_OS_LINUX_SPEC "%{!m64:%(link_os_linux_spec32)}%{m64:%(link_os_linux_spec64)}"
 #define	LINK_SECURE_PLT_SPEC "%{!m64: " LINK_SECURE_PLT_DEFAULT_SPEC "}"
@@ -190,8 +277,8 @@ extern int dot_symbols;
 #ifndef RS6000_BI_ARCH
 
 /* 64-bit PowerPC Linux always has a TOC.  */
-#undef  TARGET_HAS_TOC
-#define TARGET_HAS_TOC		1
+#undef  TARGET_TOC
+#define	TARGET_TOC		1
 
 /* Some things from sysv4.h we don't do when 64 bit.  */
 #undef	OPTION_RELOCATABLE
@@ -213,9 +300,11 @@ extern int dot_symbols;
 /* PowerPC64 Linux word-aligns FP doubles when -malign-power is given.  */
 #undef  ADJUST_FIELD_ALIGN
 #define ADJUST_FIELD_ALIGN(FIELD, TYPE, COMPUTED) \
-  ((TARGET_64BIT							\
-    && TARGET_ALIGN_NATURAL == 0					\
-    && TYPE_MODE (strip_array_types (TYPE)) == DFmode)			\
+  (rs6000_special_adjust_field_align_p ((TYPE), (COMPUTED))		\
+   ? 128								\
+   : (TARGET_64BIT							\
+      && TARGET_ALIGN_NATURAL == 0					\
+      && TYPE_MODE (strip_array_types (TYPE)) == DFmode)		\
    ? MIN ((COMPUTED), 32)						\
    : (COMPUTED))
 
@@ -555,10 +644,3 @@ extern int dot_symbols;
    enabling the __float128 keyword.  */
 #undef	TARGET_FLOAT128_ENABLE_TYPE
 #define TARGET_FLOAT128_ENABLE_TYPE 1
-
-/* Enable using prefixed PC-relative addressing on POWER10 if the ABI
-   supports it.  The ELF v2 ABI only supports PC-relative relocations for
-   the medium code model.  */
-#define PCREL_SUPPORTED_BY_OS	(TARGET_POWER10 && TARGET_PREFIXED	\
-				 && ELFv2_ABI_CHECK			\
-				 && TARGET_CMODEL == CMODEL_MEDIUM)

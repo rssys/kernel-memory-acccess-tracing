@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // PERMUTE_ARGS:
 
 // $HeadURL$

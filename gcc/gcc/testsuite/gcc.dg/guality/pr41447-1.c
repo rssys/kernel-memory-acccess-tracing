@@ -1,6 +1,5 @@
 /* { dg-do run } */
 /* { dg-options "-g" } */
-/* { dg-xfail-run-if "" { aarch64*-*-* } { "-O2" "-O3" "-Os" } { "-fno-fat-lto-objects" } } */
 
 #include "guality.h"
 

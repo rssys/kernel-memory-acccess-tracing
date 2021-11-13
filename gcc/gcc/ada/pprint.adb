@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2008-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2008-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,25 +23,20 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;          use Atree;
-with Einfo;          use Einfo;
-with Einfo.Entities; use Einfo.Entities;
-with Einfo.Utils;    use Einfo.Utils;
-with Namet;          use Namet;
-with Nlists;         use Nlists;
-with Opt;            use Opt;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Sinfo.Utils;    use Sinfo.Utils;
-with Sinput;         use Sinput;
-with Snames;         use Snames;
-with Uintp;          use Uintp;
-
-with System.Case_Util;
+with Atree;   use Atree;
+with Csets;   use Csets;
+with Einfo;   use Einfo;
+with Namet;   use Namet;
+with Nlists;  use Nlists;
+with Opt;     use Opt;
+with Sinfo;   use Sinfo;
+with Sinput;  use Sinput;
+with Snames;  use Snames;
+with Uintp;   use Uintp;
 
 package body Pprint is
 
-   List_Name_Count : Natural := 0;
+   List_Name_Count : Integer := 0;
    --  Counter used to prevent infinite recursion while computing name of
    --  complex expressions.
 
@@ -100,7 +95,7 @@ package body Pprint is
             Add_Space : Boolean := True;
             Add_Paren : Boolean := True;
             Num       : Natural := 1) return String;
-         --  Created for purposes of recursing on embedded lists
+         --  ??? what does this do
 
          ------------------------
          -- Internal_List_Name --
@@ -113,6 +108,30 @@ package body Pprint is
             Add_Paren : Boolean := True;
             Num       : Natural := 1) return String
          is
+            function Prepend (S : String) return String;
+            --  ??? what does this do
+
+            -------------
+            -- Prepend --
+            -------------
+
+            function Prepend (S : String) return String is
+            begin
+               if Add_Space then
+                  if Add_Paren then
+                     return " (" & S;
+                  else
+                     return ' ' & S;
+                  end if;
+               elsif Add_Paren then
+                  return '(' & S;
+               else
+                  return S;
+               end if;
+            end Prepend;
+
+         --  Start of processing for Internal_List_Name
+
          begin
             if not Present (List) then
                if First or else not Add_Paren then
@@ -128,22 +147,23 @@ package body Pprint is
                end if;
             end if;
 
-            --  Continue recursing on the list - handling the first element
-            --  in a special way.
+            --  ??? the Internal_List_Name calls can be factored out
 
-            return
-              (if First then
-                  (if Add_Space and Add_Paren then " ("
-                   elsif Add_Paren then "("
-                   elsif Add_Space then " "
-                   else "")
-               else ", ")
-               & Expr_Name (List)
-               & Internal_List_Name
-                   (List      => Next (List),
-                    First     => False,
-                    Add_Paren => Add_Paren,
-                    Num       => Num + 1);
+            if First then
+               return Prepend (Expr_Name (List)
+                 & Internal_List_Name
+                     (List      => Next (List),
+                      First     => False,
+                      Add_Paren => Add_Paren,
+                      Num       => Num + 1));
+            else
+               return ", " & Expr_Name (List)
+                 & Internal_List_Name
+                     (List      => Next (List),
+                      First     => False,
+                      Add_Paren => Add_Paren,
+                      Num       => Num + 1);
+            end if;
          end Internal_List_Name;
 
       --  Start of processing for List_Name
@@ -205,7 +225,8 @@ package body Pprint is
                end;
 
             when N_Integer_Literal =>
-               return UI_Image (Intval (Expr));
+               UI_Image (Intval (Expr));
+               return UI_Image_Buffer (1 .. UI_Image_Length);
 
             when N_Real_Literal =>
                return Real_Image (Realval (Expr));
@@ -217,10 +238,10 @@ package body Pprint is
                return "new " & Expr_Name (Expression (Expr));
 
             when N_Aggregate =>
-               if Present (Expressions (Expr)) then
+               if Present (Sinfo.Expressions (Expr)) then
                   return
                     List_Name
-                      (List      => First (Expressions (Expr)),
+                      (List      => First (Sinfo.Expressions (Expr)),
                        Add_Space => False);
 
                --  Do not return empty string for (others => <>) aggregate
@@ -244,13 +265,39 @@ package body Pprint is
             when N_Extension_Aggregate =>
                return "(" & Expr_Name (Ancestor_Part (Expr)) & " with "
                  & List_Name
-                     (List      => First (Expressions (Expr)),
+                     (List      => First (Sinfo.Expressions (Expr)),
                       Add_Space => False,
                       Add_Paren => False) & ")";
 
             when N_Attribute_Reference =>
                if Take_Prefix then
                   declare
+                     function To_Mixed_Case (S : String) return String;
+                     --  Transform given string into the corresponding one in
+                     --  mixed case form.
+
+                     -------------------
+                     -- To_Mixed_Case --
+                     -------------------
+
+                     function To_Mixed_Case (S : String) return String is
+                        Result : String (S'Range);
+                        Ucase  : Boolean := True;
+
+                     begin
+                        for J in S'Range loop
+                           if Ucase then
+                              Result (J) := Fold_Upper (S (J));
+                           else
+                              Result (J) := Fold_Lower (S (J));
+                           end if;
+
+                           Ucase := (S (J) = '_');
+                        end loop;
+
+                        return Result;
+                     end To_Mixed_Case;
+
                      Id : constant Attribute_Id :=
                             Get_Attribute_Id (Attribute_Name (Expr));
 
@@ -259,7 +306,7 @@ package body Pprint is
                      Str : constant String :=
                              Expr_Name (Prefix (Expr))
                                & "'"
-                               & System.Case_Util.To_Mixed
+                               & To_Mixed_Case
                                    (Get_Name_String (Attribute_Name (Expr)));
 
                      N      : Node_Id;
@@ -282,10 +329,12 @@ package body Pprint is
                                   (Constraint (Subtype_Indication (N)));
 
                               if List_Length (Ranges) = 1
-                                and then Nkind (First (Ranges)) in
-                                           N_Range                          |
-                                           N_Real_Range_Specification       |
-                                           N_Signed_Integer_Type_Definition
+                                and then
+                                  Nkind_In
+                                    (First (Ranges),
+                                     N_Range,
+                                     N_Real_Range_Specification,
+                                     N_Signed_Integer_Type_Definition)
                               then
                                  if Id = Attribute_First then
                                     return
@@ -335,8 +384,9 @@ package body Pprint is
                           and then Nkind (Decl) = N_Object_Declaration
                           and then not Comes_From_Source (Decl)
                           and then Constant_Present (Decl)
-                          and then Present (Expression (Decl))
-                          and then Nkind (Expression (Decl)) = N_Reference
+                          and then Present (Sinfo.Expression (Decl))
+                          and then Nkind (Sinfo.Expression (Decl)) =
+                                     N_Reference
                         then
                            return "";
                         end if;
@@ -389,14 +439,12 @@ package body Pprint is
 
             when N_If_Expression =>
                declare
-                  Cond_Expr : constant Node_Id := First (Expressions (Expr));
-                  Then_Expr : constant Node_Id := Next (Cond_Expr);
-                  Else_Expr : constant Node_Id := Next (Then_Expr);
+                  N : constant Node_Id := First (Sinfo.Expressions (Expr));
                begin
                   return
-                    "if " & Expr_Name (Cond_Expr) & " then "
-                      & Expr_Name (Then_Expr) & " else "
-                      & Expr_Name (Else_Expr);
+                    "if " & Expr_Name (N) & " then "
+                      & Expr_Name (Next (N)) & " else "
+                      & Expr_Name (Next (Next (N)));
                end;
 
             when N_Qualified_Expression =>
@@ -602,9 +650,9 @@ package body Pprint is
                if Take_Prefix then
                   return
                     Expr_Name (Prefix (Expr))
-                      & List_Name (First (Expressions (Expr)));
+                      & List_Name (First (Sinfo.Expressions (Expr)));
                else
-                  return List_Name (First (Expressions (Expr)));
+                  return List_Name (First (Sinfo.Expressions (Expr)));
                end if;
 
             when N_Function_Call =>
@@ -616,12 +664,13 @@ package body Pprint is
                if Default = "" then
                   return '('
                     & Expr_Name (Name (Expr))
-                    & List_Name (First (Parameter_Associations (Expr)))
+                    & List_Name (First (Sinfo.Parameter_Associations (Expr)))
                     & ')';
                else
                   return
                     Expr_Name (Name (Expr))
-                      & List_Name (First (Parameter_Associations (Expr)));
+                      & List_Name
+                          (First (Sinfo.Parameter_Associations (Expr)));
                end if;
 
             when N_Null =>
@@ -635,7 +684,7 @@ package body Pprint is
          end case;
       end Expr_Name;
 
-   --  Start of processing for Expression_Image
+   --  Start of processing for Expression_Name
 
    begin
       if not From_Source then
@@ -648,12 +697,6 @@ package body Pprint is
                return S;
             end if;
          end;
-      end if;
-
-      --  Reach to the underlying expression for an expression-with-actions
-
-      if Nkind (Expr) = N_Expression_With_Actions then
-         return Expression_Image (Expression (Expr), Default);
       end if;
 
       --  Compute left (start) and right (end) slocs for the expression
@@ -722,7 +765,8 @@ package body Pprint is
                --  If argument does not already account for a closing
                --  parenthesis, count one here.
 
-               if Nkind (Right) not in N_Aggregate | N_Quantified_Expression
+               if not Nkind_In (Right, N_Aggregate,
+                                       N_Quantified_Expression)
                then
                   Append_Paren := Append_Paren + 1;
                end if;
@@ -747,11 +791,11 @@ package body Pprint is
                end if;
 
             when N_Indexed_Component =>
-               Right := Original_Node (Last (Expressions (Right)));
+               Right := Original_Node (Last (Sinfo.Expressions (Right)));
                Append_Paren := Append_Paren + 1;
 
             when N_Function_Call =>
-               if Present (Parameter_Associations (Right)) then
+               if Present (Sinfo.Parameter_Associations (Right)) then
                   declare
                      Rover : Node_Id;
                      Found : Boolean;
@@ -760,7 +804,7 @@ package body Pprint is
                      --  Avoid source position confusion associated with
                      --  parameters for which Comes_From_Source is False.
 
-                     Rover := First (Parameter_Associations (Right));
+                     Rover := First (Sinfo.Parameter_Associations (Right));
                      Found := False;
                      while Present (Rover) loop
                         if Comes_From_Source (Original_Node (Rover)) then

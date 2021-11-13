@@ -2,7 +2,6 @@
 /* Author: Nicola Pero <nicola@brainstorm.co.uk>.  */
 /* { dg-do compile } */
 /* { dg-options "-Wundeclared-selector" } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 #include <objc/objc.h>
 

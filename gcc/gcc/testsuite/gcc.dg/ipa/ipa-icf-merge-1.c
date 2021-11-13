@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-additional-options "-O2 -fdump-ipa-icf-optimized" } */
+/* { dg-additional-options "-O2 -fdump-ipa-icf" } */
 
 /* Picking 'main' as a candiate target for equivalent functios is not a
    good idea.  */
@@ -18,7 +18,7 @@ int main ()
 }
 
 /* Notice the two functions are the same.  */
-/* { dg-final { scan-ipa-dump "Semantic equality hit:foo/\[0-9+\]+->main/\[0-9+\]+" "icf" } } */
+/* { dg-final { scan-ipa-dump "Semantic equality hit:foo->main" "icf" } } */
 
 /* Make sure we don't tail call main.  */
 /* { dg-final { scan-ipa-dump-not "= main \\(\\);" "icf" } } */

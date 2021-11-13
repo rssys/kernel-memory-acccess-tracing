@@ -5,7 +5,6 @@
 package poll
 
 import (
-	"internal/itoa"
 	"runtime"
 	"sync"
 	"syscall"
@@ -72,7 +71,7 @@ func (aio *asyncIO) Cancel() {
 	if aio.pid == -1 {
 		return
 	}
-	f, e := syscall.Open("/proc/"+itoa.Itoa(aio.pid)+"/note", syscall.O_WRONLY)
+	f, e := syscall.Open("/proc/"+itoa(aio.pid)+"/note", syscall.O_WRONLY)
 	if e != nil {
 		return
 	}

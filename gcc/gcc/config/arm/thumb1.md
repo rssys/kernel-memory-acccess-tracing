@@ -1,5 +1,5 @@
 ;; ARM Thumb-1 Machine Description
-;; Copyright (C) 2007-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -42,6 +42,41 @@
 ;; sbc or adc.
 
 
+
+(define_insn "thumb1_movsi_symbol_ref"
+  [(set (match_operand:SI 0 "register_operand" "=l")
+	(match_operand:SI 1 "general_operand" ""))
+   ]
+  "TARGET_THUMB1
+   && arm_disable_literal_pool
+   && GET_CODE (operands[1]) == SYMBOL_REF"
+  "*
+  output_asm_insn (\"movs\\t%0, #:upper8_15:%1\", operands);
+  output_asm_insn (\"lsls\\t%0, #8\", operands);
+  output_asm_insn (\"adds\\t%0, #:upper0_7:%1\", operands);
+  output_asm_insn (\"lsls\\t%0, #8\", operands);
+  output_asm_insn (\"adds\\t%0, #:lower8_15:%1\", operands);
+  output_asm_insn (\"lsls\\t%0, #8\", operands);
+  output_asm_insn (\"adds\\t%0, #:lower0_7:%1\", operands);
+  return \"\";
+  "
+  [(set_attr "length" "14")
+   (set_attr "conds" "clob")]
+)
+
+(define_split
+  [(set (match_operand:SI 0 "register_operand" "")
+	(match_operand:SI 1 "immediate_operand" ""))]
+  "TARGET_THUMB1
+   && arm_disable_literal_pool
+   && GET_CODE (operands[1]) == CONST_INT
+   && !satisfies_constraint_I (operands[1])"
+  [(clobber (const_int 0))]
+  "
+    thumb1_gen_const_int (operands[0], INTVAL (operands[1]));
+    DONE;
+  "
+)
 
 (define_insn "*thumb1_adddi3"
   [(set (match_operand:DI          0 "register_operand" "=l")
@@ -661,50 +696,24 @@
   "TARGET_THUMB1
    && (   register_operand (operands[0], SImode)
        || register_operand (operands[1], SImode))"
-{
-  switch (which_alternative)
-    {
-      default:
-      case 0: return "movs\t%0, %1";
-      case 1: return "movs\t%0, %1";
-      case 2: return "movw\t%0, %1";
-      case 3: return "#";
-      case 4: return "#";
-      case 5: return "ldmia\t%1, {%0}";
-      case 6: return "stmia\t%0, {%1}";
-      case 7:
-      /* pure-code alternative: build the constant byte by byte,
-	 instead of loading it from a constant pool.  */
-	if (arm_valid_symbolic_address_p (operands[1]))
-	  {
-	    output_asm_insn (\"movs\\t%0, #:upper8_15:%1\", operands);
-	    output_asm_insn (\"lsls\\t%0, #8\", operands);
-	    output_asm_insn (\"adds\\t%0, #:upper0_7:%1\", operands);
-	    output_asm_insn (\"lsls\\t%0, #8\", operands);
-	    output_asm_insn (\"adds\\t%0, #:lower8_15:%1\", operands);
-	    output_asm_insn (\"lsls\\t%0, #8\", operands);
-	    output_asm_insn (\"adds\\t%0, #:lower0_7:%1\", operands);
-	    return \"\";
-	  }
-	else if (GET_CODE (operands[1]) == CONST_INT)
-	  {
-	    thumb1_gen_const_int_print (operands[0], INTVAL (operands[1]));
-	    return \"\";
-	  }
-
-	gcc_unreachable ();
-
-      case 8: return "ldr\t%0, %1";
-      case 9: return "str\t%1, %0";
-      case 10: return "mov\t%0, %1";
-    }
-}
+  "@
+   movs	%0, %1
+   movs	%0, %1
+   movw	%0, %1
+   #
+   #
+   ldmia\\t%1, {%0}
+   stmia\\t%0, {%1}
+   movs\\t%0, #:upper8_15:%1; lsls\\t%0, #8; adds\\t%0, #:upper0_7:%1; lsls\\t%0, #8; adds\\t%0, #:lower8_15:%1; lsls\\t%0, #8; adds\\t%0, #:lower0_7:%1
+   ldr\\t%0, %1
+   str\\t%1, %0
+   mov\\t%0, %1"
   [(set_attr "length" "2,2,4,4,4,2,2,14,2,2,2")
    (set_attr "type" "mov_reg,mov_imm,mov_imm,multiple,multiple,load_4,store_4,alu_sreg,load_4,store_4,mov_reg")
    (set_attr "pool_range" "*,*,*,*,*,*,*, *,1018,*,*")
    (set_attr "arch" "t1,t1,v8mb,t1,t1,t1,t1,t1,t1,t1,t1")
    (set_attr "required_for_purecode" "no,no,no,no,no,no,no,yes,no,no,no")
-   (set_attr "conds" "set,clob,nocond,*,*,nocond,nocond,clob,nocond,nocond,nocond")])
+   (set_attr "conds" "set,clob,nocond,*,*,nocond,nocond,nocond,nocond,nocond,nocond")])
 
 ; Split the load of 64-bit constant into two loads for high and low 32-bit parts respectively
 ; to see if we can load them in fewer instructions or fewer cycles.
@@ -781,21 +790,6 @@
   }"
 )
 
-(define_split
-  [(set (match_operand:SI 0 "register_operand" "")
-	(match_operand:SI 1 "const_int_operand" ""))]
-  "TARGET_THUMB1
-   && arm_disable_literal_pool
-   && GET_CODE (operands[1]) == CONST_INT
-   && !TARGET_HAVE_MOVT
-   && !satisfies_constraint_K (operands[1])"
-  [(clobber (const_int 0))]
-  "
-    thumb1_gen_const_int_rtl (operands[0], INTVAL (operands[1]));
-    DONE;
-  "
-)
-
 (define_insn "*thumb1_movhi_insn"
   [(set (match_operand:HI 0 "nonimmediate_operand" "=l,l,m,l*r,*h,l,r")
 	(match_operand:HI 1 "general_operand"       "l,m,l,k*h,*r,I,n"))]
@@ -837,9 +831,9 @@
    (set_attr "conds" "clob,nocond,nocond,nocond,nocond,clob,nocond")])
 
 (define_expand "thumb_movhi_clobber"
-  [(set (match_operand:HI     0 "memory_operand")
-	(match_operand:HI     1 "register_operand"))
-   (clobber (match_operand:DI 2 "register_operand"))]
+  [(set (match_operand:HI     0 "memory_operand"   "")
+	(match_operand:HI     1 "register_operand" ""))
+   (clobber (match_operand:DI 2 "register_operand" ""))]
   "TARGET_THUMB1"
   "
   if (strict_memory_address_p (HImode, XEXP (operands[0], 0))
@@ -991,7 +985,7 @@
 
 ;; Thumb block-move insns
 
-(define_insn "cpymem12b"
+(define_insn "movmem12b"
   [(set (mem:SI (match_operand:SI 2 "register_operand" "0"))
 	(mem:SI (match_operand:SI 3 "register_operand" "1")))
    (set (mem:SI (plus:SI (match_dup 2) (const_int 4)))
@@ -1013,7 +1007,7 @@
    (set_attr "type" "store_12")]
 )
 
-(define_insn "cpymem8b"
+(define_insn "movmem8b"
   [(set (mem:SI (match_operand:SI 2 "register_operand" "0"))
 	(mem:SI (match_operand:SI 3 "register_operand" "1")))
    (set (mem:SI (plus:SI (match_dup 2) (const_int 4)))
@@ -1040,8 +1034,8 @@
 (define_expand "cbranchqi4"
   [(set (pc) (if_then_else
 	      (match_operator 0 "lt_ge_comparison_operator"
-	       [(match_operand:QI 1 "memory_operand")
-	        (match_operand:QI 2 "const0_operand")])
+	       [(match_operand:QI 1 "memory_operand" "")
+	        (match_operand:QI 2 "const0_operand" "")])
 	      (label_ref (match_operand 3 "" ""))
 	      (pc)))]
   "TARGET_THUMB1"
@@ -1086,9 +1080,9 @@
 	  if (!rtx_equal_p (cfun->machine->thumb1_cc_op0, operands[1])
 	      || !rtx_equal_p (cfun->machine->thumb1_cc_op1, operands[2]))
 	    t = NULL_RTX;
-	  if (cfun->machine->thumb1_cc_mode == CC_NZmode)
+	  if (cfun->machine->thumb1_cc_mode == CC_NOOVmode)
 	    {
-	      if (!nz_comparison_operator (operands[0], VOIDmode))
+	      if (!noov_comparison_operator (operands[0], VOIDmode))
 		t = NULL_RTX;
 	    }
 	  else if (cfun->machine->thumb1_cc_mode != CCmode)
@@ -1160,9 +1154,9 @@
       if (!rtx_equal_p (cfun->machine->thumb1_cc_op0, operands[1])
 	  || !rtx_equal_p (cfun->machine->thumb1_cc_op1, operands[2]))
 	t = NULL_RTX;
-      if (cfun->machine->thumb1_cc_mode == CC_NZmode)
+      if (cfun->machine->thumb1_cc_mode == CC_NOOVmode)
 	{
-	  if (!nz_comparison_operator (operands[0], VOIDmode))
+	  if (!noov_comparison_operator (operands[0], VOIDmode))
 	    t = NULL_RTX;
 	}
       else if (cfun->machine->thumb1_cc_mode != CCmode)
@@ -1204,21 +1198,6 @@
 		(const_int 6)
 		(const_int 8))))
    (set_attr "type" "multiple")]
-)
-
-;; An expander which makes use of the cbranchsi4_scratch insn, but can
-;; be used safely after RA.
-(define_expand "cbranchsi4_neg_late"
-  [(parallel [
-     (set (pc) (if_then_else
-		(match_operator 4 "arm_comparison_operator"
-		 [(match_operand:SI 1 "s_register_operand")
-		  (match_operand:SI 2 "thumb1_cmpneg_operand")])
-		(label_ref (match_operand 3 "" ""))
-		(pc)))
-     (clobber (match_operand:SI 0 "s_register_operand"))
-  ])]
-  "TARGET_THUMB1"
 )
 
 ;; Changes to the constraints of this pattern must be propagated to those of
@@ -1694,8 +1673,8 @@
 
 (define_expand "cstoresi_eq0_thumb1"
   [(parallel
-    [(set (match_operand:SI 0 "s_register_operand")
-	  (eq:SI (match_operand:SI 1 "s_register_operand")
+    [(set (match_operand:SI 0 "s_register_operand" "")
+	  (eq:SI (match_operand:SI 1 "s_register_operand" "")
 		 (const_int 0)))
      (clobber (match_dup:SI 2))])]
   "TARGET_THUMB1"
@@ -1704,8 +1683,8 @@
 
 (define_expand "cstoresi_ne0_thumb1"
   [(parallel
-    [(set (match_operand:SI 0 "s_register_operand")
-	  (ne:SI (match_operand:SI 1 "s_register_operand")
+    [(set (match_operand:SI 0 "s_register_operand" "")
+	  (ne:SI (match_operand:SI 1 "s_register_operand" "")
 		 (const_int 0)))
      (clobber (match_dup:SI 2))])]
   "TARGET_THUMB1"
@@ -1916,8 +1895,8 @@
 )
 
 (define_expand "thumb1_casesi_internal_pic"
-  [(match_operand:SI 0 "s_register_operand")
-   (match_operand:SI 1 "thumb1_cmp_operand")
+  [(match_operand:SI 0 "s_register_operand" "")
+   (match_operand:SI 1 "thumb1_cmp_operand" "")
    (match_operand 2 "" "")
    (match_operand 3 "" "")]
   "TARGET_THUMB1"
@@ -1989,7 +1968,7 @@
 
 ;; Miscellaneous Thumb patterns
 (define_expand "tablejump"
-  [(parallel [(set (pc) (match_operand:SI 0 "register_operand"))
+  [(parallel [(set (pc) (match_operand:SI 0 "register_operand" ""))
 	      (use (label_ref (match_operand 1 "" "")))])]
   "TARGET_THUMB1"
   "
@@ -2022,7 +2001,7 @@
   "TARGET_THUMB1"
   "mov\\t%|pc, %0"
   [(set_attr "length" "2")
-   (set_attr "type" "branch")]
+   (set_attr "type" "no_insn")]
 )
 
 (define_insn_and_split "thumb_eh_return"
@@ -2041,8 +2020,6 @@
   [(set_attr "type" "mov_reg")]
 )
 
-;; DO NOT SPLIT THIS PATTERN.  It is important for security reasons that the
-;; canary value does not live beyond the end of this sequence.
 (define_insn "thumb1_stack_protect_test_insn"
   [(set (match_operand:SI 0 "register_operand" "=&l")
 	(unspec:SI [(match_operand:SI 1 "memory_operand" "m")
@@ -2050,9 +2027,9 @@
 	 UNSPEC_SP_TEST))
    (clobber (match_dup 2))]
   "TARGET_THUMB1"
-  "ldr\t%0, [%2]\;ldr\t%2, %1\;eors\t%0, %2, %0\;movs\t%2, #0"
-  [(set_attr "length" "10")
-   (set_attr "conds" "clob")
+  "ldr\t%0, [%2]\;ldr\t%2, %1\;eors\t%0, %2, %0"
+  [(set_attr "length" "8")
+   (set_attr "conds" "set")
    (set_attr "type" "multiple")]
 )
 

@@ -17,11 +17,11 @@ struct B1 : B {};
 struct B2 : B {};
 
 struct C
-{ 
-  void foo(void); 
+{ // { dg-message "declared" }
+  void foo(void);
 };
 
-struct D : private C {}; // { dg-message "declared" }
+struct D : private C {};
 
 struct X: A, B1, B2, D
 {

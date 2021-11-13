@@ -1,6 +1,4 @@
 /* { dg-require-effective-target alloca } */
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 main ()
 {
   char *a;

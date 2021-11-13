@@ -3,8 +3,8 @@
 
 template < typename > struct A
 {
-  A a;			       // { dg-error "incomplete" }
+  A a;
   template < int > using B = decltype (a);
-  B < 0 > b;		       // { dg-prune-output "B. does not name a type" }
+  B < 0 > b;
   template < int C > B < C > foo ();
 };

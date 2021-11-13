@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build (aix || darwin || dragonfly || freebsd || hurd || (linux && !android) || netbsd || openbsd || solaris) && cgo
 // +build aix darwin dragonfly freebsd hurd linux,!android netbsd openbsd solaris
 // +build cgo
 
@@ -49,10 +48,8 @@ func (e *PtyError) Error() string {
 	return fmt.Sprintf("%s: %s", e.FuncName, e.ErrorString)
 }
 
-func (e *PtyError) Unwrap() error { return e.Errno }
-
-// Open returns a control pty and the name of the linked process tty.
-func Open() (pty *os.File, processTTY string, err error) {
+// Open returns a master pty and the name of the linked slave tty.
+func Open() (master *os.File, slave string, err error) {
 	m := posix_openpt(_O_RDWR)
 	if m < 0 {
 		return nil, "", ptyError("posix_openpt", syscall.GetErrno())
@@ -75,6 +72,6 @@ func Open() (pty *os.File, processTTY string, err error) {
 			break
 		}
 	}
-	processTTY = string(s)
-	return os.NewFile(uintptr(m), "pty"), processTTY, nil
+	slave = string(s)
+	return os.NewFile(uintptr(m), "pty-master"), slave, nil
 }

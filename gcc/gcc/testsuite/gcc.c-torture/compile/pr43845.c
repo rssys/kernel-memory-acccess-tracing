@@ -1,5 +1,3 @@
-/* { dg-require-effective-target indirect_calls } */
-
 typedef int __attribute__ ((const)) (*x264_pixel_cmp_t)(void);
 
 typedef struct {

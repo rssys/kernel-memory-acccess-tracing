@@ -1,5 +1,5 @@
 /* d-lang.cc -- Language-dependent hooks for D.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -43,14 +43,14 @@ along with GCC; see the file COPYING3.  If not see
 #include "langhooks.h"
 #include "langhooks-def.h"
 #include "target.h"
-#include "function.h"
 #include "stringpool.h"
 #include "stor-layout.h"
 #include "varasm.h"
 #include "output.h"
 #include "print-tree.h"
+#include "gimple-expr.h"
+#include "gimplify.h"
 #include "debug.h"
-#include "input.h"
 
 #include "d-tree.h"
 #include "id.h"
@@ -73,7 +73,7 @@ struct d_option_data
   bool deps_skip_system;	    /* -MM  */
   const char *deps_filename;	    /* -M[M]D  */
   const char *deps_filename_user;   /* -MF <arg>  */
-  vec <const char *> deps_target;   /* -M[QT] <arg> */
+  OutBuffer *deps_target;	    /* -M[QT] <arg> */
   bool deps_phony;		    /* -MP  */
 
   bool stdinc;			    /* -nostdinc  */
@@ -95,7 +95,7 @@ struct binding_level *global_binding_level;
 static GTY(()) tree global_context;
 
 /* Array of all global declarations to pass back to the middle-end.  */
-static GTY(()) vec <tree, va_gc> *global_declarations;
+static GTY(()) vec<tree, va_gc> *global_declarations;
 
 /* Support for GCC-style command-line make dependency generation.
    Adds TARGET to the make dependencies target buffer.
@@ -104,136 +104,114 @@ static GTY(()) vec <tree, va_gc> *global_declarations;
 static void
 deps_add_target (const char *target, bool quoted)
 {
-  obstack buffer;
-  gcc_obstack_init (&buffer);
+  if (!d_option.deps_target)
+    d_option.deps_target = new OutBuffer ();
+  else
+    d_option.deps_target->writeByte (' ');
+
+  d_option.deps_target->reserve (strlen (target));
 
   if (!quoted)
     {
-      obstack_grow0 (&buffer, target, strlen (target));
-      d_option.deps_target.safe_push ((const char *) obstack_finish (&buffer));
+      d_option.deps_target->writestring (target);
       return;
     }
 
   /* Quote characters in target which are significant to Make.  */
-  unsigned slashes = 0;
-
   for (const char *p = target; *p != '\0'; p++)
     {
       switch (*p)
 	{
-	case '\\':
-	  slashes++;
-	  break;
-
 	case ' ':
 	case '\t':
-	  while (slashes--)
-	    obstack_1grow (&buffer, '\\');
-	  obstack_1grow (&buffer, '\\');
-	  goto Ldef;
+	  for (const char *q = p - 1; target <= q && *q == '\\';  q--)
+	    d_option.deps_target->writeByte ('\\');
+	  d_option.deps_target->writeByte ('\\');
+	  break;
 
 	case '$':
-	  obstack_1grow (&buffer, '$');
-	  goto Ldef;
+	  d_option.deps_target->writeByte ('$');
+	  break;
 
 	case '#':
-	case ':':
-	  obstack_1grow (&buffer, '\\');
-	  goto Ldef;
+	  d_option.deps_target->writeByte ('\\');
+	  break;
 
 	default:
-	Ldef:
-	  slashes = 0;
 	  break;
 	}
 
-      obstack_1grow (&buffer, *p);
+      d_option.deps_target->writeByte (*p);
     }
-
-  obstack_1grow (&buffer, '\0');
-  d_option.deps_target.safe_push ((const char *) obstack_finish (&buffer));
 }
 
-/* Write STR, with a leading space to BUFFER, updating COLUMN as appropriate.
+/* Write out all dependencies of a given MODULE to the specified BUFFER.
    COLMAX is the number of columns to word-wrap at (0 means don't wrap).  */
 
 static void
-deps_write_string (const char *str, obstack *buffer, unsigned &column,
-		   unsigned colmax = 72)
+deps_write (Module *module, OutBuffer *buffer, unsigned colmax = 72)
 {
-  unsigned size = strlen (str);
-
-  if (column != 0)
-    {
-      if (colmax && column + size > colmax)
-	{
-	  obstack_grow (buffer, " \\\n ", 4);
-	  column = 1;
-	}
-      else
-	{
-	  obstack_1grow (buffer, ' ');
-	  column++;
-	}
-    }
-
-  column += size;
-  obstack_grow (buffer, str, size);
-}
-
-/* Write out all dependencies of a given MODULE to the specified BUFFER.  */
-
-static void
-deps_write (Module *module, obstack *buffer)
-{
-  hash_set <const char *> seen_modules;
-  vec <const char *> dependencies = vNULL;
+  hash_set <const char *> dependencies;
 
   Modules modlist;
   modlist.push (module);
 
-  vec <const char *> phonylist = vNULL;
+  Modules phonylist;
+
+  const char *str;
+  unsigned size;
   unsigned column = 0;
 
   /* Write out make target module name.  */
-  if (d_option.deps_target.length ())
+  if (d_option.deps_target)
     {
-      for (unsigned i = 0; i < d_option.deps_target.length (); i++)
-	deps_write_string (d_option.deps_target[i], buffer, column);
+      size = d_option.deps_target->offset;
+      str = d_option.deps_target->extractString ();
     }
   else
-    deps_write_string (module->objfile->name->str, buffer, column);
+    {
+      str = module->objfile->name->str;
+      size = strlen (str);
+    }
 
-  obstack_1grow (buffer, ':');
+  buffer->writestring (str);
+  column = size;
+  buffer->writestring (":");
   column++;
 
-  /* Search all modules for file dependencies.  */
-  while (modlist.length > 0)
+  /* Write out all make dependencies.  */
+  while (modlist.dim > 0)
     {
       Module *depmod = modlist.pop ();
 
-      const char *modstr = depmod->srcfile->name->str;
+      str = depmod->srcfile->name->str;
+      size = strlen (str);
 
-      /* Skip modules that have already been looked at.  */
-      if (seen_modules.add (modstr))
+      /* Skip dependencies that have already been written.  */
+      if (dependencies.add (str))
 	continue;
 
-      dependencies.safe_push (modstr);
+      column += size;
+
+      if (colmax && column > colmax)
+	{
+	  buffer->writestring (" \\\n ");
+	  column = size + 1;
+	}
+      else
+	{
+	  buffer->writestring (" ");
+	  column++;
+	}
+
+      buffer->writestring (str);
 
       /* Add to list of phony targets if is not being compile.  */
       if (d_option.deps_phony && !depmod->isRoot ())
-	phonylist.safe_push (modstr);
+	phonylist.push (depmod);
 
-      /* Add imported files to dependency list.  */
-      for (size_t i = 0; i < depmod->contentImportedFiles.length; i++)
-	{
-	  const char *impstr = depmod->contentImportedFiles[i];
-	  dependencies.safe_push (impstr);
-	  phonylist.safe_push (impstr);
-	}
-
-      /* Search all imports of the module.  */
-      for (size_t i = 0; i < depmod->aimports.length; i++)
+      /* Search all imports of the written dependency.  */
+      for (size_t i = 0; i < depmod->aimports.dim; i++)
 	{
 	  Module *m = depmod->aimports[i];
 
@@ -266,22 +244,17 @@ deps_write (Module *module, obstack *buffer)
 	}
     }
 
-  /* Write out all make dependencies.  */
-  for (size_t i = 0; i < dependencies.length (); i++)
-    deps_write_string (dependencies[i], buffer, column);
-
-  obstack_1grow (buffer, '\n');
+  buffer->writenl ();
 
   /* Write out all phony targets.  */
-  for (size_t i = 0; i < phonylist.length (); i++)
+  for (size_t i = 0; i < phonylist.dim; i++)
     {
-      const char *str = phonylist[i];
-      obstack_1grow (buffer, '\n');
-      obstack_grow (buffer, str, strlen (str));
-      obstack_grow (buffer, ":\n", 2);
-    }
+      Module *m = phonylist[i];
 
-  obstack_1grow (buffer, '\0');
+      buffer->writenl ();
+      buffer->writestring (m->srcfile->name->str);
+      buffer->writestring (":\n");
+    }
 }
 
 /* Implements the lang_hooks.init_options routine for language D.
@@ -297,13 +270,12 @@ d_init_options (unsigned int, cl_decoded_option *decoded_options)
   global.vendor = lang_hooks.name;
   global.params.argv0 = xstrdup (decoded_options[0].arg);
   global.params.link = true;
-  global.params.useAssert = CHECKENABLEdefault;
-  global.params.useInvariants = CHECKENABLEdefault;
-  global.params.useIn = CHECKENABLEdefault;
-  global.params.useOut = CHECKENABLEdefault;
-  global.params.useArrayBounds = CHECKENABLEdefault;
-  global.params.useSwitchError = CHECKENABLEdefault;
-  global.params.checkAction = CHECKACTION_D;
+  global.params.useAssert = true;
+  global.params.useInvariants = true;
+  global.params.useIn = true;
+  global.params.useOut = true;
+  global.params.useArrayBounds = BOUNDSCHECKdefault;
+  global.params.useSwitchError = true;
   global.params.useModuleInfo = true;
   global.params.useTypeInfo = true;
   global.params.useExceptions = true;
@@ -312,17 +284,22 @@ d_init_options (unsigned int, cl_decoded_option *decoded_options)
   global.params.hdrStripPlainFunctions = true;
   global.params.betterC = false;
   global.params.allInst = false;
-  global.params.errorLimit = flag_max_errors;
 
   /* Default extern(C++) mangling to C++14.  */
   global.params.cplusplus = CppStdRevisionCpp14;
 
+  global.params.linkswitches = new Strings ();
+  global.params.libfiles = new Strings ();
+  global.params.objfiles = new Strings ();
+  global.params.ddocfiles = new Strings ();
+
   /* Warnings and deprecations are disabled by default.  */
-  global.params.useDeprecated = DIAGNOSTICinform;
+  global.params.useDeprecated = DIAGNOSTICoff;
   global.params.warnings = DIAGNOSTICoff;
 
   global.params.imppath = new Strings ();
   global.params.fileImppath = new Strings ();
+  global.params.modFileAliasStrings = new Strings ();
 
   /* Extra GDC-specific options.  */
   d_option.fonly = NULL;
@@ -332,7 +309,7 @@ d_init_options (unsigned int, cl_decoded_option *decoded_options)
   d_option.deps_skip_system = false;
   d_option.deps_filename = NULL;
   d_option.deps_filename_user = NULL;
-  d_option.deps_target = vNULL;
+  d_option.deps_target = NULL;
   d_option.deps_phony = false;
   d_option.stdinc = true;
 }
@@ -346,9 +323,15 @@ d_init_options_struct (gcc_options *opts)
   /* GCC options.  */
   opts->x_flag_exceptions = 1;
 
-  /* Unlike C, there is no global `errno' variable.  */
+  /* Avoid range issues for complex multiply and divide.  */
+  opts->x_flag_complex_method = 2;
+
+  /* Unlike C, there is no global 'errno' variable.  */
   opts->x_flag_errno_math = 0;
   opts->frontend_set_flag_errno_math = true;
+
+  /* Keep in sync with existing -fbounds-check flag.  */
+  opts->x_flag_bounds_check = global.params.useArrayBounds;
 
   /* D says that signed overflow is precisely defined.  */
   opts->x_flag_wrapv = 1;
@@ -363,19 +346,6 @@ d_option_lang_mask (void)
   return CL_D;
 }
 
-/* Implements input charset and BOM skipping configuration for
-   diagnostics.  */
-static const char *d_input_charset_callback (const char * /*filename*/)
-{
-  /* TODO: The input charset is automatically determined by code in
-     dmd/dmodule.c based on the contents of the file.  If this detection
-     logic were factored out and could be reused here, then we would be able
-     to return UTF-16 or UTF-32 as needed here.  For now, we return always
-     NULL, which means no conversion is necessary, i.e. the input is assumed
-     to be UTF-8 when diagnostics read this file.  */
-  return nullptr;
-}
-
 /* Implements the lang_hooks.init routine for language D.  */
 
 static bool
@@ -387,13 +357,8 @@ d_init (void)
   Expression::_init ();
   Objc::_init ();
 
-  /* Diagnostics input init, to enable BOM skipping and
-     input charset conversion.  */
-  diagnostic_initialize_input_context (global_dc,
-				       d_input_charset_callback, true);
-
   /* Back-end init.  */
-  global_binding_level = ggc_cleared_alloc <binding_level> ();
+  global_binding_level = ggc_cleared_alloc<binding_level> ();
   current_binding_level = global_binding_level;
 
   /* This allows the code in d-builtins.cc to not have to worry about
@@ -408,12 +373,12 @@ d_init (void)
     using_eh_for_cleanups ();
 
   if (!supports_one_only ())
-    flag_weak_templates = 0;
+    flag_weak = 0;
 
   /* This is the C main, not the D main.  */
   main_identifier_node = get_identifier ("main");
 
-  target._init (global.params);
+  Target::_init ();
   d_init_versions ();
 
   /* Insert all library-configured identifiers and import paths.  */
@@ -450,16 +415,17 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_fassert:
-      global.params.useAssert = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useAssert = value;
       break;
 
     case OPT_fbounds_check:
-      global.params.useArrayBounds = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useArrayBounds = value
+	? BOUNDSCHECKon : BOUNDSCHECKoff;
       break;
 
     case OPT_fbounds_check_:
-      global.params.useArrayBounds = (value == 2) ? CHECKENABLEon
-	: (value == 1) ? CHECKENABLEsafeonly : CHECKENABLEoff;
+      global.params.useArrayBounds = (value == 2) ? BOUNDSCHECKon
+	: (value == 1) ? BOUNDSCHECKsafeonly : BOUNDSCHECKoff;
       break;
 
     case OPT_fdebug:
@@ -472,20 +438,18 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
 	  int level = integral_argument (arg);
 	  if (level != -1)
 	    {
-	      global.params.debuglevel = level;
+	      DebugCondition::setGlobalLevel (level);
 	      break;
 	    }
 	}
 
       if (Identifier::isValidIdentifier (CONST_CAST (char *, arg)))
 	{
-	  if (!global.params.debugids)
-	    global.params.debugids = new Strings ();
-	  global.params.debugids->push (arg);
+	  DebugCondition::addGlobalIdent (arg);
 	  break;
 	}
 
-      error ("bad argument for %<-fdebug%>: %qs", arg);
+      error ("bad argument for -fdebug %qs", arg);
       break;
 
     case OPT_fdoc:
@@ -503,7 +467,7 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_fdoc_inc_:
-      global.params.ddocfiles.push (arg);
+      global.params.ddocfiles->push (arg);
       break;
 
     case OPT_fdruntime:
@@ -523,7 +487,7 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_finvariants:
-      global.params.useInvariants = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useInvariants = value;
       break;
 
     case OPT_fmain:
@@ -531,9 +495,9 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_fmodule_file_:
-      global.params.modFileAliasStrings.push (arg);
+      global.params.modFileAliasStrings->push (arg);
       if (!strchr (arg, '='))
-	error ("bad argument for %<-fmodule-file%>: %qs", arg);
+	error ("bad argument for -fmodule-file %qs", arg);
       break;
 
     case OPT_fmoduleinfo:
@@ -545,11 +509,11 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_fpostconditions:
-      global.params.useOut = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useOut = value;
       break;
 
     case OPT_fpreconditions:
-      global.params.useIn = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useIn = value;
       break;
 
     case OPT_frelease:
@@ -561,13 +525,17 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
       break;
 
     case OPT_fswitch_errors:
-      global.params.useSwitchError = value ? CHECKENABLEon : CHECKENABLEoff;
+      global.params.useSwitchError = value;
       break;
 
     case OPT_ftransition_all:
       global.params.vtls = value;
       global.params.vfield = value;
       global.params.vcomplex = value;
+      break;
+
+    case OPT_ftransition_checkimports:
+      global.params.check10378 = value;
       break;
 
     case OPT_ftransition_complex:
@@ -585,6 +553,10 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
 
     case OPT_ftransition_field:
       global.params.vfield = value;
+      break;
+
+    case OPT_ftransition_import:
+      global.params.bug10378 = value;
       break;
 
     case OPT_ftransition_nogc:
@@ -605,20 +577,18 @@ d_handle_option (size_t scode, const char *arg, HOST_WIDE_INT value,
 	  int level = integral_argument (arg);
 	  if (level != -1)
 	    {
-	      global.params.versionlevel = level;
+	      VersionCondition::setGlobalLevel (level);
 	      break;
 	    }
 	}
 
       if (Identifier::isValidIdentifier (CONST_CAST (char *, arg)))
 	{
-	  if (!global.params.versionids)
-	    global.params.versionids = new Strings ();
-	  global.params.versionids->push (arg);
+	  VersionCondition::addGlobalIdent (arg);
 	  break;
 	}
 
-      error ("bad argument for %<-fversion%>: %qs", arg);
+      error ("bad argument for -fversion %qs", arg);
       break;
 
     case OPT_H:
@@ -748,69 +718,49 @@ d_post_options (const char ** fn)
   *fn = filename;
 
   /* Release mode doesn't turn off bounds checking for safe functions.  */
-  if (global.params.useArrayBounds == CHECKENABLEdefault)
+  if (global.params.useArrayBounds == BOUNDSCHECKdefault)
     {
       global.params.useArrayBounds = global.params.release
-	? CHECKENABLEsafeonly : CHECKENABLEon;
+	? BOUNDSCHECKsafeonly : BOUNDSCHECKon;
+      flag_bounds_check = !global.params.release;
     }
 
-  /* Assert code is generated if unittests are being compiled also, even if
-     release mode is turned on.  */
-  if (global.params.useAssert == CHECKENABLEdefault)
+  if (global.params.release)
     {
-      if (global.params.useUnitTests || !global.params.release)
-	global.params.useAssert = CHECKENABLEon;
-      else
-	global.params.useAssert = CHECKENABLEoff;
-    }
+      if (!global_options_set.x_flag_invariants)
+	global.params.useInvariants = false;
 
-  /* Checks for switches without a default are turned off in release mode.  */
-  if (global.params.useSwitchError == CHECKENABLEdefault)
-    {
-      global.params.useSwitchError = global.params.release
-	? CHECKENABLEoff : CHECKENABLEon;
-    }
+      if (!global_options_set.x_flag_preconditions)
+	global.params.useIn = false;
 
-  /* Contracts are turned off in release mode.  */
-  if (global.params.useInvariants == CHECKENABLEdefault)
-    {
-      global.params.useInvariants = global.params.release
-	? CHECKENABLEoff : CHECKENABLEon;
-    }
+      if (!global_options_set.x_flag_postconditions)
+	global.params.useOut = false;
 
-  if (global.params.useIn == CHECKENABLEdefault)
-    {
-      global.params.useIn = global.params.release
-	? CHECKENABLEoff : CHECKENABLEon;
-    }
+      if (!global_options_set.x_flag_assert)
+	global.params.useAssert = false;
 
-  if (global.params.useOut == CHECKENABLEdefault)
-    {
-      global.params.useOut = global.params.release
-	? CHECKENABLEoff : CHECKENABLEon;
+      if (!global_options_set.x_flag_switch_errors)
+	global.params.useSwitchError = false;
     }
 
   if (global.params.betterC)
     {
-      if (!OPTION_SET_P (flag_moduleinfo))
+      if (!global_options_set.x_flag_moduleinfo)
 	global.params.useModuleInfo = false;
 
-      if (!OPTION_SET_P (flag_rtti))
+      if (!global_options_set.x_flag_rtti)
 	global.params.useTypeInfo = false;
 
-      if (!OPTION_SET_P (flag_exceptions))
+      if (!global_options_set.x_flag_exceptions)
 	global.params.useExceptions = false;
 
-      global.params.checkAction = CHECKACTION_C;
+      global.params.checkAction = CHECKACTION_halt;
     }
-
-  /* Keep in sync with existing -fbounds-check flag.  */
-  flag_bounds_check = (global.params.useArrayBounds == CHECKENABLEon);
 
   /* Turn off partitioning unless it was explicitly requested, as it doesn't
      work with D exception chaining, where EH handler uses LSDA to determine
      whether two thrown exception are in the same context.  */
-  if (!OPTION_SET_P (flag_reorder_blocks_and_partition))
+  if (!global_options_set.x_flag_reorder_blocks_and_partition)
     global_options.x_flag_reorder_blocks_and_partition = 0;
 
   /* Error about use of deprecated features.  */
@@ -819,11 +769,14 @@ d_post_options (const char ** fn)
     global.params.useDeprecated = DIAGNOSTICerror;
 
   /* Make -fmax-errors visible to frontend's diagnostic machinery.  */
-  if (OPTION_SET_P (flag_max_errors))
-    global.params.errorLimit = flag_max_errors;
+  if (global_options_set.x_flag_max_errors)
+    global.errorLimit = flag_max_errors;
 
-  if (flag_excess_precision == EXCESS_PRECISION_DEFAULT)
-    flag_excess_precision = EXCESS_PRECISION_STANDARD;
+  if (flag_excess_precision_cmdline == EXCESS_PRECISION_DEFAULT)
+    flag_excess_precision_cmdline = EXCESS_PRECISION_STANDARD;
+
+  if (global.params.useUnitTests)
+    global.params.useAssert = true;
 
   global.params.symdebug = write_symbols != NO_DEBUG;
   global.params.useInline = flag_inline_functions;
@@ -837,29 +790,168 @@ d_post_options (const char ** fn)
   /* Has no effect yet.  */
   global.params.pic = flag_pic != 0;
 
-  /* Add in versions given on the command line.  */
-  if (global.params.versionids)
-    {
-      for (size_t i = 0; i < global.params.versionids->length; i++)
-	{
-	  const char *s = (*global.params.versionids)[i];
-	  VersionCondition::addGlobalIdent (s);
-	}
-    }
-
-  if (global.params.debugids)
-    {
-      for (size_t i = 0; i < global.params.debugids->length; i++)
-	{
-	  const char *s = (*global.params.debugids)[i];
-	  DebugCondition::addGlobalIdent (s);
-	}
-    }
-
   if (warn_return_type == -1)
     warn_return_type = 0;
 
   return false;
+}
+
+/* Return TRUE if an operand OP of a given TYPE being copied has no data.
+   The middle-end does a similar check with zero sized types.  */
+
+static bool
+empty_modify_p (tree type, tree op)
+{
+  tree_code code = TREE_CODE (op);
+  switch (code)
+    {
+    case COMPOUND_EXPR:
+      return empty_modify_p (type, TREE_OPERAND (op, 1));
+
+    case CONSTRUCTOR:
+      /* Non-empty construcors are valid.  */
+      if (CONSTRUCTOR_NELTS (op) != 0 || TREE_CLOBBER_P (op))
+	return false;
+      break;
+
+    case CALL_EXPR:
+      /* Leave nrvo alone because it isn't a copy.  */
+      if (CALL_EXPR_RETURN_SLOT_OPT (op))
+	return false;
+      break;
+
+    default:
+      /* If the operand doesn't have a simple form.  */
+      if (!is_gimple_lvalue (op) && !INDIRECT_REF_P (op))
+	return false;
+      break;
+    }
+
+  return empty_aggregate_p (type);
+}
+
+/* Implements the lang_hooks.gimplify_expr routine for language D.
+   Do gimplification of D specific expression trees in EXPR_P.  */
+
+int
+d_gimplify_expr (tree *expr_p, gimple_seq *pre_p,
+		 gimple_seq *post_p ATTRIBUTE_UNUSED)
+{
+  tree_code code = TREE_CODE (*expr_p);
+  enum gimplify_status ret = GS_UNHANDLED;
+  tree op0, op1;
+  tree type;
+
+  switch (code)
+    {
+    case INIT_EXPR:
+    case MODIFY_EXPR:
+      op0 = TREE_OPERAND (*expr_p, 0);
+      op1 = TREE_OPERAND (*expr_p, 1);
+
+      if (!error_operand_p (op0) && !error_operand_p (op1)
+	  && (AGGREGATE_TYPE_P (TREE_TYPE (op0))
+	      || AGGREGATE_TYPE_P (TREE_TYPE (op1)))
+	  && !useless_type_conversion_p (TREE_TYPE (op1), TREE_TYPE (op0)))
+	{
+	  /* If the back end isn't clever enough to know that the lhs and rhs
+	     types are the same, add an explicit conversion.  */
+	  TREE_OPERAND (*expr_p, 1) = build1 (VIEW_CONVERT_EXPR,
+					      TREE_TYPE (op0), op1);
+	  ret = GS_OK;
+	}
+      else if (empty_modify_p (TREE_TYPE (op0), op1))
+	{
+	  /* Remove any copies of empty aggregates.  */
+	  gimplify_expr (&TREE_OPERAND (*expr_p, 0), pre_p, post_p,
+			 is_gimple_lvalue, fb_lvalue);
+
+	  if (TREE_SIDE_EFFECTS (op1))
+	    gimplify_and_add (op1, pre_p);
+
+	  *expr_p = TREE_OPERAND (*expr_p, 0);
+	  ret = GS_OK;
+	}
+      break;
+
+    case ADDR_EXPR:
+      op0 = TREE_OPERAND (*expr_p, 0);
+      /* Constructors are not lvalues, so make them one.  */
+      if (TREE_CODE (op0) == CONSTRUCTOR)
+	{
+	  TREE_OPERAND (*expr_p, 0) = force_target_expr (op0);
+	  ret = GS_OK;
+	}
+      break;
+
+    case CALL_EXPR:
+      if (CALL_EXPR_ARGS_ORDERED (*expr_p))
+	{
+	  /* Strictly evaluate all arguments from left to right.  */
+	  int nargs = call_expr_nargs (*expr_p);
+	  location_t loc = EXPR_LOC_OR_LOC (*expr_p, input_location);
+
+	  /* No need to enforce evaluation order if only one argument.  */
+	  if (nargs < 2)
+	    break;
+
+	  /* Or if all arguments are already free of side-effects.  */
+	  bool has_side_effects = false;
+	  for (int i = 0; i < nargs; i++)
+	    {
+	      if (TREE_SIDE_EFFECTS (CALL_EXPR_ARG (*expr_p, i)))
+		{
+		  has_side_effects = true;
+		  break;
+		}
+	    }
+
+	  if (!has_side_effects)
+	    break;
+
+	  /* Leave the last argument for gimplify_call_expr.  */
+	  for (int i = 0; i < nargs - 1; i++)
+	    {
+	      tree new_arg = CALL_EXPR_ARG (*expr_p, i);
+
+	      /* If argument has a side-effect, gimplify_arg will handle it.  */
+	      if (gimplify_arg (&new_arg, pre_p, loc) == GS_ERROR)
+		ret = GS_ERROR;
+
+	      /* Even if an argument itself doesn't have any side-effects, it
+		 might be altered by another argument in the list.  */
+	      if (new_arg == CALL_EXPR_ARG (*expr_p, i)
+		  && !really_constant_p (new_arg))
+		new_arg = get_formal_tmp_var (new_arg, pre_p);
+
+	      CALL_EXPR_ARG (*expr_p, i) = new_arg;
+	    }
+
+	  if (ret != GS_ERROR)
+	    ret = GS_OK;
+	}
+      break;
+
+    case UNSIGNED_RSHIFT_EXPR:
+      /* Convert op0 to an unsigned type.  */
+      op0 = TREE_OPERAND (*expr_p, 0);
+      op1 = TREE_OPERAND (*expr_p, 1);
+
+      type = d_unsigned_type (TREE_TYPE (op0));
+
+      *expr_p = convert (TREE_TYPE (*expr_p),
+			 build2 (RSHIFT_EXPR, type, convert (type, op0), op1));
+      ret = GS_OK;
+      break;
+
+    case FLOAT_MOD_EXPR:
+      gcc_unreachable ();
+
+    default:
+      break;
+    }
+
+  return ret;
 }
 
 /* Add the module M to the list of modules that may declare GCC builtins.
@@ -885,29 +977,26 @@ d_add_entrypoint_module (Module *entry, Module *root)
 
 /* Implements the lang_hooks.parse_file routine for language D.  */
 
-static void
+void
 d_parse_file (void)
 {
   if (global.params.verbose)
     {
-      message ("binary    %s", global.params.argv0.ptr);
-      message ("version   %s", global.version.ptr);
+      message ("binary    %s", global.params.argv0);
+      message ("version   %s", global.version);
 
-      if (global.versionids)
+      if (global.params.versionids)
 	{
-	  obstack buffer;
-	  gcc_obstack_init (&buffer);
-	  obstack_grow (&buffer, "predefs  ", 9);
-	  for (size_t i = 0; i < global.versionids->length; i++)
+	  OutBuffer buf;
+	  buf.writestring ("predefs  ");
+	  for (size_t i = 0; i < global.params.versionids->dim; i++)
 	    {
-	      Identifier *id = (*global.versionids)[i];
-	      const char *str = id->toChars ();
-	      obstack_1grow (&buffer, ' ');
-	      obstack_grow (&buffer, str, strlen (str));
+	      const char *s = (*global.params.versionids)[i];
+	      buf.writestring (" ");
+	      buf.writestring (s);
 	    }
 
-	  obstack_1grow (&buffer, '\0');
-	  message ("%s", (char *) obstack_finish (&buffer));
+	  message ("%.*s", (int) buf.offset, (char *) buf.data);
 	}
     }
 
@@ -922,49 +1011,38 @@ d_parse_file (void)
   /* In this mode, the first file name is supposed to be a duplicate
      of one of the input files.  */
   if (d_option.fonly && strcmp (d_option.fonly, main_input_filename) != 0)
-    error ("%<-fonly=%> argument is different from first input file name");
+    error ("-fonly= argument is different from first input file name");
 
   for (size_t i = 0; i < num_in_fnames; i++)
     {
       if (strcmp (in_fnames[i], "-") == 0)
 	{
-	  /* Load the entire contents of stdin into memory.  8 kilobytes should
-	     be a good enough initial size, but double on each iteration.
-	     16 bytes are added for the final '\n' and 15 bytes of padding.  */
-	  ssize_t size = 8 * 1024;
-	  uchar *buffer = XNEWVEC (uchar, size + 16);
-	  ssize_t len = 0;
-	  ssize_t count;
-
-	  while ((count = read (STDIN_FILENO, buffer + len, size - len)) > 0)
-	    {
-	      len += count;
-	      if (len == size)
-		{
-		  size *= 2;
-		  buffer = XRESIZEVEC (uchar, buffer, size + 16);
-		}
-	    }
-
-	  if (count < 0)
-	    {
-	      error (Loc ("stdin", 0, 0), "%s", xstrerror (errno));
-	      free (buffer);
-	      continue;
-	    }
-
 	  /* Handling stdin, generate a unique name for the module.  */
+	  obstack buffer;
+	  gcc_obstack_init (&buffer);
+	  int c;
+
 	  Module *m = Module::create (in_fnames[i],
 				      Identifier::generateId ("__stdin"),
 				      global.params.doDocComments,
 				      global.params.doHdrGeneration);
 	  modules.push (m);
 
+	  /* Load the entire contents of stdin into memory.  */
+	  while ((c = getc (stdin)) != EOF)
+	    obstack_1grow (&buffer, c);
+
+	  if (!obstack_object_size (&buffer))
+	    obstack_1grow (&buffer, '\0');
+
 	  /* Overwrite the source file for the module, the one created by
 	     Module::create would have a forced a `.d' suffix.  */
 	  m->srcfile = File::create ("<stdin>");
-	  m->srcfile->len = len;
-	  m->srcfile->buffer = buffer;
+	  m->srcfile->len = obstack_object_size (&buffer);
+	  m->srcfile->buffer = (unsigned char *) obstack_finish (&buffer);
+
+	  /* Tell the front-end not to free the buffer after parsing.  */
+	  m->srcfile->ref = 1;
 	}
       else
 	{
@@ -981,14 +1059,14 @@ d_parse_file (void)
     }
 
   /* Read all D source files.  */
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
       m->read (Loc ());
     }
 
   /* Parse all D source files.  */
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
 
@@ -1000,6 +1078,7 @@ d_parse_file (void)
 
       m->importedFrom = m;
       m->parse ();
+      Compiler::loadModule (m);
 
       if (m->isDocFile)
 	{
@@ -1016,16 +1095,12 @@ d_parse_file (void)
       unsigned errors = global.startGagging ();
       Module *m = Module::load (Loc (), NULL, Identifier::idPool ("__main"));
 
-      if (!global.endGagging (errors))
+      if (! global.endGagging (errors))
 	{
 	  m->importedFrom = m;
 	  modules.push (m);
 	}
     }
-
-  /* If an error occurs later during compilation, remember that we generated
-     the headers, so that they can be removed before exit.  */
-  bool dump_headers = false;
 
   if (global.errors)
     goto had_errors;
@@ -1035,7 +1110,7 @@ d_parse_file (void)
       /* Generate 'header' import files.  Since 'header' import files must be
 	 independent of command line switches and what else is imported, they
 	 are generated before any semantic analysis.  */
-      for (size_t i = 0; i < modules.length; i++)
+      for (size_t i = 0; i < modules.dim; i++)
 	{
 	  Module *m = modules[i];
 	  if (d_option.fonly && m != Module::rootModule)
@@ -1046,15 +1121,13 @@ d_parse_file (void)
 
 	  genhdrfile (m);
 	}
-
-      dump_headers = true;
     }
 
   if (global.errors)
     goto had_errors;
 
   /* Load all unconditional imports for better symbol resolving.  */
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
 
@@ -1070,23 +1143,23 @@ d_parse_file (void)
   /* Do semantic analysis.  */
   doing_semantic_analysis_p = true;
 
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
 
       if (global.params.verbose)
 	message ("semantic  %s", m->toChars ());
 
-      dsymbolSemantic (m, NULL);
+      m->semantic (NULL);
     }
 
   /* Do deferred semantic analysis.  */
   Module::dprogress = 1;
   Module::runDeferredSemantic ();
 
-  if (Module::deferred.length)
+  if (Module::deferred.dim)
     {
-      for (size_t i = 0; i < Module::deferred.length; i++)
+      for (size_t i = 0; i < Module::deferred.dim; i++)
 	{
 	  Dsymbol *sd = Module::deferred[i];
 	  error_at (make_location_t (sd->loc),
@@ -1095,21 +1168,21 @@ d_parse_file (void)
     }
 
   /* Process all built-in modules or functions now for CTFE.  */
-  while (builtin_modules.length != 0)
+  while (builtin_modules.dim != 0)
     {
       Module *m = builtin_modules.pop ();
       d_maybe_set_builtin (m);
     }
 
   /* Do pass 2 semantic analysis.  */
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
 
       if (global.params.verbose)
 	message ("semantic2 %s", m->toChars ());
 
-      semantic2 (m, NULL);
+      m->semantic2 (NULL);
     }
 
   Module::runDeferredSemantic2 ();
@@ -1118,20 +1191,20 @@ d_parse_file (void)
     goto had_errors;
 
   /* Do pass 3 semantic analysis.  */
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
 
       if (global.params.verbose)
 	message ("semantic3 %s", m->toChars ());
 
-      semantic3 (m, NULL);
+      m->semantic3 (NULL);
     }
 
   Module::runDeferredSemantic3 ();
 
   /* Check again, incase semantic3 pass loaded any more modules.  */
-  while (builtin_modules.length != 0)
+  while (builtin_modules.dim != 0)
     {
       Module *m = builtin_modules.pop ();
       d_maybe_set_builtin (m);
@@ -1150,19 +1223,16 @@ d_parse_file (void)
 	 to make the middle-end fully deterministic.  */
       OutBuffer buf;
       mangleToBuffer (Module::rootModule, &buf);
-      first_global_object_name = buf.extractChars ();
+      first_global_object_name = buf.extractString ();
     }
 
   /* Make dependencies.  */
   if (d_option.deps)
     {
-      obstack buffer;
-      FILE *deps_stream;
+      OutBuffer buf;
 
-      gcc_obstack_init (&buffer);
-
-      for (size_t i = 0; i < modules.length; i++)
-	deps_write (modules[i], &buffer);
+      for (size_t i = 0; i < modules.dim; i++)
+	deps_write (modules[i], &buf);
 
       /* -MF <arg> overrides -M[M]D.  */
       if (d_option.deps_filename_user)
@@ -1170,25 +1240,13 @@ d_parse_file (void)
 
       if (d_option.deps_filename)
 	{
-	  deps_stream = fopen (d_option.deps_filename, "w");
-	  if (!deps_stream)
-	    {
-	      fatal_error (input_location, "opening dependency file %s: %m",
-			   d_option.deps_filename);
-	      goto had_errors;
-	    }
+	  File *fdeps = File::create (d_option.deps_filename);
+	  fdeps->setbuffer ((void *) buf.data, buf.offset);
+	  fdeps->ref = 1;
+	  writeFile (Loc (), fdeps);
 	}
       else
-	deps_stream = stdout;
-
-      fprintf (deps_stream, "%s", (char *) obstack_finish (&buffer));
-
-      if (deps_stream != stdout
-	  && (ferror (deps_stream) || fclose (deps_stream)))
-	{
-	  fatal_error (input_location, "closing dependency file %s: %m",
-		       d_option.deps_filename);
-	}
+	message ("%.*s", (int) buf.offset, (char *) buf.data);
     }
 
   /* Generate JSON files.  */
@@ -1197,34 +1255,24 @@ d_parse_file (void)
       OutBuffer buf;
       json_generate (&buf, &modules);
 
-      const char *name = global.params.jsonfilename.ptr;
-      FILE *json_stream;
+      const char *name = global.params.jsonfilename;
 
       if (name && (name[0] != '-' || name[1] != '\0'))
 	{
-	  const char *nameext
-	    = FileName::defaultExt (name, global.json_ext.ptr);
-	  json_stream = fopen (nameext, "w");
-	  if (!json_stream)
-	    {
-	      fatal_error (input_location, "opening json file %s: %m", nameext);
-	      goto had_errors;
-	    }
+	  const char *nameext = FileName::defaultExt (name, global.json_ext);
+	  File *fjson = File::create (nameext);
+	  fjson->setbuffer ((void *) buf.data, buf.offset);
+	  fjson->ref = 1;
+	  writeFile (Loc (), fjson);
 	}
       else
-	json_stream = stdout;
-
-      fprintf (json_stream, "%s", buf.peekChars ());
-
-      if (json_stream != stdout
-	  && (ferror (json_stream) || fclose (json_stream)))
-	fatal_error (input_location, "closing json file %s: %m", name);
+	message ("%.*s", (int) buf.offset, (char *) buf.data);
     }
 
   /* Generate Ddoc files.  */
   if (global.params.doDocComments && !global.errors && !errorcount)
     {
-      for (size_t i = 0; i < modules.length; i++)
+      for (size_t i = 0; i < modules.dim; i++)
 	{
 	  Module *m = modules[i];
 	  gendocfile (m);
@@ -1234,18 +1282,18 @@ d_parse_file (void)
   /* Handle -fdump-d-original.  */
   if (global.params.vcg_ast)
     {
-      for (size_t i = 0; i < modules.length; i++)
+      for (size_t i = 0; i < modules.dim; i++)
 	{
 	  Module *m = modules[i];
 	  OutBuffer buf;
 	  buf.doindent = 1;
 
 	  moduleToBuffer (&buf, m);
-	  message ("%s", buf.peekChars ());
+	  message ("%.*s", (int) buf.offset, (char *) buf.data);
 	}
     }
 
-  for (size_t i = 0; i < modules.length; i++)
+  for (size_t i = 0; i < modules.dim; i++)
     {
       Module *m = modules[i];
       if (d_option.fonly && m != Module::rootModule)
@@ -1271,19 +1319,6 @@ d_parse_file (void)
   /* Add the D frontend error count to the GCC error count to correctly
      exit with an error status.  */
   errorcount += (global.errors + global.warnings);
-
-  /* Remove generated .di files on error.  */
-  if (errorcount && dump_headers)
-    {
-      for (size_t i = 0; i < modules.length; i++)
-	{
-	  Module *m = modules[i];
-	  if (d_option.fonly && m != Module::rootModule)
-	    continue;
-
-	  remove (m->hdrfile->toChars ());
-	}
-    }
 
   /* Write out globals.  */
   d_finish_compilation (vec_safe_address (global_declarations),
@@ -1324,17 +1359,6 @@ d_type_for_mode (machine_mode mode, int unsignedp)
 
   if (mode == TYPE_MODE (build_pointer_type (d_int_type)))
     return build_pointer_type (d_int_type);
-
-  for (int i = 0; i < NUM_INT_N_ENTS; i ++)
-    {
-      if (int_n_enabled_p[i] && mode == int_n_data[i].m)
-	{
-	  if (unsignedp)
-	    return int_n_trees[i].unsigned_type;
-	  else
-	    return int_n_trees[i].signed_type;
-	}
-    }
 
   if (COMPLEX_MODE_P (mode))
     {
@@ -1384,79 +1408,58 @@ d_type_for_size (unsigned bits, int unsignedp)
   if (bits <= TYPE_PRECISION (d_cent_type))
     return unsignedp ? d_ucent_type : d_cent_type;
 
-  for (int i = 0; i < NUM_INT_N_ENTS; i ++)
-    {
-      if (int_n_enabled_p[i] && bits == int_n_data[i].bitsize)
-	{
-	  if (unsignedp)
-	    return int_n_trees[i].unsigned_type;
-	  else
-	    return int_n_trees[i].signed_type;
-	}
-    }
-
   return 0;
 }
 
-/* Implements the lang_hooks.types.type_promotes_to routine for language D.  */
+/* Return the signed or unsigned version of TYPE, an integral type, the
+   signedness being specified by UNSIGNEDP.  */
+
+static tree
+d_signed_or_unsigned_type (int unsignedp, tree type)
+{
+  if (TYPE_UNSIGNED (type) == (unsigned) unsignedp)
+    return type;
+
+  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_cent_type))
+    return unsignedp ? d_ucent_type : d_cent_type;
+
+  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_long_type))
+    return unsignedp ? d_ulong_type : d_long_type;
+
+  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_int_type))
+    return unsignedp ? d_uint_type : d_int_type;
+
+  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_short_type))
+    return unsignedp ? d_ushort_type : d_short_type;
+
+  if (TYPE_PRECISION (type) == TYPE_PRECISION (d_byte_type))
+    return unsignedp ? d_ubyte_type : d_byte_type;
+
+  return signed_or_unsigned_type_for (unsignedp, type);
+}
+
+/* Return the unsigned version of TYPE, an integral type.  */
+
+tree
+d_unsigned_type (tree type)
+{
+  return d_signed_or_unsigned_type (1, type);
+}
+
+/* Return the signed version of TYPE, an integral type.  */
+
+tree
+d_signed_type (tree type)
+{
+  return d_signed_or_unsigned_type (0, type);
+}
+
+/* Implements the lang_hooks.types.type_promotes_to routine for language D.
+   All promotions for variable arguments are handled by the D frontend.  */
 
 static tree
 d_type_promotes_to (tree type)
 {
-  /* Promotions are only applied on unnamed function arguments for declarations
-     with `extern(C)' or `extern(C++)' linkage.  */
-  if (cfun && DECL_LANG_FRONTEND (cfun->decl)
-      && DECL_LANG_FRONTEND (cfun->decl)->linkage != LINKd)
-    {
-      /* In [type/integer-promotions], integer promotions are conversions of the
-	 following types:
-
-		bool	int
-		byte	int
-		ubyte	int
-		short	int
-		ushort	int
-		char	int
-		wchar	int
-		dchar	uint
-
-	 If an enum has as a base type one of the types in the left column, it
-	 is converted to the type in the right column.  */
-      if (TREE_CODE (type) == ENUMERAL_TYPE && ENUM_IS_SCOPED (type))
-	type = TREE_TYPE (type);
-
-      type = TYPE_MAIN_VARIANT (type);
-
-      /* Check for promotions of target-defined types first.  */
-      tree promoted_type = targetm.promoted_type (type);
-      if (promoted_type)
-	return promoted_type;
-
-      if (TREE_CODE (type) == BOOLEAN_TYPE)
-	return d_int_type;
-
-      if (INTEGRAL_TYPE_P (type))
-	{
-	  if (type == d_byte_type || type == d_ubyte_type
-	      || type == d_short_type || type == d_ushort_type
-	      || type == char8_type_node || type == char16_type_node)
-	    return d_int_type;
-
-	  if (type == char32_type_node)
-	    return d_uint_type;
-
-	  if (TYPE_PRECISION (type) < TYPE_PRECISION (d_int_type))
-	    return d_int_type;
-	}
-
-      /* Float arguments are converted to doubles.  */
-      if (type == float_type_node)
-	return double_type_node;
-
-      if (type == ifloat_type_node)
-	return idouble_type_node;
-    }
-
   return type;
 }
 
@@ -1606,10 +1609,11 @@ static classify_record
 d_classify_record (tree type)
 {
   Type *t = TYPE_LANG_FRONTEND (type);
-  TypeClass *tc = t ? t->isTypeClass () : NULL;
 
-  if (tc != NULL)
+  if (t && t->ty == Tclass)
     {
+      TypeClass *tc = (TypeClass *) t;
+
       /* extern(C++) interfaces get emitted as classes.  */
       if (tc->sym->isInterfaceDeclaration ()
 	  && !tc->sym->isCPPinterface ())
@@ -1677,7 +1681,7 @@ d_tree_node_structure (lang_tree_node *t)
 struct lang_type *
 build_lang_type (Type *t)
 {
-  struct lang_type *lt = ggc_cleared_alloc <struct lang_type> ();
+  struct lang_type *lt = ggc_cleared_alloc<struct lang_type> ();
   lt->type = t;
   return lt;
 }
@@ -1691,11 +1695,11 @@ build_lang_decl (Declaration *d)
      there's no associated frontend symbol to refer to (yet).  If the symbol
      appears later in the compilation, then the slot will be re-used.  */
   if (d == NULL)
-    return ggc_cleared_alloc <struct lang_decl> ();
+    return ggc_cleared_alloc<struct lang_decl> ();
 
   struct lang_decl *ld = (d->csym) ? DECL_LANG_SPECIFIC (d->csym) : NULL;
   if (ld == NULL)
-    ld = ggc_cleared_alloc <struct lang_decl> ();
+    ld = ggc_cleared_alloc<struct lang_decl> ();
 
   if (ld->decl == NULL)
     ld->decl = d;
@@ -1709,10 +1713,10 @@ build_lang_decl (Declaration *d)
 static void
 d_dup_lang_specific_decl (tree node)
 {
-  if (!DECL_LANG_SPECIFIC (node))
+  if (! DECL_LANG_SPECIFIC (node))
     return;
 
-  struct lang_decl *ld = ggc_alloc <struct lang_decl> ();
+  struct lang_decl *ld = ggc_alloc<struct lang_decl> ();
   memcpy (ld, DECL_LANG_SPECIFIC (node), sizeof (struct lang_decl));
   DECL_LANG_SPECIFIC (node) = ld;
 }
@@ -1747,10 +1751,12 @@ static tree
 d_build_eh_runtime_type (tree type)
 {
   Type *t = TYPE_LANG_FRONTEND (type);
-  gcc_assert (t != NULL);
-  t = t->toBasetype ();
 
-  ClassDeclaration *cd = t->isTypeClass ()->sym;
+  if (t != NULL)
+    t = t->toBasetype ();
+
+  gcc_assert (t != NULL && t->ty == Tclass);
+  ClassDeclaration *cd = ((TypeClass *) t)->sym;
   tree decl;
 
   if (cd->isCPPclass ())
@@ -1759,16 +1765,6 @@ d_build_eh_runtime_type (tree type)
     decl = get_classinfo_decl (cd);
 
   return convert (ptr_type_node, build_address (decl));
-}
-
-/* Implements the lang_hooks.enum_underlying_base_type routine for language D.
-   Returns the underlying type of the given enumeration TYPE.  */
-
-static tree
-d_enum_underlying_base_type (const_tree type)
-{
-  gcc_assert (TREE_CODE (type) == ENUMERAL_TYPE);
-  return TREE_TYPE (type);
 }
 
 /* Definitions for our language-specific hooks.  */
@@ -1787,7 +1783,6 @@ d_enum_underlying_base_type (const_tree type)
 #undef LANG_HOOKS_GET_ALIAS_SET
 #undef LANG_HOOKS_TYPES_COMPATIBLE_P
 #undef LANG_HOOKS_BUILTIN_FUNCTION
-#undef LANG_HOOKS_BUILTIN_FUNCTION_EXT_SCOPE
 #undef LANG_HOOKS_REGISTER_BUILTIN_TYPE
 #undef LANG_HOOKS_FINISH_INCOMPLETE_DECL
 #undef LANG_HOOKS_GIMPLIFY_EXPR
@@ -1797,7 +1792,6 @@ d_enum_underlying_base_type (const_tree type)
 #undef LANG_HOOKS_DUP_LANG_SPECIFIC_DECL
 #undef LANG_HOOKS_EH_PERSONALITY
 #undef LANG_HOOKS_EH_RUNTIME_TYPE
-#undef LANG_HOOKS_ENUM_UNDERLYING_BASE_TYPE
 #undef LANG_HOOKS_PUSHDECL
 #undef LANG_HOOKS_GETDECLS
 #undef LANG_HOOKS_GLOBAL_BINDINGS_P
@@ -1819,7 +1813,6 @@ d_enum_underlying_base_type (const_tree type)
 #define LANG_HOOKS_GET_ALIAS_SET	    d_get_alias_set
 #define LANG_HOOKS_TYPES_COMPATIBLE_P	    d_types_compatible_p
 #define LANG_HOOKS_BUILTIN_FUNCTION	    d_builtin_function
-#define LANG_HOOKS_BUILTIN_FUNCTION_EXT_SCOPE d_builtin_function_ext_scope
 #define LANG_HOOKS_REGISTER_BUILTIN_TYPE    d_register_builtin_type
 #define LANG_HOOKS_FINISH_INCOMPLETE_DECL   d_finish_incomplete_decl
 #define LANG_HOOKS_GIMPLIFY_EXPR	    d_gimplify_expr
@@ -1829,7 +1822,6 @@ d_enum_underlying_base_type (const_tree type)
 #define LANG_HOOKS_DUP_LANG_SPECIFIC_DECL   d_dup_lang_specific_decl
 #define LANG_HOOKS_EH_PERSONALITY	    d_eh_personality
 #define LANG_HOOKS_EH_RUNTIME_TYPE	    d_build_eh_runtime_type
-#define LANG_HOOKS_ENUM_UNDERLYING_BASE_TYPE d_enum_underlying_base_type
 #define LANG_HOOKS_PUSHDECL		    d_pushdecl
 #define LANG_HOOKS_GETDECLS		    d_getdecls
 #define LANG_HOOKS_GLOBAL_BINDINGS_P	    d_global_bindings_p

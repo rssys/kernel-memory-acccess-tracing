@@ -25,8 +25,8 @@ struct A
 
                A    source();
 const          A  c_source();
-      volatile A  v_source(); // { dg-warning "deprecated" "" { target c++2a } }
-const volatile A cv_source(); // { dg-warning "deprecated" "" { target c++2a } }
+      volatile A  v_source();
+const volatile A cv_source();
 
 // 8 at a time
 

@@ -1,5 +1,5 @@
 /* Definitions for code generation pass of GNU compiler.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -41,8 +41,7 @@ enum expand_operand_type {
 };
 
 /* Information about an operand for instruction expansion.  */
-class expand_operand {
-public:
+struct expand_operand {
   /* The type of operand.  */
   ENUM_BITFIELD (expand_operand_type) type : 8;
 
@@ -71,14 +70,13 @@ public:
    to their default values.  */
 
 static inline void
-create_expand_operand (class expand_operand *op,
+create_expand_operand (struct expand_operand *op,
 		       enum expand_operand_type type,
 		       rtx value, machine_mode mode,
 		       bool unsigned_p, poly_int64 int_value = 0)
 {
   op->type = type;
   op->unsigned_p = unsigned_p;
-  op->target = 0;
   op->unused = 0;
   op->mode = mode;
   op->value = value;
@@ -88,7 +86,7 @@ create_expand_operand (class expand_operand *op,
 /* Make OP describe an operand that must use rtx X, even if X is volatile.  */
 
 static inline void
-create_fixed_operand (class expand_operand *op, rtx x)
+create_fixed_operand (struct expand_operand *op, rtx x)
 {
   create_expand_operand (op, EXPAND_FIXED, x, VOIDmode, false);
 }
@@ -99,7 +97,7 @@ create_fixed_operand (class expand_operand *op, rtx x)
    be ignored in that case.  */
 
 static inline void
-create_output_operand (class expand_operand *op, rtx x,
+create_output_operand (struct expand_operand *op, rtx x,
 		       machine_mode mode)
 {
   create_expand_operand (op, EXPAND_OUTPUT, x, mode, false);
@@ -111,7 +109,7 @@ create_output_operand (class expand_operand *op, rtx x,
    as an operand.  */
 
 static inline void
-create_input_operand (class expand_operand *op, rtx value,
+create_input_operand (struct expand_operand *op, rtx value,
 		      machine_mode mode)
 {
   create_expand_operand (op, EXPAND_INPUT, value, mode, false);
@@ -121,7 +119,7 @@ create_input_operand (class expand_operand *op, rtx value,
    to mode MODE.  UNSIGNED_P says whether VALUE is unsigned.  */
 
 static inline void
-create_convert_operand_to (class expand_operand *op, rtx value,
+create_convert_operand_to (struct expand_operand *op, rtx value,
 			   machine_mode mode, bool unsigned_p)
 {
   create_expand_operand (op, EXPAND_CONVERT_TO, value, mode, unsigned_p);
@@ -130,14 +128,10 @@ create_convert_operand_to (class expand_operand *op, rtx value,
 /* Make OP describe an input operand that should have the same value
    as VALUE, after any mode conversion that the backend might request.
    If VALUE is a CONST_INT, it should be treated as having mode MODE.
-   UNSIGNED_P says whether VALUE is unsigned.
-
-   The conversion of VALUE can include a combination of numerical
-   conversion (as for convert_modes) and duplicating a scalar to fill
-   a vector (if VALUE is a scalar but the operand is a vector).  */
+   UNSIGNED_P says whether VALUE is unsigned.  */
 
 static inline void
-create_convert_operand_from (class expand_operand *op, rtx value,
+create_convert_operand_from (struct expand_operand *op, rtx value,
 			     machine_mode mode, bool unsigned_p)
 {
   create_expand_operand (op, EXPAND_CONVERT_FROM, value, mode, unsigned_p);
@@ -148,12 +142,12 @@ create_convert_operand_from (class expand_operand *op, rtx value,
    of the address, but it may need to be converted to Pmode first.  */
 
 static inline void
-create_address_operand (class expand_operand *op, rtx value)
+create_address_operand (struct expand_operand *op, rtx value)
 {
   create_expand_operand (op, EXPAND_ADDRESS, value, Pmode, false);
 }
 
-extern void create_integer_operand (class expand_operand *, poly_int64);
+extern void create_integer_operand (struct expand_operand *, poly_int64);
 
 /* Passed to expand_simple_binop and expand_binop to say which options
    to try to use if the requested operation can't be open-coded on the
@@ -182,8 +176,6 @@ extern rtx simplify_expand_binop (machine_mode mode, optab binoptab,
 extern bool force_expand_binop (machine_mode, optab, rtx, rtx, rtx, int,
 				enum optab_methods);
 extern rtx expand_vector_broadcast (machine_mode, rtx);
-
-extern rtx expand_doubleword_divmod (machine_mode, rtx, rtx, rtx *, bool);
 
 /* Generate code for a simple binary or unary operation.  "Simple" in
    this case means "can be unambiguously described by a (mode, code)
@@ -245,21 +237,6 @@ enum can_compare_purpose
    (without splitting it into pieces).  */
 extern int can_compare_p (enum rtx_code, machine_mode,
 			  enum can_compare_purpose);
-
-/* Return whether the backend can emit a vector comparison (vec_cmp/vec_cmpu)
-   for code CODE, comparing operands of mode VALUE_MODE and producing a result
-   with MASK_MODE.  */
-extern bool can_vec_cmp_compare_p (enum rtx_code, machine_mode, machine_mode);
-
-/* Return whether the backend can emit a vector comparison (vcond/vcondu) for
-   code CODE, comparing operands of mode CMP_OP_MODE and producing a result
-   with VALUE_MODE.  */
-extern bool can_vcond_compare_p (enum rtx_code, machine_mode, machine_mode);
-
-/* Return whether the backend can emit vector set instructions for inserting
-   element into vector at variable index position.  */
-extern bool can_vec_set_var_idx_p (machine_mode);
-
 extern rtx prepare_operand (enum insn_code, rtx, int, machine_mode,
 			    machine_mode, int);
 /* Emit a pair of rtl insns to compare two rtx's and to jump
@@ -332,6 +309,9 @@ extern rtx expand_vec_perm_const (machine_mode, rtx, rtx,
 /* Generate code for vector comparison.  */
 extern rtx expand_vec_cmp_expr (tree, tree, rtx);
 
+/* Generate code for VEC_COND_EXPR.  */
+extern rtx expand_vec_cond_expr (tree, tree, tree, tree, rtx);
+
 /* Generate code for VEC_SERIES_EXPR.  */
 extern rtx expand_vec_series_expr (machine_mode, rtx, rtx, rtx);
 
@@ -352,32 +332,25 @@ rtx expand_atomic_store (rtx, rtx, enum memmodel, bool);
 rtx expand_atomic_fetch_op (rtx, rtx, rtx, enum rtx_code, enum memmodel, 
 			      bool);
 
-extern void expand_asm_reg_clobber_mem_blockage (HARD_REG_SET);
-
 extern bool insn_operand_matches (enum insn_code icode, unsigned int opno,
 				  rtx operand);
 extern bool valid_multiword_target_p (rtx);
-extern void create_convert_operand_from_type (class expand_operand *op,
+extern void create_convert_operand_from_type (struct expand_operand *op,
 					      rtx value, tree type);
 extern bool maybe_legitimize_operands (enum insn_code icode,
 				       unsigned int opno, unsigned int nops,
-				       class expand_operand *ops);
+				       struct expand_operand *ops);
 extern rtx_insn *maybe_gen_insn (enum insn_code icode, unsigned int nops,
-				 class expand_operand *ops);
+				 struct expand_operand *ops);
 extern bool maybe_expand_insn (enum insn_code icode, unsigned int nops,
-			       class expand_operand *ops);
+			       struct expand_operand *ops);
 extern bool maybe_expand_jump_insn (enum insn_code icode, unsigned int nops,
-				    class expand_operand *ops);
+				    struct expand_operand *ops);
 extern void expand_insn (enum insn_code icode, unsigned int nops,
-			 class expand_operand *ops);
+			 struct expand_operand *ops);
 extern void expand_jump_insn (enum insn_code icode, unsigned int nops,
-			      class expand_operand *ops);
+			      struct expand_operand *ops);
 
-extern enum rtx_code get_rtx_code_1 (enum tree_code tcode, bool unsignedp);
 extern enum rtx_code get_rtx_code (enum tree_code tcode, bool unsignedp);
-extern rtx vector_compare_rtx (machine_mode cmp_mode, enum tree_code tcode,
-			       tree t_op0, tree t_op1, bool unsignedp,
-			       enum insn_code icode, unsigned int opno);
-
 
 #endif /* GCC_OPTABS_H */

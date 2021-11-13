@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package context defines the Context type, which carries deadlines,
-// cancellation signals, and other request-scoped values across API boundaries
+// cancelation signals, and other request-scoped values across API boundaries
 // and between processes.
 //
 // Incoming requests to a server should create a Context, and outgoing
@@ -49,13 +49,13 @@ package context
 
 import (
 	"errors"
-	"internal/reflectlite"
+	"fmt"
+	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-// A Context carries a deadline, a cancellation signal, and other values across
+// A Context carries a deadline, a cancelation signal, and other values across
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
@@ -68,8 +68,6 @@ type Context interface {
 	// Done returns a channel that's closed when work done on behalf of this
 	// context should be canceled. Done may return nil if this context can
 	// never be canceled. Successive calls to Done return the same value.
-	// The close of the Done channel may happen asynchronously,
-	// after the cancel function returns.
 	//
 	// WithCancel arranges for Done to be closed when cancel is called;
 	// WithDeadline arranges for Done to be closed when the deadline
@@ -95,7 +93,7 @@ type Context interface {
 	//  }
 	//
 	// See https://blog.golang.org/pipelines for more examples of how to use
-	// a Done channel for cancellation.
+	// a Done channel for cancelation.
 	Done() <-chan struct{}
 
 	// If Done is not yet closed, Err returns nil.
@@ -219,7 +217,6 @@ func TODO() Context {
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.
-// A CancelFunc may be called by multiple goroutines simultaneously.
 // After the first call, subsequent calls to a CancelFunc do nothing.
 type CancelFunc func()
 
@@ -230,9 +227,6 @@ type CancelFunc func()
 // Canceling this context releases resources associated with it, so code should
 // call cancel as soon as the operations running in this Context complete.
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
-	if parent == nil {
-		panic("cannot create context from nil parent")
-	}
 	c := newCancelCtx(parent)
 	propagateCancel(parent, &c)
 	return &c, func() { c.cancel(true, Canceled) }
@@ -243,24 +237,11 @@ func newCancelCtx(parent Context) cancelCtx {
 	return cancelCtx{Context: parent}
 }
 
-// goroutines counts the number of goroutines ever created; for testing.
-var goroutines int32
-
 // propagateCancel arranges for child to be canceled when parent is.
 func propagateCancel(parent Context, child canceler) {
-	done := parent.Done()
-	if done == nil {
+	if parent.Done() == nil {
 		return // parent is never canceled
 	}
-
-	select {
-	case <-done:
-		// parent is already canceled
-		child.cancel(false, parent.Err())
-		return
-	default:
-	}
-
 	if p, ok := parentCancelCtx(parent); ok {
 		p.mu.Lock()
 		if p.err != nil {
@@ -274,7 +255,6 @@ func propagateCancel(parent Context, child canceler) {
 		}
 		p.mu.Unlock()
 	} else {
-		atomic.AddInt32(&goroutines, +1)
 		go func() {
 			select {
 			case <-parent.Done():
@@ -285,29 +265,22 @@ func propagateCancel(parent Context, child canceler) {
 	}
 }
 
-// &cancelCtxKey is the key that a cancelCtx returns itself for.
-var cancelCtxKey int
-
-// parentCancelCtx returns the underlying *cancelCtx for parent.
-// It does this by looking up parent.Value(&cancelCtxKey) to find
-// the innermost enclosing *cancelCtx and then checking whether
-// parent.Done() matches that *cancelCtx. (If not, the *cancelCtx
-// has been wrapped in a custom implementation providing a
-// different done channel, in which case we should not bypass it.)
+// parentCancelCtx follows a chain of parent references until it finds a
+// *cancelCtx. This function understands how each of the concrete types in this
+// package represents its parent.
 func parentCancelCtx(parent Context) (*cancelCtx, bool) {
-	done := parent.Done()
-	if done == closedchan || done == nil {
-		return nil, false
+	for {
+		switch c := parent.(type) {
+		case *cancelCtx:
+			return c, true
+		case *timerCtx:
+			return &c.cancelCtx, true
+		case *valueCtx:
+			parent = c.Context
+		default:
+			return nil, false
+		}
 	}
-	p, ok := parent.Value(&cancelCtxKey).(*cancelCtx)
-	if !ok {
-		return nil, false
-	}
-	pdone, _ := p.done.Load().(chan struct{})
-	if pdone != done {
-		return nil, false
-	}
-	return p, true
 }
 
 // removeChild removes a context from its parent.
@@ -343,31 +316,19 @@ type cancelCtx struct {
 	Context
 
 	mu       sync.Mutex            // protects following fields
-	done     atomic.Value          // of chan struct{}, created lazily, closed by first cancel call
+	done     chan struct{}         // created lazily, closed by first cancel call
 	children map[canceler]struct{} // set to nil by the first cancel call
 	err      error                 // set to non-nil by the first cancel call
 }
 
-func (c *cancelCtx) Value(key interface{}) interface{} {
-	if key == &cancelCtxKey {
-		return c
-	}
-	return c.Context.Value(key)
-}
-
 func (c *cancelCtx) Done() <-chan struct{} {
-	d := c.done.Load()
-	if d != nil {
-		return d.(chan struct{})
-	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	d = c.done.Load()
-	if d == nil {
-		d = make(chan struct{})
-		c.done.Store(d)
+	if c.done == nil {
+		c.done = make(chan struct{})
 	}
-	return d.(chan struct{})
+	d := c.done
+	c.mu.Unlock()
+	return d
 }
 
 func (c *cancelCtx) Err() error {
@@ -377,19 +338,8 @@ func (c *cancelCtx) Err() error {
 	return err
 }
 
-type stringer interface {
-	String() string
-}
-
-func contextName(c Context) string {
-	if s, ok := c.(stringer); ok {
-		return s.String()
-	}
-	return reflectlite.TypeOf(c).String()
-}
-
 func (c *cancelCtx) String() string {
-	return contextName(c.Context) + ".WithCancel"
+	return fmt.Sprintf("%v.WithCancel", c.Context)
 }
 
 // cancel closes c.done, cancels each of c's children, and, if
@@ -404,11 +354,10 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 		return // already canceled
 	}
 	c.err = err
-	d, _ := c.done.Load().(chan struct{})
-	if d == nil {
-		c.done.Store(closedchan)
+	if c.done == nil {
+		c.done = closedchan
 	} else {
-		close(d)
+		close(c.done)
 	}
 	for child := range c.children {
 		// NOTE: acquiring the child's lock while holding parent's lock.
@@ -432,9 +381,6 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 // Canceling this context releases resources associated with it, so code should
 // call cancel as soon as the operations running in this Context complete.
 func WithDeadline(parent Context, d time.Time) (Context, CancelFunc) {
-	if parent == nil {
-		panic("cannot create context from nil parent")
-	}
 	if cur, ok := parent.Deadline(); ok && cur.Before(d) {
 		// The current deadline is already sooner than the new one.
 		return WithCancel(parent)
@@ -474,9 +420,7 @@ func (c *timerCtx) Deadline() (deadline time.Time, ok bool) {
 }
 
 func (c *timerCtx) String() string {
-	return contextName(c.cancelCtx.Context) + ".WithDeadline(" +
-		c.deadline.String() + " [" +
-		time.Until(c.deadline).String() + "])"
+	return fmt.Sprintf("%v.WithDeadline(%s [%s])", c.cancelCtx.Context, c.deadline, time.Until(c.deadline))
 }
 
 func (c *timerCtx) cancel(removeFromParent bool, err error) {
@@ -521,13 +465,10 @@ func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {
 // struct{}. Alternatively, exported context key variables' static
 // type should be a pointer or interface.
 func WithValue(parent Context, key, val interface{}) Context {
-	if parent == nil {
-		panic("cannot create context from nil parent")
-	}
 	if key == nil {
 		panic("nil key")
 	}
-	if !reflectlite.TypeOf(key).Comparable() {
+	if !reflect.TypeOf(key).Comparable() {
 		panic("key is not comparable")
 	}
 	return &valueCtx{parent, key, val}
@@ -540,23 +481,8 @@ type valueCtx struct {
 	key, val interface{}
 }
 
-// stringify tries a bit to stringify v, without using fmt, since we don't
-// want context depending on the unicode tables. This is only used by
-// *valueCtx.String().
-func stringify(v interface{}) string {
-	switch s := v.(type) {
-	case stringer:
-		return s.String()
-	case string:
-		return s
-	}
-	return "<not Stringer>"
-}
-
 func (c *valueCtx) String() string {
-	return contextName(c.Context) + ".WithValue(type " +
-		reflectlite.TypeOf(c.key).String() +
-		", val " + stringify(c.val) + ")"
+	return fmt.Sprintf("%v.WithValue(%#v, %#v)", c.Context, c.key, c.val)
 }
 
 func (c *valueCtx) Value(key interface{}) interface{} {

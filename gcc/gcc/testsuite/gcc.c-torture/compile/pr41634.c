@@ -1,5 +1,3 @@
-/* { dg-require-stack-size "2*512 + 256" } */
-
 extern int _xgetw();
 extern int foo(char*);
 

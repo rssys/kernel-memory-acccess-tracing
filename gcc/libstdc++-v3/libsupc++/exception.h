@@ -1,6 +1,6 @@
 // Exception Handling support header for -*- C++ -*-
 
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -44,9 +44,8 @@ namespace std
   /**
    * @defgroup exceptions Exceptions
    * @ingroup diagnostics
-   * @since C++98
    *
-   * Classes and functions for reporting errors via exceptions.
+   * Classes and functions for reporting errors via exception classes.
    * @{
    */
 
@@ -75,8 +74,6 @@ namespace std
     virtual const char*
     what() const _GLIBCXX_TXN_SAFE_DYN _GLIBCXX_NOTHROW;
   };
-
-  /// @}
 
 } // namespace std
 

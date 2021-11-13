@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,7 +36,6 @@ with Ada.Iterator_Interfaces;
 private with Ada.Containers.Red_Black_Trees;
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 generic
    type Key_Type is private;
@@ -45,9 +44,7 @@ generic
    with function "<" (Left, Right : Key_Type) return Boolean is <>;
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Ordered_Maps with
-  SPARK_Mode => Off
-is
+package Ada.Containers.Ordered_Maps is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -58,18 +55,12 @@ is
       Constant_Indexing => Constant_Reference,
       Variable_Indexing => Reference,
       Default_Iterator  => Iterate,
-      Iterator_Element  => Element_Type,
-      Aggregate         => (Empty     => Empty,
-                            Add_Named => Insert);
-   pragma Preelaborable_Initialization (Map);
+      Iterator_Element  => Element_Type;
 
    type Cursor is private;
    pragma Preelaborable_Initialization (Cursor);
 
    Empty_Map : constant Map;
-
-   function Empty return Map;
-   pragma Ada_2022 (Empty);
 
    No_Element : constant Cursor;
 
@@ -264,10 +255,7 @@ private
 
    type Map is new Ada.Finalization.Controlled with record
       Tree : Tree_Types.Tree_Type;
-   end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Map);
+   end record;
 
    overriding procedure Adjust (Container : in out Map);
 
@@ -377,7 +365,6 @@ private
    --  Returns a pointer to the element designated by Position.
 
    Empty_Map : constant Map := (Controlled with others => <>);
-   function Empty return Map is (Empty_Map);
 
    No_Element : constant Cursor := Cursor'(null, null);
 

@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
 
 # Script to compare testsuite failures against a list of known-to-fail
 # tests.
+#
+# NOTE: This script is used in installations that are running Python 2.4.
+#       Please stick to syntax features available in 2.4 and earlier
+#       versions.
 
 # Contributed by Diego Novillo <dnovillo@google.com>
 #
@@ -78,7 +82,7 @@ _MANIFEST_PATH_PATTERN = '%s/%s/%s.xfail'
 _OPTIONS = None
 
 def Error(msg):
-  print('error: %s' % msg, file=sys.stderr)
+  print >>sys.stderr, 'error: %s' % msg
   sys.exit(1)
 
 
@@ -122,7 +126,7 @@ class TestResult(object):
          self.description) = re.match(r'([A-Z]+):\s*(\S+)\s*(.*)',
                                       summary_line).groups()
       except:
-        print('Failed to parse summary line: "%s"' % summary_line)
+        print 'Failed to parse summary line: "%s"' % summary_line
         raise
       self.ordinal = ordinal
     except ValueError:
@@ -176,7 +180,7 @@ class TestResult(object):
 
 def GetMakefileValue(makefile_name, value_name):
   if os.path.exists(makefile_name):
-    makefile = open(makefile_name, encoding='latin-1', mode='r')
+    makefile = open(makefile_name)
     for line in makefile:
       if line.startswith(value_name):
         (_, value) = line.split('=', 1)
@@ -242,8 +246,8 @@ def GetNegativeResult(line):
 def ParseManifestWorker(result_set, manifest_path):
   """Read manifest_path, adding the contents to result_set."""
   if _OPTIONS.verbosity >= 1:
-    print('Parsing manifest file %s.' % manifest_path)
-  manifest_file = open(manifest_path, encoding='latin-1', mode='r')
+    print 'Parsing manifest file %s.' % manifest_path
+  manifest_file = open(manifest_path)
   for line in manifest_file:
     line = line.strip()
     if line == "":
@@ -274,7 +278,7 @@ def ParseSummary(sum_fname):
   # ordinal is used when sorting the results so that tests within each
   # .exp file are kept sorted.
   ordinal=0
-  sum_file = open(sum_fname, encoding='latin-1', mode='r')
+  sum_file = open(sum_fname)
   for line in sum_file:
     if IsInterestingResult(line):
       result = TestResult(line, ordinal)
@@ -283,7 +287,7 @@ def ParseSummary(sum_fname):
         # Tests that have expired are not added to the set of expected
         # results. If they are still present in the set of actual results,
         # they will cause an error to be reported.
-        print('WARNING: Expected failure "%s" has expired.' % line.strip())
+        print 'WARNING: Expected failure "%s" has expired.' % line.strip()
         continue
       result_set.add(result)
   sum_file.close()
@@ -320,7 +324,7 @@ def GetResults(sum_files):
   """Collect all the test results from the given .sum files."""
   build_results = set()
   for sum_fname in sum_files:
-    print('\t%s' % sum_fname)
+    print '\t%s' % sum_fname
     build_results |= ParseSummary(sum_fname)
   return build_results
 
@@ -383,23 +387,23 @@ def GetBuildData():
       return None, None
   srcdir = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'srcdir =')
   target = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'target_alias=')
-  print('Source directory: %s' % srcdir)
-  print('Build target:     %s' % target)
+  print 'Source directory: %s' % srcdir
+  print 'Build target:     %s' % target
   return srcdir, target
 
 
 def PrintSummary(msg, summary):
-  print('\n\n%s' % msg)
+  print '\n\n%s' % msg
   for result in sorted(summary):
-    print(result)
+    print result
 
 
 def GetSumFiles(results, build_dir):
   if not results:
-    print('Getting actual results from build directory %s' % build_dir)
+    print 'Getting actual results from build directory %s' % build_dir
     sum_files = CollectSumFiles(build_dir)
   else:
-    print('Getting actual results from user-provided results')
+    print 'Getting actual results from user-provided results'
     sum_files = results.split()
   return sum_files
 
@@ -421,7 +425,7 @@ def PerformComparison(expected, actual, ignore_missing_failures):
                  expected_vs_actual)
 
   if tests_ok:
-    print('\nSUCCESS: No unexpected failures.')
+    print '\nSUCCESS: No unexpected failures.'
 
   return tests_ok
 
@@ -429,7 +433,7 @@ def PerformComparison(expected, actual, ignore_missing_failures):
 def CheckExpectedResults():
   srcdir, target = GetBuildData()
   manifest_path = GetManifestPath(srcdir, target, True)
-  print('Manifest:         %s' % manifest_path)
+  print 'Manifest:         %s' % manifest_path
   manifest = GetManifest(manifest_path)
   sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
@@ -444,16 +448,16 @@ def CheckExpectedResults():
 def ProduceManifest():
   (srcdir, target) = GetBuildData()
   manifest_path = GetManifestPath(srcdir, target, False)
-  print('Manifest:         %s' % manifest_path)
+  print 'Manifest:         %s' % manifest_path
   if os.path.exists(manifest_path) and not _OPTIONS.force:
     Error('Manifest file %s already exists.\nUse --force to overwrite.' %
           manifest_path)
 
   sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
-  manifest_file = open(manifest_path, encoding='latin-1', mode='w')
+  manifest_file = open(manifest_path, 'w')
   for result in sorted(actual):
-    print(result)
+    print result
     manifest_file.write('%s\n' % result)
   manifest_file.close()
 

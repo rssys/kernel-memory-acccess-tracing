@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build ignore
+
 package mail_test
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"net/mail"
 	"strings"
@@ -62,7 +64,7 @@ Message body
 	fmt.Println("To:", header.Get("To"))
 	fmt.Println("Subject:", header.Get("Subject"))
 
-	body, err := io.ReadAll(m.Body)
+	body, err := ioutil.ReadAll(m.Body)
 	if err != nil {
 		log.Fatal(err)
 	}

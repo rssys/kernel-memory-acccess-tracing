@@ -8,7 +8,6 @@
  */
 module core.sys.windows.lmsvc;
 version (Windows):
-@system:
 
 // FIXME: Is this file deprecated? All of the functions are only for Win16.
 /**
@@ -17,7 +16,7 @@ version (Windows):
 */
 // TODO: 5 macros
 
-import core.sys.windows.lmcons, core.sys.windows.lmsname, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.lmsname, core.sys.windows.windef;
 
 const TCHAR[] SERVICE_DOS_ENCRYPTION = "ENCRYPT";
 

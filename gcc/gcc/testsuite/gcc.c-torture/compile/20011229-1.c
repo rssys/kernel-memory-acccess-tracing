@@ -1,8 +1,5 @@
 /* ICE: call insn does not satisfy its constraints, MMIX port.
    Origin: ghostscript-6.52, reduction from hp@bitrange.com.  */
-
-/* { dg-require-effective-target indirect_calls } */
-
 struct s0
 {
   void (*init_color)(void *, void *);

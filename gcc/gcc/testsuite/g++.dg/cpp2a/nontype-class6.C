@@ -1,4 +1,4 @@
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 struct A {
   char ar[10];

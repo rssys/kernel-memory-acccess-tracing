@@ -1,5 +1,5 @@
 /* A self-testing framework, for use by -fself-test.
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -89,13 +89,13 @@ assert_streq (const location &loc,
 	if (strcmp (val1, val2) == 0)
 	  pass (loc, "ASSERT_STREQ");
 	else
-	  fail_formatted (loc, "ASSERT_STREQ (%s, %s)\n val1=\"%s\"\n val2=\"%s\"\n",
+	  fail_formatted (loc, "ASSERT_STREQ (%s, %s) val1=\"%s\" val2=\"%s\"",
 			  desc_val1, desc_val2, val1, val2);
       }
 }
 
 /* Implementation detail of ASSERT_STR_CONTAINS.
-   Use strstr to determine if val_needle is within val_haystack.
+   Use strstr to determine if val_needle is is within val_haystack.
    ::selftest::pass if it is found.
    ::selftest::fail if it is not found.  */
 
@@ -150,7 +150,8 @@ assert_str_startswith (const location &loc,
 		    "ASSERT_STR_STARTSWITH (%s, %s) str=\"%s\" prefix=NULL",
 		    desc_str, desc_prefix, val_str);
 
-  if (startswith (val_str, val_prefix))
+  const char *test = strstr (val_str, val_prefix);
+  if (test == val_str)
     pass (loc, "ASSERT_STR_STARTSWITH");
   else
     fail_formatted
@@ -189,21 +190,6 @@ temp_source_file::temp_source_file (const location &loc,
   if (!out)
     fail_formatted (loc, "unable to open tempfile: %s", get_filename ());
   fprintf (out, "%s", content);
-  fclose (out);
-}
-
-/* As above, but with a size, to allow for NUL bytes in CONTENT.  */
-
-temp_source_file::temp_source_file (const location &loc,
-				    const char *suffix,
-				    const char *content,
-				    size_t sz)
-: named_temp_file (suffix)
-{
-  FILE *out = fopen (get_filename (), "w");
-  if (!out)
-    fail_formatted (loc, "unable to open tempfile: %s", get_filename ());
-  fwrite (content, sz, 1, out);
   fclose (out);
 }
 

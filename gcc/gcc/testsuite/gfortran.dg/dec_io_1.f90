@@ -1,4 +1,4 @@
-! { dg-do run { target fd_truncate } }
+! { dg-do run }
 ! { dg-options "-fdec" }
 !
 ! Run-time tests for values of DEC I/O parameters (doesn't test functionality).

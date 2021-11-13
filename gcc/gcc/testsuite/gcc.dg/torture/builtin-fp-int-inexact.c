@@ -1,6 +1,7 @@
 /* Test -fno-fp-int-builtin-inexact.  */
 /* { dg-do run } */
 /* { dg-options "-fno-fp-int-builtin-inexact" } */
+/* { dg-add-options c99_runtime } */
 /* { dg-require-effective-target fenv_exceptions } */
 
 #include <fenv.h>

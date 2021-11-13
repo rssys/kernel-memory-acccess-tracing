@@ -1,4 +1,4 @@
-/* { dg-additional-options "-msse4" { target sse4_runtime } } */
+/* { dg-require-effective-target vect_bswap } */
 
 #include "tree-vect.h"
 
@@ -39,4 +39,4 @@ main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target { vect_bswap || sse4_runtime } } } } */
+/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */

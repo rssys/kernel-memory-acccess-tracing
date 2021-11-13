@@ -10,13 +10,12 @@
  */
 module core.sys.windows.ocidl;
 version (Windows):
-@system:
 
-import core.sys.windows.ole2, core.sys.windows.oleidl, core.sys.windows.oaidl, core.sys.windows.objfwd,
+private import core.sys.windows.ole2, core.sys.windows.oleidl, core.sys.windows.oaidl, core.sys.windows.objfwd,
   core.sys.windows.windef, core.sys.windows.wtypes;
-import core.sys.windows.objidl;  // for CLIPFORMAT
-import core.sys.windows.wingdi;  // for TEXTMETRICW
-import core.sys.windows.winuser; // for LPMSG
+private import core.sys.windows.objidl;  // for CLIPFORMAT
+private import core.sys.windows.wingdi;  // for TEXTMETRICW
+private import core.sys.windows.winuser; // for LPMSG
 
 interface IBindHost : IUnknown {}
 
@@ -26,8 +25,8 @@ interface IServiceProvider : IUnknown{
 
 /*
 // TODO:
-//import core.sys.windows.servprov; // for IServiceProvider
-// import core.sys.windows.urlmon; // for IBindHost. This is not included in MinGW.
+//private import core.sys.windows.servprov; // for IServiceProvider
+// private import core.sys.windows.urlmon; // for IBindHost. This is not included in MinGW.
 
 // core.sys.windows.urlmon should contain:
 interface IBindHost : IUnknown

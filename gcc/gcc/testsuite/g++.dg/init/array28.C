@@ -2,6 +2,6 @@
 
 struct Foo { explicit Foo(int) { } };
 struct Goo {
-  Goo() : x(Foo(4), Foo(5)) { } // { dg-error "" "" { target { ! c++20 } } }
+  Goo() : x(Foo(4), Foo(5)) { } // { dg-error "array" }
   Foo x[2];
 };

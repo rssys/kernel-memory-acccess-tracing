@@ -33,9 +33,6 @@ func Dim(x, y float64) float64 {
 //	Max(+0, ±0) = Max(±0, +0) = +0
 //	Max(-0, -0) = -0
 func Max(x, y float64) float64 {
-	if haveArchMax {
-		return archMax(x, y)
-	}
 	return max(x, y)
 }
 
@@ -65,9 +62,6 @@ func max(x, y float64) float64 {
 //	Min(x, NaN) = Min(NaN, x) = NaN
 //	Min(-0, ±0) = Min(±0, -0) = -0
 func Min(x, y float64) float64 {
-	if haveArchMin {
-		return archMin(x, y)
-	}
 	return min(x, y)
 }
 

@@ -37,8 +37,10 @@ main(int argc, char **argv)
       imin = idata[i] < imin ? idata[i] : imin;
     }
 
-  if (imax != 1234 || imin < 0 || imin > 1)
+  if (imax != 1234 || imin != 0)
     abort ();
+
+  return 0;
 
   igot = 0;
   iexp = 32;
@@ -441,16 +443,17 @@ main(int argc, char **argv)
     }
   }
 
-  int ones = 0, zeros = 0;
-
   for (i = 0; i < N; i++)
-    if (idata[i] == 1)
-      ones++;
-    else if (idata[i] == 0)
-      zeros++;
-
-  if (ones != N / 2 || zeros != N / 2)
-    abort ();
+    if (i % 2 == 0)
+      {
+	if (idata[i] != 1)
+	  abort ();
+      }
+    else
+      {
+	if (idata[i] != 0)
+	  abort ();
+      }
 
   if (iexp != igot)
     abort ();
@@ -488,16 +491,17 @@ main(int argc, char **argv)
       }
   }
 
-  ones = zeros = 0;
-
   for (i = 0; i < N; i++)
-    if (idata[i] == 1)
-      ones++;
-    else if (idata[i] == 0)
-      zeros++;
-
-  if (ones != N / 2 || zeros != N / 2)
-    abort ();
+    if (i % 2 == 0)
+      {
+	if (idata[i] != 0)
+	  abort ();
+      }
+    else
+      {
+	if (idata[i] != 1)
+	  abort ();
+      }
 
   if (iexp != igot)
     abort ();
@@ -575,7 +579,7 @@ main(int argc, char **argv)
   if (lexp != lgot)
     abort ();
 
-  lgot = 2LL << N;
+  lgot = 2LL;
   lexp = 2LL;
 
 #pragma acc data copy (lgot, ldata[0:N])
@@ -583,7 +587,7 @@ main(int argc, char **argv)
 #pragma acc parallel loop
     for (i = 0; i < N; i++)
       {
-	long long expr = 2LL;
+        long long expr = 1LL << N;
 
 #pragma acc atomic capture
         { lgot = lgot / expr; ldata[i] = lgot; }
@@ -1446,16 +1450,17 @@ main(int argc, char **argv)
       }
   }
 
-  ones = zeros = 0;
-
   for (i = 0; i < N; i++)
-    if (fdata[i] == 1.0)
-      ones++;
-    else if (fdata[i] == 0.0)
-      zeros++;
-
-  if (ones != N / 2 || zeros != N / 2)
-    abort ();
+    if (i % 2 == 0)
+      {
+	if (fdata[i] != 1.0)
+	  abort ();
+      }
+    else
+      {
+	if (fdata[i] != 0.0)
+	  abort ();
+      }
 
   if (fexp != fgot)
     abort ();
@@ -1493,16 +1498,17 @@ main(int argc, char **argv)
       }
   }
 
-  ones = zeros = 0;
-
   for (i = 0; i < N; i++)
-    if (fdata[i] == 1.0)
-      ones++;
-    else if (fdata[i] == 0.0)
-      zeros++;
-
-  if (ones != N / 2 || zeros != N / 2)
-    abort ();
+    if (i % 2 == 0)
+      {
+	if (fdata[i] != 0.0)
+	  abort ();
+      }
+    else
+      {
+	if (fdata[i] != 1.0)
+	  abort ();
+      }
 
   if (fexp != fgot)
     abort ();
@@ -1563,7 +1569,7 @@ main(int argc, char **argv)
     abort ();
 
   fgot = 8192.0*8192.0*64.0;
-  fexp = fgot;
+  fexp = 1.0;
 
 #pragma acc data copy (fgot, fdata[0:N])
   {
@@ -1580,15 +1586,15 @@ main(int argc, char **argv)
   if (fexp != fgot)
     abort ();
 
-  fgot = 2.0 * (1LL << N);
-  fexp = 2.0;
+  fgot = 4.0;
+  fexp = 4.0;
 
 #pragma acc data copy (fgot, fdata[0:N])
   {
 #pragma acc parallel loop
     for (i = 0; i < N; i++)
       {
-	long long expr = 2LL;
+        long long expr = 1LL << N;
 
 #pragma acc atomic capture
         { fgot = fgot / expr; fdata[i] = fgot; }

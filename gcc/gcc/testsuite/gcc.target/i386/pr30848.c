@@ -2,5 +2,5 @@
 
 void foo(double d)
 {
-  __asm__ ("" : "=u" (d));  /* { dg-error "output registers" } */
+  __asm__ ("" : "=u" (d));  /* { dg-error "output regs" } */
 }

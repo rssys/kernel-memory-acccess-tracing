@@ -1,4 +1,4 @@
-// Copyright (C) 2006-2021 Free Software Foundation, Inc.
+// Copyright (C) 2006-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,15 +19,14 @@
 
 #include <set>
 #include <testsuite_hooks.h>
-#include <testsuite_allocator.h>
 
 // libstdc++/29134
 void test01()
 {
   std::set<int> s;
 
-  std::allocator<std::_Rb_tree_node<int> > a;
-  VERIFY( s.max_size() == __gnu_test::max_size(a) );
+  VERIFY( s.max_size() ==
+	  std::allocator<std::_Rb_tree_node<int> >().max_size() );
 }
 
 int main()

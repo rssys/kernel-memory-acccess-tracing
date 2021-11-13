@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || (js && wasm) || linux || netbsd || openbsd || solaris || windows
-// +build aix darwin dragonfly freebsd hurd js,wasm linux netbsd openbsd solaris windows
+// +build aix darwin dragonfly freebsd hurd js,wasm linux nacl netbsd openbsd solaris windows
 
 package net
 
@@ -141,16 +140,7 @@ func (ln *TCPListener) accept() (*TCPConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc := newTCPConn(fd)
-	if ln.lc.KeepAlive >= 0 {
-		setKeepAlive(fd, true)
-		ka := ln.lc.KeepAlive
-		if ln.lc.KeepAlive == 0 {
-			ka = defaultTCPKeepAlive
-		}
-		setKeepAlivePeriod(fd, ka)
-	}
-	return tc, nil
+	return newTCPConn(fd), nil
 }
 
 func (ln *TCPListener) close() error {
@@ -170,5 +160,5 @@ func (sl *sysListener) listenTCP(ctx context.Context, laddr *TCPAddr) (*TCPListe
 	if err != nil {
 		return nil, err
 	}
-	return &TCPListener{fd: fd, lc: sl.ListenConfig}, nil
+	return &TCPListener{fd}, nil
 }

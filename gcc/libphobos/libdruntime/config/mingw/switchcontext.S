@@ -1,5 +1,5 @@
 /* Windows i386 support code for fibers and multithreading.
-   Copyright (C) 2019-2021 Free Software Foundation, Inc.
+   Copyright (C) 2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -28,10 +28,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
     .text
     .globl CSYM(fiber_switchContext)
-    .def CSYM(fiber_switchContext)
-    .scl 2
-    .type 32
-    .endef
+    .type CSYM(fiber_switchContext), @function
     .align 16
 CSYM(fiber_switchContext):
     .cfi_startproc
@@ -66,15 +63,13 @@ CSYM(fiber_switchContext):
     popq %RCX;
     jmp *%RCX;
     .cfi_endproc
+    .size CSYM(fiber_switchContext),.-CSYM(fiber_switchContext)
 
 #elif defined(_X86_)
 
     .text
     .globl CSYM(fiber_switchContext)
-    .def CSYM(fiber_switchContext)
-    .scl 2
-    .type 32
-    .endef
+    .type CSYM(fiber_switchContext), @function
     .align 16
 CSYM(fiber_switchContext):
     .cfi_startproc
@@ -109,5 +104,6 @@ CSYM(fiber_switchContext):
     // 'return' to complete switch
     ret;
     .cfi_endproc
+    .size CSYM(fiber_switchContext),.-CSYM(fiber_switchContext)
 
 #endif

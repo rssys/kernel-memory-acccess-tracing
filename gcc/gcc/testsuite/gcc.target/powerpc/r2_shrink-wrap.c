@@ -1,5 +1,5 @@
 /* { dg-do compile { target lp64 } } */
-/* { dg-options "-O2 -fdump-rtl-pro_and_epilogue -mno-pcrel" } */
+/* { dg-options "-O2 -fdump-rtl-pro_and_epilogue" } */
 
 /* Verify we move the prologue past the TOC reference of 'j' and shrink-wrap
    the function. */

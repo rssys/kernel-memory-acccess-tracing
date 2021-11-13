@@ -1,9 +1,10 @@
 // { dg-do run }
-// { dg-additional-options "-pthread" { target pthread } }
+// { dg-options "-pthread"  }
 // { dg-require-effective-target c++14 }
+// { dg-require-effective-target pthread }
 // { dg-require-gthreads "" }
 
-// Copyright (C) 2013-2021 Free Software Foundation, Inc.
+// Copyright (C) 2013-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -26,8 +27,7 @@
 #include <system_error>
 #include <testsuite_hooks.h>
 
-template <typename clock_type>
-void test()
+int main()
 {
   typedef std::shared_timed_mutex mutex_type;
 
@@ -42,15 +42,15 @@ void test()
           {
             using namespace std::chrono;
             auto timeout = 100ms;
-            auto start = clock_type::now();
+            auto start = system_clock::now();
             b = m.try_lock_for(timeout);
-            auto t = clock_type::now() - start;
+            auto t = system_clock::now() - start;
             VERIFY( !b );
             VERIFY( t >= timeout );
 
-            start = clock_type::now();
+            start = system_clock::now();
             b = m.try_lock_until(start + timeout);
-            t = clock_type::now() - start;
+            t = system_clock::now() - start;
             VERIFY( !b );
             VERIFY( t >= timeout );
           }
@@ -70,10 +70,4 @@ void test()
     {
       VERIFY( false );
     }
-}
-
-int main()
-{
-  test<std::chrono::system_clock>();
-  test<std::chrono::steady_clock>();
 }

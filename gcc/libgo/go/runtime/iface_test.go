@@ -95,19 +95,6 @@ func BenchmarkNeIfaceConcrete(b *testing.B) {
 	}
 }
 
-func BenchmarkConvT2EByteSized(b *testing.B) {
-	b.Run("bool", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			e = yes
-		}
-	})
-	b.Run("uint8", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			e = eight8
-		}
-	})
-}
-
 func BenchmarkConvT2ESmall(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		e = ts
@@ -335,22 +322,18 @@ func TestZeroConvT2x(t *testing.T) {
 var (
 	eight8  uint8 = 8
 	eight8I T8    = 8
-	yes     bool  = true
 
-	zero16     uint16 = 0
-	zero16I    T16    = 0
-	one16      uint16 = 1
-	thousand16 uint16 = 1000
+	zero16  uint16 = 0
+	zero16I T16    = 0
+	one16   uint16 = 1
 
-	zero32     uint32 = 0
-	zero32I    T32    = 0
-	one32      uint32 = 1
-	thousand32 uint32 = 1000
+	zero32  uint32 = 0
+	zero32I T32    = 0
+	one32   uint32 = 1
 
-	zero64     uint64 = 0
-	zero64I    T64    = 0
-	one64      uint64 = 1
-	thousand64 uint64 = 1000
+	zero64  uint64 = 0
+	zero64I T64    = 0
+	one64   uint64 = 1
 
 	zerostr  string = ""
 	zerostrI Tstr   = ""
@@ -398,23 +381,6 @@ func BenchmarkConvT2Ezero(b *testing.B) {
 		})
 	})
 	b.Run("nonzero", func(b *testing.B) {
-		b.Run("str", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				e = nzstr
-			}
-		})
-		b.Run("slice", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				e = nzslice
-			}
-		})
-		b.Run("big", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				e = nzbig
-			}
-		})
-	})
-	b.Run("smallint", func(b *testing.B) {
 		b.Run("16", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				e = one16
@@ -430,21 +396,19 @@ func BenchmarkConvT2Ezero(b *testing.B) {
 				e = one64
 			}
 		})
-	})
-	b.Run("largeint", func(b *testing.B) {
-		b.Run("16", func(b *testing.B) {
+		b.Run("str", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				e = thousand16
+				e = nzstr
 			}
 		})
-		b.Run("32", func(b *testing.B) {
+		b.Run("slice", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				e = thousand32
+				e = nzslice
 			}
 		})
-		b.Run("64", func(b *testing.B) {
+		b.Run("big", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				e = thousand64
+				e = nzbig
 			}
 		})
 	})

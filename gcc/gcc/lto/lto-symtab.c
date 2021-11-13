@@ -1,5 +1,5 @@
 /* LTO symbol table.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -63,19 +63,12 @@ lto_cgraph_replace_node (struct cgraph_node *node,
     prevailing_node->forced_by_abi = true;
   if (node->address_taken)
     {
-      gcc_assert (!prevailing_node->inlined_to);
+      gcc_assert (!prevailing_node->global.inlined_to);
       prevailing_node->mark_address_taken ();
     }
   if (node->definition && prevailing_node->definition
       && DECL_COMDAT (node->decl) && DECL_COMDAT (prevailing_node->decl))
     prevailing_node->merged_comdat = true;
-  else if ((node->definition || node->body_removed)
-	   && DECL_DECLARED_INLINE_P (node->decl)
-	   && DECL_EXTERNAL (node->decl)
-	   && prevailing_node->definition)
-    prevailing_node->merged_extern_inline = true;
-  prevailing_node->merged_comdat |= node->merged_comdat;
-  prevailing_node->merged_extern_inline |= node->merged_extern_inline;
 
   /* Redirect all incoming edges.  */
   compatible_p
@@ -563,8 +556,7 @@ lto_symtab_merge_p (tree prevailing, tree decl)
 	}
       if (fndecl_built_in_p (prevailing)
 	  && (DECL_BUILT_IN_CLASS (prevailing) != DECL_BUILT_IN_CLASS (decl)
-	      || (DECL_UNCHECKED_FUNCTION_CODE (prevailing)
-		  != DECL_UNCHECKED_FUNCTION_CODE (decl))))
+	      || DECL_FUNCTION_CODE (prevailing) != DECL_FUNCTION_CODE (decl)))
 	{
 	  if (dump_file)
 	    fprintf (dump_file, "Not merging decls; "
@@ -694,8 +686,8 @@ lto_symtab_merge_decls_2 (symtab_node *first, bool diagnosed_p)
 	 location in that case.  It also happens for AVR if two built-ins
 	 use the same asm name because their libgcc assembler code is the
 	 same, see PR78562.  */
-      if (DECL_IS_UNDECLARED_BUILTIN (prevailing->decl)
-	  && DECL_IS_UNDECLARED_BUILTIN (decl))
+      if (DECL_IS_BUILTIN (prevailing->decl)
+	  && DECL_IS_BUILTIN (decl))
 	continue;
 
       int level = warn_type_compatibility_p (TREE_TYPE (prevailing->decl),
@@ -917,7 +909,7 @@ lto_symtab_merge_symbols_1 (symtab_node *prevailing)
       cgraph_node *ce = dyn_cast <cgraph_node *> (e);
 
       if ((!TREE_PUBLIC (e->decl) && !DECL_EXTERNAL (e->decl))
-	  || (ce != NULL && ce->inlined_to))
+	  || (ce != NULL && ce->global.inlined_to))
 	continue;
       symtab_node *to = symtab_node::get (lto_symtab_prevailing_decl (e->decl));
 
@@ -985,7 +977,7 @@ lto_symtab_merge_symbols (void)
       /* Do the actual merging.  
 	 At this point we invalidate hash translating decls into symtab nodes
 	 because after removing one of duplicate decls the hash is not correcly
-	 updated to the other duplicate.  */
+	 updated to the ohter dupliate.  */
       FOR_EACH_SYMBOL (node)
 	if (lto_symtab_symbol_p (node)
 	    && node->next_sharing_asm_name
@@ -1081,8 +1073,7 @@ lto_symtab_merge_symbols (void)
 }
 
 /* Virtual tables may matter for code generation even if they are not
-   directly referenced by the code because they may be used for
-   devirtualization.
+   directly refernced by the code because they may be used for devirtualizaiton.
    For this reason it is important to merge even virtual tables that have no
    associated symbol table entries.  Without doing so we lose optimization
    oppurtunities by losing track of the vtable constructor.

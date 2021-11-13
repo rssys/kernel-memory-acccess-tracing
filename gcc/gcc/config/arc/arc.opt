@@ -1,6 +1,6 @@
 ; Options for the Synopsys DesignWare ARC port of the compiler
 ;
-; Copyright (C) 2005-2021 Free Software Foundation, Inc.
+; Copyright (C) 2005-2019 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -22,44 +22,44 @@ HeaderInclude
 config/arc/arc-opts.h
 
 mbig-endian
-Target RejectNegative Mask(BIG_ENDIAN)
+Target Report RejectNegative Mask(BIG_ENDIAN)
 Compile code for big endian mode.
 
 mlittle-endian
-Target RejectNegative InverseMask(BIG_ENDIAN)
+Target Report RejectNegative InverseMask(BIG_ENDIAN)
 Compile code for little endian mode.  This is the default.
 
 mno-cond-exec
-Target RejectNegative Mask(NO_COND_EXEC)
+Target Report RejectNegative Mask(NO_COND_EXEC)
 Disable ARCompact specific pass to generate conditional execution instructions.
 
 mA6
-Target
+Target Report
 Generate ARCompact 32-bit code for ARC600 processor.
 
 mARC600
-Target
+Target Report
 Same as -mA6.
 
 mARC601
-Target
+Target Report
 Generate ARCompact 32-bit code for ARC601 processor.
 
 mA7
-Target
+Target Report
 Generate ARCompact 32-bit code for ARC700 processor.
 
 mARC700
-Target
+Target Report
 Same as -mA7.
 
 mjli-always
-Target Mask(JLI_ALWAYS)
+Target Report Mask(JLI_ALWAYS)
 Force all calls to be made via a jli instruction.
 
 mmpy-option=
 Target RejectNegative Joined Enum(arc_mpy) Var(arc_mpy_option) Init(DEFAULT_arc_mpy_option)
--mmpy-option=MPY	Compile ARCv2 code with a multiplier design option.
+-mmpy-option=MPY Compile ARCv2 code with a multiplier design option.
 
 Enum
 Name(arc_mpy) Type(int)
@@ -128,105 +128,109 @@ EnumValue
 Enum(arc_mpy) String(plus_qmacw) Value(9) Canonical
 
 mdiv-rem
-Target Mask(DIVREM)
+Target Report Mask(DIVREM)
 Enable DIV-REM instructions for ARCv2.
 
 mcode-density
-Target Mask(CODE_DENSITY)
+Target Report Mask(CODE_DENSITY)
 Enable code density instructions for ARCv2.
 
 mmixed-code
-Target Ignore
-Does nothing.  Preserved for backward compatibility.
+Target Report Mask(MIXED_CODE_SET)
+Tweak register allocation to help 16-bit instruction generation.
+; originally this was:
+;Generate ARCompact 16-bit instructions intermixed with 32-bit instructions
+; but we do that without -mmixed-code, too, it's just a different instruction
+; count / size tradeoff.
 
 ; We use an explict definition for the negative form because that is the
 ; actually interesting option, and we want that to have its own comment.
 mvolatile-cache
-Target RejectNegative Mask(VOLATILE_CACHE_SET)
+Target Report RejectNegative Mask(VOLATILE_CACHE_SET)
 Use ordinarily cached memory accesses for volatile references.
 
 mno-volatile-cache
-Target RejectNegative InverseMask(VOLATILE_CACHE_SET)
+Target Report RejectNegative InverseMask(VOLATILE_CACHE_SET)
 Enable cache bypass for volatile references.
 
 mbarrel-shifter
-Target Mask(BARREL_SHIFTER)
+Target Report Mask(BARREL_SHIFTER)
 Generate instructions supported by barrel shifter.
 
 mnorm
-Target Mask(NORM_SET)
+Target Report Mask(NORM_SET)
 Generate norm instruction.
 
 mswap
-Target Mask(SWAP_SET)
+Target Report Mask(SWAP_SET)
 Generate swap instruction.
 
 mmul64
-Target Mask(MUL64_SET)
+Target Report Mask(MUL64_SET)
 Generate mul64 and mulu64 instructions.
 
 mno-mpy
-Target Mask(NOMPY_SET) Warn(%qs is deprecated)
+Target Report Mask(NOMPY_SET) Warn(%qs is deprecated)
 Do not generate mpy instructions for ARC700.
 
 mea
-Target Mask(EA_SET)
-Generate extended arithmetic instructions, only valid for ARC700.
+Target Report Mask(EA_SET)
+Generate Extended arithmetic instructions.  Currently only divaw, adds, subs and sat16 are supported.
 
 msoft-float
-Target Mask(0)
+Target Report Mask(0)
 Dummy flag. This is the default unless FPX switches are provided explicitly.
 
 mlong-calls
-Target Mask(LONG_CALLS_SET)
+Target Report Mask(LONG_CALLS_SET)
 Generate call insns as register indirect calls.
 
 mno-brcc
-Target Mask(NO_BRCC_SET)
+Target Report Mask(NO_BRCC_SET)
 Do no generate BRcc instructions in arc_reorg.
 
 msdata
-Target InverseMask(NO_SDATA_SET)
+Target Report InverseMask(NO_SDATA_SET)
 Generate sdata references.  This is the default, unless you compile for PIC.
 
 mmillicode
-Target Mask(MILLICODE_THUNK_SET)
+Target Report Mask(MILLICODE_THUNK_SET)
 Generate millicode thunks.
 
 mspfp
-Target Mask(SPFP_COMPACT_SET)
+Target Report Mask(SPFP_COMPACT_SET)
 FPX: Generate Single Precision FPX (compact) instructions.
 
 mspfp-compact
-Target Mask(SPFP_COMPACT_SET) MaskExists
+Target Report Mask(SPFP_COMPACT_SET) MaskExists
 FPX: Generate Single Precision FPX (compact) instructions.
 
 mspfp-fast
-Target Mask(SPFP_FAST_SET)
+Target Report Mask(SPFP_FAST_SET)
 FPX: Generate Single Precision FPX (fast) instructions.
 
 margonaut
-Target Mask(ARGONAUT_SET)
+Target Report Mask(ARGONAUT_SET)
 FPX: Enable Argonaut ARC CPU Double Precision Floating Point extensions.
 
 mdpfp
-Target Mask(DPFP_COMPACT_SET)
+Target Report Mask(DPFP_COMPACT_SET)
 FPX: Generate Double Precision FPX (compact) instructions.
 
 mdpfp-compact
-Target Mask(DPFP_COMPACT_SET) MaskExists
+Target Report Mask(DPFP_COMPACT_SET) MaskExists
 FPX: Generate Double Precision FPX (compact) instructions.
 
 mdpfp-fast
-Target Mask(DPFP_FAST_SET)
+Target Report Mask(DPFP_FAST_SET)
 FPX: Generate Double Precision FPX (fast) instructions.
 
 mno-dpfp-lrsr
-Target Mask(DPFP_DISABLE_LRSR)
+Target Report Mask(DPFP_DISABLE_LRSR)
 Disable LR and SR instructions from using FPX extension aux registers.
 
 msimd
-Target Mask(SIMD_SET)
+Target Report Mask(SIMD_SET)
 Enable generation of ARC SIMD instructions via target-specific builtins.
 
 mcpu=
@@ -238,7 +242,7 @@ Target RejectNegative Joined UInteger Var(arc_size_opt_level) Init(-1)
 Size optimization level: 0:none 1:opportunistic 2: regalloc 3:drop align, -Os.
 
 misize
-Target PchIgnore Var(TARGET_DUMPISIZE)
+Target Report PchIgnore Var(TARGET_DUMPISIZE)
 Annotate assembler instructions with estimated addresses.
 
 mmultcost=
@@ -247,7 +251,7 @@ Cost to assume for a multiply instruction, with 4 being equal to a normal insn.
 
 mtune=
 Target RejectNegative ToLower Joined Var(arc_tune) Enum(arc_tune_attr) Init(ARC_TUNE_NONE)
--mtune=TUNE	Tune code for given ARC variant.
+-mcpu=TUNE Tune code for given ARC variant.
 
 Enum
 Name(arc_tune_attr) Type(int)
@@ -285,12 +289,14 @@ Target Var(TARGET_AUTO_MODIFY_REG) Init(TARGET_AUTO_MODIFY_REG_DEFAULT)
 Enable the use of pre/post modify with register displacement.
 
 mmul32x16
-Target Mask(MULMAC_32BY16_SET)
+Target Report Mask(MULMAC_32BY16_SET)
 Generate 32x16 multiply and mac instructions.
 
+; the initializer is supposed to be: Init(REG_BR_PROB_BASE/2) ,
+; alas, basic-block.h is not included in options.c .
 munalign-prob-threshold=
-Target Ignore
-Does nothing.  Preserved for backward compatibility.
+Target RejectNegative Joined UInteger Var(arc_unalign_prob_threshold) Init(10000/2)
+Set probability threshold for unaligning branches.
 
 mmedium-calls
 Target Var(TARGET_MEDIUM_CALLS) Init(TARGET_MMEDIUM_CALLS_DEFAULT)
@@ -301,8 +307,8 @@ Target Var(TARGET_ANNOTATE_ALIGN)
 Explain what alignment considerations lead to the decision to make an insn short or long.
 
 malign-call
-Target Ignore
-Does nothing.  Preserved for backward compatibility.
+Target Var(TARGET_ALIGN_CALL)
+Do alignment optimizations for call instructions.
 
 mRcq
 Target Var(TARGET_Rcq)
@@ -329,7 +335,7 @@ Target Warn(%qs is deprecated)
 Enable compact casesi pattern.
 
 mq-class
-Target Warn(%qs is deprecated)
+Target Var(TARGET_Q_CLASS)
 Enable 'q' instruction alternatives.
 
 mexpand-adddi
@@ -340,42 +346,42 @@ Expand adddi3 and subdi3 at rtl generation time into add.f / adc etc.
 ; Flags used by the assembler, but for which we define preprocessor
 ; macro symbols as well.
 mcrc
-Target Warn(%qs is deprecated)
+Target Report Warn(%qs is deprecated)
 Enable variable polynomial CRC extension.
 
 mdsp-packa
-Target Warn(%qs is deprecated)
+Target Report Warn(%qs is deprecated)
 Enable DSP 3.1 Pack A extensions.
 
 mdvbf
-Target Warn(%qs is deprecated)
+Target Report Warn(%qs is deprecated)
 Enable dual viterbi butterfly extension.
 
 mmac-d16
-Target Undocumented Warn(%qs is deprecated)
+Target Report Undocumented Warn(%qs is deprecated)
 
 mmac-24
-Target Undocumented Warn(%qs is deprecated)
+Target Report Undocumented Warn(%qs is deprecated)
 
 mtelephony
-Target RejectNegative Warn(%qs is deprecated)
+Target Report RejectNegative Warn(%qs is deprecated)
 Enable Dual and Single Operand Instructions for Telephony.
 
 mxy
-Target
+Target Report
 Enable XY Memory extension (DSP version 3).
 
 ; ARC700 4.10 extension instructions
 mlock
-Target
+Target Report
 Enable Locked Load/Store Conditional extension.
 
 mswape
-Target
+Target Report
 Enable swap byte ordering extension instruction.
 
 mrtsc
-Target Warn(%qs is deprecated)
+Target Report Warn(%qs is deprecated)
 Enable 64-bit Time-Stamp Counter extension instruction.
 
 EB
@@ -396,7 +402,7 @@ Pass -marclinux_prof option through to linker.
 
 ;; lra is still unproven for ARC, so allow to fall back to reload with -mno-lra.
 mlra
-Target Var(arc_lra_flag) Init(1) Save
+Target Report Var(arc_lra_flag) Init(1) Save
 Use LRA instead of reload.
 
 mlra-priority-none
@@ -420,11 +426,11 @@ multcost=
 Target RejectNegative Joined
 
 matomic
-Target Mask(ATOMIC)
+Target Report Mask(ATOMIC)
 Enable atomic instructions.
 
 mll64
-Target Mask(LL64)
+Target Report Mask(LL64)
 Enable double load/store instructions for ARC HS.
 
 mfpu=
@@ -478,15 +484,15 @@ mtp-regno=none
 Target RejectNegative Var(arc_tp_regno,-1)
 
 mbitops
-Target Var(TARGET_NPS_BITOPS) Init(TARGET_NPS_BITOPS_DEFAULT)
+Target Report Var(TARGET_NPS_BITOPS) Init(TARGET_NPS_BITOPS_DEFAULT)
 Enable use of NPS400 bit operations.
 
 mcmem
-Target Var(TARGET_NPS_CMEM) Init(TARGET_NPS_CMEM_DEFAULT)
+Target Report Var(TARGET_NPS_CMEM) Init(TARGET_NPS_CMEM_DEFAULT)
 Enable use of NPS400 xld/xst extension.
 
 munaligned-access
-Target Var(unaligned_access) Init(UNALIGNED_ACCESS_DEFAULT)
+Target Report Var(unaligned_access) Init(UNALIGNED_ACCESS_DEFAULT)
 Enable unaligned word and halfword accesses to packed data.
 
 mirq-ctrl-saved=
@@ -523,13 +529,13 @@ EnumValue
 Enum(arc_lpc) String(32) Value(32)
 
 mrf16
-Target Mask(RF16)
+Target Report Mask(RF16)
 Enable 16-entry register file.
 
 mbranch-index
-Target Var(TARGET_BRANCH_INDEX) Init(DEFAULT_BRANCH_INDEX)
+Target Report Var(TARGET_BRANCH_INDEX) Init(DEFAULT_BRANCH_INDEX)
 Enable use of BI/BIH instructions when available.
 
 mcode-density-frame
-Target Var(TARGET_CODE_DENSITY_FRAME) Init(TARGET_CODE_DENSITY_FRAME_DEFAULT)
+Target Report Var(TARGET_CODE_DENSITY_FRAME) Init(TARGET_CODE_DENSITY_FRAME_DEFAULT)
 Enable ENTER_S and LEAVE_S opcodes for ARCv2.

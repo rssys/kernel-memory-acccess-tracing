@@ -13,7 +13,8 @@ foo (word x, word y, word a)
   word i = x;
   word j = y;
   /* Try to make taking the branch likely.  */
-  if (__builtin_expect (x > y, 0))
+  __builtin_expect (x > y, 1);
+  if (x > y)
     {
       i = a;
       j = i;

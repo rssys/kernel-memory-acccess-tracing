@@ -1,6 +1,6 @@
 // Versatile string utility -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -40,7 +40,6 @@
 #include <bits/ostream_insert.h>
 #include <bits/stl_iterator.h>
 #include <ext/numeric_traits.h>
-#include <ext/alloc_traits.h>
 #include <bits/move.h>
 #include <bits/range_access.h>
 
@@ -51,16 +50,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     struct __vstring_utility
     {
-      typedef typename __alloc_traits<_Alloc>::template rebind<_CharT>::other
-	_CharT_alloc_type;
-      typedef __alloc_traits<_CharT_alloc_type> _CharT_alloc_traits;
+      typedef typename _Alloc::template rebind<_CharT>::other _CharT_alloc_type;
 
       typedef _Traits					    traits_type;
       typedef typename _Traits::char_type		    value_type;
       typedef typename _CharT_alloc_type::size_type	    size_type;
       typedef typename _CharT_alloc_type::difference_type   difference_type;
-      typedef typename _CharT_alloc_traits::pointer	    pointer;
-      typedef typename _CharT_alloc_traits::const_pointer   const_pointer;
+      typedef typename _CharT_alloc_type::pointer	    pointer;
+      typedef typename _CharT_alloc_type::const_pointer	    const_pointer;
 
       // For __sso_string.
       typedef __gnu_cxx::

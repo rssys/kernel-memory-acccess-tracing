@@ -9,10 +9,9 @@
  */
 module core.sys.windows.dde;
 version (Windows):
-@system:
 pragma(lib, "user32");
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum : uint {
     WM_DDE_FIRST     = 0x03E0,

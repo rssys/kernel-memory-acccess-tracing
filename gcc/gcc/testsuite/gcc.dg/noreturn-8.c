@@ -1,4 +1,4 @@
-/* { dg-do run { target { nonpic || pie_enabled } } } */
+/* { dg-do run { target nonpic } } */
 /* { dg-options "-O2" } */
 void exit (int);
 void noreturn_autodetection_failed ();

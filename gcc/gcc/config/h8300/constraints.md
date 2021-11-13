@@ -1,5 +1,5 @@
 ;; Constraint definitions for Renesas H8/300.
-;; Copyright (C) 2011-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2019 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -82,9 +82,11 @@
        (match_test "(ival & 0xff) == 0")))
 
 (define_constraint "L"
-  "Integer 1, 2 or 4"
+  "1, 2 or 4 on the H8300H or S; 1 or 2 otherwise."
   (and (match_code "const_int")
-       (match_test "ival == 1 || ival == 2 || ival == 4")))
+       (if_then_else (match_test "TARGET_H8300H || TARGET_H8300S")
+		     (match_test "ival == 1 || ival == 2 || ival == 4")
+		     (match_test "ival == 1 || ival == 2"))))
 
 (define_constraint "M"
   "Integer 1 or 2."
@@ -92,9 +94,11 @@
        (match_test "ival == 1 || ival == 2")))
 
 (define_constraint "N"
-  "Integer -1, -2 or -4"
+  "-1, -2, or -4 on the H8300H or S; -1 or -2 otherwise."
   (and (match_code "const_int")
-       (match_test "ival == -1 || ival == -2 || ival == -4")))
+       (if_then_else (match_test "TARGET_H8300H || TARGET_H8300S")
+		     (match_test "ival == -1 || ival == -2 || ival == -4")
+		     (match_test "ival == -1 || ival == -2"))))
 
 (define_constraint "O"
   "Integer -1 or -2."
@@ -152,7 +156,7 @@
 (define_constraint "R"
   "@internal"
   (and (match_code "const_int")
-       (match_test "!h8300_shift_needs_scratch_p (ival, QImode, CLOBBER)")))
+       (match_test "!h8300_shift_needs_scratch_p (ival, QImode)")))
 
 (define_constraint "C"
   "@internal"
@@ -161,12 +165,12 @@
 (define_constraint "S"
   "@internal"
   (and (match_code "const_int")
-       (match_test "!h8300_shift_needs_scratch_p (ival, HImode, CLOBBER)")))
+       (match_test "!h8300_shift_needs_scratch_p (ival, HImode)")))
 
 (define_constraint "T"
   "@internal"
   (and (match_code "const_int")
-       (match_test "!h8300_shift_needs_scratch_p (ival, SImode, CLOBBER)")))
+       (match_test "!h8300_shift_needs_scratch_p (ival, SImode)")))
 
 (define_constraint "U"
   "An operand valid for a bset destination."

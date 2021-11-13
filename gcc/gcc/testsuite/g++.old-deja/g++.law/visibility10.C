@@ -10,7 +10,7 @@ public:
 };
 
 class deriv : public base {
-  void base :: f1();// { dg-error "8:cannot declare" } .*
+  void base :: f1();// { dg-error "" } .*
 };
 
 int main ()

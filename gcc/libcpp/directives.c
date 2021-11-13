@@ -1,5 +1,5 @@
 /* CPP Library. (Directive handling.)
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2019 Free Software Foundation, Inc.
    Contributed by Per Bothner, 1994-95.
    Based on CCCP program by Paul Rubin, June 1986
    Adapted to ANSI C, Richard Stallman, Jan 1987
@@ -56,12 +56,10 @@ struct pragma_entry
 
 /* Values for the origin field of struct directive.  KANDR directives
    come from traditional (K&R) C.  STDC89 directives come from the
-   1989 C standard.  STDC2X directives come from the C2X standard.  EXTENSION
-   directives are extensions.  */
+   1989 C standard.  EXTENSION directives are extensions.  */
 #define KANDR		0
 #define STDC89		1
-#define STDC2X		2
-#define EXTENSION	3
+#define EXTENSION	2
 
 /* Values for the flags field of struct directive.  COND indicates a
    conditional; IF_COND an opening conditional.  INCL means to treat
@@ -69,17 +67,13 @@ struct pragma_entry
    means this directive should be handled even if -fpreprocessed is in
    effect (these are the directives with callback hooks).
 
-   EXPAND is set on directives that are always macro-expanded.
-
-   ELIFDEF is set on directives that are only handled for standards with the
-   #elifdef / #elifndef feature.  */
+   EXPAND is set on directives that are always macro-expanded.  */
 #define COND		(1 << 0)
 #define IF_COND		(1 << 1)
 #define INCL		(1 << 2)
 #define IN_I		(1 << 3)
 #define EXPAND		(1 << 4)
 #define DEPRECATED	(1 << 5)
-#define ELIFDEF		(1 << 6)
 
 /* Defines one #-directive, including how to handle it.  */
 typedef void (*directive_handler) (cpp_reader *);
@@ -154,8 +148,6 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(undef,	T_UNDEF,	KANDR,     IN_I)			\
   D(line,	T_LINE,		KANDR,     EXPAND)			\
   D(elif,	T_ELIF,		STDC89,    COND | EXPAND)		\
-  D(elifdef,	T_ELIFDEF,	STDC2X,    COND | ELIFDEF)		\
-  D(elifndef,	T_ELIFNDEF,	STDC2X,    COND | ELIFDEF)		\
   D(error,	T_ERROR,	STDC89,    0)				\
   D(pragma,	T_PRAGMA,	STDC89,    IN_I)			\
   D(warning,	T_WARNING,	EXTENSION, 0)				\
@@ -414,13 +406,13 @@ directive_diagnostics (cpp_reader *pfile, const directive *dir, int indented)
     }
 }
 
-/* Check if we have a known directive.  INDENTED is true if the
+/* Check if we have a known directive.  INDENTED is nonzero if the
    '#' of the directive was indented.  This function is in this file
    to save unnecessarily exporting dtable etc. to lex.c.  Returns
    nonzero if the line of tokens has been handled, zero if we should
    continue processing the line.  */
 int
-_cpp_handle_directive (cpp_reader *pfile, bool indented)
+_cpp_handle_directive (cpp_reader *pfile, int indented)
 {
   const directive *dir = 0;
   const cpp_token *dname;
@@ -445,15 +437,7 @@ _cpp_handle_directive (cpp_reader *pfile, bool indented)
   if (dname->type == CPP_NAME)
     {
       if (dname->val.node.node->is_directive)
-	{
-	  dir = &dtable[dname->val.node.node->directive_index];
-	  if ((dir->flags & ELIFDEF)
-	      && !CPP_OPTION (pfile, elifdef)
-	      /* For -std=gnu* modes elifdef is supported with
-		 a pedwarn if pedantic.  */
-	      && CPP_OPTION (pfile, std))
-	    dir = 0;
-	}
+	dir = &dtable[dname->val.node.node->directive_index];
     }
   /* We do not recognize the # followed by a number extension in
      assembler code.  */
@@ -611,11 +595,14 @@ lex_macro_node (cpp_reader *pfile, bool is_def_or_undef)
     {
       cpp_hashnode *node = token->val.node.node;
 
-      if (is_def_or_undef
-	  && node == pfile->spec_nodes.n_defined)
+      if (is_def_or_undef && node == pfile->spec_nodes.n_defined)
 	cpp_error (pfile, CPP_DL_ERROR,
-		   "\"%s\" cannot be used as a macro name",
-		   NODE_NAME (node));
+		   "\"defined\" cannot be used as a macro name");
+      else if (is_def_or_undef
+	    && (node == pfile->spec_nodes.n__has_include__
+	     || node == pfile->spec_nodes.n__has_include_next__))
+	cpp_error (pfile, CPP_DL_ERROR,
+		   "\"__has_include__\" cannot be used as a macro name");
       else if (! (node->flags & NODE_POISONED))
 	return node;
     }
@@ -683,8 +670,7 @@ do_undef (cpp_reader *pfile)
 				   pfile->directive_line, 0,
 				   "undefining \"%s\"", NODE_NAME (node));
 
-	  if (node->value.macro
-	      && CPP_OPTION (pfile, warn_unused_macros))
+	  if (CPP_OPTION (pfile, warn_unused_macros))
 	    _cpp_warn_if_unused_macro (pfile, node, NULL);
 
 	  _cpp_free_definition (node);
@@ -832,10 +818,6 @@ do_include_common (cpp_reader *pfile, enum include_type type)
      callback can dump comments which follow #include.  */
   pfile->state.save_comments = ! CPP_OPTION (pfile, discard_comments);
 
-  /* Tell the lexer this is an include directive -- we want it to
-     increment the line number even if this is the last line of a file.  */
-  pfile->state.in_directive = 2;
-
   fname = parse_include (pfile, &angle_brackets, &buf, &location);
   if (!fname)
     goto done;
@@ -849,13 +831,8 @@ do_include_common (cpp_reader *pfile, enum include_type type)
     }
 
   /* Prevent #include recursion.  */
-  if (pfile->line_table->depth >= CPP_OPTION (pfile, max_include_depth))
-    cpp_error (pfile, 
-	       CPP_DL_ERROR, 
-	       "#include nested depth %u exceeds maximum of %u"
-	       " (use -fmax-include-depth=DEPTH to increase the maximum)",
-	       pfile->line_table->depth,
-	       CPP_OPTION (pfile, max_include_depth));
+  if (pfile->line_table->depth >= CPP_STACK_MAX)
+    cpp_error (pfile, CPP_DL_ERROR, "#include nested too deeply");
   else
     {
       /* Get out of macro context, if we are.  */
@@ -894,7 +871,7 @@ do_include_next (cpp_reader *pfile)
 
   /* If this is the primary source file, warn and use the normal
      search logic.  */
-  if (_cpp_in_main_source_file (pfile))
+  if (cpp_in_primary_file (pfile))
     {
       cpp_error (pfile, CPP_DL_WARNING,
 		 "#include_next in primary source file");
@@ -931,32 +908,25 @@ read_flag (cpp_reader *pfile, unsigned int last)
 /* Subroutine of do_line and do_linemarker.  Convert a number in STR,
    of length LEN, to binary; store it in NUMP, and return false if the
    number was well-formed, true if not. WRAPPED is set to true if the
-   number did not fit into 'linenum_type'.  */
+   number did not fit into 'unsigned long'.  */
 static bool
 strtolinenum (const uchar *str, size_t len, linenum_type *nump, bool *wrapped)
 {
   linenum_type reg = 0;
+  linenum_type reg_prev = 0;
 
   uchar c;
-  bool seen_digit_sep = false;
   *wrapped = false;
   while (len--)
     {
       c = *str++;
-      if (!seen_digit_sep && c == '\'' && len)
-	{
-	  seen_digit_sep = true;
-	  continue;
-	}
       if (!ISDIGIT (c))
 	return true;
-      seen_digit_sep = false;
-      if (reg > ((linenum_type) -1) / 10)
-	*wrapped = true;
       reg *= 10;
-      if (reg > ((linenum_type) -1) - (c - '0'))
-	*wrapped = true;
       reg += c - '0';
+      if (reg < reg_prev) 
+	*wrapped = true;
+      reg_prev = reg;
     }
   *nump = reg;
   return false;
@@ -964,11 +934,11 @@ strtolinenum (const uchar *str, size_t len, linenum_type *nump, bool *wrapped)
 
 /* Interpret #line command.
    Note that the filename string (if any) is a true string constant
-   (escapes are interpreted).  */
+   (escapes are interpreted), unlike in #line.  */
 static void
 do_line (cpp_reader *pfile)
 {
-  class line_maps *line_table = pfile->line_table;
+  struct line_maps *line_table = pfile->line_table;
   const line_map_ordinary *map = LINEMAPS_LAST_ORDINARY_MAP (line_table);
 
   /* skip_rest_of_line() may cause line table to be realloc()ed so note down
@@ -1031,7 +1001,7 @@ do_line (cpp_reader *pfile)
 static void
 do_linemarker (cpp_reader *pfile)
 {
-  class line_maps *line_table = pfile->line_table;
+  struct line_maps *line_table = pfile->line_table;
   const line_map_ordinary *map = LINEMAPS_LAST_ORDINARY_MAP (line_table);
   const cpp_token *token;
   const char *new_file = ORDINARY_MAP_FILE_NAME (map);
@@ -1109,17 +1079,9 @@ do_linemarker (cpp_reader *pfile)
       map = LINEMAPS_LAST_ORDINARY_MAP (line_table);
       const line_map_ordinary *from
 	= linemap_included_from_linemap (line_table, map);
-
-      if (!from)
-	/* Not nested.  */;
-      else if (!new_file[0])
-	/* Leaving to "" means fill in the popped-to name.  */
-	new_file = ORDINARY_MAP_FILE_NAME (from);
-      else if (filename_cmp (ORDINARY_MAP_FILE_NAME (from), new_file) != 0)
-	/* It's the wrong name, Grommit!  */
-	from = NULL;
-
-      if (!from)
+      if (MAIN_FILE_P (map)
+	  || (from
+	      && filename_cmp (ORDINARY_MAP_FILE_NAME (from), new_file) != 0))
 	{
 	  cpp_warning (pfile, CPP_W_NONE,
 		       "file \"%s\" linemarker ignored due to "
@@ -1127,7 +1089,6 @@ do_linemarker (cpp_reader *pfile)
 	  return;
 	}
     }
-
   /* Compensate for the increment in linemap_add that occurs in
      _cpp_do_file_change.  We're currently at the start of the line
      *following* the #line directive.  A separate location_t for this
@@ -1139,43 +1100,26 @@ do_linemarker (cpp_reader *pfile)
   line_table->seen_line_directive = true;
 }
 
-/* Arrange the file_change callback.  Changing to TO_FILE:TO_LINE for
-   REASON.  SYSP is 1 for a system header, 2 for a system header that
-   needs to be extern "C" protected, and zero otherwise.  */
+/* Arrange the file_change callback.  pfile->line has changed to
+   FILE_LINE of TO_FILE, for reason REASON.  SYSP is 1 for a system
+   header, 2 for a system header that needs to be extern "C" protected,
+   and zero otherwise.  */
 void
 _cpp_do_file_change (cpp_reader *pfile, enum lc_reason reason,
-		     const char *to_file, linenum_type to_line,
+		     const char *to_file, linenum_type file_line,
 		     unsigned int sysp)
 {
   linemap_assert (reason != LC_ENTER_MACRO);
-
+  const struct line_map *map = linemap_add (pfile->line_table, reason, sysp,
+					    to_file, file_line);
   const line_map_ordinary *ord_map = NULL;
-  if (!to_line && reason == LC_RENAME_VERBATIM)
+  if (map != NULL)
     {
-      /* A linemarker moving to line zero.  If we're on the second
-         line of the current map, and it also starts at zero, just
-         rewind -- we're probably reading the builtins of a
-         preprocessed source.  */
-      line_map_ordinary *last = LINEMAPS_LAST_ORDINARY_MAP (pfile->line_table);
-      if (!ORDINARY_MAP_STARTING_LINE_NUMBER (last)
-	  && 0 == filename_cmp (to_file, ORDINARY_MAP_FILE_NAME (last))
-	  && SOURCE_LINE (last, pfile->line_table->highest_line) == 2)
-	{
-	  ord_map = last;
-	  pfile->line_table->highest_location
-	    = pfile->line_table->highest_line = MAP_START_LOCATION (last);
-	}
+      ord_map = linemap_check_ordinary (map);
+      linemap_line_start (pfile->line_table,
+			  ORDINARY_MAP_STARTING_LINE_NUMBER (ord_map),
+			  127);
     }
-
-  if (!ord_map)
-    if (const line_map *map = linemap_add (pfile->line_table, reason, sysp,
-					   to_file, to_line))
-      {
-	ord_map = linemap_check_ordinary (map);
-	linemap_line_start (pfile->line_table,
-			    ORDINARY_MAP_STARTING_LINE_NUMBER (ord_map),
-			    127);
-      }
 
   if (pfile->cb.file_change)
     pfile->cb.file_change (pfile, ord_map);
@@ -1570,7 +1514,7 @@ do_pragma (cpp_reader *pfile)
 static void
 do_pragma_once (cpp_reader *pfile)
 {
-  if (_cpp_in_main_source_file (pfile))
+  if (cpp_in_primary_file (pfile))
     cpp_error (pfile, CPP_DL_WARNING, "#pragma once in main file");
 
   check_eol (pfile, false);
@@ -1732,7 +1676,7 @@ do_pragma_poison (cpp_reader *pfile)
 static void
 do_pragma_system_header (cpp_reader *pfile)
 {
-  if (_cpp_in_main_source_file (pfile))
+  if (cpp_in_primary_file (pfile))
     cpp_error (pfile, CPP_DL_WARNING,
 	       "#pragma system_header ignored outside include file");
   else
@@ -1907,8 +1851,6 @@ destringize_and_run (cpp_reader *pfile, const cpp_string *in,
   save_directive = pfile->directive;
   pfile->directive = &dtable[T_PRAGMA];
   do_pragma (pfile);
-  if (pfile->directive_result.type == CPP_PRAGMA)
-    pfile->directive_result.flags |= PRAGMA_OP;
   end_directive (pfile, 1);
   pfile->directive = save_directive;
 
@@ -2006,11 +1948,13 @@ do_ifdef (cpp_reader *pfile)
 
       if (node)
 	{
-	  skip = !_cpp_defined_macro_p (node);
-	  if (!_cpp_maybe_notify_macro_use (pfile, node, pfile->directive_line))
-	    /* It wasn't a macro after all.  */
-	    skip = true;
+	  /* Do not treat conditional macros as being defined.  This is due to
+	     the powerpc and spu ports using conditional macros for 'vector',
+	     'bool', and 'pixel' to act as conditional keywords.  This messes
+	     up tests like #ifndef bool.  */
+	  skip = !cpp_macro_p (node) || (node->flags & NODE_CONDITIONAL);
 	  _cpp_mark_macro_used (node);
+	  _cpp_maybe_notify_macro_use (pfile, node);
 	  if (pfile->cb.used)
 	    pfile->cb.used (pfile, pfile->directive_line, node);
 	  check_eol (pfile, false);
@@ -2033,11 +1977,14 @@ do_ifndef (cpp_reader *pfile)
 
       if (node)
 	{
-	  skip = _cpp_defined_macro_p (node);
-	  if (!_cpp_maybe_notify_macro_use (pfile, node, pfile->directive_line))
-	    /* It wasn't a macro after all.  */
-	    skip = false;
+	  /* Do not treat conditional macros as being defined.  This is due to
+	     the powerpc and spu ports using conditional macros for 'vector',
+	     'bool', and 'pixel' to act as conditional keywords.  This messes
+	     up tests like #ifndef bool.  */
+	  skip = (cpp_macro_p (node)
+		  && !(node->flags & NODE_CONDITIONAL));
 	  _cpp_mark_macro_used (node);
+	  _cpp_maybe_notify_macro_use (pfile, node);
 	  if (pfile->cb.used)
 	    pfile->cb.used (pfile, pfile->directive_line, node);
 	  check_eol (pfile, false);
@@ -2097,8 +2044,8 @@ do_else (cpp_reader *pfile)
     }
 }
 
-/* Handle a #elif, #elifdef or #elifndef directive by not changing if_stack
-   either.  See the comment above do_else.  */
+/* Handle a #elif directive by not changing if_stack either.  See the
+   comment above do_else.  */
 static void
 do_elif (cpp_reader *pfile)
 {
@@ -2106,13 +2053,12 @@ do_elif (cpp_reader *pfile)
   struct if_stack *ifs = buffer->if_stack;
 
   if (ifs == NULL)
-    cpp_error (pfile, CPP_DL_ERROR, "#%s without #if", pfile->directive->name);
+    cpp_error (pfile, CPP_DL_ERROR, "#elif without #if");
   else
     {
       if (ifs->type == T_ELSE)
 	{
-	  cpp_error (pfile, CPP_DL_ERROR, "#%s after #else",
-		     pfile->directive->name);
+	  cpp_error (pfile, CPP_DL_ERROR, "#elif after #else");
 	  cpp_error_with_line (pfile, CPP_DL_ERROR, ifs->line, 0,
 			       "the conditional began here");
 	}
@@ -2123,86 +2069,16 @@ do_elif (cpp_reader *pfile)
 	 are skipped and their controlling directives are processed as
 	 if they were in a group that is skipped."  */
       if (ifs->skip_elses)
-	{
-	  /* In older GNU standards, #elifdef/#elifndef is supported
-	     as an extension, but pedwarn if -pedantic if the presence
-	     of the directive would be rejected.  */
-	  if (pfile->directive != &dtable[T_ELIF]
-	      && ! CPP_OPTION (pfile, elifdef)
-	      && CPP_PEDANTIC (pfile)
-	      && !pfile->state.skipping)
-	    {
-	      if (CPP_OPTION (pfile, cplusplus))
-		cpp_error (pfile, CPP_DL_PEDWARN,
-			   "#%s before C++23 is a GCC extension",
-			   pfile->directive->name);
-	      else
-		cpp_error (pfile, CPP_DL_PEDWARN,
-			   "#%s before C2X is a GCC extension",
-			   pfile->directive->name);
-	    }
-	  pfile->state.skipping = 1;
-	}
+	pfile->state.skipping = 1;
       else
 	{
-	  if (pfile->directive == &dtable[T_ELIF])
-	    pfile->state.skipping = !_cpp_parse_expr (pfile, false);
-	  else
-	    {
-	      cpp_hashnode *node = lex_macro_node (pfile, false);
-
-	      if (node)
-		{
-		  bool macro_defined = _cpp_defined_macro_p (node);
-		  if (!_cpp_maybe_notify_macro_use (pfile, node,
-						    pfile->directive_line))
-		    /* It wasn't a macro after all.  */
-		    macro_defined = false;
-		  bool skip = (pfile->directive == &dtable[T_ELIFDEF]
-			       ? !macro_defined
-			       : macro_defined);
-		  if (pfile->cb.used)
-		    pfile->cb.used (pfile, pfile->directive_line, node);
-		  check_eol (pfile, false);
-		  /* In older GNU standards, #elifdef/#elifndef is supported
-		     as an extension, but pedwarn if -pedantic if the presence
-		     of the directive would change behavior.  */
-		  if (! CPP_OPTION (pfile, elifdef)
-		      && CPP_PEDANTIC (pfile)
-		      && pfile->state.skipping != skip)
-		    {
-		      if (CPP_OPTION (pfile, cplusplus))
-			cpp_error (pfile, CPP_DL_PEDWARN,
-				   "#%s before C++23 is a GCC extension",
-				   pfile->directive->name);
-		      else
-			cpp_error (pfile, CPP_DL_PEDWARN,
-				   "#%s before C2X is a GCC extension",
-				   pfile->directive->name);
-		    }
-		  pfile->state.skipping = skip;
-		}
-	    }
-	  ifs->skip_elses = !pfile->state.skipping;
+	  pfile->state.skipping = ! _cpp_parse_expr (pfile, false);
+	  ifs->skip_elses = ! pfile->state.skipping;
 	}
 
       /* Invalidate any controlling macro.  */
       ifs->mi_cmacro = 0;
     }
-}
-
-/* Handle a #elifdef directive.  */
-static void
-do_elifdef (cpp_reader *pfile)
-{
-  do_elif (pfile);
-}
-
-/* Handle a #elifndef directive.  */
-static void
-do_elifndef (cpp_reader *pfile)
-{
-  do_elif (pfile);
 }
 
 /* #endif pops the if stack and resets pfile->state.skipping.  */
@@ -2513,15 +2389,6 @@ cpp_define (cpp_reader *pfile, const char *str)
   run_directive (pfile, T_DEFINE, buf, count);
 }
 
-/* Like cpp_define, but does not warn about unused macro.  */
-void
-cpp_define_unused (cpp_reader *pfile, const char *str)
-{
-    unsigned char warn_unused_macros = CPP_OPTION (pfile, warn_unused_macros);
-    CPP_OPTION (pfile, warn_unused_macros) = 0;
-    cpp_define (pfile, str);
-    CPP_OPTION (pfile, warn_unused_macros) = warn_unused_macros;
-}
 
 /* Use to build macros to be run through cpp_define() as
    described above.
@@ -2541,20 +2408,6 @@ cpp_define_formatted (cpp_reader *pfile, const char *fmt, ...)
   free (ptr);
 }
 
-/* Like cpp_define_formatted, but does not warn about unused macro.  */
-void
-cpp_define_formatted_unused (cpp_reader *pfile, const char *fmt, ...)
-{
-  char *ptr;
-
-  va_list ap;
-  va_start (ap, fmt);
-  ptr = xvasprintf (fmt, ap);
-  va_end (ap);
-
-  cpp_define_unused (pfile, ptr);
-  free (ptr);
-}
 
 /* Slight variant of the above for use by initialize_builtins.  */
 void
@@ -2692,25 +2545,11 @@ cpp_set_callbacks (cpp_reader *pfile, cpp_callbacks *cb)
   pfile->cb = *cb;
 }
 
-/* The narrow character set identifier.  */
-const char *
-cpp_get_narrow_charset_name (cpp_reader *pfile)
-{
-  return pfile->narrow_cset_desc.to;
-}
-
-/* The wide character set identifier.  */
-const char *
-cpp_get_wide_charset_name (cpp_reader *pfile)
-{
-  return pfile->wide_cset_desc.to;
-}
-
 /* The dependencies structure.  (Creates one if it hasn't already been.)  */
-class mkdeps *
+struct deps *
 cpp_get_deps (cpp_reader *pfile)
 {
-  if (!pfile->deps && CPP_OPTION (pfile, deps.style) != DEPS_NONE)
+  if (!pfile->deps)
     pfile->deps = deps_init ();
   return pfile->deps;
 }
@@ -2781,9 +2620,12 @@ _cpp_pop_buffer (cpp_reader *pfile)
 void
 _cpp_init_directives (cpp_reader *pfile)
 {
-  for (int i = 0; i < N_DIRECTIVES; i++)
+  unsigned int i;
+  cpp_hashnode *node;
+
+  for (i = 0; i < (unsigned int) N_DIRECTIVES; i++)
     {
-      cpp_hashnode *node = cpp_lookup (pfile, dtable[i].name, dtable[i].length);
+      node = cpp_lookup (pfile, dtable[i].name, dtable[i].length);
       node->is_directive = 1;
       node->directive_index = i;
     }

@@ -1,22 +1,4 @@
-/* RUNNABLE_PHOBOS_TEST
-TEST_OUTPUT:
----
-true
-g
-&Test109S(&Test109S(<recursion>))
-runnable/interpret.d(3197): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3199): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3202): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3205): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3206): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3212): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3213): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-runnable/interpret.d(3216): Deprecation: The `delete` keyword has been deprecated.  Use `object.destroy()` (and `core.memory.GC.free()` if applicable) instead.
-tfoo
-tfoo
-Crash!
----
-*/
+
 import std.stdio;
 
 template Tuple(A...)
@@ -3496,50 +3478,6 @@ void test15681()
     static assert(s2.values[1].value == 1); // OK
     assert(s2.values[0].value == 0);        // OK <- NG
     assert(s2.values[1].value == 1);        // OK
-}
-
-/************************************************/
-// toPrec
-
-void testToPrec()
-{
-    import core.math;
-
-    enum real ctpir = 0xc.90fdaa22168c235p-2;
-    enum double ctpid = 0x1.921fb54442d18p+1;
-    enum float ctpif = 0x1.921fb6p+1;
-    static assert(toPrec!float(ctpir) == ctpif);
-    static assert(toPrec!double(ctpir) == ctpid);
-    static assert(toPrec!real(ctpir) == ctpir);
-    static assert(toPrec!float(ctpid) == ctpif);
-    static assert(toPrec!double(ctpid) == ctpid);
-    static assert(toPrec!real(ctpid) == ctpid);
-    static assert(toPrec!float(ctpif) == ctpif);
-    static assert(toPrec!double(ctpif) == ctpif);
-    static assert(toPrec!real(ctpif) == ctpif);
-
-    assert(toPrec!float(ctpir) == ctpif);
-    assert(toPrec!double(ctpir) == ctpid);
-    assert(toPrec!real(ctpir) == ctpir);
-    assert(toPrec!float(ctpid) == ctpif);
-    assert(toPrec!double(ctpid) == ctpid);
-    assert(toPrec!real(ctpid) == ctpid);
-    assert(toPrec!float(ctpif) == ctpif);
-    assert(toPrec!double(ctpif) == ctpif);
-    assert(toPrec!real(ctpif) == ctpif);
-
-    static real rtpir = 0xc.90fdaa22168c235p-2;
-    static double rtpid = 0x1.921fb54442d18p+1;
-    static float rtpif = 0x1.921fb6p+1;
-    assert(toPrec!float(rtpir) == rtpif);
-    assert(toPrec!double(rtpir) == rtpid);
-    assert(toPrec!real(rtpir) == rtpir);
-    assert(toPrec!float(rtpid) == rtpif);
-    assert(toPrec!double(rtpid) == rtpid);
-    assert(toPrec!real(rtpid) == rtpid);
-    assert(toPrec!float(rtpif) == rtpif);
-    assert(toPrec!double(rtpif) == rtpif);
-    assert(toPrec!real(rtpif) == rtpif);
 }
 
 /************************************************/

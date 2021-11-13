@@ -181,8 +181,8 @@ func testCallbackCallers(t *testing.T) {
 	name := []string{
 		"runtime.cgocallbackg1",
 		"runtime.cgocallbackg",
-		"runtime.cgocallback",
-		"runtime.systemstack_switch",
+		"runtime.cgocallback_gofunc",
+		"runtime.asmcgocall",
 		"runtime.cgocall",
 		"test._Cfunc_callback",
 		"test.nestedCall.func1",
@@ -199,7 +199,7 @@ func testCallbackCallers(t *testing.T) {
 		t.Errorf("expected %d frames, got %d", len(name), n)
 	}
 	for i := 0; i < n; i++ {
-		f := runtime.FuncForPC(pc[i] - 1) // TODO: use runtime.CallersFrames
+		f := runtime.FuncForPC(pc[i])
 		if f == nil {
 			t.Fatalf("expected non-nil Func for pc %d", pc[i])
 		}
@@ -209,10 +209,6 @@ func testCallbackCallers(t *testing.T) {
 		if strings.HasPrefix(fname, "_") {
 			fname = path.Base(f.Name()[1:])
 		}
-		// In module mode, this package has a fully-qualified import path.
-		// Remove it if present.
-		fname = strings.TrimPrefix(fname, "misc/cgo/")
-
 		namei := ""
 		if i < len(name) {
 			namei = name[i]

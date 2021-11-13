@@ -1,6 +1,6 @@
 /* Declarations for variables relating to reading the source file.
    Used by parsers, lexical analyzers, and error message routines.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -23,8 +23,8 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "line-map.h"
 
-extern GTY(()) class line_maps *line_table;
-extern GTY(()) class line_maps *saved_line_table;
+extern GTY(()) struct line_maps *line_table;
+extern GTY(()) struct line_maps *saved_line_table;
 
 /* A value which will never be used to represent a real location.  */
 #define UNKNOWN_LOCATION ((location_t) 0)
@@ -36,36 +36,8 @@ extern GTY(()) class line_maps *saved_line_table;
    both UNKNOWN_LOCATION and BUILTINS_LOCATION fit into that.  */
 STATIC_ASSERT (BUILTINS_LOCATION < RESERVED_LOCATION_COUNT);
 
-/* Hasher for 'location_t' values satisfying '!RESERVED_LOCATION_P', thus able
-   to use 'UNKNOWN_LOCATION'/'BUILTINS_LOCATION' as spare values for
-   'Empty'/'Deleted'.  */
-/* Per PR103157 "'gengtype': 'typedef' causing infinite-recursion code to be
-   generated", don't use
-       typedef int_hash<location_t, UNKNOWN_LOCATION, BUILTINS_LOCATION>
-         location_hash;
-   here.
-
-   It works for a single-use case, but when using a 'struct'-based variant
-       struct location_hash
-         : int_hash<location_t, UNKNOWN_LOCATION, BUILTINS_LOCATION> {};
-   in more than one place, 'gengtype' generates duplicate functions (thus:
-   "error: redefinition of 'void gt_ggc_mx(location_hash&)'" etc.).
-   Attempting to mark that one up with GTY options, we run into a 'gengtype'
-   "parse error: expected '{', have '<'", which probably falls into category
-   "understanding of C++ is limited", as documented in 'gcc/doc/gty.texi'.
-
-   Thus, use a plain ol' '#define':
-*/
-#define location_hash int_hash<location_t, UNKNOWN_LOCATION, BUILTINS_LOCATION>
-
 extern bool is_location_from_builtin_token (location_t);
 extern expanded_location expand_location (location_t);
-
-class cpp_char_column_policy;
-
-extern int
-location_compute_display_column (expanded_location exploc,
-				 const cpp_char_column_policy &policy);
 
 /* A class capturing the bounds of a buffer, to allow for run-time
    bounds-checking in a checked build.  */
@@ -113,49 +85,6 @@ class char_span
 extern char_span location_get_source_line (const char *file_path, int line);
 
 extern bool location_missing_trailing_newline (const char *file_path);
-
-/* Forward decl of slot within file_cache, so that the definition doesn't
-   need to be in this header.  */
-class file_cache_slot;
-
-/* A cache of source files for use when emitting diagnostics
-   (and in a few places in the C/C++ frontends).
-
-   Results are only valid until the next call to the cache, as
-   slots can be evicted.
-
-   Filenames are stored by pointer, and so must outlive the cache
-   instance.  */
-
-class file_cache
-{
- public:
-  file_cache ();
-  ~file_cache ();
-
-  file_cache_slot *lookup_or_add_file (const char *file_path);
-  void forcibly_evict_file (const char *file_path);
-
-  /* See comments in diagnostic.h about the input conversion context.  */
-  struct input_context
-  {
-    diagnostic_input_charset_callback ccb;
-    bool should_skip_bom;
-  };
-  void initialize_input_context (diagnostic_input_charset_callback ccb,
-				 bool should_skip_bom);
-
- private:
-  file_cache_slot *evicted_cache_tab_entry (unsigned *highest_use_count);
-  file_cache_slot *add_file (const char *file_path);
-  file_cache_slot *lookup_file (const char *file_path);
-
- private:
-  static const size_t num_file_slots = 16;
-  file_cache_slot *m_file_slots;
-  input_context in_context;
-};
-
 extern expanded_location
 expand_location_to_spelling_point (location_t,
 				   enum location_aspect aspect
@@ -246,14 +175,15 @@ void diagnostics_file_cache_fini (void);
 
 void diagnostics_file_cache_forcibly_evict_file (const char *file_path);
 
-class GTY(()) string_concat
+struct GTY(()) string_concat
 {
-public:
   string_concat (int num, location_t *locs);
 
   int m_num;
   location_t * GTY ((atomic)) m_locs;
 };
+
+struct location_hash : int_hash <location_t, UNKNOWN_LOCATION> { };
 
 class GTY(()) string_concat_db
 {

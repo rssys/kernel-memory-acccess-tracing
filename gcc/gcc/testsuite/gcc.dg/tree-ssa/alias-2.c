@@ -1,4 +1,4 @@
-/* { dg-do compile { target { nonpic || pie_enabled } } } */
+/* { dg-do compile { target { nonpic } } } */
 /* { dg-options "-O2 -fdump-tree-optimized" } */
 static int a;
 int f;

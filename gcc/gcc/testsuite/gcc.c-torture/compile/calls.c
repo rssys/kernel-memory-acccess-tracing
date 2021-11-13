@@ -1,6 +1,5 @@
 /* { dg-require-effective-target ptr32plus } */
 /* { dg-require-effective-target untyped_assembly } */
-/* { dg-require-effective-target indirect_calls } */
 
 typedef void  *(*T)(void);
 f1 ()

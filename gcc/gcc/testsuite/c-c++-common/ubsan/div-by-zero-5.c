@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-fsanitize=signed-integer-overflow" } */
+/* { dg-options "-fsanitize=integer-divide-by-zero" } */
 
 void
 foo (void)

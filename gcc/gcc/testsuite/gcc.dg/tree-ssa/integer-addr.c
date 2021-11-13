@@ -1,7 +1,7 @@
 /* { dg-do compile } */
 /* { dg-options "-O2 -fdump-tree-optimized -fno-strict-aliasing" } */
 /* Test with fixed address */
-static int *foo =  (int *) (unsigned long) __INTPTR_MAX__;
+static int *foo =  (int *) (unsigned long) 0x7800000;
 
 int func(void) __attribute__ ((noinline));
 

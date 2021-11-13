@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,7 +31,8 @@
 
 with Ada.Text_IO.Generic_Aux; use Ada.Text_IO.Generic_Aux;
 
-with System.Img_Util; use System.Img_Util;
+with System.Img_Real; use System.Img_Real;
+with System.Val_Real; use System.Val_Real;
 
 package body Ada.Text_IO.Float_Aux is
 
@@ -41,12 +42,12 @@ package body Ada.Text_IO.Float_Aux is
 
    procedure Get
      (File  : File_Type;
-      Item  : out Num;
+      Item  : out Long_Long_Float;
       Width : Field)
    is
       Buf  : String (1 .. Field'Last);
       Stop : Integer := 0;
-      Ptr  : aliased Integer;
+      Ptr  : aliased Integer := 1;
 
    begin
       if Width /= 0 then
@@ -54,10 +55,10 @@ package body Ada.Text_IO.Float_Aux is
          String_Skip (Buf, Ptr);
       else
          Load_Real (File, Buf, Stop);
-         Ptr := 1;
       end if;
 
-      Item := Scan (Buf, Ptr'Access, Stop);
+      Item := Scan_Real (Buf, Ptr'Access, Stop);
+
       Check_End_Of_Field (Buf, Stop, Ptr, Width);
    end Get;
 
@@ -67,19 +68,120 @@ package body Ada.Text_IO.Float_Aux is
 
    procedure Gets
      (From : String;
-      Item : out Num;
+      Item : out Long_Long_Float;
       Last : out Positive)
    is
       Pos : aliased Integer;
 
    begin
       String_Skip (From, Pos);
-      Item := Scan (From, Pos'Access, From'Last);
+      Item := Scan_Real (From, Pos'Access, From'Last);
       Last := Pos - 1;
 
    exception
-      when Constraint_Error => raise Data_Error;
+      when Constraint_Error =>
+         raise Data_Error;
    end Gets;
+
+   ---------------
+   -- Load_Real --
+   ---------------
+
+   procedure Load_Real
+     (File : File_Type;
+      Buf  : out String;
+      Ptr  : in out Natural)
+   is
+      Loaded   : Boolean;
+
+   begin
+      --  Skip initial blanks, and load possible sign
+
+      Load_Skip (File);
+      Load (File, Buf, Ptr, '+', '-');
+
+      --  Case of .nnnn
+
+      Load (File, Buf, Ptr, '.', Loaded);
+
+      if Loaded then
+         Load_Digits (File, Buf, Ptr, Loaded);
+
+         --  Hopeless junk if no digits loaded
+
+         if not Loaded then
+            return;
+         end if;
+
+      --  Otherwise must have digits to start
+
+      else
+         Load_Digits (File, Buf, Ptr, Loaded);
+
+         --  Hopeless junk if no digits loaded
+
+         if not Loaded then
+            return;
+         end if;
+
+         --  Based cases. We recognize either the standard '#' or the
+         --  allowed alternative replacement ':' (see RM J.2(3)).
+
+         Load (File, Buf, Ptr, '#', ':', Loaded);
+
+         if Loaded then
+
+            --  Case of nnn#.xxx#
+
+            Load (File, Buf, Ptr, '.', Loaded);
+
+            if Loaded then
+               Load_Extended_Digits (File, Buf, Ptr);
+               Load (File, Buf, Ptr, '#', ':');
+
+            --  Case of nnn#xxx.[xxx]# or nnn#xxx#
+
+            else
+               Load_Extended_Digits (File, Buf, Ptr);
+               Load (File, Buf, Ptr, '.', Loaded);
+
+               if Loaded then
+                  Load_Extended_Digits (File, Buf, Ptr);
+               end if;
+
+               --  As usual, it seems strange to allow mixed base characters,
+               --  but that is what ACVC tests expect, see CE3804M, case (3).
+
+               Load (File, Buf, Ptr, '#', ':');
+            end if;
+
+         --  Case of nnn.[nnn] or nnn
+
+         else
+            --  Prevent the potential processing of '.' in cases where the
+            --  initial digits have a trailing underscore.
+
+            if Buf (Ptr) = '_' then
+               return;
+            end if;
+
+            Load (File, Buf, Ptr, '.', Loaded);
+
+            if Loaded then
+               Load_Digits (File, Buf, Ptr);
+            end if;
+         end if;
+      end if;
+
+      --  Deal with exponent
+
+      Load (File, Buf, Ptr, 'E', 'e', Loaded);
+
+      if Loaded then
+         Load (File, Buf, Ptr, '+', '-');
+         Load_Digits (File, Buf, Ptr);
+      end if;
+   end Load_Real;
 
    ---------
    -- Put --
@@ -87,16 +189,16 @@ package body Ada.Text_IO.Float_Aux is
 
    procedure Put
      (File : File_Type;
-      Item : Num;
+      Item : Long_Long_Float;
       Fore : Field;
       Aft  : Field;
       Exp  : Field)
    is
-      Buf : String (1 .. Max_Real_Image_Length);
+      Buf : String (1 .. 3 * Field'Last + 2);
       Ptr : Natural := 0;
 
    begin
-      Set_Image (Item, Buf, Ptr, Fore, Aft, Exp);
+      Set_Image_Real (Item, Buf, Ptr, Fore, Aft, Exp);
       Put_Item (File, Buf (1 .. Ptr));
    end Put;
 
@@ -106,15 +208,15 @@ package body Ada.Text_IO.Float_Aux is
 
    procedure Puts
      (To   : out String;
-      Item : Num;
+      Item : Long_Long_Float;
       Aft  : Field;
       Exp  : Field)
    is
-      Buf : String (1 .. Max_Real_Image_Length);
+      Buf : String (1 .. 3 * Field'Last + 2);
       Ptr : Natural := 0;
 
    begin
-      Set_Image (Item, Buf, Ptr, Fore => 1, Aft => Aft, Exp => Exp);
+      Set_Image_Real (Item, Buf, Ptr, Fore => 1, Aft => Aft, Exp => Exp);
 
       if Ptr > To'Length then
          raise Layout_Error;

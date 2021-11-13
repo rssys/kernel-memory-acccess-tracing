@@ -222,39 +222,10 @@ func ExampleParseFloat() {
 	if s, err := strconv.ParseFloat(v, 64); err == nil {
 		fmt.Printf("%T, %v\n", s, s)
 	}
-	if s, err := strconv.ParseFloat("NaN", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	// ParseFloat is case insensitive
-	if s, err := strconv.ParseFloat("nan", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	if s, err := strconv.ParseFloat("inf", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	if s, err := strconv.ParseFloat("+Inf", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	if s, err := strconv.ParseFloat("-Inf", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	if s, err := strconv.ParseFloat("-0", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
-	if s, err := strconv.ParseFloat("+0", 32); err == nil {
-		fmt.Printf("%T, %v\n", s, s)
-	}
 
 	// Output:
 	// float64, 3.1415927410125732
 	// float64, 3.1415926535
-	// float64, NaN
-	// float64, NaN
-	// float64, +Inf
-	// float64, +Inf
-	// float64, -Inf
-	// float64, -0
-	// float64, 0
 }
 
 func ExampleParseInt() {
@@ -294,8 +265,7 @@ func ExampleParseUint() {
 }
 
 func ExampleQuote() {
-	// This string literal contains a tab character.
-	s := strconv.Quote(`"Fran & Freddie's Diner	☺"`)
+	s := strconv.Quote(`"Fran & Freddie's Diner	☺"`) // there is a tab character inside the string literal
 	fmt.Println(s)
 
 	// Output:
@@ -339,8 +309,7 @@ func ExampleQuoteRuneToGraphic() {
 }
 
 func ExampleQuoteToASCII() {
-	// This string literal contains a tab character.
-	s := strconv.QuoteToASCII(`"Fran & Freddie's Diner	☺"`)
+	s := strconv.QuoteToASCII(`"Fran & Freddie's Diner	☺"`) // there is a tab character inside the string literal
 	fmt.Println(s)
 
 	// Output:
@@ -351,8 +320,7 @@ func ExampleQuoteToGraphic() {
 	s := strconv.QuoteToGraphic("☺")
 	fmt.Println(s)
 
-	// This string literal contains a tab character.
-	s = strconv.QuoteToGraphic("This is a \u263a	\u000a")
+	s = strconv.QuoteToGraphic("This is a \u263a	\u000a") // there is a tab character inside the string literal
 	fmt.Println(s)
 
 	s = strconv.QuoteToGraphic(`" This is a ☺ \n "`)

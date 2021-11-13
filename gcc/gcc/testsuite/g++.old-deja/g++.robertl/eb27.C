@@ -1,5 +1,6 @@
 // { dg-do assemble  }
-// { dg-options "-Wno-deprecated -Wno-return-type" }
+// { dg-options "-Wno-deprecated" }
+// { dg-additional-options "-Wno-return-type" }
 /* bug.cc */
 /* simple program to demonstrate the bug with named return values in gcc
 */

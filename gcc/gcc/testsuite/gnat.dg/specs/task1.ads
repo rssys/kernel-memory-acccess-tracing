@@ -1,5 +1,5 @@
 -- { dg-do compile }
--- { dg-options "-gnatc" }
+-- { dg-options "-gnatct" }
 
 package Task1 is
 

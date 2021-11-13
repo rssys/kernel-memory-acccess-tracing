@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler.  MIPS version.
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2019 Free Software Foundation, Inc.
    Contributed by A. Lichnewsky (lich@inria.inria.fr).
    Changed by Michael Meissner	(meissner@osf.org).
    64-bit r4000 support by Ian Lance Taylor (ian@cygnus.com) and
@@ -42,23 +42,6 @@ extern int target_flags_explicit;
 #define ABI_EABI 3
 #define ABI_O64  4
 
-enum mips_isa {
-  MIPS_ISA_MIPS1 = 1,
-  MIPS_ISA_MIPS2 = 2,
-  MIPS_ISA_MIPS3 = 3,
-  MIPS_ISA_MIPS4 = 4,
-  MIPS_ISA_MIPS32 = 32,
-  MIPS_ISA_MIPS32R2 = 33,
-  MIPS_ISA_MIPS32R3 = 34,
-  MIPS_ISA_MIPS32R5 = 36,
-  MIPS_ISA_MIPS32R6 = 37,
-  MIPS_ISA_MIPS64 = 64,
-  MIPS_ISA_MIPS64R2 = 65,
-  MIPS_ISA_MIPS64R3 = 66,
-  MIPS_ISA_MIPS64R5 = 68,
-  MIPS_ISA_MIPS64R6 = 69
-};
-
 /* Masks that affect tuning.
 
    PTF_AVOID_BRANCHLIKELY_SPEED
@@ -98,7 +81,7 @@ struct mips_cpu_info {
   enum processor cpu;
 
   /* The ISA level that the processor implements.  */
-  enum mips_isa isa;
+  int isa;
 
   /* A mask of PTF_* values.  */
   unsigned int tune_flags;
@@ -249,7 +232,7 @@ struct mips_cpu_info {
 /* Generate mips16 code */
 #define TARGET_MIPS16		((target_flags & MASK_MIPS16) != 0)
 /* Generate mips16e code. Default 16bit ASE for mips32* and mips64* */
-#define GENERATE_MIPS16E	(TARGET_MIPS16 && mips_isa >= MIPS_ISA_MIPS32)
+#define GENERATE_MIPS16E	(TARGET_MIPS16 && mips_isa >= 32)
 /* Generate mips16e register save/restore sequences.  */
 #define GENERATE_MIPS16E_SAVE_RESTORE (GENERATE_MIPS16E && mips_abi == ABI_32)
 
@@ -264,20 +247,20 @@ struct mips_cpu_info {
   (TARGET_MIPS16 && mips_code_readable >= CODE_READABLE_PCREL)
 
 /* Generic ISA defines.  */
-#define ISA_MIPS1		    (mips_isa == MIPS_ISA_MIPS1)
-#define ISA_MIPS2		    (mips_isa == MIPS_ISA_MIPS2)
-#define ISA_MIPS3                   (mips_isa == MIPS_ISA_MIPS3)
-#define ISA_MIPS4		    (mips_isa == MIPS_ISA_MIPS4)
-#define ISA_MIPS32		    (mips_isa == MIPS_ISA_MIPS32)
-#define ISA_MIPS32R2		    (mips_isa == MIPS_ISA_MIPS32R2)
-#define ISA_MIPS32R3		    (mips_isa == MIPS_ISA_MIPS32R3)
-#define ISA_MIPS32R5		    (mips_isa == MIPS_ISA_MIPS32R5)
-#define ISA_MIPS32R6		    (mips_isa == MIPS_ISA_MIPS32R6)
-#define ISA_MIPS64                  (mips_isa == MIPS_ISA_MIPS64)
-#define ISA_MIPS64R2		    (mips_isa == MIPS_ISA_MIPS64R2)
-#define ISA_MIPS64R3		    (mips_isa == MIPS_ISA_MIPS64R3)
-#define ISA_MIPS64R5		    (mips_isa == MIPS_ISA_MIPS64R5)
-#define ISA_MIPS64R6		    (mips_isa == MIPS_ISA_MIPS64R6)
+#define ISA_MIPS1		    (mips_isa == 1)
+#define ISA_MIPS2		    (mips_isa == 2)
+#define ISA_MIPS3                   (mips_isa == 3)
+#define ISA_MIPS4		    (mips_isa == 4)
+#define ISA_MIPS32		    (mips_isa == 32)
+#define ISA_MIPS32R2		    (mips_isa == 33)
+#define ISA_MIPS32R3		    (mips_isa == 34)
+#define ISA_MIPS32R5		    (mips_isa == 36)
+#define ISA_MIPS32R6		    (mips_isa == 37)
+#define ISA_MIPS64                  (mips_isa == 64)
+#define ISA_MIPS64R2		    (mips_isa == 65)
+#define ISA_MIPS64R3		    (mips_isa == 66)
+#define ISA_MIPS64R5		    (mips_isa == 68)
+#define ISA_MIPS64R6		    (mips_isa == 69)
 
 /* Architecture target defines.  */
 #define TARGET_LOONGSON_2E          (mips_arch == PROCESSOR_LOONGSON_2E)
@@ -528,13 +511,12 @@ struct mips_cpu_info {
 	  builtin_define ("__mips=4");					\
 	  builtin_define ("_MIPS_ISA=_MIPS_ISA_MIPS4");			\
 	}								\
-      else if (mips_isa >= MIPS_ISA_MIPS32				\
-	       && mips_isa < MIPS_ISA_MIPS64)				\
+      else if (mips_isa >= 32 && mips_isa < 64)				\
 	{								\
 	  builtin_define ("__mips=32");					\
 	  builtin_define ("_MIPS_ISA=_MIPS_ISA_MIPS32");		\
 	}								\
-      else if (mips_isa >= MIPS_ISA_MIPS64)				\
+      else if (mips_isa >= 64)						\
 	{								\
 	  builtin_define ("__mips=64");					\
 	  builtin_define ("_MIPS_ISA=_MIPS_ISA_MIPS64");		\
@@ -676,9 +658,8 @@ struct mips_cpu_info {
     }									\
   while (0)
 
-/* Target hooks for D language.  */
+/* Target CPU versions for D.  */
 #define TARGET_D_CPU_VERSIONS mips_d_target_versions
-#define TARGET_D_REGISTER_CPU_TARGET_INFO mips_d_register_target_info
 
 /* Default target_flags if no switches are specified  */
 
@@ -726,25 +707,25 @@ struct mips_cpu_info {
 #endif
 
 #ifndef MULTILIB_ISA_DEFAULT
-#if MIPS_ISA_DEFAULT == MIPS_ISA_MIPS1
+#if MIPS_ISA_DEFAULT == 1
 #define MULTILIB_ISA_DEFAULT "mips1"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS2
+#elif MIPS_ISA_DEFAULT == 2
 #define MULTILIB_ISA_DEFAULT "mips2"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS3
+#elif MIPS_ISA_DEFAULT == 3
 #define MULTILIB_ISA_DEFAULT "mips3"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS4
+#elif MIPS_ISA_DEFAULT == 4
 #define MULTILIB_ISA_DEFAULT "mips4"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS32
+#elif MIPS_ISA_DEFAULT == 32
 #define MULTILIB_ISA_DEFAULT "mips32"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS32R2
+#elif MIPS_ISA_DEFAULT == 33
 #define MULTILIB_ISA_DEFAULT "mips32r2"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS32R6
+#elif MIPS_ISA_DEFAULT == 37
 #define MULTILIB_ISA_DEFAULT "mips32r6"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS64
+#elif MIPS_ISA_DEFAULT == 64
 #define MULTILIB_ISA_DEFAULT "mips64"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS64R2
+#elif MIPS_ISA_DEFAULT == 65
 #define MULTILIB_ISA_DEFAULT "mips64r2"
-#elif MIPS_ISA_DEFAULT == MIPS_ISA_MIPS64R6
+#elif MIPS_ISA_DEFAULT == 69
 #define MULTILIB_ISA_DEFAULT "mips64r6"
 #else
 #define MULTILIB_ISA_DEFAULT "mips1"
@@ -1293,12 +1274,12 @@ struct mips_cpu_info {
 				 && !TARGET_MICROMIPS)
 
 /* Likewise mtc1 and mfc1.  */
-#define ISA_HAS_XFER_DELAY	(mips_isa <= MIPS_ISA_MIPS3	\
+#define ISA_HAS_XFER_DELAY	(mips_isa <= 3			\
 				 && !TARGET_MIPS5900		\
 				 && !TARGET_LOONGSON_2EF)
 
 /* Likewise floating-point comparisons.  */
-#define ISA_HAS_FCMP_DELAY	(mips_isa <= MIPS_ISA_MIPS3	\
+#define ISA_HAS_FCMP_DELAY	(mips_isa <= 3			\
 				 && !TARGET_MIPS5900		\
 				 && !TARGET_LOONGSON_2EF)
 
@@ -1323,7 +1304,7 @@ struct mips_cpu_info {
 #define ISA_HAS_SYNCI (mips_isa_rev >= 2 && !TARGET_MIPS16)
 
 /* ISA includes sync.  */
-#define ISA_HAS_SYNC ((mips_isa >= MIPS_ISA_MIPS2 || TARGET_MIPS3900) && !TARGET_MIPS16)
+#define ISA_HAS_SYNC ((mips_isa >= 2 || TARGET_MIPS3900) && !TARGET_MIPS16)
 #define GENERATE_SYNC			\
   (target_flags_explicit & MASK_LLSC	\
    ? TARGET_LLSC && !TARGET_MIPS16	\
@@ -1332,7 +1313,7 @@ struct mips_cpu_info {
 /* ISA includes ll and sc.  Note that this implies ISA_HAS_SYNC
    because the expanders use both ISA_HAS_SYNC and ISA_HAS_LL_SC
    instructions.  */
-#define ISA_HAS_LL_SC (mips_isa >= MIPS_ISA_MIPS2 && !TARGET_MIPS5900 && !TARGET_MIPS16)
+#define ISA_HAS_LL_SC (mips_isa >= 2 && !TARGET_MIPS5900 && !TARGET_MIPS16)
 #define GENERATE_LL_SC			\
   (target_flags_explicit & MASK_LLSC	\
    ? TARGET_LLSC && !TARGET_MIPS16	\
@@ -1360,7 +1341,7 @@ struct mips_cpu_info {
 #define ISA_HAS_POP		(TARGET_OCTEON && !TARGET_MIPS16)
 
 /* The CACHE instruction is available in non-MIPS16 code.  */
-#define TARGET_CACHE_BUILTIN (mips_isa >= MIPS_ISA_MIPS3)
+#define TARGET_CACHE_BUILTIN (mips_isa >= 3)
 
 /* The CACHE instruction is available.  */
 #define ISA_HAS_CACHE (TARGET_CACHE_BUILTIN && !TARGET_MIPS16)
@@ -1835,6 +1816,29 @@ FP_ASM_SPEC "\
    calls, sibcalls don't clobber $31, so the register reaches the
    called function in tact.  EPILOGUE_USES says that $31 is useful
    to the called function.  */
+
+#define CALL_USED_REGISTERS						\
+{									\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0,			\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,			\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  /* COP0 registers */							\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  /* COP2 registers */							\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  /* COP3 registers */							\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,			\
+  /* 6 DSP accumulator registers & 6 control registers */		\
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1					\
+}
+
+
+/* Define this since $28, though fixed, is call-saved in many ABIs.  */
 
 #define CALL_REALLY_USED_REGISTERS                                      \
 { /* General registers.  */                                             \
@@ -3095,12 +3099,12 @@ while (0)
 #define MIPS_MIN_MOVE_MEM_ALIGN 16
 
 /* The maximum number of bytes that can be copied by one iteration of
-   a cpymemsi loop; see mips_block_move_loop.  */
+   a movmemsi loop; see mips_block_move_loop.  */
 #define MIPS_MAX_MOVE_BYTES_PER_LOOP_ITER \
   (UNITS_PER_WORD * 4)
 
 /* The maximum number of bytes that can be copied by a straight-line
-   implementation of cpymemsi; see mips_block_move_straight.  We want
+   implementation of movmemsi; see mips_block_move_straight.  We want
    to make sure that any loop-based implementation will iterate at
    least twice.  */
 #define MIPS_MAX_MOVE_BYTES_STRAIGHT \
@@ -3115,11 +3119,11 @@ while (0)
 
 #define MIPS_CALL_RATIO 8
 
-/* Any loop-based implementation of cpymemsi will have at least
+/* Any loop-based implementation of movmemsi will have at least
    MIPS_MAX_MOVE_BYTES_STRAIGHT / UNITS_PER_WORD memory-to-memory
    moves, so allow individual copies of fewer elements.
 
-   When cpymemsi is not available, use a value approximating
+   When movmemsi is not available, use a value approximating
    the length of a memcpy call sequence, so that move_by_pieces
    will generate inline code if it is shorter than a function call.
    Since move_by_pieces_ninsns counts memory-to-memory moves, but
@@ -3127,7 +3131,7 @@ while (0)
    value of MIPS_CALL_RATIO to take that into account.  */
 
 #define MOVE_RATIO(speed)				\
-  (HAVE_cpymemsi					\
+  (HAVE_movmemsi					\
    ? MIPS_MAX_MOVE_BYTES_STRAIGHT / MOVE_MAX		\
    : MIPS_CALL_RATIO / 2)
 
@@ -3457,5 +3461,3 @@ struct GTY(())  machine_function {
   (TARGET_LOAD_STORE_PAIRS \
    && (TUNE_P5600 || TUNE_I6400 || TUNE_P6600) \
    && !TARGET_MICROMIPS && !TARGET_FIX_24K)
-
-#define NEED_INDICATE_EXEC_STACK 0

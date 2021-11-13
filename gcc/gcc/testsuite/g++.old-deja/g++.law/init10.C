@@ -20,7 +20,7 @@ public:
         b();
 };
 
-b::b() : three(this)  // { dg-error "array|could not convert" }
+b::b() : three(this)  // { dg-error "array" }
 {
 }
 

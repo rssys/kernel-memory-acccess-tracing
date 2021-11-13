@@ -10,10 +10,7 @@ program test
   x = 0.0 !$acc parallel ! comment
   ! sentinel must appear as a single word
   ! $acc parallel ! comment
-
-  ! note that '!$ ' is OpenMP's conditional compilation sentinel
-  !$ acc ignored_due_to_space  ! comment
-
+  !$ acc parallel ! { dg-error "Unclassifiable statement" }
   ! directive lines must have space after sentinel
   !$accparallel ! { dg-warning "followed by a space" }
   do i = 1,10

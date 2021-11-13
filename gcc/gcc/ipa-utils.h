@@ -1,5 +1,5 @@
 /* Utilities for ipa analysis.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
 
 This file is part of GCC.
@@ -47,10 +47,6 @@ void ipa_merge_profiles (struct cgraph_node *dst,
 			 struct cgraph_node *src, bool preserve_body = false);
 bool recursive_call_p (tree, tree);
 
-/* In ipa-pure-const.c  */
-bool finite_function_p ();
-bool builtin_safe_for_const_function_p (bool *, tree);
-
 /* In ipa-profile.c  */
 bool ipa_propagate_frequency (struct cgraph_node *node);
 
@@ -58,7 +54,6 @@ bool ipa_propagate_frequency (struct cgraph_node *node);
 
 struct odr_type_d;
 typedef odr_type_d *odr_type;
-extern bool thunk_expansion;
 void build_type_inheritance_graph (void);
 void rebuild_type_inheritance_graph (void);
 void update_type_inheritance_graph (void);
@@ -97,12 +92,6 @@ void warn_types_mismatch (tree t1, tree t2, location_t loc1 = UNKNOWN_LOCATION,
 bool odr_or_derived_type_p (const_tree t);
 bool odr_types_equivalent_p (tree type1, tree type2);
 bool odr_type_violation_reported_p (tree type);
-tree prevailing_odr_type (tree type);
-void enable_odr_based_tbaa (tree type);
-bool odr_based_tbaa_p (const_tree type);
-void set_type_canonical_for_odr_type (tree type, tree canonical);
-
-void register_odr_enum (tree type);
 
 /* Return vector containing possible targets of polymorphic call E.
    If COMPLETEP is non-NULL, store true if the list is complete. 
@@ -197,14 +186,19 @@ type_with_linkage_p (const_tree t)
   if (!TYPE_NAME (t) || TREE_CODE (TYPE_NAME (t)) != TYPE_DECL)
     return false;
 
-  /* After free_lang_data was run we can recongize
+  /* To support -fno-lto-odr-type-merigng recognize types with vtables
+     to have linkage.  */
+  if (RECORD_OR_UNION_TYPE_P (t)
+      && TYPE_BINFO (t) && BINFO_VTABLE (TYPE_BINFO (t)))
+    return true;
+
+  /* After free_lang_data was run and -flto-odr-type-merging we can recongize
      types with linkage by presence of mangled name.  */
   if (DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
     return true;
 
   if (in_lto_p)
     return false;
-
   /* We used to check for TYPE_STUB_DECL but that is set to NULL for forward
      declarations.  */
 
@@ -247,36 +241,27 @@ odr_type_p (const_tree t)
 {
   /* We do not have this information when not in LTO, but we do not need
      to care, since it is used only for type merging.  */
-  gcc_checking_assert (in_lto_p || flag_lto || flag_generate_offload);
-  return TYPE_NAME (t) && TREE_CODE (TYPE_NAME (t)) == TYPE_DECL
-         && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t));
-}
+  gcc_checking_assert (in_lto_p || flag_lto);
 
-/* If TYPE has mangled ODR name, return it.  Otherwise return NULL.
-   The function works only when free_lang_data is run.  */
+  if (!type_with_linkage_p (t))
+    return false;
 
-inline const char *
-get_odr_name_for_type (tree type)
-{
-  tree type_name = TYPE_NAME (type);
-  if (type_name == NULL_TREE
-      || TREE_CODE (type_name) != TYPE_DECL
-      || !DECL_ASSEMBLER_NAME_SET_P (type_name))
-    return NULL;
-
-  return IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (type_name));
-}
-
-/* Return true if we are going to do LTO streaming.  */
-
-inline bool
-lto_streaming_expected_p ()
-{
-  /* Compilation before LTO stremaing.  */
-  if (flag_lto && !in_lto_p && symtab->state < IPA_SSA_AFTER_INLINING)
+  /* To support -fno-lto-odr-type-merging consider types with vtables ODR.  */
+  if (type_in_anonymous_namespace_p (t))
     return true;
-  /* WPA or incremental link.  */
-  return (flag_wpa || flag_incremental_link == INCREMENTAL_LINK_LTO);
+
+  if (TYPE_NAME (t) && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
+    {
+      /* C++ FE uses magic <anon> as assembler names of anonymous types.
+ 	 verify that this match with type_in_anonymous_namespace_p.  */
+      gcc_checking_assert (strcmp ("<anon>",
+				   IDENTIFIER_POINTER
+				   (DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
+      return true;
+    }
+  return false;
 }
 
 #endif  /* GCC_IPA_UTILS_H  */
+
+

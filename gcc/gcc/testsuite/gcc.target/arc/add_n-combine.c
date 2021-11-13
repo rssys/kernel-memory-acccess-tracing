@@ -1,5 +1,5 @@
 /* { dg-do compile }  */
-/* { dg-options "-O2" }  */
+/* { dg-options "-O2 -fdump-rtl-combine" }  */
 
 struct b1 {
       char c;
@@ -45,6 +45,4 @@ void f() {
   a(at3.bn[bu]);
 }
 
-/* { dg-final { scan-assembler "add1" } } */
-/* { dg-final { scan-assembler "add2" } } */
-/* { dg-final { scan-assembler "add3" } } */
+/* { dg-final { scan-rtl-dump-times "\\*add_n" 2 "combine" } } */

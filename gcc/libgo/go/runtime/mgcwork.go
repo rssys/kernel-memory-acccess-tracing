@@ -22,6 +22,13 @@ const (
 	workbufAlloc = 32 << 10
 )
 
+// throwOnGCWork causes any operations that add pointers to a gcWork
+// buffer to throw.
+//
+// TODO(austin): This is a temporary debugging measure for issue
+// #27993. To be removed before release.
+var throwOnGCWork bool
+
 func init() {
 	if workbufAlloc%pageSize != 0 || workbufAlloc%_WorkbufSize != 0 {
 		throw("bad workbufAlloc")
@@ -86,6 +93,17 @@ type gcWork struct {
 	// termination check. Specifically, this indicates that this
 	// gcWork may have communicated work to another gcWork.
 	flushedWork bool
+
+	// pauseGen causes put operations to spin while pauseGen ==
+	// gcWorkPauseGen if debugCachedWork is true.
+	pauseGen uint32
+
+	// putGen is the pauseGen of the last putGen.
+	putGen uint32
+
+	// pauseStack is the stack at which this P was paused if
+	// debugCachedWork is true.
+	pauseStack [16]location
 }
 
 // Most of the methods of gcWork are go:nowritebarrierrec because the
@@ -104,16 +122,61 @@ func (w *gcWork) init() {
 	w.wbuf2 = wbuf2
 }
 
+func (w *gcWork) checkPut(ptr uintptr, ptrs []uintptr) {
+	if debugCachedWork {
+		alreadyFailed := w.putGen == w.pauseGen
+		w.putGen = w.pauseGen
+		if m := getg().m; m.locks > 0 || m.mallocing != 0 || m.preemptoff != "" || m.p.ptr().status != _Prunning {
+			// If we were to spin, the runtime may
+			// deadlock: the condition above prevents
+			// preemption (see newstack), which could
+			// prevent gcMarkDone from finishing the
+			// ragged barrier and releasing the spin.
+			return
+		}
+		for atomic.Load(&gcWorkPauseGen) == w.pauseGen {
+		}
+		if throwOnGCWork {
+			printlock()
+			if alreadyFailed {
+				println("runtime: checkPut already failed at this generation")
+			}
+			println("runtime: late gcWork put")
+			if ptr != 0 {
+				gcDumpObject("ptr", ptr, ^uintptr(0))
+			}
+			for _, ptr := range ptrs {
+				gcDumpObject("ptrs", ptr, ^uintptr(0))
+			}
+			println("runtime: paused at")
+			for _, loc := range w.pauseStack {
+				if loc.pc == 0 {
+					break
+				}
+				if loc.function != "" {
+					// Obviously this doesn't
+					// relate to ancestor
+					// tracebacks, but this
+					// function prints what we
+					// want.
+					printAncestorTracebackFuncInfo(loc.function, loc.filename, loc.lineno, loc.pc)
+				} else {
+					println("\tunknown PC ", hex(loc.pc), "\n")
+				}
+			}
+			throw("throwOnGCWork")
+		}
+	}
+}
+
 // put enqueues a pointer for the garbage collector to trace.
 // obj must point to the beginning of a heap object or an oblet.
 //go:nowritebarrierrec
 func (w *gcWork) put(obj uintptr) {
+	w.checkPut(obj, nil)
+
 	flushed := false
 	wbuf := w.wbuf1
-	// Record that this may acquire the wbufSpans or heap lock to
-	// allocate a workbuf.
-	lockWithRankMayAcquire(&work.wbufSpans.lock, lockRankWbufSpans)
-	lockWithRankMayAcquire(&mheap_.lock, lockRankMheap)
 	if wbuf == nil {
 		w.init()
 		wbuf = w.wbuf1
@@ -146,6 +209,8 @@ func (w *gcWork) put(obj uintptr) {
 // otherwise it returns false and the caller needs to call put.
 //go:nowritebarrierrec
 func (w *gcWork) putFast(obj uintptr) bool {
+	w.checkPut(obj, nil)
+
 	wbuf := w.wbuf1
 	if wbuf == nil {
 		return false
@@ -166,6 +231,8 @@ func (w *gcWork) putBatch(obj []uintptr) {
 	if len(obj) == 0 {
 		return
 	}
+
+	w.checkPut(0, obj)
 
 	flushed := false
 	wbuf := w.wbuf1
@@ -288,10 +355,12 @@ func (w *gcWork) balance() {
 		return
 	}
 	if wbuf := w.wbuf2; wbuf.nobj != 0 {
+		w.checkPut(0, wbuf.obj[:wbuf.nobj])
 		putfull(wbuf)
 		w.flushedWork = true
 		w.wbuf2 = getempty()
 	} else if wbuf := w.wbuf1; wbuf.nobj > 4 {
+		w.checkPut(0, wbuf.obj[:wbuf.nobj])
 		w.wbuf1 = handoff(wbuf)
 		w.flushedWork = true // handoff did putfull
 	} else {
@@ -353,10 +422,6 @@ func getempty() *workbuf {
 			b.checkempty()
 		}
 	}
-	// Record that this may acquire the wbufSpans or heap lock to
-	// allocate a workbuf.
-	lockWithRankMayAcquire(&work.wbufSpans.lock, lockRankWbufSpans)
-	lockWithRankMayAcquire(&mheap_.lock, lockRankMheap)
 	if b == nil {
 		// Allocate more workbufs.
 		var s *mspan
@@ -371,7 +436,7 @@ func getempty() *workbuf {
 		}
 		if s == nil {
 			systemstack(func() {
-				s = mheap_.allocManual(workbufAlloc/pageSize, spanAllocWorkBuf)
+				s = mheap_.allocManual(workbufAlloc/pageSize, &memstats.gc_sys)
 			})
 			if s == nil {
 				throw("out of memory")
@@ -398,7 +463,7 @@ func getempty() *workbuf {
 }
 
 // putempty puts a workbuf onto the work.empty list.
-// Upon entry this goroutine owns b. The lfstack.push relinquishes ownership.
+// Upon entry this go routine owns b. The lfstack.push relinquishes ownership.
 //go:nowritebarrier
 func putempty(b *workbuf) {
 	b.checkempty()
@@ -473,7 +538,7 @@ func freeSomeWbufs(preemptible bool) bool {
 				break
 			}
 			work.wbufSpans.free.remove(span)
-			mheap_.freeManual(span, spanAllocWorkBuf)
+			mheap_.freeManual(span, &memstats.gc_sys)
 		}
 	})
 	more := !work.wbufSpans.free.isEmpty()

@@ -1,5 +1,5 @@
 /* PR target/65780 */
-/* { dg-do link { target *-*-linux* *-*-gnu* *-*-uclinux* } } */
+/* { dg-do link { target *-*-linux* *-*-gnu* } } */
 /* { dg-require-effective-target pie } */
 /* { dg-options "-O2 -fpie" } */
 

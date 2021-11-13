@@ -1,4 +1,4 @@
-// { dg-do compile { target c++14_only } }
+// { dg-do compile { target c++11 } }
 
 #include <type_traits>
 

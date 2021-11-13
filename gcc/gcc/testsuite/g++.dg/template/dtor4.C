@@ -5,5 +5,5 @@
 
 template<int> struct A
 {
-  ~A<0>(); // { dg-error "parse error|declaration|template-id" }
+  ~A<0>(); // { dg-error "parse error|declaration" }
 };

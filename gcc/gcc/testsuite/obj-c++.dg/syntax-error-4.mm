@@ -1,6 +1,5 @@
 /* Yet another stray infinite loop... */
 /* { dg-do compile } */
-// { dg-additional-options "-Wno-objc-root-class" }
 
 @interface t
 {

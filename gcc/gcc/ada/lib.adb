@@ -6,17 +6,23 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
--- for  more details.  You should have  received  a copy of the GNU General --
--- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
--- http://www.gnu.org/licenses for a complete copy of the license.          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
+--                                                                          --
+-- As a special exception under Section 7 of GPL version 3, you are granted --
+-- additional permissions described in the GCC Runtime Library Exception,   --
+-- version 3.1, as published by the Free Software Foundation.               --
+--                                                                          --
+-- You should have received a copy of the GNU General Public License and    --
+-- a copy of the GCC Runtime Library Exception along with this program;     --
+-- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
+-- <http://www.gnu.org/licenses/>.                                          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -27,20 +33,19 @@ pragma Style_Checks (All_Checks);
 --  Subprogram ordering not enforced in this unit
 --  (because of some logical groupings).
 
-with Atree;          use Atree;
-with Csets;          use Csets;
-with Einfo;          use Einfo;
-with Einfo.Entities; use Einfo.Entities;
-with Nlists;         use Nlists;
-with Opt;            use Opt;
-with Output;         use Output;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Sinput;         use Sinput;
-with Stand;          use Stand;
-with Stringt;        use Stringt;
-with Uname;          use Uname;
-with Widechar;       use Widechar;
+with Atree;    use Atree;
+with Csets;    use Csets;
+with Einfo;    use Einfo;
+with Nlists;   use Nlists;
+with Opt;      use Opt;
+with Output;   use Output;
+with Sinfo;    use Sinfo;
+with Sinput;   use Sinput;
+with Stand;    use Stand;
+with Stringt;  use Stringt;
+with Tree_IO;  use Tree_IO;
+with Uname;    use Uname;
+with Widechar; use Widechar;
 
 package body Lib is
 
@@ -128,12 +133,12 @@ package body Lib is
       return Units.Table (U).Is_Predefined_Renaming;
    end Is_Predefined_Renaming;
 
-   function Is_Internal_Unit (U : Unit_Number_Type) return Boolean is
+   function Is_Internal_Unit       (U : Unit_Number_Type) return Boolean is
    begin
       return Units.Table (U).Is_Internal_Unit;
    end Is_Internal_Unit;
 
-   function Is_Predefined_Unit (U : Unit_Number_Type) return Boolean is
+   function Is_Predefined_Unit     (U : Unit_Number_Type) return Boolean is
    begin
       return Units.Table (U).Is_Predefined_Unit;
    end Is_Predefined_Unit;
@@ -272,24 +277,8 @@ package body Lib is
    end Set_OA_Setting;
 
    procedure Set_Unit_Name (U : Unit_Number_Type; N : Unit_Name_Type) is
-      Old_N : constant Unit_Name_Type := Units.Table (U).Unit_Name;
-
    begin
-      --  First unregister the old name, if any
-
-      if Present (Old_N) and then Unit_Names.Get (Old_N) = U then
-         Unit_Names.Set (Old_N, No_Unit);
-      end if;
-
-      --  Then set the new name
-
       Units.Table (U).Unit_Name := N;
-
-      --  Finally register the new name
-
-      if Unit_Names.Get (N) = No_Unit then
-         Unit_Names.Set (N, U);
-      end if;
    end Set_Unit_Name;
 
    ------------------------------
@@ -358,12 +347,6 @@ package body Lib is
          --  Step 2: Check subunits. If a subunit is instantiated, follow the
          --  instantiation chain rather than the stub chain.
 
-         --  Note that we must handle the case where the subunit exists in the
-         --  same body as the main unit (which may happen when Naming gets
-         --  manually specified within a project file or through tools like
-         --  gprname). Otherwise, we will have an infinite loop jumping around
-         --  the same file.
-
          Unit1 := Unit (Cunit (Unum1));
          Unit2 := Unit (Cunit (Unum2));
          Inst1 := Instantiation (Sind1);
@@ -386,35 +369,21 @@ package body Lib is
                   Length_Of_Name (Unit_Name (Unum2))
                then
                   Sloc2 := Sloc (Corresponding_Stub (Unit2));
+                  Unum2 := Get_Source_Unit (Sloc2);
+                  goto Continue;
 
-                  if Unum2 /= Get_Source_Unit (Sloc2) then
-                     Unum2 := Get_Source_Unit (Sloc2);
-                     goto Continue;
-                  else
-                     null; --  Unum2 already designates the correct unit
-                  end if;
                else
                   Sloc1 := Sloc (Corresponding_Stub (Unit1));
-
-                  if Unum1 /= Get_Source_Unit (Sloc1) then
-                     Unum1 := Get_Source_Unit (Sloc1);
-                     goto Continue;
-                  else
-                     null; --  Unum1 already designates the correct unit
-                  end if;
+                  Unum1 := Get_Source_Unit (Sloc1);
+                  goto Continue;
                end if;
 
             --  Sloc1 in subunit, Sloc2 not
 
             else
                Sloc1 := Sloc (Corresponding_Stub (Unit1));
-
-               if Unum1 /= Get_Source_Unit (Sloc1) then
-                  Unum1 := Get_Source_Unit (Sloc1);
-                  goto Continue;
-               else
-                  null; --  Unum1 already designates the correct unit
-               end if;
+               Unum1 := Get_Source_Unit (Sloc1);
+               goto Continue;
             end if;
 
          --  Sloc2 in subunit, Sloc1 not
@@ -424,13 +393,8 @@ package body Lib is
            and then Inst2 = No_Location
          then
             Sloc2 := Sloc (Corresponding_Stub (Unit2));
-
-            if Unum2 /= Get_Source_Unit (Sloc2) then
-               Unum2 := Get_Source_Unit (Sloc2);
-               goto Continue;
-            else
-               null; --  Unum2 already designates the correct unit
-            end if;
+            Unum2 := Get_Source_Unit (Sloc2);
+            goto Continue;
          end if;
 
          --  Step 3: Check instances. The two locations may yield a common
@@ -482,12 +446,18 @@ package body Lib is
          --  body of the same unit. The location in the spec is considered
          --  earlier.
 
-         if Nkind (Unit1) in N_Subprogram_Body | N_Package_Body then
+         if Nkind (Unit1) = N_Subprogram_Body
+              or else
+            Nkind (Unit1) = N_Package_Body
+         then
             if Library_Unit (Cunit (Unum1)) = Cunit (Unum2) then
                return Yes_After;
             end if;
 
-         elsif Nkind (Unit2) in N_Subprogram_Body | N_Package_Body then
+         elsif Nkind (Unit2) = N_Subprogram_Body
+                 or else
+               Nkind (Unit2) = N_Package_Body
+         then
             if Library_Unit (Cunit (Unum2)) = Cunit (Unum1) then
                return Yes_Before;
             end if;
@@ -505,8 +475,8 @@ package body Lib is
 
          if Counter > Max_Iterations then
 
-            --  In CodePeer_Mode, return a value to be able to generate SCIL
-            --  files and hope for the best.
+            --  ??? Not quite right, but return a value to be able to generate
+            --  SCIL files and hope for the best.
 
             if CodePeer_Mode then
                return No;
@@ -1098,16 +1068,6 @@ package body Lib is
       return TSN;
    end Increment_Serial_Number;
 
-   ----------------------
-   --  Init_Unit_Name  --
-   ----------------------
-
-   procedure Init_Unit_Name (U : Unit_Number_Type; N : Unit_Name_Type) is
-   begin
-      Units.Table (U).Unit_Name := N;
-      Unit_Names.Set (N, U);
-   end Init_Unit_Name;
-
    ----------------
    -- Initialize --
    ----------------
@@ -1127,7 +1087,13 @@ package body Lib is
 
    function Is_Loaded (Uname : Unit_Name_Type) return Boolean is
    begin
-      return Unit_Names.Get (Uname) /= No_Unit;
+      for Unum in Units.First .. Units.Last loop
+         if Uname = Unit_Name (Unum) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
    end Is_Loaded;
 
    ---------------
@@ -1174,9 +1140,9 @@ package body Lib is
 
    procedure Remove_Unit (U : Unit_Number_Type) is
    begin
-      pragma Assert (U = Units.Last);
-      Unit_Names.Set (Unit_Name (U), No_Unit);
-      Units.Decrement_Last;
+      if U = Units.Last then
+         Units.Decrement_Last;
+      end if;
    end Remove_Unit;
 
    ----------------------------------
@@ -1261,26 +1227,55 @@ package body Lib is
    -- Synchronize_Serial_Number --
    -------------------------------
 
-   procedure Synchronize_Serial_Number (SN : Nat) is
+   procedure Synchronize_Serial_Number is
       TSN : Int renames Units.Table (Current_Sem_Unit).Serial_Number;
    begin
-      --  We should not be trying to synchronize downward
-
-      pragma Assert (TSN <= SN);
-
-      if TSN < SN then
-         TSN := SN;
-      end if;
+      TSN := TSN + 1;
    end Synchronize_Serial_Number;
 
-   --------------------
-   -- Unit_Name_Hash --
-   --------------------
+   ---------------
+   -- Tree_Read --
+   ---------------
 
-   function Unit_Name_Hash (Id : Unit_Name_Type) return Unit_Name_Header_Num is
+   procedure Tree_Read is
+      N : Nat;
+      S : String_Ptr;
+
    begin
-      return Unit_Name_Header_Num (Id mod Unit_Name_Table_Size);
-   end Unit_Name_Hash;
+      Units.Tree_Read;
+
+      --  Read Compilation_Switches table. First release the memory occupied
+      --  by the previously loaded switches.
+
+      for J in Compilation_Switches.First .. Compilation_Switches.Last loop
+         Free (Compilation_Switches.Table (J));
+      end loop;
+
+      Tree_Read_Int (N);
+      Compilation_Switches.Set_Last (N);
+
+      for J in 1 .. N loop
+         Tree_Read_Str (S);
+         Compilation_Switches.Table (J) := S;
+      end loop;
+   end Tree_Read;
+
+   ----------------
+   -- Tree_Write --
+   ----------------
+
+   procedure Tree_Write is
+   begin
+      Units.Tree_Write;
+
+      --  Write Compilation_Switches table
+
+      Tree_Write_Int (Compilation_Switches.Last);
+
+      for J in 1 .. Compilation_Switches.Last loop
+         Tree_Write_Str (Compilation_Switches.Table (J));
+      end loop;
+   end Tree_Write;
 
    ------------
    -- Unlock --
@@ -1355,7 +1350,7 @@ package body Lib is
            and then (Nkind (Context_Item) /= N_With_Clause
                       or else Limited_Present (Context_Item))
          loop
-            Next (Context_Item);
+            Context_Item := Next (Context_Item);
          end loop;
 
          if Present (Context_Item) then
@@ -1379,7 +1374,7 @@ package body Lib is
                   Write_Eol;
                end if;
 
-               Next (Context_Item);
+               Context_Item := Next (Context_Item);
             end loop;
 
             Outdent;

@@ -47,6 +47,17 @@ struct S {
 	 []{return 3;}());
 };
 
+template<typename T> struct R {
+  static int x;
+};
+// "int i;" makes the op() non-constexpr in C++17.
+template<typename T> int R<T>::x = []{int i; return 1;}();
+template int R<int>::x;
+// Type of lambda in intializer of R<int>::x: N1RIiE1xMUlvE_E
+// Corresponding operator(): _ZNK1RIiE1xMUlvE_clEv
+// { dg-final { scan-assembler "_ZNK1RIiE1xMUlvE_clEv" } }
+// { dg-final { scan-assembler "weak\[^\n\r\]*_?_ZNK1RIiE1xMUlvE_clEv" { target { ! { *-*-mingw* *-*-cygwin } } } } }
+
 void bar()
 {
   // lambdas in non-vague linkage functions have internal linkage.
@@ -54,12 +65,9 @@ void bar()
   []{}();
 }
 
-// lambdas used in namespace-scope initializers have the linkage of
-// the decl
+// lambdas used in non-template, non-class body initializers are internal.
 // { dg-final { scan-assembler-not "weak\[^\n\r\]*_ZNKUlv" } }
-// { dg-final { scan-assembler "weak\[^\n\r\]*variableMUlvE_clEv" { target c++14_down } } }
-// in c++17 and up, this operator() become constexpr, no not emitted
-// { dg-final { scan-assembler-not "weak\[^\n\r\]*variableMUlvE_clEv" { target c++17 } } }
+// { dg-final { scan-assembler-not "weak\[^\n\r\]*variable" } }
 int variable = []{return 1;}();
 
 // And a template instantiated with such a lambda is also internal.

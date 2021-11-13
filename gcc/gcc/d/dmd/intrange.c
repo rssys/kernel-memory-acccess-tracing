@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by KennyTM
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -278,7 +278,7 @@ IntRange IntRange::fromType(Type *type)
 
 IntRange IntRange::fromType(Type *type, bool isUnsigned)
 {
-    if (!type->isintegral() || type->toBasetype()->ty == Tvector)
+    if (!type->isintegral())
         return widest();
 
     uinteger_t mask = type->sizemask();
@@ -404,7 +404,7 @@ IntRange& IntRange::castDchar()
 
 IntRange& IntRange::cast(Type *type)
 {
-    if (!type->isintegral() || type->toBasetype()->ty == Tvector)
+    if (!type->isintegral())
         return *this;
     else if (!type->isunsigned())
         return castSigned(type->sizemask());
@@ -416,7 +416,7 @@ IntRange& IntRange::cast(Type *type)
 
 IntRange& IntRange::castUnsigned(Type *type)
 {
-    if (!type->isintegral() || type->toBasetype()->ty == Tvector)
+    if (!type->isintegral())
         return castUnsigned(UINT64_MAX);
     else if (type->toBasetype()->ty == Tdchar)
         return castDchar();
@@ -610,7 +610,7 @@ IntRange IntRange::operator/(const IntRange& rhs) const
     {
         r.imax.value--;
     }
-    else if (r.imin.value == 0)
+    else if(r.imin.value == 0)
     {
         r.imin.value++;
     }

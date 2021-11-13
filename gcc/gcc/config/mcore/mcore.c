@@ -1,5 +1,5 @@
 /* Output routines for Motorola MCore processor
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -99,9 +99,7 @@ static int        calc_live_regs                (int *);
 static int        try_constant_tricks           (HOST_WIDE_INT, HOST_WIDE_INT *, HOST_WIDE_INT *);
 static const char *     output_inline_const     (machine_mode, rtx *);
 static void       layout_mcore_frame            (struct mcore_frame *);
-static void       mcore_setup_incoming_varargs	(cumulative_args_t,
-						 const function_arg_info &,
-						 int *, int);
+static void       mcore_setup_incoming_varargs	(cumulative_args_t, machine_mode, tree, int *, int);
 static cond_type  is_cond_candidate             (rtx);
 static rtx_insn  *emit_new_cond_insn            (rtx_insn *, int);
 static rtx_insn  *conditionalize_block          (rtx_insn *);
@@ -131,11 +129,14 @@ static bool       mcore_rtx_costs		(rtx, machine_mode, int, int,
 static void       mcore_external_libcall	(rtx);
 static bool       mcore_return_in_memory	(const_tree, const_tree);
 static int        mcore_arg_partial_bytes       (cumulative_args_t,
-						 const function_arg_info &);
+						 machine_mode,
+						 tree, bool);
 static rtx        mcore_function_arg            (cumulative_args_t,
-						 const function_arg_info &);
+						 machine_mode,
+						 const_tree, bool);
 static void       mcore_function_arg_advance    (cumulative_args_t,
-						 const function_arg_info &);
+						 machine_mode,
+						 const_tree, bool);
 static unsigned int mcore_function_arg_boundary (machine_mode,
 						 const_tree);
 static void       mcore_asm_trampoline_template (FILE *);
@@ -316,7 +317,7 @@ calc_live_regs (int * count)
 
   for (reg = 0; reg < FIRST_PSEUDO_REGISTER; reg++)
     {
-      if (df_regs_ever_live_p (reg) && !call_used_or_fixed_reg_p (reg))
+      if (df_regs_ever_live_p (reg) && !call_used_regs[reg])
 	{
 	  (*count)++;
 	  live_regs_mask |= (1 << reg);
@@ -1942,7 +1943,7 @@ mcore_initial_elimination_offset (int from, int to)
 
 static void
 mcore_setup_incoming_varargs (cumulative_args_t args_so_far_v,
-			      const function_arg_info &arg,
+			      machine_mode mode, tree type,
 			      int * ptr_pretend_size ATTRIBUTE_UNUSED,
 			      int second_time ATTRIBUTE_UNUSED)
 {
@@ -1953,8 +1954,7 @@ mcore_setup_incoming_varargs (cumulative_args_t args_so_far_v,
   /* We need to know how many argument registers are used before
      the varargs start, so that we can push the remaining argument
      registers during the prologue.  */
-  number_of_regs_before_varargs
-    = *args_so_far + mcore_num_arg_regs (arg.mode, arg.type);
+  number_of_regs_before_varargs = *args_so_far + mcore_num_arg_regs (mode, type);
   
   /* There is a bug somewhere in the arg handling code.
      Until I can find it this workaround always pushes the
@@ -2713,8 +2713,7 @@ mcore_num_arg_regs (machine_mode mode, const_tree type)
 {
   int size;
 
-  function_arg_info arg (const_cast<tree> (type), mode, /*named=*/true);
-  if (targetm.calls.must_pass_in_stack (arg))
+  if (targetm.calls.must_pass_in_stack (mode, type))
     return 0;
 
   if (type && mode == BLKmode)
@@ -2787,9 +2786,14 @@ mcore_function_value (const_tree valtype, const_tree func)
    Value is zero to push the argument on the stack,
    or a hard register in which to store the argument.
 
+   MODE is the argument's machine mode.
+   TYPE is the data type of the argument (as a tree).
+    This is null for libcalls where that information may
+    not be available.
    CUM is a variable of type CUMULATIVE_ARGS which gives info about
     the preceding args and about the function being called.
-   ARG is a description of the argument.
+   NAMED is nonzero if this argument is a named parameter
+    (otherwise it is an extra parameter matching an ellipsis).
 
    On MCore the first args are normally in registers
    and the rest are pushed.  Any arg that starts within the first
@@ -2797,33 +2801,33 @@ mcore_function_value (const_tree valtype, const_tree func)
    its data type forbids.  */
 
 static rtx
-mcore_function_arg (cumulative_args_t cum, const function_arg_info &arg)
+mcore_function_arg (cumulative_args_t cum, machine_mode mode,
+		    const_tree type, bool named)
 {
   int arg_reg;
   
-  if (!arg.named || arg.end_marker_p ())
+  if (! named || mode == VOIDmode)
     return 0;
 
-  if (targetm.calls.must_pass_in_stack (arg))
+  if (targetm.calls.must_pass_in_stack (mode, type))
     return 0;
 
-  arg_reg = ROUND_REG (*get_cumulative_args (cum), arg.mode);
+  arg_reg = ROUND_REG (*get_cumulative_args (cum), mode);
   
   if (arg_reg < NPARM_REGS)
-    return handle_structs_in_regs (arg.mode, arg.type,
-				   FIRST_PARM_REG + arg_reg);
+    return handle_structs_in_regs (mode, type, FIRST_PARM_REG + arg_reg);
 
   return 0;
 }
 
 static void
-mcore_function_arg_advance (cumulative_args_t cum_v,
-			    const function_arg_info &arg)
+mcore_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
+			    const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
-  *cum = (ROUND_REG (*cum, arg.mode)
-	  + (int) arg.named * mcore_num_arg_regs (arg.mode, arg.type));
+  *cum = (ROUND_REG (*cum, mode)
+	  + (int)named * mcore_num_arg_regs (mode, type));
 }
 
 static unsigned int
@@ -2837,19 +2841,22 @@ mcore_function_arg_boundary (machine_mode mode,
 }
 
 /* Returns the number of bytes of argument registers required to hold *part*
-   of argument ARG.  If the argument fits entirely in the argument registers,
-   or entirely on the stack, then 0 is returned.  CUM is the number of
-   argument registers already used by earlier parameters to the function.  */
+   of a parameter of machine mode MODE and type TYPE (which may be NULL if
+   the type is not known).  If the argument fits entirely in the argument
+   registers, or entirely on the stack, then 0 is returned.  CUM is the
+   number of argument registers already used by earlier parameters to
+   the function.  */
 
 static int
-mcore_arg_partial_bytes (cumulative_args_t cum, const function_arg_info &arg)
+mcore_arg_partial_bytes (cumulative_args_t cum, machine_mode mode,
+			 tree type, bool named)
 {
-  int reg = ROUND_REG (*get_cumulative_args (cum), arg.mode);
+  int reg = ROUND_REG (*get_cumulative_args (cum), mode);
 
-  if (!arg.named)
+  if (named == 0)
     return 0;
 
-  if (targetm.calls.must_pass_in_stack (arg))
+  if (targetm.calls.must_pass_in_stack (mode, type))
     return 0;
       
   /* REG is not the *hardware* register number of the register that holds
@@ -2864,7 +2871,7 @@ mcore_arg_partial_bytes (cumulative_args_t cum, const function_arg_info &arg)
     return 0;
 
   /* If the argument fits entirely in registers, return 0.  */
-  if (reg + mcore_num_arg_regs (arg.mode, arg.type) <= NPARM_REGS)
+  if (reg + mcore_num_arg_regs (mode, type) <= NPARM_REGS)
     return 0;
 
   /* The argument overflows the number of available argument registers.

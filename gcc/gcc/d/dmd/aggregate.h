@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -71,19 +71,6 @@ FuncDeclaration *buildDtor(AggregateDeclaration *ad, Scope *sc);
 FuncDeclaration *buildInv(AggregateDeclaration *ad, Scope *sc);
 FuncDeclaration *search_toString(StructDeclaration *sd);
 
-struct ClassKind
-{
-    enum Type
-    {
-        /// the class is a d(efault) class
-        d,
-        /// the class is a C++ interface
-        cpp,
-        /// the class is an Objective-C class/interface
-        objc,
-    };
-};
-
 class AggregateDeclaration : public ScopeDsymbol
 {
 public:
@@ -96,8 +83,6 @@ public:
     Sizeok sizeok;              // set when structsize contains valid data
     Dsymbol *deferred;          // any deferred semantic2() or semantic3() symbol
     bool isdeprecated;          // true if deprecated
-
-    ClassKind::Type classKind;  // specifies the linkage type
 
     /* !=NULL if is nested
      * pointing to the dsymbol that directly enclosing it.
@@ -131,6 +116,8 @@ public:
     AggregateDeclaration(Loc loc, Identifier *id);
     virtual Scope *newScope(Scope *sc);
     void setScope(Scope *sc);
+    void semantic2(Scope *sc);
+    void semantic3(Scope *sc);
     bool determineFields();
     bool determineSize(Loc loc);
     virtual void finalizeSize() = 0;
@@ -201,6 +188,7 @@ public:
     StructDeclaration(Loc loc, Identifier *id, bool inObject);
     static StructDeclaration *create(Loc loc, Identifier *id, bool inObject);
     Dsymbol *syntaxCopy(Dsymbol *s);
+    void semantic(Scope *sc);
     void semanticTypeInfoMembers();
     Dsymbol *search(const Loc &loc, Identifier *ident, int flags = SearchLocalsOnly);
     const char *kind() const;
@@ -286,6 +274,8 @@ public:
 
     TypeInfoClassDeclaration *vclassinfo;       // the ClassInfo object for this ClassDeclaration
     bool com;                           // true if this is a COM class (meaning it derives from IUnknown)
+    bool cpp;                           // true if this is a C++ interface
+    bool isobjc;                        // true if this is an Objective-C class/interface
     bool isscope;                       // true if this is a scope class
     Abstract isabstract;                // 0: fwdref, 1: is abstract class, 2: not abstract
     int inuse;                          // to prevent recursive attempts
@@ -296,6 +286,7 @@ public:
     static ClassDeclaration *create(Loc loc, Identifier *id, BaseClasses *baseclasses, Dsymbols *members, bool inObject);
     Dsymbol *syntaxCopy(Dsymbol *s);
     Scope *newScope(Scope *sc);
+    void semantic(Scope *sc);
     bool isBaseOf2(ClassDeclaration *cd);
 
     #define OFFSET_RUNTIME 0x76543210
@@ -306,9 +297,9 @@ public:
     Dsymbol *search(const Loc &loc, Identifier *ident, int flags = SearchLocalsOnly);
     ClassDeclaration *searchBase(Identifier *ident);
     void finalizeSize();
-    bool hasMonitor();
     bool isFuncHidden(FuncDeclaration *fd);
     FuncDeclaration *findFunc(Identifier *ident, TypeFunction *tf);
+    void interfaceSemantic(Scope *sc);
     bool isCOMclass() const;
     virtual bool isCOMinterface() const;
     bool isCPPclass() const;
@@ -332,6 +323,7 @@ public:
     InterfaceDeclaration(Loc loc, Identifier *id, BaseClasses *baseclasses);
     Dsymbol *syntaxCopy(Dsymbol *s);
     Scope *newScope(Scope *sc);
+    void semantic(Scope *sc);
     bool isBaseOf(ClassDeclaration *cd, int *poffset);
     bool isBaseOf(BaseClass *bc, int *poffset);
     const char *kind() const;

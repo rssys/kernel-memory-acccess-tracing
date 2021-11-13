@@ -1,6 +1,6 @@
 // { dg-do run { target c++11 } }
 
-// Copyright (C) 2008-2021 Free Software Foundation, Inc.
+// Copyright (C) 2008-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -21,7 +21,6 @@
 
 #include <forward_list>
 #include <testsuite_hooks.h>
-#include <testsuite_allocator.h>
 
 void
 test01()
@@ -35,14 +34,14 @@ test01()
   fld.resize(0);
   VERIFY(fld.empty() == true);
 
-#ifdef _GLIBCXX_DEBUG
+#if defined(_GLIBCXX_DEBUG) || defined(_GLIBCXX_PROFILE)
   using std::_GLIBCXX_STD_C::_Fwd_list_node;
 #else
   using std::_Fwd_list_node;
 #endif
 
-  std::allocator<_Fwd_list_node<double> > a;
-  VERIFY( fld.max_size() == __gnu_test::max_size(a) );
+  VERIFY( (fld.max_size()
+	   == std::allocator<_Fwd_list_node<double> >().max_size()) );
 }
 
 int

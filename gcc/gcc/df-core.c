@@ -1,5 +1,5 @@
 /* Allocation for dataflow support routines.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
    Originally contributed by Michael P. Hayes
              (m.hayes@elec.canterbury.ac.nz, mhayes@redhat.com)
    Major rewrite contributed by Danny Berlin (dberlin@dberlin.org)
@@ -407,7 +407,7 @@ bitmap_obstack df_bitmap_obstack;
   Functions to create, destroy and manipulate an instance of df.
 ----------------------------------------------------------------------------*/
 
-class df_d *df;
+struct df_d *df;
 
 /* Add PROBLEM (and any dependent problems) to the DF instance.  */
 
@@ -684,7 +684,7 @@ static unsigned int
 rest_of_handle_df_initialize (void)
 {
   gcc_assert (!df);
-  df = XCNEW (class df_d);
+  df = XCNEW (struct df_d);
   df->changeable_flags = 0;
 
   bitmap_obstack_initialize (&df_bitmap_obstack);
@@ -871,6 +871,9 @@ make_pass_df_finish (gcc::context *ctxt)
    The general data flow analysis engine.
 ----------------------------------------------------------------------------*/
 
+/* Return time BB when it was visited for last time.  */
+#define BB_LAST_CHANGE_AGE(bb) ((ptrdiff_t)(bb)->aux)
+
 /* Helper function for df_worklist_dataflow.
    Propagate the dataflow forward.
    Given a BB_INDEX, do the dataflow propagation
@@ -894,8 +897,7 @@ df_worklist_propagate_forward (struct dataflow *dataflow,
                                unsigned *bbindex_to_postorder,
                                bitmap pending,
                                sbitmap considered,
-			       vec<int> &last_change_age,
-			       int age)
+			       ptrdiff_t age)
 {
   edge e;
   edge_iterator ei;
@@ -906,8 +908,7 @@ df_worklist_propagate_forward (struct dataflow *dataflow,
   if (EDGE_COUNT (bb->preds) > 0)
     FOR_EACH_EDGE (e, ei, bb->preds)
       {
-	if (bbindex_to_postorder[e->src->index] < last_change_age.length ()
-	    && age <= last_change_age[bbindex_to_postorder[e->src->index]]
+        if (age <= BB_LAST_CHANGE_AGE (e->src)
 	    && bitmap_bit_p (considered, e->src->index))
           changed |= dataflow->problem->con_fun_n (e);
       }
@@ -941,8 +942,7 @@ df_worklist_propagate_backward (struct dataflow *dataflow,
                                 unsigned *bbindex_to_postorder,
                                 bitmap pending,
                                 sbitmap considered,
-				vec<int> &last_change_age,
-				int age)
+			        ptrdiff_t age)
 {
   edge e;
   edge_iterator ei;
@@ -953,8 +953,7 @@ df_worklist_propagate_backward (struct dataflow *dataflow,
   if (EDGE_COUNT (bb->succs) > 0)
     FOR_EACH_EDGE (e, ei, bb->succs)
       {
-	if (bbindex_to_postorder[e->dest->index] < last_change_age.length ()
-	    && age <= last_change_age[bbindex_to_postorder[e->dest->index]]
+        if (age <= BB_LAST_CHANGE_AGE (e->dest)
 	    && bitmap_bit_p (considered, e->dest->index))
           changed |= dataflow->problem->con_fun_n (e);
       }
@@ -992,10 +991,10 @@ df_worklist_propagate_backward (struct dataflow *dataflow,
    worklists (we are processing WORKLIST and storing new BBs to visit in
    PENDING).
 
-   As an optimization we maintain ages when BB was changed (stored in
-   last_change_age) and when it was last visited (stored in last_visit_age).
-   This avoids need to re-do confluence function for edges to basic blocks
-   whose source did not change since destination was visited last time.  */
+   As an optimization we maintain ages when BB was changed (stored in bb->aux)
+   and when it was last visited (stored in last_visit_age).  This avoids need
+   to re-do confluence function for edges to basic blocks whose source
+   did not change since destination was visited last time.  */
 
 static void
 df_worklist_dataflow_doublequeue (struct dataflow *dataflow,
@@ -1011,11 +1010,11 @@ df_worklist_dataflow_doublequeue (struct dataflow *dataflow,
   int age = 0;
   bool changed;
   vec<int> last_visit_age = vNULL;
-  vec<int> last_change_age = vNULL;
   int prev_age;
+  basic_block bb;
+  int i;
 
-  last_visit_age.safe_grow_cleared (n_blocks, true);
-  last_change_age.safe_grow_cleared (n_blocks, true);
+  last_visit_age.safe_grow_cleared (n_blocks);
 
   /* Double-queueing. Worklist is for the current iteration,
      and pending is for the next. */
@@ -1033,30 +1032,30 @@ df_worklist_dataflow_doublequeue (struct dataflow *dataflow,
 
 	  bitmap_clear_bit (pending, index);
 	  bb_index = blocks_in_postorder[index];
+	  bb = BASIC_BLOCK_FOR_FN (cfun, bb_index);
 	  prev_age = last_visit_age[index];
 	  if (dir == DF_FORWARD)
 	    changed = df_worklist_propagate_forward (dataflow, bb_index,
 						     bbindex_to_postorder,
 						     pending, considered,
-						     last_change_age,
 						     prev_age);
 	  else
 	    changed = df_worklist_propagate_backward (dataflow, bb_index,
 						      bbindex_to_postorder,
 						      pending, considered,
-						      last_change_age,
 						      prev_age);
 	  last_visit_age[index] = ++age;
 	  if (changed)
-	    last_change_age[index] = age;
+	    bb->aux = (void *)(ptrdiff_t)age;
 	}
       bitmap_clear (worklist);
     }
+  for (i = 0; i < n_blocks; i++)
+    BASIC_BLOCK_FOR_FN (cfun, blocks_in_postorder[i])->aux = NULL;
 
   BITMAP_FREE (worklist);
   BITMAP_FREE (pending);
   last_visit_age.release ();
-  last_change_age.release ();
 
   /* Dump statistics. */
   if (dump_file)
@@ -1064,7 +1063,7 @@ df_worklist_dataflow_doublequeue (struct dataflow *dataflow,
 	     " n_basic_blocks %d n_edges %d"
 	     " count %d (%5.2g)\n",
 	     n_basic_blocks_for_fn (cfun), n_edges_for_fn (cfun),
-	     dcount, dcount / (double)n_basic_blocks_for_fn (cfun));
+	     dcount, dcount / (float)n_basic_blocks_for_fn (cfun));
 }
 
 /* Worklist-based dataflow solver. It uses sbitmap as a worklist,
@@ -1294,7 +1293,7 @@ df_analyze (void)
    Returns the number of blocks which is always loop->num_nodes.  */
 
 static int
-loop_post_order_compute (int *post_order, class loop *loop)
+loop_post_order_compute (int *post_order, struct loop *loop)
 {
   edge_iterator *stack;
   int sp;
@@ -1355,7 +1354,7 @@ loop_post_order_compute (int *post_order, class loop *loop)
    by LOOP.  Returns the number of blocks which is always loop->num_nodes.  */
 
 static void
-loop_inverted_post_order_compute (vec<int> *post_order, class loop *loop)
+loop_inverted_post_order_compute (vec<int> *post_order, struct loop *loop)
 {
   basic_block bb;
   edge_iterator *stack;
@@ -1420,7 +1419,7 @@ loop_inverted_post_order_compute (vec<int> *post_order, class loop *loop)
 /* Analyze dataflow info for the basic blocks contained in LOOP.  */
 
 void
-df_analyze_loop (class loop *loop)
+df_analyze_loop (struct loop *loop)
 {
   free (df->postorder);
 
@@ -2053,7 +2052,7 @@ debug_regset (regset r)
    This is part of making a debugging dump.  */
 
 void
-df_print_regset (FILE *file, const_bitmap r)
+df_print_regset (FILE *file, bitmap r)
 {
   unsigned int i;
   bitmap_iterator bi;
@@ -2078,7 +2077,7 @@ df_print_regset (FILE *file, const_bitmap r)
    debugging dump.  */
 
 void
-df_print_word_regset (FILE *file, const_bitmap r)
+df_print_word_regset (FILE *file, bitmap r)
 {
   unsigned int max_reg = max_reg_num ();
 

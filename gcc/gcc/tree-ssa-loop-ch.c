@@ -1,5 +1,5 @@
 /* Loop header copying on trees.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -31,10 +31,12 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-into-ssa.h"
 #include "cfgloop.h"
 #include "tree-inline.h"
+#include "tree-ssa-scopedtables.h"
 #include "tree-ssa-threadedge.h"
 #include "tree-ssa-sccvn.h"
 #include "tree-phinodes.h"
 #include "ssa-iterators.h"
+#include "params.h"
 
 /* Duplicates headers of loops if they are small enough, so that the statements
    in the loop body are always executed when the loop is entered.  This
@@ -46,7 +48,7 @@ along with GCC; see the file COPYING3.  If not see
    amount.  */
 
 static bool
-should_duplicate_loop_header_p (basic_block header, class loop *loop,
+should_duplicate_loop_header_p (basic_block header, struct loop *loop,
 				int *limit)
 {
   gimple_stmt_iterator bsi;
@@ -82,7 +84,7 @@ should_duplicate_loop_header_p (basic_block header, class loop *loop,
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
-		 "  Not duplicating bb %i: both successors are in loop.\n",
+		 "  Not duplicating bb %i: both sucessors are in loop.\n",
 		 loop->num);
       return false;
     }
@@ -197,7 +199,7 @@ should_duplicate_loop_header_p (basic_block header, class loop *loop,
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
 		 "  Not duplicating bb %i: condition based on non-IV loop"
-		 " variant.\n", header->index);
+		 "variant.\n", header->index);
       return false;
     }
 
@@ -209,7 +211,7 @@ should_duplicate_loop_header_p (basic_block header, class loop *loop,
 /* Checks whether LOOP is a do-while style loop.  */
 
 static bool
-do_while_loop_p (class loop *loop)
+do_while_loop_p (struct loop *loop)
 {
   gimple *stmt = last_stmt (loop->latch);
 
@@ -266,7 +268,7 @@ class ch_base : public gimple_opt_pass
   unsigned int copy_headers (function *fun);
 
   /* Return true to copy headers of LOOP or false to skip.  */
-  virtual bool process_loop_p (class loop *loop) = 0;
+  virtual bool process_loop_p (struct loop *loop) = 0;
 };
 
 const pass_data pass_data_ch =
@@ -299,7 +301,7 @@ public:
 
 protected:
   /* ch_base method: */
-  virtual bool process_loop_p (class loop *loop);
+  virtual bool process_loop_p (struct loop *loop);
 }; // class pass_ch
 
 const pass_data pass_data_ch_vect =
@@ -337,7 +339,7 @@ public:
 
 protected:
   /* ch_base method: */
-  virtual bool process_loop_p (class loop *loop);
+  virtual bool process_loop_p (struct loop *loop);
 }; // class pass_ch_vect
 
 /* For all loops, copy the condition at the end of the loop body in front
@@ -347,6 +349,7 @@ protected:
 unsigned int
 ch_base::copy_headers (function *fun)
 {
+  struct loop *loop;
   basic_block header;
   edge exit, entry;
   basic_block *bbs, *copied_bbs;
@@ -363,9 +366,9 @@ ch_base::copy_headers (function *fun)
 
   auto_vec<std::pair<edge, loop_p> > copied;
 
-  for (auto loop : loops_list (cfun, 0))
+  FOR_EACH_LOOP (loop, 0)
     {
-      int initial_limit = param_max_loop_header_insns;
+      int initial_limit = PARAM_VALUE (PARAM_MAX_LOOP_HEADER_INSNS);
       int remaining_limit = initial_limit;
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
@@ -423,8 +426,7 @@ ch_base::copy_headers (function *fun)
       if (!gimple_duplicate_sese_region (entry, exit, bbs, n_bbs, copied_bbs,
 					 true))
 	{
-	  if (dump_file && (dump_flags & TDF_DETAILS))
-	    fprintf (dump_file, "Duplication failed.\n");
+	  fprintf (dump_file, "Duplication failed.\n");
 	  continue;
 	}
       copied.safe_push (std::make_pair (entry, loop));
@@ -456,7 +458,7 @@ ch_base::copy_headers (function *fun)
 			  && gimple_cond_code (stmt) != NE_EXPR
 			  && INTEGRAL_TYPE_P (TREE_TYPE (lhs))
 			  && TYPE_OVERFLOW_UNDEFINED (TREE_TYPE (lhs)))
-			suppress_warning (stmt, OPT_Wstrict_overflow_);
+			gimple_set_no_warning (stmt, true);
 		    }
 		  else if (is_gimple_assign (stmt))
 		    {
@@ -467,7 +469,7 @@ ch_base::copy_headers (function *fun)
 			  && rhs_code != NE_EXPR
 			  && INTEGRAL_TYPE_P (TREE_TYPE (rhs1))
 			  && TYPE_OVERFLOW_UNDEFINED (TREE_TYPE (rhs1)))
-			suppress_warning (stmt, OPT_Wstrict_overflow_);
+			gimple_set_no_warning (stmt, true);
 		    }
 		}
 	    }
@@ -503,13 +505,14 @@ ch_base::copy_headers (function *fun)
 	{
 	  edge entry = copied[i].first;
 	  loop_p loop = copied[i].second;
-	  auto_vec<edge> exit_edges = get_loop_exit_edges (loop);
+	  vec<edge> exit_edges = get_loop_exit_edges (loop);
 	  bitmap exit_bbs = BITMAP_ALLOC (NULL);
 	  for (unsigned j = 0; j < exit_edges.length (); ++j)
 	    bitmap_set_bit (exit_bbs, exit_edges[j]->dest->index);
 	  bitmap_set_bit (exit_bbs, loop->header->index);
 	  do_rpo_vn (cfun, entry, exit_bbs);
 	  BITMAP_FREE (exit_bbs);
+	  exit_edges.release ();
 	}
     }
   free (bbs);
@@ -546,7 +549,7 @@ pass_ch_vect::execute (function *fun)
 /* Apply header copying according to a very simple test of do-while shape.  */
 
 bool
-pass_ch::process_loop_p (class loop *loop)
+pass_ch::process_loop_p (struct loop *loop)
 {
   return !do_while_loop_p (loop);
 }
@@ -554,7 +557,7 @@ pass_ch::process_loop_p (class loop *loop)
 /* Apply header-copying to loops where we might enable vectorization.  */
 
 bool
-pass_ch_vect::process_loop_p (class loop *loop)
+pass_ch_vect::process_loop_p (struct loop *loop)
 {
   if (!flag_tree_loop_vectorize && !loop->force_vectorize)
     return false;

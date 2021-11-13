@@ -32,7 +32,8 @@ target_priority = [
     "powerpc-eabisimaltivec",
     "rs6000-ibm-aix5.1.0",
     "sh-superh-elf",
-    "sparc64-elf"
+    "sparc64-elf",
+    "spu-elf"
 ]
 
 

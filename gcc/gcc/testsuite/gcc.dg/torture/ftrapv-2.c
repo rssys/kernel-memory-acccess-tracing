@@ -3,7 +3,7 @@
 /* { dg-skip-if "" { *-*-* } { "-flto" } { "" } } */
 /* { dg-additional-options "-ftrapv" } */
 /* { dg-require-effective-target trapping } */
-/* { dg-require-fork "" } */
+/* { dg-require-fork unused } */
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -12,7 +12,7 @@
 
 /* Verify SImode operations properly trap.  PR middle-end/68046 */
 
-volatile int i = 0x7fffffff;
+int i = 0x7fffffff;
 
 int main(void)
 {
@@ -20,7 +20,7 @@ int main(void)
   int status = 0;
   if (child == 0)
     {
-      i = i + 1;
+      volatile int x = i + 1 < i;
       exit (0);
     }
   else if (child == -1)

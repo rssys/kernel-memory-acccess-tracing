@@ -8,11 +8,10 @@
  */
 module core.sys.windows.lmchdev;
 version (Windows):
-@system:
 
 // COMMENT: This file might be deprecated.
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 enum CHARDEVQ_NO_REQUESTS  = -1;
 enum CHARDEV_CLOSE         = 0;

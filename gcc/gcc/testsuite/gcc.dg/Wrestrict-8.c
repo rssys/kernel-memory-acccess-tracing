@@ -7,9 +7,7 @@ typedef __SIZE_TYPE__ size_t;
 
 extern void* memcpy (void* restrict, const void* restrict, size_t);
 
-void foo (void *);
-
-#define T(d, s, n)   do { memcpy (d, s, n); foo (d); } while (0)
+#define T(d, s, n)   memcpy (d, s, n)
 
 struct S1 { char c; } a8_1[8];
 

@@ -1,6 +1,4 @@
 /* PR tree-optimization/32139 */
-/* { dg-require-effective-target indirect_calls } */
-
 int foo (void);
 int bar (void) __attribute__ ((const));
 

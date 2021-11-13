@@ -1,5 +1,4 @@
 /* PR tree-optimization/34371 */
-/* { dg-require-stack-size "1108" } */
 /* Testcase by Martin Michlmayr <tbm@cyrius.com> */
 
 void centerln (int width, int ch, char *s)

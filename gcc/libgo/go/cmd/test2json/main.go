@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	go tool test2json [-p pkg] [-t] [./pkg.test -test.v [-test.paniconexit0]]
+//	go tool test2json [-p pkg] [-t] [./pkg.test -test.v]
 //
 // Test2json runs the given test command and converts its output to JSON;
 // with no command specified, test2json expects test output on standard input.
@@ -17,10 +17,6 @@
 // The -p flag sets the package reported in each test event.
 //
 // The -t flag requests that time stamps be added to each test event.
-//
-// The test must be invoked with -test.v. Additionally passing
-// -test.paniconexit0 will cause test2json to exit with a non-zero
-// status if one of the tests being run calls os.Exit(0).
 //
 // Note that test2json is only intended for converting a single test
 // binary's output. To convert the output of a "go test" command,
@@ -86,9 +82,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	exec "internal/execabs"
 	"io"
 	"os"
+	"os/exec"
 
 	"cmd/internal/test2json"
 )
@@ -122,16 +118,12 @@ func main() {
 		w := &countWriter{0, c}
 		cmd.Stdout = w
 		cmd.Stderr = w
-		err := cmd.Run()
-		if err != nil {
+		if err := cmd.Run(); err != nil {
 			if w.n > 0 {
 				// Assume command printed why it failed.
 			} else {
 				fmt.Fprintf(c, "test2json: %v\n", err)
 			}
-		}
-		c.Exited(err)
-		if err != nil {
 			c.Close()
 			os.Exit(1)
 		}

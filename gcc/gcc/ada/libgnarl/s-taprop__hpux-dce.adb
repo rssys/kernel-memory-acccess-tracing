@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2021, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -33,6 +33,10 @@
 
 --  This package contains all the GNULL primitives that interface directly with
 --  the underlying OS.
+
+pragma Polling (Off);
+--  Turn off polling, we do not want ATC polling to take place during tasking
+--  operations. It causes infinite loops and other problems.
 
 with Ada.Unchecked_Conversion;
 
@@ -79,7 +83,7 @@ package body System.Task_Primitives.Operations is
    Single_RTS_Lock : aliased RTS_Lock;
    --  This is a lock to allow only one thread of control in the RTS at
    --  a time; it is used to execute in mutual exclusion from all other tasks.
-   --  Used to protect All_Tasks_List
+   --  Used mainly in Single_Lock mode, but also to protect All_Tasks_List
 
    Environment_Task_Id : Task_Id;
    --  A variable to hold Task_Id for the environment task
@@ -87,10 +91,10 @@ package body System.Task_Primitives.Operations is
    Unblocked_Signal_Mask : aliased sigset_t;
    --  The set of signals that should unblocked in all tasks
 
-   Time_Slice_Val : constant Integer;
+   Time_Slice_Val : Integer;
    pragma Import (C, Time_Slice_Val, "__gl_time_slice_val");
 
-   Dispatching_Policy : constant Character;
+   Dispatching_Policy : Character;
    pragma Import (C, Dispatching_Policy, "__gl_task_dispatching_policy");
 
    --  Note: the reason that Locking_Policy is not needed is that this
@@ -321,18 +325,25 @@ package body System.Task_Primitives.Operations is
       Ceiling_Violation := False;
    end Write_Lock;
 
-   procedure Write_Lock (L : not null access RTS_Lock) is
+   procedure Write_Lock
+     (L           : not null access RTS_Lock;
+      Global_Lock : Boolean := False)
+   is
       Result : Interfaces.C.int;
    begin
-      Result := pthread_mutex_lock (L);
-      pragma Assert (Result = 0);
+      if not Single_Lock or else Global_Lock then
+         Result := pthread_mutex_lock (L);
+         pragma Assert (Result = 0);
+      end if;
    end Write_Lock;
 
    procedure Write_Lock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      Result := pthread_mutex_lock (T.Common.LL.L'Access);
-      pragma Assert (Result = 0);
+      if not Single_Lock then
+         Result := pthread_mutex_lock (T.Common.LL.L'Access);
+         pragma Assert (Result = 0);
+      end if;
    end Write_Lock;
 
    ---------------
@@ -358,18 +369,25 @@ package body System.Task_Primitives.Operations is
       pragma Assert (Result = 0);
    end Unlock;
 
-   procedure Unlock (L : not null access RTS_Lock) is
+   procedure Unlock
+     (L           : not null access RTS_Lock;
+      Global_Lock : Boolean := False)
+   is
       Result : Interfaces.C.int;
    begin
-      Result := pthread_mutex_unlock (L);
-      pragma Assert (Result = 0);
+      if not Single_Lock or else Global_Lock then
+         Result := pthread_mutex_unlock (L);
+         pragma Assert (Result = 0);
+      end if;
    end Unlock;
 
    procedure Unlock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      Result := pthread_mutex_unlock (T.Common.LL.L'Access);
-      pragma Assert (Result = 0);
+      if not Single_Lock then
+         Result := pthread_mutex_unlock (T.Common.LL.L'Access);
+         pragma Assert (Result = 0);
+      end if;
    end Unlock;
 
    -----------------
@@ -403,7 +421,9 @@ package body System.Task_Primitives.Operations is
       Result :=
         pthread_cond_wait
           (cond  => Self_ID.Common.LL.CV'Access,
-           mutex => Self_ID.Common.LL.L'Access);
+           mutex => (if Single_Lock
+                     then Single_RTS_Lock'Access
+                     else Self_ID.Common.LL.L'Access));
 
       --  EINTR is not considered a failure
 
@@ -447,7 +467,9 @@ package body System.Task_Primitives.Operations is
             Result :=
               pthread_cond_timedwait
                 (cond    => Self_ID.Common.LL.CV'Access,
-                 mutex   => Self_ID.Common.LL.L'Access,
+                 mutex   => (if Single_Lock
+                             then Single_RTS_Lock'Access
+                             else Self_ID.Common.LL.L'Access),
                  abstime => Request'Access);
 
             exit when Abs_Time <= Monotonic_Clock;
@@ -482,6 +504,10 @@ package body System.Task_Primitives.Operations is
       pragma Warnings (Off, Result);
 
    begin
+      if Single_Lock then
+         Lock_RTS;
+      end if;
+
       Write_Lock (Self_ID);
 
       Abs_Time :=
@@ -499,7 +525,9 @@ package body System.Task_Primitives.Operations is
             Result :=
               pthread_cond_timedwait
                 (cond    => Self_ID.Common.LL.CV'Access,
-                 mutex   => Self_ID.Common.LL.L'Access,
+                 mutex   => (if Single_Lock
+                             then Single_RTS_Lock'Access
+                             else Self_ID.Common.LL.L'Access),
                  abstime => Request'Access);
 
             exit when Abs_Time <= Monotonic_Clock;
@@ -513,6 +541,11 @@ package body System.Task_Primitives.Operations is
       end if;
 
       Unlock (Self_ID);
+
+      if Single_Lock then
+         Unlock_RTS;
+      end if;
+
       Result := sched_yield;
    end Timed_Delay;
 
@@ -700,23 +733,25 @@ package body System.Task_Primitives.Operations is
       Cond_Attr  : aliased pthread_condattr_t;
 
    begin
-      Result := pthread_mutexattr_init (Mutex_Attr'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = 0 then
-         Result :=
-           pthread_mutex_init
-             (Self_ID.Common.LL.L'Access, Mutex_Attr'Access);
+      if not Single_Lock then
+         Result := pthread_mutexattr_init (Mutex_Attr'Access);
          pragma Assert (Result = 0 or else Result = ENOMEM);
-      end if;
 
-      if Result /= 0 then
-         Succeeded := False;
-         return;
-      end if;
+         if Result = 0 then
+            Result :=
+              pthread_mutex_init
+                (Self_ID.Common.LL.L'Access, Mutex_Attr'Access);
+            pragma Assert (Result = 0 or else Result = ENOMEM);
+         end if;
 
-      Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
-      pragma Assert (Result = 0);
+         if Result /= 0 then
+            Succeeded := False;
+            return;
+         end if;
+
+         Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
+         pragma Assert (Result = 0);
+      end if;
 
       Result := pthread_condattr_init (Cond_Attr'Access);
       pragma Assert (Result = 0 or else Result = ENOMEM);
@@ -732,8 +767,10 @@ package body System.Task_Primitives.Operations is
       if Result = 0 then
          Succeeded := True;
       else
-         Result := pthread_mutex_destroy (Self_ID.Common.LL.L'Access);
-         pragma Assert (Result = 0);
+         if not Single_Lock then
+            Result := pthread_mutex_destroy (Self_ID.Common.LL.L'Access);
+            pragma Assert (Result = 0);
+         end if;
 
          Succeeded := False;
       end if;
@@ -804,8 +841,10 @@ package body System.Task_Primitives.Operations is
       Result : Interfaces.C.int;
 
    begin
-      Result := pthread_mutex_destroy (T.Common.LL.L'Access);
-      pragma Assert (Result = 0);
+      if not Single_Lock then
+         Result := pthread_mutex_destroy (T.Common.LL.L'Access);
+         pragma Assert (Result = 0);
+      end if;
 
       Result := pthread_cond_destroy (T.Common.LL.CV'Access);
       pragma Assert (Result = 0);
@@ -1054,7 +1093,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Lock_RTS is
    begin
-      Write_Lock (Single_RTS_Lock'Access);
+      Write_Lock (Single_RTS_Lock'Access, Global_Lock => True);
    end Lock_RTS;
 
    ----------------
@@ -1063,7 +1102,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Unlock_RTS is
    begin
-      Unlock (Single_RTS_Lock'Access);
+      Unlock (Single_RTS_Lock'Access, Global_Lock => True);
    end Unlock_RTS;
 
    ------------------

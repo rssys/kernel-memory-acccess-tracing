@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime/pprof"
 	"time"
@@ -16,7 +17,7 @@ func init() {
 }
 
 func TimeProf() {
-	f, err := os.CreateTemp("", "timeprof")
+	f, err := ioutil.TempFile("", "timeprof")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

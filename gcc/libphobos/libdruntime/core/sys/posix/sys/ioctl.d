@@ -15,7 +15,6 @@
 module core.sys.posix.sys.ioctl;
 
 import core.stdc.config;
-public import core.sys.posix.sys.ttycom;
 
 version (OSX)
     version = Darwin;
@@ -29,7 +28,6 @@ else version (WatchOS)
 version (Posix):
 
 extern (C) nothrow @nogc:
-@system:
 
 version (CRuntime_Glibc)
 {
@@ -214,7 +212,7 @@ version (CRuntime_Glibc)
     enum TIOCGSID = 0x5429;
 
     enum TCGETS2 = _IOR!termios2('T', 0x2A);
-    enum TCSETS2 = _IOW!termios2('T', 0x2B);
+    enum TCSETS2 = _IOR!termios2('T', 0x2B);
     enum TCSETSW2 = _IOW!termios2('T', 0x2C);
     enum TCSETSF2 = _IOW!termios2('T', 0x2D);
 
@@ -359,10 +357,6 @@ else version (FreeBSD)
         void* buf;
     }
 
-    int ioctl(int, c_ulong, ...);
-}
-else version (NetBSD)
-{
     struct winsize
     {
         ushort ws_row;
@@ -373,7 +367,7 @@ else version (NetBSD)
 
     int ioctl(int, c_ulong, ...);
 }
-else version (OpenBSD)
+else version (NetBSD)
 {
     struct winsize
     {
@@ -625,7 +619,7 @@ else version (CRuntime_UClibc)
     enum TIOCGSID = 0x5429;
 
     enum TCGETS2 = _IOR!termios2('T', 0x2A);
-    enum TCSETS2 = _IOW!termios2('T', 0x2B);
+    enum TCSETS2 = _IOR!termios2('T', 0x2B);
     enum TCSETSW2 = _IOW!termios2('T', 0x2C);
     enum TCSETSF2 = _IOW!termios2('T', 0x2D);
 

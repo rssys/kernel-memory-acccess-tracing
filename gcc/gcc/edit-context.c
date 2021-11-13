@@ -1,5 +1,5 @@
 /* Determining the results of applying fix-it hints.
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -48,9 +48,8 @@ class line_event;
 
 /* A struct to hold the params of a print_diff call.  */
 
-class diff
+struct diff
 {
-public:
   diff (pretty_printer *pp, bool show_filenames)
   : m_pp (pp), m_show_filenames (show_filenames) {}
 
@@ -447,13 +446,8 @@ edited_file::print_diff (pretty_printer *pp, bool show_filenames)
   if (show_filenames)
     {
       pp_string (pp, colorize_start (pp_show_color (pp), "diff-filename"));
-      /* Avoid -Wformat-diag in non-diagnostic output.  */
-      pp_string (pp, "--- ");
-      pp_string (pp, m_filename);
-      pp_newline (pp);
-      pp_string (pp, "+++ ");
-      pp_string (pp, m_filename);
-      pp_newline (pp);
+      pp_printf (pp, "--- %s\n", m_filename);
+      pp_printf (pp, "+++ %s\n", m_filename);
       pp_string (pp, colorize_stop (pp_show_color (pp)));
     }
 
@@ -524,9 +518,8 @@ edited_file::print_diff_hunk (pretty_printer *pp, int old_start_of_hunk,
     = get_effective_line_count (old_start_of_hunk, old_end_of_hunk);
 
   pp_string (pp, colorize_start (pp_show_color (pp), "diff-hunk"));
-  pp_printf (pp, "%s -%i,%i +%i,%i %s",
-	     "@@", old_start_of_hunk, old_num_lines,
-	     new_start_of_hunk, new_num_lines, "@@\n");
+  pp_printf (pp, "@@ -%i,%i +%i,%i @@\n", old_start_of_hunk, old_num_lines,
+	     new_start_of_hunk, new_num_lines);
   pp_string (pp, colorize_stop (pp_show_color (pp)));
 
   int line_num = old_start_of_hunk;
@@ -1646,7 +1639,7 @@ static void
 test_applying_fixits_unreadable_file ()
 {
   const char *filename = "this-does-not-exist.txt";
-  line_table_test ltt;
+  line_table_test ltt ();
   linemap_add (line_table, LC_ENTER, false, filename, 1);
 
   location_t loc = linemap_position_for_column (line_table, 1);
@@ -1677,7 +1670,7 @@ test_applying_fixits_line_out_of_range ()
   const char *old_content = "One-liner file\n";
   temp_source_file tmp (SELFTEST_LOCATION, ".txt", old_content);
   const char *filename = tmp.get_filename ();
-  line_table_test ltt;
+  line_table_test ltt ();
   linemap_add (line_table, LC_ENTER, false, filename, 2);
 
   /* Try to insert a string in line 2.  */

@@ -1,5 +1,5 @@
 /* initialized by fortran */
-extern int i;
+int i;
 void test_globals(void);
 
 extern void abort(void);

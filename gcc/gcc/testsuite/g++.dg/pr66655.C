@@ -7,13 +7,13 @@ extern "C" void abort (void);
 
 #define COOKIE 0xabcd0123
 
-int32_t
+int
 g (void)
 {
   return COOKIE;
 }
 
-extern int32_t f (void);
+extern int f (void);
 
 int
 main (void)

@@ -1,5 +1,3 @@
-/* { dg-additional-options "-Wno-deprecated-declarations" } */
-
 #include <omp.h>
 #include <stdlib.h>
 
@@ -47,13 +45,11 @@ main ()
 		{
 		  #pragma omp teams thread_limit (2)
 		    {
-		      #pragma omp distribute dist_schedule(static,1)
-		      for (int i = 0; i < 1; ++i)
-			if (omp_in_parallel ()
-			    || omp_get_level () != 0
-			    || omp_get_ancestor_thread_num (0) != 0
-			    || omp_get_ancestor_thread_num (1) != -1)
-			  abort ();
+		      if (omp_in_parallel ()
+			  || omp_get_level () != 0
+			  || omp_get_ancestor_thread_num (0) != 0
+			  || omp_get_ancestor_thread_num (1) != -1)
+			abort ();
 		      #pragma omp parallel num_threads (2)
 		      {
 			if (!omp_in_parallel ()

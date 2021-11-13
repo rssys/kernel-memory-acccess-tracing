@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js
 // +build !js
 
 package net
@@ -394,7 +393,7 @@ func TestIPv6LinkLocalUnicastTCP(t *testing.T) {
 		}
 		defer ls.teardown()
 		ch := make(chan error, 1)
-		handler := func(ls *localServer, ln Listener) { ls.transponder(ln, ch) }
+		handler := func(ls *localServer, ln Listener) { transponder(ln, ch) }
 		if err := ls.buildup(handler); err != nil {
 			t.Fatal(err)
 		}
@@ -480,6 +479,10 @@ func TestTCPReadWriteAllocs(t *testing.T) {
 		// The implementation of asynchronous cancelable
 		// I/O on Plan 9 allocates memory.
 		// See net/fd_io_plan9.go.
+		t.Skipf("not supported on %s", runtime.GOOS)
+	case "nacl":
+		// NaCl needs to allocate pseudo file descriptor
+		// stuff. See syscall/fd_nacl.go.
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -653,7 +656,7 @@ func TestTCPSelfConnect(t *testing.T) {
 		n = 1000
 	}
 	switch runtime.GOOS {
-	case "darwin", "ios", "dragonfly", "freebsd", "netbsd", "openbsd", "plan9", "illumos", "solaris", "windows":
+	case "darwin", "dragonfly", "freebsd", "netbsd", "openbsd", "plan9", "solaris", "windows":
 		// Non-Linux systems take a long time to figure
 		// out that there is nothing listening on localhost.
 		n = 100

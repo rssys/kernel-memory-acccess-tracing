@@ -1,6 +1,4 @@
 /* { dg-require-effective-target untyped_assembly } */
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 int
 foo (a, b, c)
 {

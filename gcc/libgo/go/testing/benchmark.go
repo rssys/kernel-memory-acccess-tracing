@@ -8,32 +8,22 @@ import (
 	"flag"
 	"fmt"
 	"internal/race"
-	"internal/sysinfo"
-	"io"
-	"math"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 )
 
-func initBenchmarkFlags() {
-	matchBenchmarks = flag.String("test.bench", "", "run only benchmarks matching `regexp`")
-	benchmarkMemory = flag.Bool("test.benchmem", false, "print memory allocations for benchmarks")
+var matchBenchmarks = flag.String("test.bench", "", "run only benchmarks matching `regexp`")
+var benchTime = benchTimeFlag{d: 1 * time.Second}
+var benchmarkMemory = flag.Bool("test.benchmem", false, "print memory allocations for benchmarks")
+
+func init() {
 	flag.Var(&benchTime, "test.benchtime", "run each benchmark for duration `d`")
 }
-
-var (
-	matchBenchmarks *string
-	benchmarkMemory *bool
-
-	benchTime = benchTimeFlag{d: 1 * time.Second} // changed during test of testing package
-)
 
 type benchTimeFlag struct {
 	d time.Duration
@@ -70,8 +60,8 @@ var benchmarkLock sync.Mutex
 // Used for every benchmark for measuring memory.
 var memStats runtime.MemStats
 
-// InternalBenchmark is an internal type but exported because it is cross-package;
-// it is part of the implementation of the "go test" command.
+// An internal type but exported because it is cross-package; part of the implementation
+// of the "go test" command.
 type InternalBenchmark struct {
 	Name string
 	F    func(b *B)
@@ -87,7 +77,7 @@ type InternalBenchmark struct {
 // may be called simultaneously from multiple goroutines.
 //
 // Like in tests, benchmark logs are accumulated during execution
-// and dumped to standard output when done. Unlike in tests, benchmark logs
+// and dumped to standard error when done. Unlike in tests, benchmark logs
 // are always printed, so as not to hide output whose existence may be
 // affecting benchmark results.
 type B struct {
@@ -111,12 +101,10 @@ type B struct {
 	// The net total of this test after being run.
 	netAllocs uint64
 	netBytes  uint64
-	// Extra metrics collected by ReportMetric.
-	extra map[string]float64
 }
 
 // StartTimer starts timing a test. This function is called automatically
-// before a benchmark starts, but it can also be used to resume timing after
+// before a benchmark starts, but it can also used to resume timing after
 // a call to StopTimer.
 func (b *B) StartTimer() {
 	if !b.timerOn {
@@ -141,19 +129,9 @@ func (b *B) StopTimer() {
 	}
 }
 
-// ResetTimer zeroes the elapsed benchmark time and memory allocation counters
-// and deletes user-reported metrics.
+// ResetTimer zeros the elapsed benchmark time and memory allocation counters.
 // It does not affect whether the timer is running.
 func (b *B) ResetTimer() {
-	if b.extra == nil {
-		// Allocate the extra map before reading memory stats.
-		// Pre-size it to make more allocation unlikely.
-		b.extra = make(map[string]float64, 16)
-	} else {
-		for k := range b.extra {
-			delete(b.extra, k)
-		}
-	}
 	if b.timerOn {
 		runtime.ReadMemStats(&memStats)
 		b.startAllocs = memStats.Mallocs
@@ -176,11 +154,17 @@ func (b *B) ReportAllocs() {
 	b.showAllocResult = true
 }
 
+func (b *B) nsPerOp() int64 {
+	if b.N <= 0 {
+		return 0
+	}
+	return b.duration.Nanoseconds() / int64(b.N)
+}
+
 // runN runs a single benchmark for the specified number of iterations.
 func (b *B) runN(n int) {
 	benchmarkLock.Lock()
 	defer benchmarkLock.Unlock()
-	defer b.runCleanup(normalPanic)
 	// Try to get a comparable environment for each run
 	// by clearing garbage from previous runs.
 	runtime.GC()
@@ -199,18 +183,51 @@ func (b *B) runN(n int) {
 	}
 }
 
-func min(x, y int64) int64 {
+func min(x, y int) int {
 	if x > y {
 		return y
 	}
 	return x
 }
 
-func max(x, y int64) int64 {
+func max(x, y int) int {
 	if x < y {
 		return y
 	}
 	return x
+}
+
+// roundDown10 rounds a number down to the nearest power of 10.
+func roundDown10(n int) int {
+	var tens = 0
+	// tens = floor(log_10(n))
+	for n >= 10 {
+		n = n / 10
+		tens++
+	}
+	// result = 10^tens
+	result := 1
+	for i := 0; i < tens; i++ {
+		result *= 10
+	}
+	return result
+}
+
+// roundUp rounds x up to a number of the form [1eX, 2eX, 3eX, 5eX].
+func roundUp(n int) int {
+	base := roundDown10(n)
+	switch {
+	case n <= base:
+		return base
+	case n <= (2 * base):
+		return 2 * base
+	case n <= (3 * base):
+		return 3 * base
+	case n <= (5 * base):
+		return 5 * base
+	default:
+		return 10 * base
+	}
 }
 
 // run1 runs the first iteration of benchFunc. It reports whether more
@@ -238,15 +255,12 @@ func (b *B) run1() bool {
 	}
 	// Only print the output if we know we are not going to proceed.
 	// Otherwise it is printed in processBench.
-	b.mu.RLock()
-	finished := b.finished
-	b.mu.RUnlock()
-	if atomic.LoadInt32(&b.hasSub) != 0 || finished {
+	if atomic.LoadInt32(&b.hasSub) != 0 || b.finished {
 		tag := "BENCH"
 		if b.skipped {
 			tag = "SKIP"
 		}
-		if b.chatty != nil && (len(b.output) > 0 || finished) {
+		if b.chatty && (len(b.output) > 0 || b.finished) {
 			b.trimOutput()
 			fmt.Fprintf(b.w, "--- %s: %s\n%s", tag, b.name, b.output)
 		}
@@ -265,9 +279,6 @@ func (b *B) run() {
 		fmt.Fprintf(b.w, "goarch: %s\n", runtime.GOARCH)
 		if b.importPath != "" {
 			fmt.Fprintf(b.w, "pkg: %s\n", b.importPath)
-		}
-		if cpu := sysinfo.CPU.Name(); cpu != "" {
-			fmt.Fprintf(b.w, "cpu: %s\n", cpu)
 		}
 	})
 	if b.context != nil {
@@ -301,182 +312,82 @@ func (b *B) launch() {
 		b.runN(b.benchTime.n)
 	} else {
 		d := b.benchTime.d
-		for n := int64(1); !b.failed && b.duration < d && n < 1e9; {
+		for n := 1; !b.failed && b.duration < d && n < 1e9; {
 			last := n
 			// Predict required iterations.
-			goalns := d.Nanoseconds()
-			prevIters := int64(b.N)
-			prevns := b.duration.Nanoseconds()
-			if prevns <= 0 {
-				// Round up, to avoid div by zero.
-				prevns = 1
+			n = int(d.Nanoseconds())
+			if nsop := b.nsPerOp(); nsop != 0 {
+				n /= int(nsop)
 			}
-			// Order of operations matters.
-			// For very fast benchmarks, prevIters ~= prevns.
-			// If you divide first, you get 0 or 1,
-			// which can hide an order of magnitude in execution time.
-			// So multiply first, then divide.
-			n = goalns * prevIters / prevns
 			// Run more iterations than we think we'll need (1.2x).
-			n += n / 5
 			// Don't grow too fast in case we had timing errors previously.
-			n = min(n, 100*last)
 			// Be sure to run at least one more than last time.
-			n = max(n, last+1)
-			// Don't run more than 1e9 times. (This also keeps n in int range on 32 bit platforms.)
-			n = min(n, 1e9)
-			b.runN(int(n))
+			n = max(min(n+n/5, 100*last), last+1)
+			// Round up to something easy to read.
+			n = roundUp(n)
+			b.runN(n)
 		}
 	}
-	b.result = BenchmarkResult{b.N, b.duration, b.bytes, b.netAllocs, b.netBytes, b.extra}
+	b.result = BenchmarkResult{b.N, b.duration, b.bytes, b.netAllocs, b.netBytes}
 }
 
-// ReportMetric adds "n unit" to the reported benchmark results.
-// If the metric is per-iteration, the caller should divide by b.N,
-// and by convention units should end in "/op".
-// ReportMetric overrides any previously reported value for the same unit.
-// ReportMetric panics if unit is the empty string or if unit contains
-// any whitespace.
-// If unit is a unit normally reported by the benchmark framework itself
-// (such as "allocs/op"), ReportMetric will override that metric.
-// Setting "ns/op" to 0 will suppress that built-in metric.
-func (b *B) ReportMetric(n float64, unit string) {
-	if unit == "" {
-		panic("metric unit must not be empty")
-	}
-	if strings.IndexFunc(unit, unicode.IsSpace) >= 0 {
-		panic("metric unit must not contain whitespace")
-	}
-	b.extra[unit] = n
-}
-
-// BenchmarkResult contains the results of a benchmark run.
+// The results of a benchmark run.
 type BenchmarkResult struct {
 	N         int           // The number of iterations.
 	T         time.Duration // The total time taken.
 	Bytes     int64         // Bytes processed in one iteration.
 	MemAllocs uint64        // The total number of memory allocations.
 	MemBytes  uint64        // The total number of bytes allocated.
-
-	// Extra records additional metrics reported by ReportMetric.
-	Extra map[string]float64
 }
 
-// NsPerOp returns the "ns/op" metric.
 func (r BenchmarkResult) NsPerOp() int64 {
-	if v, ok := r.Extra["ns/op"]; ok {
-		return int64(v)
-	}
 	if r.N <= 0 {
 		return 0
 	}
 	return r.T.Nanoseconds() / int64(r.N)
 }
 
-// mbPerSec returns the "MB/s" metric.
 func (r BenchmarkResult) mbPerSec() float64 {
-	if v, ok := r.Extra["MB/s"]; ok {
-		return v
-	}
 	if r.Bytes <= 0 || r.T <= 0 || r.N <= 0 {
 		return 0
 	}
 	return (float64(r.Bytes) * float64(r.N) / 1e6) / r.T.Seconds()
 }
 
-// AllocsPerOp returns the "allocs/op" metric,
-// which is calculated as r.MemAllocs / r.N.
+// AllocsPerOp returns r.MemAllocs / r.N.
 func (r BenchmarkResult) AllocsPerOp() int64 {
-	if v, ok := r.Extra["allocs/op"]; ok {
-		return int64(v)
-	}
 	if r.N <= 0 {
 		return 0
 	}
 	return int64(r.MemAllocs) / int64(r.N)
 }
 
-// AllocedBytesPerOp returns the "B/op" metric,
-// which is calculated as r.MemBytes / r.N.
+// AllocedBytesPerOp returns r.MemBytes / r.N.
 func (r BenchmarkResult) AllocedBytesPerOp() int64 {
-	if v, ok := r.Extra["B/op"]; ok {
-		return int64(v)
-	}
 	if r.N <= 0 {
 		return 0
 	}
 	return int64(r.MemBytes) / int64(r.N)
 }
 
-// String returns a summary of the benchmark results.
-// It follows the benchmark result line format from
-// https://golang.org/design/14313-benchmark-format, not including the
-// benchmark name.
-// Extra metrics override built-in metrics of the same name.
-// String does not include allocs/op or B/op, since those are reported
-// by MemString.
 func (r BenchmarkResult) String() string {
-	buf := new(strings.Builder)
-	fmt.Fprintf(buf, "%8d", r.N)
-
-	// Get ns/op as a float.
-	ns, ok := r.Extra["ns/op"]
-	if !ok {
-		ns = float64(r.T.Nanoseconds()) / float64(r.N)
+	mbs := r.mbPerSec()
+	mb := ""
+	if mbs != 0 {
+		mb = fmt.Sprintf("\t%7.2f MB/s", mbs)
 	}
-	if ns != 0 {
-		buf.WriteByte('\t')
-		prettyPrint(buf, ns, "ns/op")
-	}
-
-	if mbs := r.mbPerSec(); mbs != 0 {
-		fmt.Fprintf(buf, "\t%7.2f MB/s", mbs)
-	}
-
-	// Print extra metrics that aren't represented in the standard
-	// metrics.
-	var extraKeys []string
-	for k := range r.Extra {
-		switch k {
-		case "ns/op", "MB/s", "B/op", "allocs/op":
-			// Built-in metrics reported elsewhere.
-			continue
+	nsop := r.NsPerOp()
+	ns := fmt.Sprintf("%10d ns/op", nsop)
+	if r.N > 0 && nsop < 100 {
+		// The format specifiers here make sure that
+		// the ones digits line up for all three possible formats.
+		if nsop < 10 {
+			ns = fmt.Sprintf("%13.2f ns/op", float64(r.T.Nanoseconds())/float64(r.N))
+		} else {
+			ns = fmt.Sprintf("%12.1f ns/op", float64(r.T.Nanoseconds())/float64(r.N))
 		}
-		extraKeys = append(extraKeys, k)
 	}
-	sort.Strings(extraKeys)
-	for _, k := range extraKeys {
-		buf.WriteByte('\t')
-		prettyPrint(buf, r.Extra[k], k)
-	}
-	return buf.String()
-}
-
-func prettyPrint(w io.Writer, x float64, unit string) {
-	// Print all numbers with 10 places before the decimal point
-	// and small numbers with four sig figs. Field widths are
-	// chosen to fit the whole part in 10 places while aligning
-	// the decimal point of all fractional formats.
-	var format string
-	switch y := math.Abs(x); {
-	case y == 0 || y >= 999.95:
-		format = "%10.0f %s"
-	case y >= 99.995:
-		format = "%12.1f %s"
-	case y >= 9.9995:
-		format = "%13.2f %s"
-	case y >= 0.99995:
-		format = "%14.3f %s"
-	case y >= 0.099995:
-		format = "%15.4f %s"
-	case y >= 0.0099995:
-		format = "%16.5f %s"
-	case y >= 0.00099995:
-		format = "%17.6f %s"
-	default:
-		format = "%18.7f %s"
-	}
-	fmt.Fprintf(w, format, x, unit)
+	return fmt.Sprintf("%8d\t%s%s", r.N, ns, mb)
 }
 
 // MemString returns r.AllocedBytesPerOp and r.AllocsPerOp in the same format as 'go test'.
@@ -500,8 +411,8 @@ type benchContext struct {
 	extLen int // Maximum extension length.
 }
 
-// RunBenchmarks is an internal function but exported because it is cross-package;
-// it is part of the implementation of the "go test" command.
+// An internal function but exported because it is cross-package; part of the implementation
+// of the "go test" command.
 func RunBenchmarks(matchString func(pat, str string) (bool, error), benchmarks []InternalBenchmark) {
 	runBenchmarks("", matchString, benchmarks)
 }
@@ -534,9 +445,9 @@ func runBenchmarks(importPath string, matchString func(pat, str string) (bool, e
 	}
 	main := &B{
 		common: common{
-			name:  "Main",
-			w:     os.Stdout,
-			bench: true,
+			name:   "Main",
+			w:      os.Stdout,
+			chatty: *chatty,
 		},
 		importPath: importPath,
 		benchFunc: func(b *B) {
@@ -546,9 +457,6 @@ func runBenchmarks(importPath string, matchString func(pat, str string) (bool, e
 		},
 		benchTime: benchTime,
 		context:   ctx,
-	}
-	if Verbose() {
-		main.chatty = newChattyPrinter(main.w)
 	}
 	main.runN(1)
 	return !main.failed
@@ -560,11 +468,7 @@ func (ctx *benchContext) processBench(b *B) {
 		for j := uint(0); j < *count; j++ {
 			runtime.GOMAXPROCS(procs)
 			benchName := benchmarkName(b.name, procs)
-
-			// If it's chatty, we've already printed this information.
-			if b.chatty == nil {
-				fmt.Fprintf(b.w, "%-*s\t", ctx.maxLen, benchName)
-			}
+			fmt.Fprintf(b.w, "%-*s\t", ctx.maxLen, benchName)
 			// Recompute the running time for all but the first iteration.
 			if i > 0 || j > 0 {
 				b = &B{
@@ -573,7 +477,6 @@ func (ctx *benchContext) processBench(b *B) {
 						name:   b.name,
 						w:      b.w,
 						chatty: b.chatty,
-						bench:  true,
 					},
 					benchFunc: b.benchFunc,
 					benchTime: b.benchTime,
@@ -589,9 +492,6 @@ func (ctx *benchContext) processBench(b *B) {
 				continue
 			}
 			results := r.String()
-			if b.chatty != nil {
-				fmt.Fprintf(b.w, "%-*s\t", ctx.maxLen, benchName)
-			}
 			if *benchmarkMemory || b.showAllocResult {
 				results += "\t" + r.MemString()
 			}
@@ -639,7 +539,6 @@ func (b *B) Run(name string, f func(b *B)) bool {
 			creator: pc[:n],
 			w:       b.w,
 			chatty:  b.chatty,
-			bench:   true,
 		},
 		importPath: b.importPath,
 		benchFunc:  f,
@@ -651,22 +550,6 @@ func (b *B) Run(name string, f func(b *B)) bool {
 		// Only process sub-benchmarks, if any.
 		atomic.StoreInt32(&sub.hasSub, 1)
 	}
-
-	if b.chatty != nil {
-		labelsOnce.Do(func() {
-			fmt.Printf("goos: %s\n", runtime.GOOS)
-			fmt.Printf("goarch: %s\n", runtime.GOARCH)
-			if b.importPath != "" {
-				fmt.Printf("pkg: %s\n", b.importPath)
-			}
-			if cpu := sysinfo.CPU.Name(); cpu != "" {
-				fmt.Printf("cpu: %s\n", cpu)
-			}
-		})
-
-		fmt.Println(benchName)
-	}
-
 	if sub.run1() {
 		sub.run()
 	}
@@ -797,11 +680,8 @@ func (b *B) SetParallelism(p int) {
 	}
 }
 
-// Benchmark benchmarks a single function. It is useful for creating
+// Benchmark benchmarks a single function. Useful for creating
 // custom benchmarks that do not use the "go test" command.
-//
-// If f depends on testing flags, then Init must be used to register
-// those flags before calling Benchmark and before calling flag.Parse.
 //
 // If f calls Run, the result will be an estimate of running all its
 // subbenchmarks that don't call Run in sequence in a single benchmark.

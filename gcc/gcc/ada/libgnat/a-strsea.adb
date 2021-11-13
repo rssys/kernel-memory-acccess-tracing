@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -35,18 +35,10 @@
 --  case of identity mappings for Count and Index, and also Index_Non_Blank
 --  is specialized (rather than using the general Index routine).
 
---  Ghost code, loop invariants and assertions in this unit are meant for
---  analysis only, not for run-time checking, as it would be too costly
---  otherwise. This is enforced by setting the assertion policy to Ignore.
-
-pragma Assertion_Policy (Ghost          => Ignore,
-                         Loop_Invariant => Ignore,
-                         Assert         => Ignore);
-
 with Ada.Strings.Maps; use Ada.Strings.Maps;
 with System;           use System;
 
-package body Ada.Strings.Search with SPARK_Mode is
+package body Ada.Strings.Search is
 
    -----------------------
    -- Local Subprograms --
@@ -69,9 +61,13 @@ package body Ada.Strings.Search with SPARK_Mode is
       Set     : Maps.Character_Set;
       Test    : Membership) return Boolean
    is
-      (if Test = Inside then
-          Is_In (Element, Set)
-      else not (Is_In (Element, Set)));
+   begin
+      if Test = Inside then
+         return Is_In (Element, Set);
+      else
+         return not Is_In (Element, Set);
+      end if;
+   end Belongs;
 
    -----------
    -- Count --
@@ -85,63 +81,47 @@ package body Ada.Strings.Search with SPARK_Mode is
       PL1 : constant Integer := Pattern'Length - 1;
       Num : Natural;
       Ind : Natural;
+      Cur : Natural;
 
    begin
       if Pattern = "" then
          raise Pattern_Error;
       end if;
 
-      --  Isolating the null string case to ensure Source'First, Source'Last in
-      --  Positive.
-
-      if Source = "" then
-         return 0;
-      end if;
-
       Num := 0;
-      Ind := Source'First - 1;
+      Ind := Source'First;
 
       --  Unmapped case
 
-      if Is_Identity (Mapping) then
-         while Ind < Source'Last - PL1 loop
-            Ind := Ind + 1;
+      if Mapping'Address = Maps.Identity'Address then
+         while Ind <= Source'Last - PL1 loop
             if Pattern = Source (Ind .. Ind + PL1) then
                Num := Num + 1;
-               Ind := Ind + PL1;
+               Ind := Ind + Pattern'Length;
+            else
+               Ind := Ind + 1;
             end if;
-
-            pragma Loop_Invariant (Num <= Ind - (Source'First - 1));
-            pragma Loop_Invariant (Ind >= Source'First);
          end loop;
 
       --  Mapped case
 
       else
-         while Ind < Source'Last - PL1 loop
-            Ind := Ind + 1;
+         while Ind <= Source'Last - PL1 loop
+            Cur := Ind;
             for K in Pattern'Range loop
-               if Pattern (K) /= Value (Mapping,
-                 Source (Ind + (K - Pattern'First)))
-               then
-                  pragma Assert (not (Match (Source, Pattern, Mapping, Ind)));
+               if Pattern (K) /= Value (Mapping, Source (Cur)) then
+                  Ind := Ind + 1;
                   goto Cont;
+               else
+                  Cur := Cur + 1;
                end if;
-
-               pragma Loop_Invariant
-                 (for all J in Pattern'First .. K =>
-                    Pattern (J) = Value (Mapping,
-                      Source (Ind + (J - Pattern'First))));
             end loop;
 
-            pragma Assert (Match (Source, Pattern, Mapping, Ind));
             Num := Num + 1;
-            Ind := Ind + PL1;
+            Ind := Ind + Pattern'Length;
 
-            <<Cont>>
+         <<Cont>>
             null;
-            pragma Loop_Invariant (Num <= Ind - (Source'First - 1));
-            pragma Loop_Invariant (Ind >= Source'First);
          end loop;
       end if;
 
@@ -158,17 +138,11 @@ package body Ada.Strings.Search with SPARK_Mode is
       PL1 : constant Integer := Pattern'Length - 1;
       Num : Natural;
       Ind : Natural;
+      Cur : Natural;
 
    begin
       if Pattern = "" then
          raise Pattern_Error;
-      end if;
-
-      --  Isolating the null string case to ensure Source'First, Source'Last in
-      --  Positive.
-
-      if Source = "" then
-         return 0;
       end if;
 
       --  Check for null pointer in case checks are off
@@ -178,28 +152,23 @@ package body Ada.Strings.Search with SPARK_Mode is
       end if;
 
       Num := 0;
-      Ind := Source'First - 1;
-      while Ind < Source'Last - PL1 loop
-         Ind := Ind + 1;
+      Ind := Source'First;
+      while Ind <= Source'Last - PL1 loop
+         Cur := Ind;
          for K in Pattern'Range loop
-            if Pattern (K) /= Mapping (Source (Ind + (K - Pattern'First))) then
-               pragma Assert (not (Match (Source, Pattern, Mapping, Ind)));
+            if Pattern (K) /= Mapping (Source (Cur)) then
+               Ind := Ind + 1;
                goto Cont;
+            else
+               Cur := Cur + 1;
             end if;
-
-            pragma Loop_Invariant
-              (for all J in Pattern'First .. K =>
-                 Pattern (J) = Mapping (Source (Ind + (J - Pattern'First))));
          end loop;
 
-         pragma Assert (Match (Source, Pattern, Mapping, Ind));
          Num := Num + 1;
-         Ind := Ind + PL1;
+         Ind := Ind + Pattern'Length;
 
       <<Cont>>
          null;
-         pragma Loop_Invariant (Num <= Ind - (Source'First - 1));
-         pragma Loop_Invariant (Ind >= Source'First);
       end loop;
 
       return Num;
@@ -213,7 +182,6 @@ package body Ada.Strings.Search with SPARK_Mode is
 
    begin
       for J in Source'Range loop
-         pragma Loop_Invariant (N <= J - Source'First);
          if Is_In (Source (J), Set) then
             N := N + 1;
          end if;
@@ -249,18 +217,12 @@ package body Ada.Strings.Search with SPARK_Mode is
          if Belongs (Source (J), Set, Test) then
             First := J;
 
-            if J < Source'Last then
-               for K in J + 1 .. Source'Last loop
-                  if not Belongs (Source (K), Set, Test) then
-                     Last := K - 1;
-                     return;
-                  end if;
-
-                  pragma Loop_Invariant
-                    (for all L in J .. K =>
-                       Belongs (Source (L), Set, Test));
-               end loop;
-            end if;
+            for K in J + 1 .. Source'Last loop
+               if not Belongs (Source (K), Set, Test) then
+                  Last := K - 1;
+                  return;
+               end if;
+            end loop;
 
             --  Here if J indexes first char of token, and all chars after J
             --  are in the token.
@@ -268,10 +230,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             Last := Source'Last;
             return;
          end if;
-
-         pragma Loop_Invariant
-           (for all K in Integer'Max (From, Source'First) .. J =>
-                not (Belongs (Source (K), Set, Test)));
       end loop;
 
       --  Here if no token found
@@ -292,18 +250,12 @@ package body Ada.Strings.Search with SPARK_Mode is
          if Belongs (Source (J), Set, Test) then
             First := J;
 
-            if J < Source'Last then
-               for K in J + 1 .. Source'Last loop
-                  if not Belongs (Source (K), Set, Test) then
-                     Last := K - 1;
-                     return;
-                  end if;
-
-                  pragma Loop_Invariant
-                    (for all L in J .. K =>
-                       Belongs (Source (L), Set, Test));
-               end loop;
-            end if;
+            for K in J + 1 .. Source'Last loop
+               if not Belongs (Source (K), Set, Test) then
+                  Last := K - 1;
+                  return;
+               end if;
+            end loop;
 
             --  Here if J indexes first char of token, and all chars after J
             --  are in the token.
@@ -311,10 +263,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             Last := Source'Last;
             return;
          end if;
-
-         pragma Loop_Invariant
-           (for all K in Source'First .. J =>
-              not (Belongs (Source (K), Set, Test)));
       end loop;
 
       --  Here if no token found
@@ -344,61 +292,53 @@ package body Ada.Strings.Search with SPARK_Mode is
       Mapping : Maps.Character_Mapping := Maps.Identity) return Natural
    is
       PL1 : constant Integer := Pattern'Length - 1;
+      Cur : Natural;
+
+      Ind : Integer;
+      --  Index for start of match check. This can be negative if the pattern
+      --  length is greater than the string length, which is why this variable
+      --  is Integer instead of Natural. In this case, the search loops do not
+      --  execute at all, so this Ind value is never used.
 
    begin
       if Pattern = "" then
          raise Pattern_Error;
       end if;
 
-      --  If Pattern is longer than Source, it can't be found
-
-      if Pattern'Length > Source'Length then
-         return 0;
-      end if;
-
       --  Forwards case
 
       if Going = Forward then
+         Ind := Source'First;
 
          --  Unmapped forward case
 
-         if Is_Identity (Mapping) then
-            for Ind in Source'First .. Source'Last - PL1 loop
+         if Mapping'Address = Maps.Identity'Address then
+            for J in 1 .. Source'Length - PL1 loop
                if Pattern = Source (Ind .. Ind + PL1) then
-                  pragma Assert (Match (Source, Pattern, Mapping, Ind));
                   return Ind;
+               else
+                  Ind := Ind + 1;
                end if;
-
-               pragma Loop_Invariant
-                 (for all J in Source'First .. Ind =>
-                    not (Match (Source, Pattern, Mapping, J)));
             end loop;
 
          --  Mapped forward case
 
          else
-            for Ind in Source'First .. Source'Last - PL1 loop
-               for K in Pattern'Range loop
-                  if Pattern (K) /= Value (Mapping,
-                    Source (Ind + (K - Pattern'First)))
-                  then
-                     goto Cont1;
-                  end if;
+            for J in 1 .. Source'Length - PL1 loop
+               Cur := Ind;
 
-                  pragma Loop_Invariant
-                    (for all J in Pattern'First .. K =>
-                       Pattern (J) = Value (Mapping,
-                         Source (Ind + (J - Pattern'First))));
+               for K in Pattern'Range loop
+                  if Pattern (K) /= Value (Mapping, Source (Cur)) then
+                     goto Cont1;
+                  else
+                     Cur := Cur + 1;
+                  end if;
                end loop;
 
-               pragma Assert (Match (Source, Pattern, Mapping, Ind));
                return Ind;
 
-               <<Cont1>>
-               pragma Loop_Invariant
-                 (for all J in Source'First .. Ind =>
-                    not (Match (Source, Pattern, Mapping, J)));
-               null;
+            <<Cont1>>
+               Ind := Ind + 1;
             end loop;
          end if;
 
@@ -407,43 +347,35 @@ package body Ada.Strings.Search with SPARK_Mode is
       else
          --  Unmapped backward case
 
-         if Is_Identity (Mapping) then
-            for Ind in reverse Source'First .. Source'Last - PL1 loop
-               if Pattern = Source (Ind .. Ind + PL1) then
-                  pragma Assert (Match (Source, Pattern, Mapping, Ind));
-                  return Ind;
-               end if;
+         Ind := Source'Last - PL1;
 
-               pragma Loop_Invariant
-                 (for all J in Ind .. Source'Last - PL1 =>
-                    not (Match (Source, Pattern, Mapping, J)));
+         if Mapping'Address = Maps.Identity'Address then
+            for J in reverse 1 .. Source'Length - PL1 loop
+               if Pattern = Source (Ind .. Ind + PL1) then
+                  return Ind;
+               else
+                  Ind := Ind - 1;
+               end if;
             end loop;
 
          --  Mapped backward case
 
          else
-            for Ind in reverse Source'First .. Source'Last - PL1 loop
-               for K in Pattern'Range loop
-                  if Pattern (K) /= Value (Mapping,
-                    Source (Ind + (K - Pattern'First)))
-                  then
-                     goto Cont2;
-                  end if;
+            for J in reverse 1 .. Source'Length - PL1 loop
+               Cur := Ind;
 
-                  pragma Loop_Invariant
-                    (for all J in Pattern'First .. K =>
-                       Pattern (J) = Value (Mapping,
-                         Source (Ind + (J - Pattern'First))));
+               for K in Pattern'Range loop
+                  if Pattern (K) /= Value (Mapping, Source (Cur)) then
+                     goto Cont2;
+                  else
+                     Cur := Cur + 1;
+                  end if;
                end loop;
 
-               pragma Assert (Match (Source, Pattern, Mapping, Ind));
                return Ind;
 
-               <<Cont2>>
-               pragma Loop_Invariant
-                 (for all J in Ind .. Source'Last - PL1 =>
-                    not (Match (Source, Pattern, Mapping, J)));
-               null;
+            <<Cont2>>
+               Ind := Ind - 1;
             end loop;
          end if;
       end if;
@@ -461,6 +393,9 @@ package body Ada.Strings.Search with SPARK_Mode is
       Mapping : Maps.Character_Mapping_Function) return Natural
    is
       PL1 : constant Integer := Pattern'Length - 1;
+      Ind : Natural;
+      Cur : Natural;
+
    begin
       if Pattern = "" then
          raise Pattern_Error;
@@ -481,52 +416,43 @@ package body Ada.Strings.Search with SPARK_Mode is
       --  Forwards case
 
       if Going = Forward then
-         for Ind in Source'First .. Source'Last - PL1 loop
-            for K in Pattern'Range loop
-               if Pattern (K) /= Mapping.all
-                 (Source (Ind + (K - Pattern'First)))
-               then
-                  goto Cont1;
-               end if;
+         Ind := Source'First;
+         for J in 1 .. Source'Length - PL1 loop
+            Cur := Ind;
 
-               pragma Loop_Invariant
-                 (for all J in Pattern'First .. K =>
-                   Pattern (J) = Mapping (Source (Ind + (J - Pattern'First))));
+            for K in Pattern'Range loop
+               if Pattern (K) /= Mapping.all (Source (Cur)) then
+                  goto Cont1;
+               else
+                  Cur := Cur + 1;
+               end if;
             end loop;
 
-            pragma Assert (Match (Source, Pattern, Mapping, Ind));
             return Ind;
 
-            <<Cont1>>
-            pragma Loop_Invariant
-              (for all J in Source'First .. Ind =>
-                 not (Match (Source, Pattern, Mapping, J)));
-            null;
+         <<Cont1>>
+            Ind := Ind + 1;
          end loop;
 
       --  Backwards case
 
       else
-         for Ind in reverse Source'First .. Source'Last - PL1 loop
-            for K in Pattern'Range loop
-               if Pattern (K) /= Mapping.all
-                 (Source (Ind + (K - Pattern'First)))
-               then
-                  goto Cont2;
-               end if;
+         Ind := Source'Last - PL1;
+         for J in reverse 1 .. Source'Length - PL1 loop
+            Cur := Ind;
 
-               pragma Loop_Invariant
-                 (for all J in Pattern'First .. K =>
-                   Pattern (J) = Mapping (Source (Ind + (J - Pattern'First))));
+            for K in Pattern'Range loop
+               if Pattern (K) /= Mapping.all (Source (Cur)) then
+                  goto Cont2;
+               else
+                  Cur := Cur + 1;
+               end if;
             end loop;
 
             return Ind;
 
-            <<Cont2>>
-            pragma Loop_Invariant
-              (for all J in Ind .. (Source'Last - PL1) =>
-                not (Match (Source, Pattern, Mapping, J)));
-            null;
+         <<Cont2>>
+            Ind := Ind - 1;
          end loop;
       end if;
 
@@ -550,10 +476,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             if Belongs (Source (J), Set, Test) then
                return J;
             end if;
-
-            pragma Loop_Invariant
-              (for all C of Source (Source'First .. J) =>
-                   not (Belongs (C, Set, Test)));
          end loop;
 
       --  Backwards case
@@ -563,10 +485,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             if Belongs (Source (J), Set, Test) then
                return J;
             end if;
-
-            pragma Loop_Invariant
-              (for all C of Source (J .. Source'Last) =>
-                   not (Belongs (C, Set, Test)));
          end loop;
       end if;
 
@@ -582,8 +500,6 @@ package body Ada.Strings.Search with SPARK_Mode is
       Going   : Direction := Forward;
       Mapping : Maps.Character_Mapping := Maps.Identity) return Natural
    is
-      Result : Natural;
-      PL1    : constant Integer := Pattern'Length - 1;
    begin
 
       --  AI05-056: If source is empty result is always zero
@@ -596,29 +512,17 @@ package body Ada.Strings.Search with SPARK_Mode is
             raise Index_Error;
          end if;
 
-         Result :=
+         return
            Index (Source (From .. Source'Last), Pattern, Forward, Mapping);
-         pragma Assert
-           (if (for some J in From .. Source'Last - PL1 =>
-                 Match (Source, Pattern, Mapping, J))
-            then Result in From .. Source'Last - PL1
-            else Result = 0);
 
       else
          if From > Source'Last then
             raise Index_Error;
          end if;
 
-         Result :=
+         return
            Index (Source (Source'First .. From), Pattern, Backward, Mapping);
-         pragma Assert
-           (if (for some J in Source'First .. From - PL1 =>
-                  Match (Source, Pattern, Mapping, J))
-            then Result in Source'First .. From - PL1
-            else Result = 0);
       end if;
-
-      return Result;
    end Index;
 
    function Index
@@ -699,9 +603,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             if Source (J) /= ' ' then
                return J;
             end if;
-
-            pragma Loop_Invariant
-              (for all C of Source (Source'First .. J) => C = ' ');
          end loop;
 
       else -- Going = Backward
@@ -709,9 +610,6 @@ package body Ada.Strings.Search with SPARK_Mode is
             if Source (J) /= ' ' then
                return J;
             end if;
-
-            pragma Loop_Invariant
-              (for all C of Source (J .. Source'Last) => C = ' ');
          end loop;
       end if;
 
@@ -726,13 +624,6 @@ package body Ada.Strings.Search with SPARK_Mode is
       Going  : Direction := Forward) return Natural
    is
    begin
-
-      --  For equivalence with Index, if Source is empty the result is 0
-
-      if Source'Length = 0 then
-         return 0;
-      end if;
-
       if Going = Forward then
          if From < Source'First then
             raise Index_Error;
@@ -750,13 +641,5 @@ package body Ada.Strings.Search with SPARK_Mode is
            Index_Non_Blank (Source (Source'First .. From), Backward);
       end if;
    end Index_Non_Blank;
-
-   function Is_Identity
-     (Mapping : Maps.Character_Mapping) return Boolean
-   with SPARK_Mode => Off
-   is
-   begin
-      return Mapping'Address = Maps.Identity'Address;
-   end Is_Identity;
 
 end Ada.Strings.Search;

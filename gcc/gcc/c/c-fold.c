@@ -1,5 +1,5 @@
 /* Support for fully folding sub-trees of an expression for C compiler.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -154,7 +154,7 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
   tree orig_op0, orig_op1, orig_op2;
   bool op0_const = true, op1_const = true, op2_const = true;
   bool op0_const_self = true, op1_const_self = true, op2_const_self = true;
-  bool nowarning = warning_suppressed_p (expr, OPT_Woverflow);
+  bool nowarning = TREE_NO_WARNING (expr);
   bool unused_p;
   bool op0_lval = false;
   source_range old_range;
@@ -346,7 +346,6 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
     case UNGT_EXPR:
     case UNGE_EXPR:
     case UNEQ_EXPR:
-    case MEM_REF:
       /* Binary operations evaluating both arguments (increment and
 	 decrement are binary internally in GCC).  */
       orig_op0 = op0 = TREE_OPERAND (expr, 0);
@@ -374,7 +373,6 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
 	ret = fold (expr);
       if (TREE_OVERFLOW_P (ret)
 	  && !TREE_OVERFLOW_P (op0)
-	  && !(BINARY_CLASS_P (op0) && TREE_OVERFLOW_P (TREE_OPERAND (op0, 1)))
 	  && !TREE_OVERFLOW_P (op1))
 	overflow_warning (EXPR_LOC_OR_LOC (expr, input_location), ret, expr);
       if (code == LSHIFT_EXPR
@@ -437,14 +435,6 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
 	      || TREE_CODE (TREE_TYPE (orig_op0)) == FIXED_POINT_TYPE)
 	  && TREE_CODE (TREE_TYPE (orig_op1)) == INTEGER_TYPE)
 	warn_for_div_by_zero (loc, op1);
-      if (code == MEM_REF
-	  && ret != expr
-	  && TREE_CODE (ret) == MEM_REF)
-	{
-	  TREE_READONLY (ret) = TREE_READONLY (expr);
-	  TREE_SIDE_EFFECTS (ret) = TREE_SIDE_EFFECTS (expr);
-	  TREE_THIS_VOLATILE (ret) = TREE_THIS_VOLATILE (expr);
-	}
       goto out;
 
     case ADDR_EXPR:
@@ -670,13 +660,13 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
  out:
   /* Some folding may introduce NON_LVALUE_EXPRs; all lvalue checks
      have been done by this point, so remove them again.  */
-  nowarning |= warning_suppressed_p (ret, OPT_Woverflow);
+  nowarning |= TREE_NO_WARNING (ret);
   STRIP_TYPE_NOPS (ret);
-  if (nowarning && !warning_suppressed_p (ret, OPT_Woverflow))
+  if (nowarning && !TREE_NO_WARNING (ret))
     {
       if (!CAN_HAVE_LOCATION_P (ret))
 	ret = build1 (NOP_EXPR, TREE_TYPE (ret), ret);
-      suppress_warning (ret, OPT_Woverflow);
+      TREE_NO_WARNING (ret) = 1;
     }
   if (ret != expr)
     {

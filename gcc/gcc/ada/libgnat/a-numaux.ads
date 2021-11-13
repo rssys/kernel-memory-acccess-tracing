@@ -5,8 +5,9 @@
 --                     A D A . N U M E R I C S . A U X                      --
 --                                                                          --
 --                                 S p e c                                  --
+--                       (C Library Version, non-x86)                       --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,60 +30,83 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This is a backward-compatibility unit, for users of this internal
---  package before the introduction of Aux.Generic_Float.
+--  This package provides the basic computational interface for the generic
+--  elementary functions. The C library version interfaces with the routines
+--  in the C mathematical library, and is thus quite portable, although it may
+--  not necessarily meet the requirements for accuracy in the numerics annex.
+--  One advantage of using this package is that it will interface directly to
+--  hardware instructions, such as the those provided on the Intel x86.
 
-with Ada.Numerics.Aux_Compat;
+--  This version here is for use with normal Unix math functions. Alternative
+--  versions are provided for special situations:
+
+--    a-numaux-darwin    For PowerPC/Darwin (special handling of sin/cos)
+--    a-numaux-libc-x86  For the x86, using 80-bit long double format
+--    a-numaux-x86       For the x86, using 80-bit long double format with
+--                       inline asm statements
+--    a-numaux-vxworks   For use on VxWorks (where we have no libm.a library)
 
 package Ada.Numerics.Aux is
    pragma Pure;
 
-   package Aux renames Aux_Compat;
+   pragma Linker_Options ("-lm");
 
-   type Double is new Aux.T;
+   type Double is new Long_Float;
+   --  Type Double is the type used to call the C routines
 
-   subtype T is Double;
-   subtype W is Aux.T;
+   --  We import these functions directly from C. Note that we label them
+   --  all as pure functions, because indeed all of them are in fact pure.
 
-   --  Use the Aux implementation.
+   function Sin (X : Double) return Double;
+   pragma Import (C, Sin, "sin");
+   pragma Pure_Function (Sin);
 
-   function Sin (X : T) return T
-   is (T (Aux.Sin (W (X))));
+   function Cos (X : Double) return Double;
+   pragma Import (C, Cos, "cos");
+   pragma Pure_Function (Cos);
 
-   function Cos (X : T) return T
-   is (T (Aux.Cos (W (X))));
+   function Tan (X : Double) return Double;
+   pragma Import (C, Tan, "tan");
+   pragma Pure_Function (Tan);
 
-   function Tan (X : T) return T
-   is (T (Aux.Tan (W (X))));
+   function Exp (X : Double) return Double;
+   pragma Import (C, Exp, "exp");
+   pragma Pure_Function (Exp);
 
-   function Exp (X : T) return T
-   is (T (Aux.Exp (W (X))));
+   function Sqrt (X : Double) return Double;
+   pragma Import (C, Sqrt, "sqrt");
+   pragma Pure_Function (Sqrt);
 
-   function Sqrt (X : T) return T
-   is (T (Aux.Sqrt (W (X))));
+   function Log (X : Double) return Double;
+   pragma Import (C, Log, "log");
+   pragma Pure_Function (Log);
 
-   function Log (X : T) return T
-   is (T (Aux.Log (W (X))));
+   function Acos (X : Double) return Double;
+   pragma Import (C, Acos, "acos");
+   pragma Pure_Function (Acos);
 
-   function Acos (X : T) return T
-   is (T (Aux.Acos (W (X))));
+   function Asin (X : Double) return Double;
+   pragma Import (C, Asin, "asin");
+   pragma Pure_Function (Asin);
 
-   function Asin (X : T) return T
-   is (T (Aux.Asin (W (X))));
+   function Atan (X : Double) return Double;
+   pragma Import (C, Atan, "atan");
+   pragma Pure_Function (Atan);
 
-   function Atan (X : T) return T
-   is (T (Aux.Atan (W (X))));
+   function Sinh (X : Double) return Double;
+   pragma Import (C, Sinh, "sinh");
+   pragma Pure_Function (Sinh);
 
-   function Sinh (X : T) return T
-   is (T (Aux.Sinh (W (X))));
+   function Cosh (X : Double) return Double;
+   pragma Import (C, Cosh, "cosh");
+   pragma Pure_Function (Cosh);
 
-   function Cosh (X : T) return T
-   is (T (Aux.Cosh (W (X))));
+   function Tanh (X : Double) return Double;
+   pragma Import (C, Tanh, "tanh");
+   pragma Pure_Function (Tanh);
 
-   function Tanh (X : T) return T
-   is (T (Aux.Tanh (W (X))));
-
-   function Pow (X, Y : T) return T
-   is (T (Aux.Pow (W (X), W (Y))));
+   function Pow (X, Y : Double) return Double;
+   pragma Import (C, Pow, "pow");
+   pragma Pure_Function (Pow);
 
 end Ada.Numerics.Aux;

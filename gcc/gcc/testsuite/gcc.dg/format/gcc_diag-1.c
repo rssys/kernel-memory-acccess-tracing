@@ -1,7 +1,7 @@
 /* Test for GCC diagnostic formats.  */
 /* Origin: Kaveh Ghazi <ghazi@caip.rutgers.edu> */
 /* { dg-do compile } */
-/* { dg-options "-Wformat -Wno-format-diag" } */
+/* { dg-options "-Wformat" } */
 
 #include "format.h"
 

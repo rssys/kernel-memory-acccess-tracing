@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,11 +29,9 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Ada.Numerics.Aux_Generic_Float;
+with Ada.Numerics.Aux; use Ada.Numerics.Aux;
 
 package body Ada.Numerics.Generic_Complex_Types is
-
-   package Aux is new Ada.Numerics.Aux_Generic_Float (Real);
 
    subtype R is Real'Base;
 
@@ -68,19 +66,11 @@ package body Ada.Numerics.Generic_Complex_Types is
          --  return false, the test can only be written thus.
 
          if not (abs (X) <= R'Last) then
-            pragma Annotate
-              (CodePeer, Intentional,
-               "test always false", "test for infinity");
-
             X := Scale**2 * ((Left.Re / Scale) * (Right.Re / Scale) -
                              (Left.Im / Scale) * (Right.Im / Scale));
          end if;
 
          if not (abs (Y) <= R'Last) then
-            pragma Annotate
-              (CodePeer, Intentional,
-               "test always false", "test for infinity");
-
             Y := Scale**2 * ((Left.Re / Scale) * (Right.Im / Scale)
                            + (Left.Im / Scale) * (Right.Re / Scale));
          end if;
@@ -442,7 +432,7 @@ package body Ada.Numerics.Generic_Complex_Types is
          end if;
 
       else
-         arg := Aux.Atan (abs (b / a));
+         arg := R (Atan (Double (abs (b / a))));
 
          if a > 0.0 then
             if b > 0.0 then
@@ -509,8 +499,8 @@ package body Ada.Numerics.Generic_Complex_Types is
       if Modulus = 0.0 then
          return (0.0, 0.0);
       else
-         return (Modulus * Aux.Cos (Argument),
-                 Modulus * Aux.Sin (Argument));
+         return (Modulus * R (Cos (Double (Argument))),
+                 Modulus * R (Sin (Double (Argument))));
       end if;
    end Compose_From_Polar;
 
@@ -538,8 +528,8 @@ package body Ada.Numerics.Generic_Complex_Types is
             return (0.0, -Modulus);
          else
             Arg := Two_Pi * Argument / Cycle;
-            return (Modulus * Aux.Cos (Arg),
-                    Modulus * Aux.Sin (Arg));
+            return (Modulus * R (Cos (Double (Arg))),
+                    Modulus * R (Sin (Double (Arg))));
          end if;
       else
          raise Argument_Error;
@@ -598,9 +588,8 @@ package body Ada.Numerics.Generic_Complex_Types is
 
       exception
          when Constraint_Error =>
-            pragma Assert (X.Re /= 0.0);
-            return R (abs (X.Re))
-              * Aux.Sqrt (1.0 + (R (X.Im) / R (X.Re)) ** 2);
+            return R (Double (abs (X.Re))
+              * Sqrt (1.0 + (Double (X.Im) / Double (X.Re)) ** 2));
       end;
 
       begin
@@ -613,9 +602,8 @@ package body Ada.Numerics.Generic_Complex_Types is
 
       exception
          when Constraint_Error =>
-            pragma Assert (X.Im /= 0.0);
-            return R (abs (X.Im))
-              * Aux.Sqrt (1.0 + (R (X.Re) / R (X.Im)) ** 2);
+            return R (Double (abs (X.Im))
+              * Sqrt (1.0 + (Double (X.Re) / Double (X.Im)) ** 2));
       end;
 
       --  Now deal with cases of underflow. If only one of the squares
@@ -634,11 +622,13 @@ package body Ada.Numerics.Generic_Complex_Types is
 
             else
                if abs (X.Re) > abs (X.Im) then
-                  return R (abs (X.Re))
-                    * Aux.Sqrt (1.0 + (R (X.Im) / R (X.Re)) ** 2);
+                  return
+                    R (Double (abs (X.Re))
+                      * Sqrt (1.0 + (Double (X.Im) / Double (X.Re)) ** 2));
                else
-                  return R (abs (X.Im))
-                    * Aux.Sqrt (1.0 + (R (X.Re) / R (X.Im)) ** 2);
+                  return
+                    R (Double (abs (X.Im))
+                      * Sqrt (1.0 + (Double (X.Re) / Double (X.Im)) ** 2));
                end if;
             end if;
 
@@ -652,7 +642,7 @@ package body Ada.Numerics.Generic_Complex_Types is
       --  In all other cases, the naive computation will do
 
       else
-         return Aux.Sqrt (Re2 + Im2);
+         return R (Sqrt (Double (Re2 + Im2)));
       end if;
    end Modulus;
 

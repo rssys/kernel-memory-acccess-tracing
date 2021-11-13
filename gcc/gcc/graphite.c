@@ -1,5 +1,5 @@
 /* Gimple Represented as Polyhedra.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@inria.fr>.
 
 This file is part of GCC.
@@ -27,7 +27,7 @@ along with GCC; see the file COPYING3.  If not see
    The wiki page http://gcc.gnu.org/wiki/Graphite contains pointers to
    the related work.  */
 
-#define INCLUDE_ISL
+#define USES_ISL
 
 #include "config.h"
 #include "system.h"
@@ -36,6 +36,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic-core.h"
 #include "cfgloop.h"
 #include "tree-pass.h"
+#include "params.h"
 #include "pretty-print.h"
 #include "cfganal.h"
 
@@ -233,7 +234,6 @@ struct sese_scev_hash : typed_noop_remove <seir_cache_key>
 	    && operand_equal_p (key1.expr, key2.expr, 0));
   }
   static void mark_deleted (seir_cache_key &key) { key.expr = NULL_TREE; }
-  static const bool empty_zero_p = false;
   static void mark_empty (seir_cache_key &key) { key.entry_dest = 0; }
   static bool is_deleted (const seir_cache_key &key) { return !key.expr; }
   static bool is_empty (const seir_cache_key &key) { return key.entry_dest == 0; }
@@ -377,7 +377,8 @@ canonicalize_loop_closed_ssa (loop_p loop, edge e)
 static void
 canonicalize_loop_form (void)
 {
-  for (auto loop : loops_list (cfun, LI_FROM_INNERMOST))
+  loop_p loop;
+  FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
     {
       edge e = single_exit (loop);
       if (!e || (e->flags & (EDGE_COMPLEX|EDGE_FAKE)))
@@ -493,9 +494,10 @@ graphite_transform_loops (void)
 
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
+      loop_p loop;
       int num_no_dependency = 0;
 
-      for (auto loop : loops_list (cfun, 0))
+      FOR_EACH_LOOP (loop, 0)
 	if (loop->can_be_parallel)
 	  num_no_dependency++;
 

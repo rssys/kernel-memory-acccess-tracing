@@ -1,8 +1,8 @@
 // ASan interceptor can be accessed with __interceptor_ prefix.
 
-// { dg-do run { target *-*-linux* *-*-freebsd* } }
+// { dg-do run { target *-*-linux* } }
 // { dg-options "-fno-builtin-free" }
-// { dg-additional-options "-D__NO_INLINE__" { target { *-*-linux-gnu *-*-freebsd* } } }
+// { dg-additional-options "-D__NO_INLINE__" { target { *-*-linux-gnu } } }
 // { dg-shouldfail "asan" }
 
 #include <stdlib.h>

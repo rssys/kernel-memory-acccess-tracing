@@ -14,44 +14,44 @@ import (
 // these are written in OS-specific files and in assembler.
 
 //go:noescape
-//extern-sysinfo sigaction
+//extern sigaction
 func sigaction(signum uint32, act *_sigaction, oact *_sigaction) int32
 
 //go:noescape
-//extern-sysinfo sigprocmask
+//extern sigprocmask
 func sigprocmask(how int32, set *sigset, oldset *sigset) int32
 
 //go:noescape
-//extern-sysinfo sigfillset
+//extern sigfillset
 func sigfillset(set *sigset) int32
 
 //go:noescape
-//extern-sysinfo sigemptyset
+//extern sigemptyset
 func sigemptyset(set *sigset) int32
 
 //go:noescape
-//extern-sysinfo sigaddset
+//extern sigaddset
 func c_sigaddset(set *sigset, signum uint32) int32
 
 //go:noescape
-//extern-sysinfo sigdelset
+//extern sigdelset
 func c_sigdelset(set *sigset, signum uint32) int32
 
 //go:noescape
-//extern-sysinfo sigaltstack
+//extern sigaltstack
 func sigaltstack(ss *_stack_t, oss *_stack_t) int32
 
-//extern-sysinfo raise
+//extern raise
 func raise(sig uint32) int32
 
-//extern-sysinfo getpid
+//extern getpid
 func getpid() _pid_t
 
-//extern-sysinfo kill
+//extern kill
 func kill(pid _pid_t, sig uint32) int32
 
 //go:noescape
-//extern-sysinfo setitimer
+//extern setitimer
 func setitimer(which int32, new *_itimerval, old *_itimerval) int32
 
 type sigctxt struct {
@@ -60,7 +60,12 @@ type sigctxt struct {
 }
 
 func (c *sigctxt) sigcode() uint64 {
-	return uint64(getSiginfoCode(c.info))
+	if c.info == nil {
+		// This can happen on Solaris 10.  We don't know the
+		// code, just avoid a misleading value.
+		return _SI_USER + 1
+	}
+	return uint64(c.info.si_code)
 }
 
 //go:nosplit

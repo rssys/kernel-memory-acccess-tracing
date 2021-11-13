@@ -1,7 +1,6 @@
 // -*- C++ -*-
-// { dg-options "-ltbb" }
+// { dg-options "-std=gnu++17 -ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-timeout-factor 3 }
 // { dg-require-effective-target tbb-backend }
 
 //===-- count.pass.cpp ----------------------------------------------------===//
@@ -102,7 +101,7 @@ int32_t
 main()
 {
     test<int32_t>(42, IsEqual<int32_t>(50, OddTag()), [](int32_t j) { return j; });
-#if !_PSTL_ICC_16_17_TEST_REDUCTION_RELEASE_BROKEN
+#if !__PSTL_ICC_16_17_TEST_REDUCTION_RELEASE_BROKEN
     test<int32_t>(42, [](const int32_t& x) { return true; }, [](int32_t j) { return j; });
 #endif
     test<float64_t>(42, IsEqual<float64_t>(50, OddTag()), [](int32_t j) { return float64_t(j); });

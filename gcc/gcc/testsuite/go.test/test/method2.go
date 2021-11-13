@@ -33,9 +33,5 @@ var _ = (*Val).val // ERROR "method"
 var v Val
 var pv = &v
 
-var _ = pv.val() // ERROR "undefined|pointer to interface"
-var _ = pv.val   // ERROR "undefined|pointer to interface"
-
-func (t *T) g() int { return t.a }
-
-var _ = (T).g() // ERROR "needs pointer receiver|undefined|method requires pointer"
+var _ = pv.val() // ERROR "method"
+var _ = pv.val   // ERROR "method"

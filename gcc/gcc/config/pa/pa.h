@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for the HP Spectrum.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) of Cygnus Support
    and Tim Moore (moore@defmacro.cs.utah.edu) of the Center for
    Software Science at the University of Utah.
@@ -136,9 +136,6 @@ extern unsigned long total_code_bytes;
    by default.  */
 #define DEFAULT_GDB_EXTENSIONS 1
 
-/* Select dwarf2 as the preferred debug format.  */
-#define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
-
 /* This used to be zero (no max length), but big enums and such can
    cause huge strings which killed gas.
 
@@ -174,7 +171,6 @@ do {								\
      builtin_assert("machine=hppa");				\
      builtin_define("__hppa");					\
      builtin_define("__hppa__");				\
-     builtin_define("__BIG_ENDIAN__");				\
      if (TARGET_PA_20)						\
        builtin_define("_PA_RISC2_0");				\
      else if (TARGET_PA_11)					\
@@ -258,17 +254,11 @@ typedef struct GTY(()) machine_function
    is UNITS_PER_WORD.  Otherwise, it is the constant value that is the
    smallest value that UNITS_PER_WORD can have at run-time.
 
-   This needs to be 8 when TARGET_64BIT is true to allow building various
-   TImode routines in libgcc.  However, we also need the DImode DIVMOD
-   routines because they are not currently implemented in pa.md.
-   
-   The HP runtime specification doesn't provide the alignment requirements
-   and calling conventions for TImode variables.  */
-#ifdef IN_LIBGCC2
-#define MIN_UNITS_PER_WORD      UNITS_PER_WORD
-#else
-#define MIN_UNITS_PER_WORD      4
-#endif
+   FIXME: This needs to be 4 when TARGET_64BIT is true to suppress the
+   building of various TImode routines in libgcc.  The HP runtime
+   specification doesn't provide the alignment requirements and calling
+   conventions for TImode variables.  */
+#define MIN_UNITS_PER_WORD 4
 
 /* The widest floating point format supported by the hardware.  Note that
    setting this influences some Ada floating point type sizes, currently
@@ -676,6 +666,7 @@ struct hppa_args {int words, nargs_prototype, incoming, indirect; };
   (*targetm.asm_out.internal_label) (FILE, FUNC_BEGIN_PROLOG_LABEL, LABEL)
 
 #define PROFILE_HOOK(label_no) hppa_profile_hook (label_no)
+void hppa_profile_hook (int label_no);
 
 /* The profile counter if emitted must come before the prologue.  */
 #define PROFILE_BEFORE_PROLOGUE 1
@@ -842,6 +833,7 @@ extern int may_call_alloca;
 
 #define INT14_OK_STRICT \
   (TARGET_SOFT_FLOAT                                                   \
+   || TARGET_DISABLE_FPREGS                                            \
    || (TARGET_PA_20 && !TARGET_ELF32))
 
 /* The macros REG_OK_FOR..._P assume that the arg is a REG rtx
@@ -1310,9 +1302,8 @@ do {									     \
 
 #define NEED_INDICATE_EXEC_STACK 0
 
-/* Target hooks for D language.  */
+/* Target CPU versions for D.  */
 #define TARGET_D_CPU_VERSIONS pa_d_target_versions
-#define TARGET_D_REGISTER_CPU_TARGET_INFO pa_d_register_target_info
 
 /* Output default function prologue for hpux.  */
 #define TARGET_ASM_FUNCTION_PROLOGUE pa_output_function_prologue

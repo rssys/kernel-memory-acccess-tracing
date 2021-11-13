@@ -1,7 +1,7 @@
 /* { dg-do run { target vmx_hw } } */
-/* { dg-do compile { target { ! vmx_hw } } } */
+/* { dg-do compile } */
 /* { dg-require-effective-target powerpc_altivec_ok } */
-/* { dg-options "-maltivec -mabi=altivec -O2 -save-temps" } */
+/* { dg-options "-maltivec -mabi=altivec -O2" } */
 
 /* Check that "easy" AltiVec constants are correctly synthesized.  */
 

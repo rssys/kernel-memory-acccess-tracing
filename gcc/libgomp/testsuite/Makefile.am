@@ -12,8 +12,6 @@ _RUNTEST = $(shell if test -f $(top_srcdir)/../dejagnu/runtest; then \
 	     echo $(top_srcdir)/../dejagnu/runtest; else echo runtest; fi)
 RUNTESTDEFAULTFLAGS = --tool $$tool --srcdir $$srcdir
 
-EXTRA_DEJAGNU_SITE_CONFIG = libgomp-site-extra.exp
-
 # Instead of directly in ../testsuite/libgomp-test-support.exp.in, the
 # following variables have to be "routed through" this Makefile, for expansion
 # of the several (Makefile) variables used therein.
@@ -71,11 +69,11 @@ distclean-DEJAGNU:
 distclean-am: distclean-DEJAGNU
 check-am:
 	@if test -n "$(filter -j%, $(MFLAGS))"; then \
-	  num_cpus=@CPU_COUNT@; \
+	  num_cpus=1; \
 	  if type -p getconf 2>/dev/null >/dev/null; then \
 	    num_cpus=`getconf _NPROCESSORS_ONLN 2>/dev/null`; \
 	    case "$$num_cpus" in \
-	      '' | 0* | *[!0-9]*) num_cpus=@CPU_COUNT@;; \
+	      '' | 0* | *[!0-9]*) num_cpus=1;; \
 	    esac; \
 	  fi; \
 	  if test $$num_cpus -gt 8 && test -z "$$OMP_NUM_THREADS"; then \

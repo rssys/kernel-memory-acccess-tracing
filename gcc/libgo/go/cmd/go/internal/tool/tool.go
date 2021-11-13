@@ -6,11 +6,9 @@
 package tool
 
 import (
-	"context"
 	"fmt"
-	exec "internal/execabs"
 	"os"
-	"os/signal"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -50,7 +48,7 @@ func init() {
 	CmdTool.Flag.BoolVar(&toolN, "n", false, "")
 }
 
-func runTool(ctx context.Context, cmd *base.Command, args []string) {
+func runTool(cmd *base.Command, args []string) {
 	if len(args) == 0 {
 		listTools()
 		return
@@ -85,20 +83,10 @@ func runTool(ctx context.Context, cmd *base.Command, args []string) {
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		// Set $GOROOT, mainly for go tool dist.
+		Env: base.MergeEnvLists([]string{"GOROOT=" + cfg.GOROOT}, os.Environ()),
 	}
-	err := toolCmd.Start()
-	if err == nil {
-		c := make(chan os.Signal, 100)
-		signal.Notify(c)
-		go func() {
-			for sig := range c {
-				toolCmd.Process.Signal(sig)
-			}
-		}()
-		err = toolCmd.Wait()
-		signal.Stop(c)
-		close(c)
-	}
+	err := toolCmd.Run()
 	if err != nil {
 		// Only print about the exit status if the command
 		// didn't even run (not an ExitError) or it didn't exit cleanly

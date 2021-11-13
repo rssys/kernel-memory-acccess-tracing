@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                    Copyright (C) 2007-2021, AdaCore                      --
+--                    Copyright (C) 2007-2019, AdaCore                      --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,11 +31,13 @@
 
 --  This is the Windows implementation of this package
 
-with Ada.Streams;          use Ada.Streams, Ada;
+with Ada.Streams;                use Ada.Streams;
+with Ada.Unchecked_Deallocation; use Ada;
 
 with System;               use System;
 with System.Communication; use System.Communication;
 with System.CRTL;          use System.CRTL;
+with System.OS_Constants;
 with System.Win32;         use System.Win32;
 with System.Win32.Ext;     use System.Win32.Ext;
 
@@ -46,6 +48,8 @@ package body GNAT.Serial_Communications is
    package OSC renames System.OS_Constants;
 
    --  Common types
+
+   type Port_Data is new HANDLE;
 
    C_Bits      : constant array (Data_Bits) of Interfaces.C.unsigned := (8, 7);
    C_Parity    : constant array (Parity_Check) of Interfaces.C.unsigned :=
@@ -65,11 +69,15 @@ package body GNAT.Serial_Communications is
    -----------
 
    procedure Close (Port : in out Serial_Port) is
+      procedure Unchecked_Free is
+        new Unchecked_Deallocation (Port_Data, Port_Data_Access);
+
       Success : BOOL;
 
    begin
-      if Port.H /= -1 then
-         Success := CloseHandle (HANDLE (Port.H));
+      if Port.H /= null then
+         Success := CloseHandle (HANDLE (Port.H.all));
+         Unchecked_Free (Port.H);
 
          if Success = Win32.FALSE then
             Raise_Error ("error closing the port");
@@ -106,11 +114,13 @@ package body GNAT.Serial_Communications is
       pragma Unreferenced (Success);
 
    begin
-      if Port.H /= -1 then
-         Success := CloseHandle (HANDLE (Port.H));
+      if Port.H = null then
+         Port.H := new Port_Data;
+      else
+         Success := CloseHandle (HANDLE (Port.H.all));
       end if;
 
-      Port.H := CreateFileA
+      Port.H.all := CreateFileA
         (lpFileName            => C_Name (C_Name'First)'Address,
          dwDesiredAccess       => GENERIC_READ or GENERIC_WRITE,
          dwShareMode           => 0,
@@ -119,9 +129,7 @@ package body GNAT.Serial_Communications is
          dwFlagsAndAttributes  => 0,
          hTemplateFile         => 0);
 
-      pragma Assert (INVALID_HANDLE_VALUE = -1);
-
-      if Port.H = Serial_Port_Descriptor (INVALID_HANDLE_VALUE) then
+      if Port.H.all = Port_Data (INVALID_HANDLE_VALUE) then
          Raise_Error ("cannot open com port");
       end if;
    end Open;
@@ -151,13 +159,13 @@ package body GNAT.Serial_Communications is
       Read_Last : aliased DWORD;
 
    begin
-      if Port.H = -1 then
+      if Port.H = null then
          Raise_Error ("read: port not opened", 0);
       end if;
 
       Success :=
         ReadFile
-          (hFile                => HANDLE (Port.H),
+          (hFile                => HANDLE (Port.H.all),
            lpBuffer             => Buffer (Buffer'First)'Address,
            nNumberOfBytesToRead => DWORD (Buffer'Length),
            lpNumberOfBytesRead  => Read_Last'Access,
@@ -167,7 +175,7 @@ package body GNAT.Serial_Communications is
          Raise_Error ("read error");
       end if;
 
-      Last := Last_Index (Buffer'First, CRTL.size_t (Read_Last));
+      Last := Last_Index (Buffer'First, size_t (Read_Last));
    end Read;
 
    ---------
@@ -192,14 +200,15 @@ package body GNAT.Serial_Communications is
       Com_Settings : aliased DCB;
 
    begin
-      if Port.H = -1 then
+      if Port.H = null then
          Raise_Error ("set: port not opened", 0);
       end if;
 
-      Success := GetCommState (HANDLE (Port.H), Com_Settings'Access);
+      Success := GetCommState (HANDLE (Port.H.all), Com_Settings'Access);
 
       if Success = Win32.FALSE then
-         Success := CloseHandle (HANDLE (Port.H));
+         Success := CloseHandle (HANDLE (Port.H.all));
+         Port.H.all := 0;
          Raise_Error ("set: cannot get comm state");
       end if;
 
@@ -231,10 +240,11 @@ package body GNAT.Serial_Communications is
       Com_Settings.Parity        := BYTE (C_Parity (Parity));
       Com_Settings.StopBits      := BYTE (C_Stop_Bits (Stop_Bits));
 
-      Success := SetCommState (HANDLE (Port.H), Com_Settings'Access);
+      Success := SetCommState (HANDLE (Port.H.all), Com_Settings'Access);
 
       if Success = Win32.FALSE then
-         Success := CloseHandle (HANDLE (Port.H));
+         Success := CloseHandle (HANDLE (Port.H.all));
+         Port.H.all := 0;
          Raise_Error ("cannot set comm state");
       end if;
 
@@ -264,22 +274,13 @@ package body GNAT.Serial_Communications is
 
       Success :=
         SetCommTimeouts
-          (hFile          => HANDLE (Port.H),
+          (hFile          => HANDLE (Port.H.all),
            lpCommTimeouts => Com_Time_Out'Access);
 
       if Success = Win32.FALSE then
          Raise_Error ("cannot set the timeout");
       end if;
    end Set;
-
-   ------------
-   -- To_Ada --
-   ------------
-
-   procedure To_Ada (Port : out Serial_Port; Fd : Serial_Port_Descriptor) is
-   begin
-      Port.H := Fd;
-   end To_Ada;
 
    -----------
    -- Write --
@@ -293,13 +294,13 @@ package body GNAT.Serial_Communications is
       Temp_Last : aliased DWORD;
 
    begin
-      if Port.H = -1 then
+      if Port.H = null then
          Raise_Error ("write: port not opened", 0);
       end if;
 
       Success :=
         WriteFile
-          (hFile                  => HANDLE (Port.H),
+          (hFile                  => HANDLE (Port.H.all),
            lpBuffer               => Buffer'Address,
            nNumberOfBytesToWrite  => DWORD (Buffer'Length),
            lpNumberOfBytesWritten => Temp_Last'Access,

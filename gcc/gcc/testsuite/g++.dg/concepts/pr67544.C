@@ -1,5 +1,4 @@
-// { dg-do compile { target c++11 } }
-// { dg-options "-fconcepts" }
+// { dg-additional-options "-fconcepts" }
 
 template <typename T> struct A
 {

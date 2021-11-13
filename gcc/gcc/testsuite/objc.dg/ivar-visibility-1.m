@@ -1,7 +1,6 @@
 /* Test instance variable visibility.  */
 /* Author: Dimitris Papavasiliou <dpapavas@gmail.com>.  */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 #include <objc/objc.h>
 
 @interface MySuperClass

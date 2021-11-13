@@ -1,6 +1,7 @@
 /* { dg-do run } */
 /* { dg-options "-O2 -ffast-math -ftree-vectorize -msse2" } */
 /* { dg-require-effective-target sse2 } */
+/* { dg-skip-if "no M_PI" { vxworks_kernel } } */
 
 #ifndef CHECK_H
 #define CHECK_H "sse2-check.h"
@@ -12,7 +13,7 @@
 
 #include CHECK_H
 
-#include "math_m_pi.h"
+#include <math.h>
 
 #define NUM 64
 

@@ -14,7 +14,7 @@
  */
 module core.sys.posix.utime;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 public import core.sys.posix.sys.types; // for time_t
 
 version (OSX)
@@ -30,7 +30,6 @@ version (Posix):
 extern (C):
 nothrow:
 @nogc:
-@system:
 
 //
 // Required
@@ -42,7 +41,7 @@ struct utimbuf
     time_t  modtime;
 }
 
-int utime(const scope char*, const scope utimbuf*);
+int utime(in char*, in utimbuf*);
 */
 
 version (CRuntime_Glibc)
@@ -53,7 +52,7 @@ version (CRuntime_Glibc)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (CRuntime_Musl)
 {
@@ -63,7 +62,7 @@ else version (CRuntime_Musl)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (Darwin)
 {
@@ -73,7 +72,7 @@ else version (Darwin)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (FreeBSD)
 {
@@ -83,7 +82,7 @@ else version (FreeBSD)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (NetBSD)
 {
@@ -93,17 +92,7 @@ else version (NetBSD)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
-}
-else version (OpenBSD)
-{
-    struct utimbuf
-    {
-        time_t  actime;
-        time_t  modtime;
-    }
-
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (DragonFlyBSD)
 {
@@ -113,7 +102,7 @@ else version (DragonFlyBSD)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (Solaris)
 {
@@ -123,7 +112,7 @@ else version (Solaris)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (CRuntime_Bionic)
 {
@@ -133,7 +122,7 @@ else version (CRuntime_Bionic)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }
 else version (CRuntime_UClibc)
 {
@@ -143,5 +132,5 @@ else version (CRuntime_UClibc)
         time_t  modtime;
     }
 
-    int utime(const scope char*, const scope utimbuf*);
+    int utime(in char*, in utimbuf*);
 }

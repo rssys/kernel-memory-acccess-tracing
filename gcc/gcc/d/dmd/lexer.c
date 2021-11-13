@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -401,7 +401,7 @@ void Lexer::scan(Token *t)
                     }
                     else if (id == Id::VENDOR)
                     {
-                        t->ustring = (utf8_t *)const_cast<char *>(global.vendor.ptr);
+                        t->ustring = (utf8_t *)const_cast<char *>(global.vendor);
                         goto Lstr;
                     }
                     else if (id == Id::TIMESTAMP)
@@ -417,7 +417,7 @@ void Lexer::scan(Token *t)
                         unsigned minor = 0;
                         bool point = false;
 
-                        for (const char *p = global.version.ptr + 1; 1; p++)
+                        for (const char *p = global.version + 1; 1; p++)
                         {
                             c = *p;
                             if (isdigit((utf8_t)c))
@@ -1111,10 +1111,10 @@ TOK Lexer::wysiwygStringConstant(Token *t, int tc)
             case '`':
                 if (c == tc)
                 {
-                    t->len = (unsigned)stringbuffer.length();
+                    t->len = (unsigned)stringbuffer.offset;
                     stringbuffer.writeByte(0);
-                    t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.length());
-                    memcpy(t->ustring, stringbuffer.slice().ptr, stringbuffer.length());
+                    t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.offset);
+                    memcpy(t->ustring, stringbuffer.data, stringbuffer.offset);
                     stringPostfix(t);
                     return TOKstring;
                 }
@@ -1183,10 +1183,10 @@ TOK Lexer::hexStringConstant(Token *t)
                 {   error("odd number (%d) of hex characters in hex string", n);
                     stringbuffer.writeByte(v);
                 }
-                t->len = (unsigned)stringbuffer.length();
+                t->len = (unsigned)stringbuffer.offset;
                 stringbuffer.writeByte(0);
-                t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.length());
-                memcpy(t->ustring, stringbuffer.slice().ptr, stringbuffer.length());
+                t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.offset);
+                memcpy(t->ustring, stringbuffer.data, stringbuffer.offset);
                 stringPostfix(t);
                 return TOKxstring;
 
@@ -1371,10 +1371,10 @@ Ldone:
         error("delimited string must end in %s\"", hereid->toChars());
     else
         error("delimited string must end in %c\"", delimright);
-    t->len = (unsigned)stringbuffer.length();
+    t->len = (unsigned)stringbuffer.offset;
     stringbuffer.writeByte(0);
-    t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.length());
-    memcpy(t->ustring, stringbuffer.slice().ptr, stringbuffer.length());
+    t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.offset);
+    memcpy(t->ustring, stringbuffer.data, stringbuffer.offset);
     stringPostfix(t);
     return TOKstring;
 }
@@ -1473,10 +1473,10 @@ TOK Lexer::escapeStringConstant(Token *t)
                 break;
 
             case '"':
-                t->len = (unsigned)stringbuffer.length();
+                t->len = (unsigned)stringbuffer.offset;
                 stringbuffer.writeByte(0);
-                t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.length());
-                memcpy(t->ustring, stringbuffer.slice().ptr, stringbuffer.length());
+                t->ustring = (utf8_t *)mem.xmalloc(stringbuffer.offset);
+                memcpy(t->ustring, stringbuffer.data, stringbuffer.offset);
                 stringPostfix(t);
                 return TOKstring;
 
@@ -1699,7 +1699,7 @@ TOK Lexer::number(Token *t)
                 ++p;
                 if (base < 10 && !err)
                 {
-                    error("radix %d digit expected, not `%c`", base, c);
+                    error("radix %d digit expected, not '%c'", base, c);
                     err = true;
                 }
                 d = c - '0';
@@ -1714,7 +1714,7 @@ TOK Lexer::number(Token *t)
                         goto Lreal;
                     if (!err)
                     {
-                        error("radix %d digit expected, not `%c`", base, c);
+                        error("radix %d digit expected, not '%c'", base, c);
                         err = true;
                     }
                 }
@@ -1997,7 +1997,7 @@ TOK Lexer::inreal(Token *t)
     }
 
     stringbuffer.writeByte(0);
-    const char *sbufptr = (char *)stringbuffer.slice().ptr;
+    const char *sbufptr = (char *)stringbuffer.data;
     TOK result;
     bool isOutOfRange = false;
     t->floatvalue = (isWellformedString ? CTFloat::parse(sbufptr, &isOutOfRange) : CTFloat::zero);
@@ -2049,7 +2049,7 @@ TOK Lexer::inreal(Token *t)
     if (isOutOfRange && !isLong)
     {
         const char *suffix = (result == TOKfloat32v || result == TOKimaginary32v) ? "f" : "";
-        error(scanloc, "number `%s%s` is not representable", (char *)stringbuffer.slice().ptr, suffix);
+        error(scanloc, "number '%s%s' is not representable", (char *)stringbuffer.data, suffix);
     }
     return result;
 }
@@ -2138,7 +2138,7 @@ void Lexer::poundLine()
 
                         case '"':
                             stringbuffer.writeByte(0);
-                            filespec = mem.xstrdup((char *)stringbuffer.slice().ptr);
+                            filespec = mem.xstrdup((char *)stringbuffer.data);
                             p++;
                             break;
 
@@ -2203,14 +2203,6 @@ unsigned Lexer::decodeUTF()
     return u;
 }
 
-static void trimTrailingWhitespace(OutBuffer &buf)
-{
-    const unsigned char *s = buf.slice().ptr;
-    size_t len = buf.length();
-    while (len && (s[len - 1] == ' ' || s[len - 1] == '\t'))
-        --len;
-    buf.setsize(len);
-}
 
 /***************************************************
  * Parse doc comment embedded between t->ptr and p.
@@ -2295,7 +2287,8 @@ void Lexer::getDocComment(Token *t, unsigned lineComment)
                 {   linestart = 0;
                     /* Trim preceding whitespace up to preceding \n
                      */
-                    trimTrailingWhitespace(buf);
+                    while (buf.offset && (buf.data[buf.offset - 1] == ' ' || buf.data[buf.offset - 1] == '\t'))
+                        buf.offset--;
                     continue;
                 }
                 break;
@@ -2331,7 +2324,9 @@ void Lexer::getDocComment(Token *t, unsigned lineComment)
 
                 /* Trim trailing whitespace
                  */
-                trimTrailingWhitespace(buf);
+                while (buf.offset && (buf.data[buf.offset - 1] == ' ' || buf.data[buf.offset - 1] == '\t'))
+                    buf.offset--;
+
                 break;
         }
         buf.writeByte(c);
@@ -2339,13 +2334,14 @@ void Lexer::getDocComment(Token *t, unsigned lineComment)
 
     /* Trim trailing whitespace (if the last line does not have newline)
      */
-    if (buf.length() && (buf.slice().ptr[buf.length() - 1] == ' ' || buf.slice().ptr[buf.length() - 1] == '\t'))
+    if (buf.offset && (buf.data[buf.offset - 1] == ' ' || buf.data[buf.offset - 1] == '\t'))
     {
-        trimTrailingWhitespace(buf);
+        while (buf.offset && (buf.data[buf.offset - 1] == ' ' || buf.data[buf.offset - 1] == '\t'))
+            buf.offset--;
     }
 
     // Always end with a newline
-    if (!buf.length() || buf.slice().ptr[buf.length() - 1] != '\n')
+    if (!buf.offset || buf.data[buf.offset - 1] != '\n')
         buf.writeByte('\n');
 
     buf.writeByte(0);
@@ -2358,7 +2354,7 @@ void Lexer::getDocComment(Token *t, unsigned lineComment)
 
     // Combine with previous doc comment, if any
     if (*dc)
-        *dc = combineComments(*dc, (utf8_t *)buf.slice().ptr);
+        *dc = combineComments(*dc, (utf8_t *)buf.data);
     else
         *dc = (utf8_t *)buf.extractData();
 }

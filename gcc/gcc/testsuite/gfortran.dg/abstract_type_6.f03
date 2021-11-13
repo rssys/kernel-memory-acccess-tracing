@@ -46,7 +46,7 @@ END SUBROUTINE bottom_b
 
 SUBROUTINE bottom_c(obj)
    CLASS(Bottom) :: obj
-   CALL top_c(obj) ! { dg-error "Explicit interface required" }
+   CALL top_c(obj)
    ! other stuff
 END SUBROUTINE bottom_c 
 end module

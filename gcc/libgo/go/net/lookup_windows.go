@@ -6,7 +6,6 @@ package net
 
 import (
 	"context"
-	"internal/syscall/windows"
 	"os"
 	"runtime"
 	"syscall"
@@ -57,12 +56,7 @@ func lookupProtocol(ctx context.Context, name string) (int, error) {
 			if proto, err := lookupProtocolMap(name); err == nil {
 				return proto, nil
 			}
-
-			dnsError := &DNSError{Err: r.err.Error(), Name: name}
-			if r.err == errNoSuchHost {
-				dnsError.IsNotFound = true
-			}
-			r.err = dnsError
+			r.err = &DNSError{Err: r.err.Error(), Name: name}
 		}
 		return r.proto, r.err
 	case <-ctx.Done():
@@ -102,18 +96,9 @@ func (r *Resolver) lookupIP(ctx context.Context, network, name string) ([]IPAddr
 			Protocol: syscall.IPPROTO_IP,
 		}
 		var result *syscall.AddrinfoW
-		name16p, err := syscall.UTF16PtrFromString(name)
-		if err != nil {
-			return nil, &DNSError{Name: name, Err: err.Error()}
-		}
-		e := syscall.GetAddrInfoW(name16p, nil, &hints, &result)
+		e := syscall.GetAddrInfoW(syscall.StringToUTF16Ptr(name), nil, &hints, &result)
 		if e != nil {
-			err := winError("getaddrinfow", e)
-			dnsError := &DNSError{Err: err.Error(), Name: name}
-			if err == errNoSuchHost {
-				dnsError.IsNotFound = true
-			}
-			return nil, dnsError
+			return nil, &DNSError{Err: winError("getaddrinfow", e).Error(), Name: name}
 		}
 		defer syscall.FreeAddrInfoW(result)
 		addrs := make([]IPAddr, 0, 5)
@@ -139,14 +124,11 @@ func (r *Resolver) lookupIP(ctx context.Context, network, name string) ([]IPAddr
 		err   error
 	}
 
-	var ch chan ret
-	if ctx.Err() == nil {
-		ch = make(chan ret, 1)
-		go func() {
-			addr, err := getaddr()
-			ch <- ret{addrs: addr, err: err}
-		}()
-	}
+	ch := make(chan ret, 1)
+	go func() {
+		addr, err := getaddr()
+		ch <- ret{addrs: addr, err: err}
+	}()
 
 	select {
 	case r := <-ch:
@@ -194,12 +176,7 @@ func (r *Resolver) lookupPort(ctx context.Context, network, service string) (int
 		if port, err := lookupPortMap(network, service); err == nil {
 			return port, nil
 		}
-		err := winError("getaddrinfow", e)
-		dnsError := &DNSError{Err: err.Error(), Name: network + "/" + service}
-		if err == errNoSuchHost {
-			dnsError.IsNotFound = true
-		}
-		return 0, dnsError
+		return 0, &DNSError{Err: winError("getaddrinfow", e).Error(), Name: network + "/" + service}
 	}
 	defer syscall.FreeAddrInfoW(result)
 	if result == nil {
@@ -234,7 +211,7 @@ func (*Resolver) lookupCNAME(ctx context.Context, name string) (string, error) {
 	defer syscall.DnsRecordListFree(r, 1)
 
 	resolved := resolveCNAME(syscall.StringToUTF16Ptr(name), r)
-	cname := windows.UTF16PtrToString(resolved)
+	cname := syscall.UTF16ToString((*[256]uint16)(unsafe.Pointer(resolved))[:])
 	return absDomainName([]byte(cname)), nil
 }
 
@@ -278,7 +255,7 @@ func (*Resolver) lookupMX(ctx context.Context, name string) ([]*MX, error) {
 	mxs := make([]*MX, 0, 10)
 	for _, p := range validRecs(r, syscall.DNS_TYPE_MX, name) {
 		v := (*syscall.DNSMXData)(unsafe.Pointer(&p.Data[0]))
-		mxs = append(mxs, &MX{absDomainName([]byte(windows.UTF16PtrToString(v.NameExchange))), v.Preference})
+		mxs = append(mxs, &MX{absDomainName([]byte(syscall.UTF16ToString((*[256]uint16)(unsafe.Pointer(v.NameExchange))[:]))), v.Preference})
 	}
 	byPref(mxs).sort()
 	return mxs, nil
@@ -318,8 +295,8 @@ func (*Resolver) lookupTXT(ctx context.Context, name string) ([]string, error) {
 	for _, p := range validRecs(r, syscall.DNS_TYPE_TEXT, name) {
 		d := (*syscall.DNSTXTData)(unsafe.Pointer(&p.Data[0]))
 		s := ""
-		for _, v := range (*[1 << 10]*uint16)(unsafe.Pointer(&(d.StringArray[0])))[:d.StringCount:d.StringCount] {
-			s += windows.UTF16PtrToString(v)
+		for _, v := range (*[1 << 10]*uint16)(unsafe.Pointer(&(d.StringArray[0])))[:d.StringCount] {
+			s += syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(v))[:])
 		}
 		txts = append(txts, s)
 	}
@@ -344,7 +321,7 @@ func (*Resolver) lookupAddr(ctx context.Context, addr string) ([]string, error) 
 	ptrs := make([]string, 0, 10)
 	for _, p := range validRecs(r, syscall.DNS_TYPE_PTR, arpa) {
 		v := (*syscall.DNSPTRData)(unsafe.Pointer(&p.Data[0]))
-		ptrs = append(ptrs, absDomainName([]byte(windows.UTF16PtrToString(v.Host))))
+		ptrs = append(ptrs, absDomainName([]byte(syscall.UTF16ToString((*[256]uint16)(unsafe.Pointer(v.Host))[:]))))
 	}
 	return ptrs, nil
 }
@@ -359,8 +336,7 @@ func validRecs(r *syscall.DNSRecord, dnstype uint16, name string) []*syscall.DNS
 	}
 	rec := make([]*syscall.DNSRecord, 0, 10)
 	for p := r; p != nil; p = p.Next {
-		// in case of a local machine, DNS records are returned with DNSREC_QUESTION flag instead of DNS_ANSWER
-		if p.Dw&dnsSectionMask != syscall.DnsSectionAnswer && p.Dw&dnsSectionMask != syscall.DnsSectionQuestion {
+		if p.Dw&dnsSectionMask != syscall.DnsSectionAnswer {
 			continue
 		}
 		if p.Type != dnstype {
@@ -376,7 +352,7 @@ func validRecs(r *syscall.DNSRecord, dnstype uint16, name string) []*syscall.DNS
 
 // returns the last CNAME in chain
 func resolveCNAME(name *uint16, r *syscall.DNSRecord) *uint16 {
-	// limit cname resolving to 10 in case of an infinite CNAME loop
+	// limit cname resolving to 10 in case of a infinite CNAME loop
 Cname:
 	for cnameloop := 0; cnameloop < 10; cnameloop++ {
 		for p := r; p != nil; p = p.Next {

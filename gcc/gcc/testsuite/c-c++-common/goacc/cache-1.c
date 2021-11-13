@@ -1,15 +1,9 @@
-/* OpenACC 'cache' directive: valid usage.  */
+/* OpenACC cache directive: valid usage.  */
+/* For execution testing, this file is "#include"d from
+   libgomp/testsuite/libgomp.oacc-c-c++-common/cache-1.c.  */
 
-/* See also corresponding C++ variant: '../../g++.dg/goacc/cache-1.C'.  */
-
-/* For execution testing, this file is '#include'd from
-   '../../../../libgomp/testsuite/libgomp.oacc-c-c++-common/cache-1.c'.  */
-
-#ifdef TEMPLATIZE
-template <int N>
-#endif
-static void
-test ()
+int
+main (int argc, char **argv)
 {
 #define N   2
     int a[N], b[N];
@@ -67,4 +61,6 @@ test ()
         if (a[i] != b[i])
             __builtin_abort ();
     }
+
+    return 0;
 }

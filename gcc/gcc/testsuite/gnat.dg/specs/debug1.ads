@@ -1,6 +1,5 @@
 -- { dg-do compile }
--- { dg-skip-if "No Dwarf" { { hppa*-*-hpux* } && { ! lp64 } } }
--- { dg-options "-cargs -O0 -g -dA -fgnat-encodings=minimal -margs" }
+-- { dg-options "-cargs -g -dA -fgnat-encodings=minimal -margs" }
 
 package Debug1 is
 

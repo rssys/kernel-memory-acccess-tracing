@@ -1,4 +1,3 @@
-! { dg-do run }
   common /blk/ q, e
   integer :: q, r
   logical :: e
@@ -8,7 +7,7 @@
   r = bar (12, 18)
 !$omp end single
 !$omp end parallel
-  if (q .ne. 6 .or. r .ne. 17 .or. e) stop 1
+  if (q .ne. 6 .or. r .ne. 17 .or. e) STOP 1
 contains
   subroutine foo (a, b)
     integer, intent (in) :: a, b

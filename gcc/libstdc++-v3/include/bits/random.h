@@ -1,6 +1,6 @@
 // random number generation -*- C++ -*-
 
-// Copyright (C) 2009-2021 Free Software Foundation, Inc.
+// Copyright (C) 2009-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -48,8 +48,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    * @{
    */
 
-  // std::uniform_random_bit_generator is defined in <bits/uniform_int_dist.h>
-
   /**
    * @brief A function template for converting the output of a (integral)
    * uniform random number generator to a floatng point result in the range
@@ -60,19 +58,20 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _RealType
     generate_canonical(_UniformRandomNumberGenerator& __g);
 
-  /// @cond undocumented
-  // Implementation-space details.
+  /*
+   * Implementation-space details.
+   */
   namespace __detail
   {
     template<typename _UIntType, size_t __w,
 	     bool = __w < static_cast<size_t>
 			  (std::numeric_limits<_UIntType>::digits)>
       struct _Shift
-      { static constexpr _UIntType __value = 0; };
+      { static const _UIntType __value = 0; };
 
     template<typename _UIntType, size_t __w>
       struct _Shift<_UIntType, __w, true>
-      { static constexpr _UIntType __value = _UIntType(1) << __w; };
+      { static const _UIntType __value = _UIntType(1) << __w; };
 
     template<int __s,
 	     int __which = ((__s <= __CHAR_BIT__ * sizeof (int))
@@ -88,20 +87,20 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     template<int __s>
       struct _Select_uint_least_t<__s, 4>
-      { using type = unsigned int; };
+      { typedef unsigned int type; };
 
     template<int __s>
       struct _Select_uint_least_t<__s, 3>
-      { using type = unsigned long; };
+      { typedef unsigned long type; };
 
     template<int __s>
       struct _Select_uint_least_t<__s, 2>
-      { using type = unsigned long long; };
+      { typedef unsigned long long type; };
 
-#if __SIZEOF_INT128__ > __SIZEOF_LONG_LONG__
+#ifdef _GLIBCXX_USE_INT128
     template<int __s>
       struct _Select_uint_least_t<__s, 1>
-      { __extension__ using type = unsigned __int128; };
+      { typedef unsigned __int128 type; };
 #endif
 
     // Assume a != 0, a < m, c < m, x < m.
@@ -111,14 +110,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
              bool __schrage_ok = __m % __a < __m / __a>
       struct _Mod
       {
+	typedef typename _Select_uint_least_t<std::__lg(__a)
+					      + std::__lg(__m) + 2>::type _Tp2;
 	static _Tp
 	__calc(_Tp __x)
-	{
-	  using _Tp2
-	    = typename _Select_uint_least_t<std::__lg(__a)
-					    + std::__lg(__m) + 2>::type;
-	  return static_cast<_Tp>((_Tp2(__a) * __x + __c) % __m);
-	}
+	{ return static_cast<_Tp>((_Tp2(__a) * __x + __c) % __m); }
       };
 
     // Schrage.
@@ -148,16 +144,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     template<typename _Tp, _Tp __m, _Tp __a = 1, _Tp __c = 0>
       inline _Tp
       __mod(_Tp __x)
-      {
-	if _GLIBCXX17_CONSTEXPR (__a == 0)
-	  return __c;
-	else
-	  {
-	    // _Mod must not be instantiated with a == 0
-	    constexpr _Tp __a1 = __a ? __a : 1;
-	    return _Mod<_Tp, __m, __a1, __c>::__calc(__x);
-	  }
-      }
+      { return _Mod<_Tp, __m, __a, __c>::__calc(__x); }
 
     /*
      * An adaptor class for converting the output of any Generator into
@@ -214,7 +201,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       >;
 
   } // namespace __detail
-  /// @endcond
 
   /**
    * @addtogroup random_generators Random Number Generators
@@ -1102,7 +1088,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
    * Produces random numbers by combining random numbers from some base
-   * engine to produce random numbers with a specified number of bits @p __w.
+   * engine to produce random numbers with a specifies number of bits @p __w.
    */
   template<typename _RandomNumberEngine, size_t __w, typename _UIntType>
     class independent_bits_engine
@@ -1319,11 +1305,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 
   /**
-   * @brief Produces random numbers by reordering random numbers from some
-   * base engine.
-   *
-   * The values from the base engine are stored in a sequence of size @p __k
-   * and shuffled by an algorithm that depends on those values.
+   * @brief Produces random numbers by combining random numbers from some
+   * base engine to produce random numbers with a specifies number of bits
+   * @p __k.
    */
   template<typename _RandomNumberEngine, size_t __k>
     class shuffle_order_engine
@@ -1618,14 +1602,20 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     // constructors, destructors and member functions
 
+#ifdef _GLIBCXX_USE_DEV_RANDOM
     random_device() { _M_init("default"); }
 
     explicit
     random_device(const std::string& __token) { _M_init(__token); }
 
-#if defined _GLIBCXX_USE_DEV_RANDOM
     ~random_device()
     { _M_fini(); }
+#else
+    random_device() { _M_init_pretr1("mt19937"); }
+
+    explicit
+    random_device(const std::string& __token)
+    { _M_init_pretr1(__token); }
 #endif
 
     static constexpr result_type
@@ -1648,7 +1638,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     result_type
     operator()()
-    { return this->_M_getval(); }
+    {
+#ifdef _GLIBCXX_USE_DEV_RANDOM
+      return this->_M_getval();
+#else
+      return this->_M_getval_pretr1();
+#endif
+    }
 
     // No copy functions.
     random_device(const random_device&) = delete;
@@ -1664,21 +1660,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     result_type _M_getval_pretr1();
     double _M_getentropy() const noexcept;
 
-    void _M_init(const char*, size_t); // not exported from the shared library
-
-    __extension__ union
+    union
     {
-      struct
-      {
-	void*      _M_file;
-	result_type (*_M_func)(void*);
-	int _M_fd;
-      };
+      void*      _M_file;
       mt19937    _M_mt;
     };
   };
 
-  /// @} group random_generators
+  /* @} */ // group random_generators
 
   /**
    * @addtogroup random_distributions Random Number Distributions
@@ -1954,7 +1943,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     operator>>(std::basic_istream<_CharT, _Traits>&,
 	       std::uniform_real_distribution<_RealType>&);
 
-  /// @} group random_distributions_uniform
+  /* @} */ // group random_distributions_uniform
 
   /**
    * @addtogroup random_distributions_normal Normal Distributions
@@ -2027,12 +2016,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       explicit
       normal_distribution(result_type __mean,
 			  result_type __stddev = result_type(1))
-      : _M_param(__mean, __stddev)
+      : _M_param(__mean, __stddev), _M_saved_available(false)
       { }
 
       explicit
       normal_distribution(const param_type& __p)
-      : _M_param(__p)
+      : _M_param(__p), _M_saved_available(false)
       { }
 
       /**
@@ -2169,8 +2158,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 			const param_type& __p);
 
       param_type  _M_param;
-      result_type _M_saved = 0;
-      bool        _M_saved_available = false;
+      result_type _M_saved;
+      bool        _M_saved_available;
     };
 
   /**
@@ -3509,7 +3498,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     { return !(__d1 == __d2); }
 
 
-  /// @} group random_distributions_normal
+  /* @} */ // group random_distributions_normal
 
   /**
    * @addtogroup random_distributions_bernoulli Bernoulli Distributions
@@ -3721,7 +3710,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    * @returns The input stream with @p __x extracted or in an error state.
    */
   template<typename _CharT, typename _Traits>
-    inline std::basic_istream<_CharT, _Traits>&
+    std::basic_istream<_CharT, _Traits>&
     operator>>(std::basic_istream<_CharT, _Traits>& __is,
 	       std::bernoulli_distribution& __x)
     {
@@ -4405,7 +4394,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     { return !(__d1 == __d2); }
 
 
-  /// @} group random_distributions_bernoulli
+  /* @} */ // group random_distributions_bernoulli
 
   /**
    * @addtogroup random_distributions_poisson Poisson Distributions
@@ -6051,9 +6040,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     { return !(__d1 == __d2); }
 
 
-  /// @} group random_distributions_poisson
+  /* @} */ // group random_distributions_poisson
 
-  /// @} *group random_distributions
+  /* @} */ // group random_distributions
 
   /**
    * @addtogroup random_utilities Random Number Utilities
@@ -6076,8 +6065,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : _M_v()
     { }
 
-    template<typename _IntType, typename = _Require<is_integral<_IntType>>>
-      seed_seq(std::initializer_list<_IntType> __il);
+    template<typename _IntType>
+      seed_seq(std::initializer_list<_IntType> il);
 
     template<typename _InputIterator>
       seed_seq(_InputIterator __begin, _InputIterator __end);
@@ -6104,9 +6093,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     std::vector<result_type> _M_v;
   };
 
-  /// @} group random_utilities
+  /* @} */ // group random_utilities
 
-  /// @} group random
+  /* @} */ // group random
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std

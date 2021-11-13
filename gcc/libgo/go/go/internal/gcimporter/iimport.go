@@ -8,7 +8,6 @@
 package gcimporter
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -16,12 +15,11 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"math/big"
 	"sort"
 )
 
 type intReader struct {
-	*bufio.Reader
+	*bytes.Reader
 	path string
 }
 
@@ -62,9 +60,9 @@ const (
 // and returns the number of bytes consumed and a reference to the package.
 // If the export data version is not recognized or the format is otherwise
 // compromised, an error is returned.
-func iImportData(fset *token.FileSet, imports map[string]*types.Package, dataReader *bufio.Reader, path string) (pkg *types.Package, err error) {
-	const currentVersion = 1
-	version := int64(-1)
+func iImportData(fset *token.FileSet, imports map[string]*types.Package, data []byte, path string) (_ int, pkg *types.Package, err error) {
+	const currentVersion = 0
+	version := -1
 	defer func() {
 		if e := recover(); e != nil {
 			if version > currentVersion {
@@ -75,11 +73,11 @@ func iImportData(fset *token.FileSet, imports map[string]*types.Package, dataRea
 		}
 	}()
 
-	r := &intReader{dataReader, path}
+	r := &intReader{bytes.NewReader(data), path}
 
-	version = int64(r.uint64())
+	version = int(r.uint64())
 	switch version {
-	case currentVersion, 0:
+	case currentVersion:
 	default:
 		errorf("unknown iexport format version %d", version)
 	}
@@ -87,16 +85,13 @@ func iImportData(fset *token.FileSet, imports map[string]*types.Package, dataRea
 	sLen := int64(r.uint64())
 	dLen := int64(r.uint64())
 
-	data := make([]byte, sLen+dLen)
-	if _, err := io.ReadFull(r, data); err != nil {
-		errorf("cannot read %d bytes of stringData and declData: %s", len(data), err)
-	}
-	stringData := data[:sLen]
-	declData := data[sLen:]
+	whence, _ := r.Seek(0, io.SeekCurrent)
+	stringData := data[whence : whence+sLen]
+	declData := data[whence+sLen : whence+sLen+dLen]
+	r.Seek(sLen+dLen, io.SeekCurrent)
 
 	p := iimporter{
-		ipath:   path,
-		version: int(version),
+		ipath: path,
 
 		stringData:  stringData,
 		stringCache: make(map[uint64]string),
@@ -168,12 +163,13 @@ func iImportData(fset *token.FileSet, imports map[string]*types.Package, dataRea
 
 	// package was imported completely and without errors
 	localpkg.MarkComplete()
-	return localpkg, nil
+
+	consumed, _ := r.Seek(0, io.SeekCurrent)
+	return int(consumed), localpkg, nil
 }
 
 type iimporter struct {
-	ipath   string
-	version int
+	ipath string
 
 	stringData  []byte
 	stringCache map[uint64]string
@@ -253,7 +249,6 @@ type importReader struct {
 	currPkg    *types.Package
 	prevFile   string
 	prevLine   int64
-	prevColumn int64
 }
 
 func (r *importReader) obj(name string) {
@@ -322,9 +317,7 @@ func (r *importReader) value() (typ types.Type, val constant.Value) {
 		val = constant.MakeString(r.string())
 
 	case types.IsInteger:
-		var x big.Int
-		r.mpint(&x, b)
-		val = constant.Make(&x)
+		val = r.mpint(b)
 
 	case types.IsFloat:
 		val = r.mpfloat(b)
@@ -369,8 +362,8 @@ func intSize(b *types.Basic) (signed bool, maxBytes uint) {
 	return
 }
 
-func (r *importReader) mpint(x *big.Int, typ *types.Basic) {
-	signed, maxBytes := intSize(typ)
+func (r *importReader) mpint(b *types.Basic) constant.Value {
+	signed, maxBytes := intSize(b)
 
 	maxSmall := 256 - maxBytes
 	if signed {
@@ -389,8 +382,7 @@ func (r *importReader) mpint(x *big.Int, typ *types.Basic) {
 				v = ^v
 			}
 		}
-		x.SetInt64(v)
-		return
+		return constant.MakeInt64(v)
 	}
 
 	v := -n
@@ -400,23 +392,39 @@ func (r *importReader) mpint(x *big.Int, typ *types.Basic) {
 	if v < 1 || uint(v) > maxBytes {
 		errorf("weird decoding: %v, %v => %v", n, signed, v)
 	}
-	b := make([]byte, v)
-	io.ReadFull(&r.declReader, b)
-	x.SetBytes(b)
-	if signed && n&1 != 0 {
-		x.Neg(x)
+
+	buf := make([]byte, v)
+	io.ReadFull(&r.declReader, buf)
+
+	// convert to little endian
+	// TODO(gri) go/constant should have a more direct conversion function
+	//           (e.g., once it supports a big.Float based implementation)
+	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
+		buf[i], buf[j] = buf[j], buf[i]
 	}
+
+	x := constant.MakeFromBytes(buf)
+	if signed && n&1 != 0 {
+		x = constant.UnaryOp(token.SUB, x, 0)
+	}
+	return x
 }
 
-func (r *importReader) mpfloat(typ *types.Basic) constant.Value {
-	var mant big.Int
-	r.mpint(&mant, typ)
-	var f big.Float
-	f.SetInt(&mant)
-	if f.Sign() != 0 {
-		f.SetMantExp(&f, int(r.int64()))
+func (r *importReader) mpfloat(b *types.Basic) constant.Value {
+	x := r.mpint(b)
+	if constant.Sign(x) == 0 {
+		return x
 	}
-	return constant.Make(&f)
+
+	exp := r.int64()
+	switch {
+	case exp > 0:
+		x = constant.Shift(x, token.SHL, uint(exp))
+	case exp < 0:
+		d := constant.Shift(constant.MakeInt64(1), token.SHL, uint(-exp))
+		x = constant.BinaryOp(x, token.QUO, d)
+	}
+	return x
 }
 
 func (r *importReader) ident() string {
@@ -430,19 +438,6 @@ func (r *importReader) qualifiedIdent() (*types.Package, string) {
 }
 
 func (r *importReader) pos() token.Pos {
-	if r.p.version >= 1 {
-		r.posv1()
-	} else {
-		r.posv0()
-	}
-
-	if r.prevFile == "" && r.prevLine == 0 && r.prevColumn == 0 {
-		return token.NoPos
-	}
-	return r.p.fake.pos(r.prevFile, int(r.prevLine), int(r.prevColumn))
-}
-
-func (r *importReader) posv0() {
 	delta := r.int64()
 	if delta != deltaNewFile {
 		r.prevLine += delta
@@ -452,18 +447,12 @@ func (r *importReader) posv0() {
 		r.prevFile = r.string()
 		r.prevLine = l
 	}
-}
 
-func (r *importReader) posv1() {
-	delta := r.int64()
-	r.prevColumn += delta >> 1
-	if delta&1 != 0 {
-		delta = r.int64()
-		r.prevLine += delta >> 1
-		if delta&1 != 0 {
-			r.prevFile = r.string()
-		}
+	if r.prevFile == "" && r.prevLine == 0 {
+		return token.NoPos
 	}
+
+	return r.p.fake.pos(r.prevFile, int(r.prevLine))
 }
 
 func (r *importReader) typ() types.Type {

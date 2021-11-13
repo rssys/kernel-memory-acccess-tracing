@@ -17,7 +17,7 @@ private :
 class B
 {
 public :
-  void *operator new(size_t);
+  void *operator new(size_t t) { return (void*)(42); };
 };
 
 class C

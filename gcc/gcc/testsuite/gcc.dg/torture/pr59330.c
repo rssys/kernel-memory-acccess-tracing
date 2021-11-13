@@ -1,5 +1,4 @@
 /* { dg-do run } */
-/* { dg-skip-if "free inseparable from malloc when wrapped" { mmix-knuth-mmixware } } */
 
 void free(void *ptr)
 {

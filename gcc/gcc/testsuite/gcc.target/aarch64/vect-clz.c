@@ -1,8 +1,6 @@
 /* { dg-do run } */
 /* { dg-options "-O3 -save-temps -fno-inline -fno-vect-cost-model" } */
 
-#pragma GCC target "+nosve"
-
 extern void abort ();
 
 void

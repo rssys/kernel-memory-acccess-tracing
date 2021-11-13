@@ -3,19 +3,19 @@
 
 template<typename T> struct A
 {
-  template<T> int foo();                        // { dg-error "double" "" { target c++17_down } }
-  template<template<T> class> int bar();        // { dg-error "double" "" { target c++17_down } }
-  template<T> struct X;                         // { dg-error "double" "" { target c++17_down } }
+  template<T> int foo();                        // { dg-error "double" }
+  template<template<T> class> int bar();        // { dg-error "double" }
+  template<T> struct X;                         // { dg-error "double" }
 };
 
 A<char>   a1;
-A<double> a2;                                   // { dg-message "required" "" { target c++17_down } }
+A<double> a2;                                   // { dg-message "required" }
 
 template<typename T> struct B
 {
-  template<double> int foo();                   // { dg-error "double" "" { target c++17_down } }
-  template<template<double> class> int bar();   // { dg-error "double" "" { target c++17_down } }
-  template<double> struct X;                    // { dg-error "double" "" { target c++17_down } }
+  template<double> int foo();                   // { dg-error "double" }
+  template<template<double> class> int bar();   // { dg-error "double" }
+  template<double> struct X;                    // { dg-error "double" }
 };
 
 template<void> int foo();                       // { dg-error "void" }
@@ -24,12 +24,12 @@ template<void> struct X;                        // { dg-error "void" }
 
 template<typename T> struct C
 {
-  template<T> int foo();                        // { dg-error "double" "" { target c++17_down } }
+  template<T> int foo();                        // { dg-error "double" }
 };
 
-template<typename T> int baz(T) { C<T> c; return 0;}  // { dg-message "required" "" { target c++17_down } }
+template<typename T> int baz(T) { C<T> c; return 0;}  // { dg-message "required" }
 
 void foobar()
 {
-  baz(1.2);                                     // { dg-message "required" "" { target c++17_down } }
+  baz(1.2);                                     // { dg-message "required" }
 }

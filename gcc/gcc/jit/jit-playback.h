@@ -1,5 +1,5 @@
 /* Internals of libgccjit: classes for playing back recorded API calls.
-   Copyright (C) 2013-2021 Free Software Foundation, Inc.
+   Copyright (C) 2013-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -75,12 +75,6 @@ public:
 	     type *type,
 	     const char *name);
 
-  field *
-  new_bitfield (location *loc,
-		type *type,
-		int width,
-		const char *name);
-
   compound_type *
   new_compound_type (location *loc,
 		     const char *name,
@@ -110,15 +104,6 @@ public:
 	      enum gcc_jit_global_kind kind,
 	      type *type,
 	      const char *name);
-
-  lvalue *
-  new_global_initialized (location *loc,
-                          enum gcc_jit_global_kind kind,
-                          type *type,
-                          size_t element_size,
-                          size_t initializer_num_elem,
-                          const void *initializer,
-                          const char *name);
 
   template <typename HOST_TYPE>
   rvalue *
@@ -252,8 +237,6 @@ public:
 
   timer *get_timer () const { return m_recording_ctxt->get_timer (); }
 
-  void add_top_level_asm (const char *asm_stmts);
-
 private:
   void dump_generated_code ();
 
@@ -271,24 +254,11 @@ private:
   source_file *
   get_source_file (const char *filename);
 
-  tree
-  get_tree_node_for_type (enum gcc_jit_types type_);
-
   void handle_locations ();
-
-  void init_types ();
 
   const char * get_path_c_file () const;
   const char * get_path_s_file () const;
   const char * get_path_so_file () const;
-
-  tree
-  global_new_decl (location *loc,
-                   enum gcc_jit_global_kind kind,
-                   type *type,
-                   const char *name);
-  lvalue *
-  global_finalize_lvalue (tree inner);
 
 private:
 
@@ -346,6 +316,7 @@ private:
 
   auto_vec<function *> m_functions;
   auto_vec<tree> m_globals;
+  tree m_char_array_type_node;
   tree m_const_char_ptr;
 
   /* Source location handling.  */
@@ -455,8 +426,6 @@ private:
   tree m_inner;
 };
 
-class bitfield : public field {};
-
 class function : public wrapper
 {
 public:
@@ -521,21 +490,6 @@ struct case_
   block *m_dest_block;
 };
 
-struct asm_operand
-{
-  asm_operand (const char *asm_symbolic_name,
-	       const char *constraint,
-	       tree expr)
-  : m_asm_symbolic_name (asm_symbolic_name),
-    m_constraint (constraint),
-    m_expr (expr)
-  {}
-
-  const char *m_asm_symbolic_name;
-  const char *m_constraint;
-  tree m_expr;
-};
-
 class block : public wrapper
 {
 public:
@@ -585,16 +539,6 @@ public:
 	      block *default_block,
 	      const auto_vec <case_> *cases);
 
-  void
-  add_extended_asm (location *loc,
-		    const char *asm_template,
-		    bool is_volatile,
-		    bool is_inline,
-		    const auto_vec <asm_operand> *outputs,
-		    const auto_vec <asm_operand> *inputs,
-		    const auto_vec <const char *> *clobbers,
-		    const auto_vec <block *> *goto_blocks);
-
 private:
   void
   set_tree_location (tree t, location *loc)
@@ -625,12 +569,7 @@ public:
   rvalue (context *ctxt, tree inner)
     : m_ctxt (ctxt),
       m_inner (inner)
-  {
-    /* Pre-mark tree nodes with TREE_VISITED so that they can be
-       deeply unshared during gimplification (including across
-       functions); this requires LANG_HOOKS_DEEP_UNSHARING to be true.  */
-    TREE_VISITED (inner) = 1;
-  }
+  {}
 
   rvalue *
   as_rvalue () { return this; }
@@ -675,8 +614,6 @@ public:
   rvalue *
   get_address (location *loc);
 
-private:
-  bool mark_addressable (location *loc);
 };
 
 class param : public lvalue
@@ -766,3 +703,4 @@ extern playback::context *active_playback_ctxt;
 } // namespace gcc
 
 #endif /* JIT_PLAYBACK_H */
+

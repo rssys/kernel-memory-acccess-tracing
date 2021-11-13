@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,6 +31,7 @@ with Osint;   use Osint;
 with Scans;   use Scans;
 with Scng;
 with Sinput.C;
+with Snames;  use Snames;
 with Stringt;
 with Styleg;
 
@@ -153,6 +154,15 @@ package body ALI.Util is
 
       Scanner.Initialize_Scanner (Source_Index);
 
+      --  Make sure that the project language reserved words are not
+      --  recognized as reserved words, but as identifiers. The byte info for
+      --  those names have been set if we are in gnatmake.
+
+      Set_Name_Table_Byte (Name_Project,          0);
+      Set_Name_Table_Byte (Name_Extends,          0);
+      Set_Name_Table_Byte (Name_External,         0);
+      Set_Name_Table_Byte (Name_External_As_List, 0);
+
       --  Scan the complete file to compute its checksum
 
       loop
@@ -169,7 +179,7 @@ package body ALI.Util is
 
    function Hash (F : File_Name_Type) return Header_Num is
    begin
-      return Header_Num (Int (F) mod Header_Num'Range_Length);
+      return Header_Num (Int (F) rem Header_Num'Range_Length);
    end Hash;
 
    ---------------------------
@@ -205,7 +215,10 @@ package body ALI.Util is
    -- Read_Withed_ALIs --
    ----------------------
 
-   procedure Read_Withed_ALIs (Id : ALI_Id) is
+   procedure Read_Withed_ALIs
+     (Id            : ALI_Id;
+      Ignore_Errors : Boolean := False)
+   is
       Afile  : File_Name_Type;
       Text   : Text_Buffer_Ptr;
       Idread : ALI_Id;
@@ -227,14 +240,14 @@ package body ALI.Util is
             then
                Text := Read_Library_Info (Afile);
 
-               --  Unless in GNATprove mode, return with an error if source
+               --  Unless Ignore_Errors is true, return with an error if source
                --  cannot be found. We used to skip this check when we did not
                --  compile library generics separately, but we now always do,
                --  so there is no special case here anymore.
 
                if Text = null then
 
-                  if not GNATprove_Mode then
+                  if not Ignore_Errors then
                      Error_Msg_File_1 := Afile;
                      Error_Msg_File_2 := Withs.Table (W).Sfile;
                      Error_Msg ("{ not found, { must be compiled");
@@ -249,12 +262,13 @@ package body ALI.Util is
                     Scan_ALI
                       (F         => Afile,
                        T         => Text,
+                       Ignore_ED => False,
                        Err       => False);
 
                   Free (Text);
 
                   if ALIs.Table (Idread).Compile_Errors
-                    and then not GNATprove_Mode
+                    and then not Ignore_Errors
                   then
                      Error_Msg_File_1 := Withs.Table (W).Sfile;
                      Error_Msg ("{ had errors, must be fixed, and recompiled");
@@ -265,6 +279,7 @@ package body ALI.Util is
 
                   elsif ALIs.Table (Idread).No_Object
                     and then not GNATprove_Mode
+                    and then not Ignore_Errors
                   then
                      Error_Msg_File_1 := Withs.Table (W).Sfile;
                      Error_Msg ("{ must be recompiled");

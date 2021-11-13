@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -43,7 +43,6 @@
 
 #include <bits/c++config.h>
 #include <cstdlib>
-#include <ext/pb_ds/detail/types_traits.hpp>
 #include <ext/pb_ds/detail/list_update_policy/lu_counter_metadata.hpp>
 #include <ext/pb_ds/tag_and_trait.hpp>
 
@@ -63,10 +62,12 @@ namespace __gnu_pbds
      /// Metadata on which this functor operates.
      typedef null_type 					metadata_type;
 
+   private:
+     typedef typename _Alloc::template rebind<metadata_type> __rebind_m;
+
    public:
      /// Reference to metadata on which this functor operates.
-     typedef typename detail::rebind_traits<_Alloc, metadata_type>::reference
-       metadata_reference;
+     typedef typename __rebind_m::other::reference 	metadata_reference;
 
      /// Creates a metadata object.
      metadata_type
@@ -107,11 +108,11 @@ namespace __gnu_pbds
 
     private:
       typedef detail::lu_counter_policy_base<size_type> 	base_type;
+      typedef typename _Alloc::template rebind<metadata_type> __rebind_m;
 
     public:
       /// Reference to metadata on which this functor operates.
-     typedef typename detail::rebind_traits<_Alloc, metadata_type>::reference
-       metadata_reference;
+      typedef typename __rebind_m::other::reference 	metadata_reference;
 
       /// Creates a metadata object.
       metadata_type

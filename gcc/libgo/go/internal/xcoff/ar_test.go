@@ -25,8 +25,8 @@ var archTest = []archiveTest{
 			{"printhello.o", 860},
 		},
 		[]FileHeader{
-			{U64_TOCMAGIC},
-			{U64_TOCMAGIC},
+			FileHeader{U64_TOCMAGIC},
+			FileHeader{U64_TOCMAGIC},
 		},
 	},
 	{

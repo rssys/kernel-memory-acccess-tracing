@@ -6,8 +6,10 @@
 package base32
 
 import (
+	"bytes"
 	"io"
 	"strconv"
+	"strings"
 )
 
 /*
@@ -59,6 +61,13 @@ var StdEncoding = NewEncoding(encodeStd)
 // HexEncoding is the ``Extended Hex Alphabet'' defined in RFC 4648.
 // It is typically used in DNS.
 var HexEncoding = NewEncoding(encodeHex)
+
+var removeNewlinesMapper = func(r rune) rune {
+	if r == '\r' || r == '\n' {
+		return -1
+	}
+	return r
+}
 
 // WithPadding creates a new encoding identical to enc except
 // with a specified padding character, or NoPadding to disable padding.
@@ -275,12 +284,7 @@ func (e CorruptInputError) Error() string {
 // additional data is an error. This method assumes that src has been
 // stripped of all supported whitespace ('\r' and '\n').
 func (enc *Encoding) decode(dst, src []byte) (n int, end bool, err error) {
-	// Lift the nil check outside of the loop.
-	_ = enc.decodeMap
-
-	dsti := 0
 	olen := len(src)
-
 	for len(src) > 0 && !end {
 		// Decode quantum using the base32 alphabet
 		var dbuf [8]byte
@@ -288,15 +292,17 @@ func (enc *Encoding) decode(dst, src []byte) (n int, end bool, err error) {
 
 		for j := 0; j < 8; {
 
-			if len(src) == 0 {
-				if enc.padChar != NoPadding {
-					// We have reached the end and are missing padding
-					return n, false, CorruptInputError(olen - len(src) - j)
-				}
-				// We have reached the end and are not expecting any padding
+			// We have reached the end and are missing padding
+			if len(src) == 0 && enc.padChar != NoPadding {
+				return n, false, CorruptInputError(olen - len(src) - j)
+			}
+
+			// We have reached the end and are not expecing any padding
+			if len(src) == 0 && enc.padChar == NoPadding {
 				dlen, end = j, true
 				break
 			}
+
 			in := src[0]
 			src = src[1:]
 			if in == byte(enc.padChar) && j >= 2 && len(src) < 8 {
@@ -333,26 +339,37 @@ func (enc *Encoding) decode(dst, src []byte) (n int, end bool, err error) {
 		// quantum
 		switch dlen {
 		case 8:
-			dst[dsti+4] = dbuf[6]<<5 | dbuf[7]
-			n++
+			dst[4] = dbuf[6]<<5 | dbuf[7]
 			fallthrough
 		case 7:
-			dst[dsti+3] = dbuf[4]<<7 | dbuf[5]<<2 | dbuf[6]>>3
-			n++
+			dst[3] = dbuf[4]<<7 | dbuf[5]<<2 | dbuf[6]>>3
 			fallthrough
 		case 5:
-			dst[dsti+2] = dbuf[3]<<4 | dbuf[4]>>1
-			n++
+			dst[2] = dbuf[3]<<4 | dbuf[4]>>1
 			fallthrough
 		case 4:
-			dst[dsti+1] = dbuf[1]<<6 | dbuf[2]<<1 | dbuf[3]>>4
-			n++
+			dst[1] = dbuf[1]<<6 | dbuf[2]<<1 | dbuf[3]>>4
 			fallthrough
 		case 2:
-			dst[dsti+0] = dbuf[0]<<3 | dbuf[1]>>2
-			n++
+			dst[0] = dbuf[0]<<3 | dbuf[1]>>2
 		}
-		dsti += 5
+
+		if !end {
+			dst = dst[5:]
+		}
+
+		switch dlen {
+		case 2:
+			n += 1
+		case 4:
+			n += 2
+		case 5:
+			n += 3
+		case 7:
+			n += 4
+		case 8:
+			n += 5
+		}
 	}
 	return n, end, nil
 }
@@ -363,18 +380,17 @@ func (enc *Encoding) decode(dst, src []byte) (n int, end bool, err error) {
 // number of bytes successfully written and CorruptInputError.
 // New line characters (\r and \n) are ignored.
 func (enc *Encoding) Decode(dst, src []byte) (n int, err error) {
-	buf := make([]byte, len(src))
-	l := stripNewlines(buf, src)
-	n, _, err = enc.decode(dst, buf[:l])
+	src = bytes.Map(removeNewlinesMapper, src)
+	n, _, err = enc.decode(dst, src)
 	return
 }
 
 // DecodeString returns the bytes represented by the base32 string s.
 func (enc *Encoding) DecodeString(s string) ([]byte, error) {
-	buf := []byte(s)
-	l := stripNewlines(buf, buf)
-	n, _, err := enc.decode(buf, buf[:l])
-	return buf[:n], err
+	s = strings.Map(removeNewlinesMapper, s)
+	dbuf := make([]byte, enc.DecodedLen(len(s)))
+	n, _, err := enc.decode(dbuf, []byte(s))
+	return dbuf[:n], err
 }
 
 type decoder struct {
@@ -489,25 +505,18 @@ type newlineFilteringReader struct {
 	wrapped io.Reader
 }
 
-// stripNewlines removes newline characters and returns the number
-// of non-newline characters copied to dst.
-func stripNewlines(dst, src []byte) int {
-	offset := 0
-	for _, b := range src {
-		if b == '\r' || b == '\n' {
-			continue
-		}
-		dst[offset] = b
-		offset++
-	}
-	return offset
-}
-
 func (r *newlineFilteringReader) Read(p []byte) (int, error) {
 	n, err := r.wrapped.Read(p)
 	for n > 0 {
-		s := p[0:n]
-		offset := stripNewlines(s, s)
+		offset := 0
+		for i, b := range p[0:n] {
+			if b != '\r' && b != '\n' {
+				if i != offset {
+					p[offset] = b
+				}
+				offset++
+			}
+		}
 		if err != nil || offset > 0 {
 			return offset, err
 		}

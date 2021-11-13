@@ -1,6 +1,6 @@
 /* Check acc_is_present.  */
 
-/* { dg-skip-if "" { *-*-* } { "*" } { "-DACC_MEM_SHARED=0" } } */
+/* { dg-do run { target openacc_nvidia_accel_selected } } */
 
 #include <stdlib.h>
 #include <openacc.h>
@@ -48,7 +48,7 @@ main (int argc, char **argv)
 	abort ();
     }
 
-  acc_delete (h, N);
+  acc_free (d);
 
   for (i = 0; i < N; i++)
     {

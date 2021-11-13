@@ -1,4 +1,4 @@
-/* { dg-options "-march=v10" { target { cris*-*-* && { ! march_option } } } } */
+/* { dg-options "-march=v10" { target cris*-*-* } } */
 struct i
 {
   long long i_size;

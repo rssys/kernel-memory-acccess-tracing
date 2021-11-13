@@ -6,14 +6,16 @@ package net
 
 import (
 	"context"
-	"internal/itoa"
 	"syscall"
 )
 
-// BUG(mikio): On Plan 9, the ReadMsgUDP and
+// BUG(mikio): On NaCl and Plan 9, the ReadMsgUDP and
 // WriteMsgUDP methods of UDPConn are not implemented.
 
 // BUG(mikio): On Windows, the File method of UDPConn is not
+// implemented.
+
+// BUG(mikio): On NaCl, the ListenMulticastUDP function is not
 // implemented.
 
 // BUG(mikio): On JS, methods and functions related to UDPConn are not
@@ -35,9 +37,9 @@ func (a *UDPAddr) String() string {
 	}
 	ip := ipEmptyString(a.IP)
 	if a.Zone != "" {
-		return JoinHostPort(ip+"%"+a.Zone, itoa.Itoa(a.Port))
+		return JoinHostPort(ip+"%"+a.Zone, itoa(a.Port))
 	}
-	return JoinHostPort(ip, itoa.Itoa(a.Port))
+	return JoinHostPort(ip, itoa(a.Port))
 }
 
 func (a *UDPAddr) isWildcard() bool {
@@ -100,20 +102,11 @@ func (c *UDPConn) SyscallConn() (syscall.RawConn, error) {
 }
 
 // ReadFromUDP acts like ReadFrom but returns a UDPAddr.
-func (c *UDPConn) ReadFromUDP(b []byte) (n int, addr *UDPAddr, err error) {
-	// This function is designed to allow the caller to control the lifetime
-	// of the returned *UDPAddr and thereby prevent an allocation.
-	// See https://blog.filippo.io/efficient-go-apis-with-the-inliner/.
-	// The real work is done by readFromUDP, below.
-	return c.readFromUDP(b, &UDPAddr{})
-}
-
-// readFromUDP implements ReadFromUDP.
-func (c *UDPConn) readFromUDP(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
+func (c *UDPConn) ReadFromUDP(b []byte) (int, *UDPAddr, error) {
 	if !c.ok() {
 		return 0, nil, syscall.EINVAL
 	}
-	n, addr, err := c.readFrom(b, addr)
+	n, addr, err := c.readFrom(b)
 	if err != nil {
 		err = &OpError{Op: "read", Net: c.fd.net, Source: c.fd.laddr, Addr: c.fd.raddr, Err: err}
 	}
@@ -122,9 +115,14 @@ func (c *UDPConn) readFromUDP(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
 
 // ReadFrom implements the PacketConn ReadFrom method.
 func (c *UDPConn) ReadFrom(b []byte) (int, Addr, error) {
-	n, addr, err := c.readFromUDP(b, &UDPAddr{})
+	if !c.ok() {
+		return 0, nil, syscall.EINVAL
+	}
+	n, addr, err := c.readFrom(b)
+	if err != nil {
+		err = &OpError{Op: "read", Net: c.fd.net, Source: c.fd.laddr, Addr: c.fd.raddr, Err: err}
+	}
 	if addr == nil {
-		// Return Addr(nil), not Addr(*UDPConn(nil)).
 		return n, nil, err
 	}
 	return n, addr, err
@@ -264,9 +262,6 @@ func ListenUDP(network string, laddr *UDPAddr) (*UDPConn, error) {
 // ListenMulticastUDP is just for convenience of simple, small
 // applications. There are golang.org/x/net/ipv4 and
 // golang.org/x/net/ipv6 packages for general purpose uses.
-//
-// Note that ListenMulticastUDP will set the IP_MULTICAST_LOOP socket option
-// to 0 under IPPROTO_IP, to disable loopback of multicast packets.
 func ListenMulticastUDP(network string, ifi *Interface, gaddr *UDPAddr) (*UDPConn, error) {
 	switch network {
 	case "udp", "udp4", "udp6":

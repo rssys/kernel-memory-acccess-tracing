@@ -8,10 +8,9 @@
  */
 module core.sys.windows.lmrepl;
 version (Windows):
-@system:
 pragma(lib, "netapi32");
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 enum REPL_ROLE_EXPORT=1;
 enum REPL_ROLE_IMPORT=2;

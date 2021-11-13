@@ -1,6 +1,5 @@
 // { dg-do assemble }
 // { dg-xfail-if "" { xstormy16-*-* } }
-// { dg-require-effective-target size20plus }
 
 #include <stdio.h>
 #include <stdlib.h>

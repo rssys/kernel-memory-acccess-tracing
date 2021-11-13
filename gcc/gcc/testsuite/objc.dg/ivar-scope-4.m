@@ -1,8 +1,7 @@
 /* Test instance variable scope.  */
 /* Author: Dimitris Papavasiliou <dpapavas@gmail.com>.  */
 /* { dg-do run } */
-/* { dg-additional-options "-Wno-shadow-ivar -fno-local-ivars -Wno-objc-root-class" } */
-
+/* { dg-additional-options "-Wno-shadow-ivar -fno-local-ivars" } */
 #include "../objc-obj-c++-shared/runtime.h"
 #include <objc/objc.h>
 
@@ -19,7 +18,6 @@ int someivar = 1;
   int someivar;
 }
 
-+ (id) initialize;
 + (id) alloc;
 - (id) init;
 - (int) getGlobal;
@@ -28,11 +26,6 @@ int someivar = 1;
 @end
 
 @implementation MyClass
-+ (id) initialize
-{
-  return self;
-}
-
 + (id) alloc
 {
   return class_createInstance (self, 0);

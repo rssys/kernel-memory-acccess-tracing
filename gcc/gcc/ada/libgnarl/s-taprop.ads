@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -181,8 +181,11 @@ package System.Task_Primitives.Operations is
    procedure Write_Lock
      (L                 : not null access Lock;
       Ceiling_Violation : out Boolean);
-   procedure Write_Lock (L : not null access RTS_Lock);
-   procedure Write_Lock (T : ST.Task_Id);
+   procedure Write_Lock
+     (L           : not null access RTS_Lock;
+      Global_Lock : Boolean := False);
+   procedure Write_Lock
+     (T : ST.Task_Id);
    pragma Inline (Write_Lock);
    --  Lock a lock object for write access. After this operation returns,
    --  the calling task holds write permission for the lock object. No other
@@ -194,6 +197,9 @@ package System.Task_Primitives.Operations is
    --  For the operation on Lock, Ceiling_Violation is set to true iff the
    --  operation failed, which will happen if there is a priority ceiling
    --  violation.
+   --
+   --  For the operation on RTS_Lock, Global_Lock should be set to True
+   --  if L is a global lock (Single_RTS_Lock, Global_Task_Lock).
    --
    --  For the operation on ST.Task_Id, the lock is the special lock object
    --  associated with that task's ATCB. This lock has effective ceiling
@@ -229,8 +235,11 @@ package System.Task_Primitives.Operations is
 
    procedure Unlock
      (L : not null access Lock);
-   procedure Unlock (L : not null access RTS_Lock);
-   procedure Unlock (T : ST.Task_Id);
+   procedure Unlock
+     (L           : not null access RTS_Lock;
+      Global_Lock : Boolean := False);
+   procedure Unlock
+     (T : ST.Task_Id);
    pragma Inline (Unlock);
    --  Unlock a locked lock object
    --
@@ -240,6 +249,9 @@ package System.Task_Primitives.Operations is
    --  read or write permission. (That is, matching pairs of Lock and Unlock
    --  operations on each lock object must be properly nested.)
 
+   --  For the operation on RTS_Lock, Global_Lock should be set to True if L
+   --  is a global lock (Single_RTS_Lock, Global_Task_Lock).
+   --
    --  Note that Write_Lock for RTS_Lock does not have an out-parameter.
    --  RTS_Locks are used in situations where we have not made provision for
    --  recovery from ceiling violations. We do not expect them to occur inside
@@ -412,7 +424,10 @@ package System.Task_Primitives.Operations is
 
    --  Following two routines are used for possible operations needed to be
    --  setup/cleared upon entrance/exit of RTS while maintaining a single
-   --  thread of control in the RTS.
+   --  thread of control in the RTS. Since we intend these routines to be used
+   --  for implementing the Single_Lock RTS, Lock_RTS should follow the first
+   --  Defer_Abort operation entering RTS. In the same fashion Unlock_RTS
+   --  should precede the last Undefer_Abort exiting RTS.
    --
    --  These routines also replace the functions Lock/Unlock_All_Tasks_List
 

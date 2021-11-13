@@ -9,12 +9,11 @@
  */
 module core.sys.windows.prsht;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 pragma(lib, "comctl32");
 
-import core.sys.windows.w32api, core.sys.windows.windef, core.sys.windows.winuser;
+private import core.sys.windows.w32api, core.sys.windows.windef, core.sys.windows.winuser;
 
 enum MAXPROPPAGES = 100;
 

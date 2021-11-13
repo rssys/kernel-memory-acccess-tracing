@@ -3,8 +3,7 @@
    that calls to strncpy involving multidimensional arrays of structs don't
    trigger false positive -Wrestrict warnings.
    { dg-do compile }
-   { dg-options "-O2 -Wrestrict -ftrack-macro-expansion=0" }
-   { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+   { dg-options "-O2 -Wrestrict -ftrack-macro-expansion=0" } */
 
 typedef __SIZE_TYPE__ size_t;
 

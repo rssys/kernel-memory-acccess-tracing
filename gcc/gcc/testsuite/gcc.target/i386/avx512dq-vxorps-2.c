@@ -15,11 +15,8 @@ CALC (float *src1, float *src2, float *dst)
 
   for (i = 0; i < SIZE; i++)
     {
-      union U { float f; int i; } u1, u2;
-      u1.f = src1[i];
-      u2.f = src2[i];
-      u1.i ^= u2.i;
-      dst[i] = u1.f;
+      int tmp = (*(int *) &src1[i]) ^ (*(int *) &src2[i]);
+      dst[i] = *(float *) &tmp;
     }
 }
 

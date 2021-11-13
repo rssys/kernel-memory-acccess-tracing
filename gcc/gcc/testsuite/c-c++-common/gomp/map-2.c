@@ -1,8 +1,5 @@
-/* Test 'map' clause diagnostics.  */
-
-/* See also corresponding OpenMP C++ variant: '../../g++.dg/gomp/map-2.C'.  */
-
-/* See also corresponding OpenACC variant: '../goacc/data-clause-2.c'.  */
+/* { dg-do compile } */
+/* { dg-options "-fopenmp" } */
 
 void
 foo (int *p, int (*q)[10], int r[10], int s[10][10])

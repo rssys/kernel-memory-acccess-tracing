@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,17 +29,19 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Width attribute for modular integers larger than Integer
+--  This package contains the routine used for Width attribute for all
+--  non-static unsigned integer (modular integer) subtypes. Note we only
+--  have one routine, since this seems a fairly marginal function.
 
-with System.Width_U;
 with System.Unsigned_Types;
 
-package System.Wid_LLU
-  with SPARK_Mode
-is
-   subtype Long_Long_Unsigned is Unsigned_Types.Long_Long_Unsigned;
+package System.Wid_LLU is
+   pragma Pure;
 
-   function Width_Long_Long_Unsigned is new Width_U (Long_Long_Unsigned);
-   pragma Pure_Function (Width_Long_Long_Unsigned);
+   function Width_Long_Long_Unsigned
+     (Lo, Hi : System.Unsigned_Types.Long_Long_Unsigned)
+      return   Natural;
+   --  Compute Width attribute for non-static type derived from a modular
+   --  integer type. The arguments Lo, Hi are the bounds of the type.
 
 end System.Wid_LLU;

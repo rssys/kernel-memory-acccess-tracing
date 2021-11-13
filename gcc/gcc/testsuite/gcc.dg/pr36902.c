@@ -24,9 +24,10 @@ struct {
   unsigned char pcr_select[4];
 } sel;
 
-unsigned char buf[64];
 int bar(void)
 {
+  static unsigned char buf[64];
+
   sel.size_of_select = 3;
   foo(buf, sel.pcr_select, sel.size_of_select);
 
@@ -43,7 +44,7 @@ foo2(unsigned char * to, const unsigned char * from, int n)
       *to = *from;
       break;
     case 5:
-      to[4] = from [4]; /* { dg-warning "\\\[-Warray-bounds" } */
+      to[4] = from [4]; /* { dg-warning "array subscript is above array bounds" "" { xfail *-*-* } } */
       break;
     }
   return to;
@@ -51,6 +52,8 @@ foo2(unsigned char * to, const unsigned char * from, int n)
 
 int baz(void)
 {
+  static unsigned char buf[64];
+
   sel.size_of_select = 5;
   foo2(buf, sel.pcr_select, sel.size_of_select);
 

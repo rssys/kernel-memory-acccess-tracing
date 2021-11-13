@@ -1478,13 +1478,10 @@ private bool isUnionAliasedImpl(T)(size_t offset)
         static assert( isUnionAliased!(S.A5, 1)); //a5.b1;
 }
 
-version (CRuntime_Glibc) version = GNU_STRERROR;
-version (CRuntime_UClibc) version = GNU_STRERROR;
-
 package string errnoString(int errno) nothrow @trusted
 {
     import core.stdc.string : strlen;
-    version (GNU_STRERROR)
+    version (CRuntime_Glibc)
     {
         import core.stdc.string : strerror_r;
         char[1024] buf = void;

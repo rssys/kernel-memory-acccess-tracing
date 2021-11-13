@@ -1,5 +1,3 @@
-/* { dg-require-effective-target indirect_calls } */
-
 void regex_subst(void)
 {
   const void *subst = "";

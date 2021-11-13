@@ -1,5 +1,5 @@
 /* Darwin support needed only by C/C++ frontends.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
 This file is part of GCC.
@@ -44,12 +44,13 @@ static bool using_frameworks = false;
 static const char *find_subframework_header (cpp_reader *pfile, const char *header,
 					     cpp_dir **dirp);
 
-struct fld_align_stack {
-  int	alignment;
-  struct fld_align_stack * prev;
-};
+typedef struct align_stack
+{
+  int alignment;
+  struct align_stack * prev;
+} align_stack;
 
-static struct fld_align_stack * field_align_stack;
+static struct align_stack * field_align_stack = NULL;
 
 /* Maintain a small stack of alignments.  This is similar to pragma
    pack's stack, but simpler.  */
@@ -57,7 +58,7 @@ static struct fld_align_stack * field_align_stack;
 static void
 push_field_alignment (int bit_alignment)
 {
-  fld_align_stack *entry = XNEW (fld_align_stack);
+  align_stack *entry = XNEW (align_stack);
 
   entry->alignment = maximum_field_alignment;
   entry->prev = field_align_stack;
@@ -71,14 +72,14 @@ pop_field_alignment (void)
 {
   if (field_align_stack)
     {
-      fld_align_stack *entry = field_align_stack;
+      align_stack *entry = field_align_stack;
 
       maximum_field_alignment = entry->alignment;
       field_align_stack = entry->prev;
       free (entry);
     }
   else
-    error ("too many %<#pragma options align=reset%>");
+    error ("too many #pragma options align=reset");
 }
 
 /* Handlers for Darwin-specific pragmas.  */
@@ -691,10 +692,10 @@ macosx_version_as_macro (void)
   if (!version_array)
     goto fail;
 
-  if (version_array[MAJOR] < 10 || version_array[MAJOR] > 12)
+  if (version_array[MAJOR] != 10)
     goto fail;
 
-  if (version_array[MAJOR] == 10 && version_array[MINOR] < 10)
+  if (version_array[MINOR] < 10)
     version_macro = version_as_legacy_macro (version_array);
   else
     version_macro = version_as_modern_macro (version_array);
@@ -808,7 +809,7 @@ darwin_cfstring_ref_p (const_tree strp)
     tn = DECL_NAME (tn);
   return (tn 
 	  && IDENTIFIER_POINTER (tn)
-	  && startswith (IDENTIFIER_POINTER (tn), "CFStringRef"));
+	  && !strncmp (IDENTIFIER_POINTER (tn), "CFStringRef", 8));
 }
 
 /* At present the behavior of this is undefined and it does nothing.  */
@@ -842,7 +843,7 @@ darwin_objc_declare_unresolved_class_reference (const char *name)
   size_t len = strlen (reference) + strlen(name) + 2;
   char *buf = (char *) alloca (len);
 
-  gcc_checking_assert (startswith (name, ".objc_class_name_"));
+  gcc_checking_assert (!strncmp (name, ".objc_class_name_", 17));
 
   snprintf (buf, len, "%s%s", reference, name);
   symtab->finalize_toplevel_asm (build_string (strlen (buf), buf));
@@ -855,8 +856,8 @@ darwin_objc_declare_class_definition (const char *name)
   size_t len = strlen (xname) + 7 + 5;
   char *buf = (char *) alloca (len);
 
-  gcc_checking_assert (startswith (name, ".objc_class_name_")
-		       || startswith (name, "*.objc_category_name_"));
+  gcc_checking_assert (!strncmp (name, ".objc_class_name_", 17)
+		       || !strncmp (name, "*.objc_category_name_", 21));
 
   /* Mimic default_globalize_label.  */
   snprintf (buf, len, ".globl\t%s", xname);

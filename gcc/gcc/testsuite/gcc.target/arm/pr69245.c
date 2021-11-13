@@ -12,7 +12,7 @@
 #pragma GCC target "fpu=neon-vfpv4"
 int a, c, d;
 float b;
- int fn1 ()
+static int fn1 ()
 {
   return 0;
 }
@@ -23,8 +23,4 @@ void fn2 ()
   d = b * c + a;
 }
 
-/* Because we don't know the exact command-line options used to invoke the test
-   we cannot expect these tests to match exactly once.  But they must appear at
-   least once.  */
-/* { dg-final { scan-assembler "\.fpu\\s+vfp\n" } } */
-/* { dg-final { scan-assembler "\.fpu\\s+neon-vfpv4\n" } } */
+/* { dg-final { scan-assembler-times "\.fpu vfp" 1 } } */

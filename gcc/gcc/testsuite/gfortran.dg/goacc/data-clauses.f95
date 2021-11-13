@@ -39,9 +39,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel copy (tip)
+  !$acc parallel copy (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel copy (tia)
+  !$acc parallel copy (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) copy (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -54,9 +54,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel copyin (tip)
+  !$acc parallel copyin (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel copyin (tia)
+  !$acc parallel copyin (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) copyin (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -71,9 +71,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel copyout (tip)
+  !$acc parallel copyout (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel copyout (tia)
+  !$acc parallel copyout (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) copyout (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -90,9 +90,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel create (tip)
+  !$acc parallel create (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel create (tia)
+  !$acc parallel create (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) create (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -111,30 +111,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel no_create (tip)
+  !$acc parallel present (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel no_create (tia)
-  !$acc end parallel
-  !$acc parallel deviceptr (i) no_create (i) ! { dg-error "multiple clauses" }
-  !$acc end parallel
-  !$acc parallel copy (i) no_create (i) ! { dg-error "multiple clauses" }
-  !$acc end parallel
-  !$acc parallel copyin (i) no_create (i) ! { dg-error "multiple clauses" }
-  !$acc end parallel
-  !$acc parallel copyout (i) no_create (i) ! { dg-error "multiple clauses" }
-  !$acc end parallel
-
-  !$acc parallel no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
-  !$acc end parallel
-  !$acc kernels no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
-  !$acc end kernels
-  !$acc data no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
-  !$acc end data
-
-
-  !$acc parallel present (tip)
-  !$acc end parallel
-  !$acc parallel present (tia)
+  !$acc parallel present (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) present (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -165,9 +144,9 @@ contains
   !$acc end parallel
 
 
-  !$acc parallel present_or_copy (tip)
+  !$acc parallel present_or_copy (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel present_or_copy (tia)
+  !$acc parallel present_or_copy (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copy (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -190,9 +169,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel present_or_copyin (tip)
+  !$acc parallel present_or_copyin (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel present_or_copyin (tia)
+  !$acc parallel present_or_copyin (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copyin (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -217,9 +196,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel present_or_copyout (tip)
+  !$acc parallel present_or_copyout (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel present_or_copyout (tia)
+  !$acc parallel present_or_copyout (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copyout (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -246,9 +225,9 @@ contains
   !$acc end data
 
 
-  !$acc parallel present_or_create (tip)
+  !$acc parallel present_or_create (tip) ! { dg-error "POINTER" }
   !$acc end parallel
-  !$acc parallel present_or_create (tia)
+  !$acc parallel present_or_create (tia) ! { dg-error "ALLOCATABLE" }
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_create (i) ! { dg-error "multiple clauses" }
   !$acc end parallel

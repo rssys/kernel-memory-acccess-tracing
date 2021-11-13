@@ -1,8 +1,7 @@
 //===-- tsan_sync.h ---------------------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -17,6 +16,7 @@
 #include "sanitizer_common/sanitizer_deadlock_detector_interface.h"
 #include "tsan_defs.h"
 #include "tsan_clock.h"
+#include "tsan_mutex.h"
 #include "tsan_dense_alloc.h"
 
 namespace __tsan {
@@ -46,16 +46,16 @@ enum MutexFlags {
                                  MutexFlagNotStatic,
 };
 
-// SyncVar is a descriptor of a user synchronization object
-// (mutex or an atomic variable).
 struct SyncVar {
   SyncVar();
+
+  static const int kInvalidTid = -1;
 
   uptr addr;  // overwritten by DenseSlabAlloc freelist
   Mutex mtx;
   u64 uid;  // Globally unique id.
-  StackID creation_stack_id;
-  Tid owner_tid;  // Set only by exclusive owners.
+  u32 creation_stack_id;
+  int owner_tid;  // Set only by exclusive owners.
   u64 last_lock;
   int recursion;
   atomic_uint32_t flags;
@@ -66,7 +66,7 @@ struct SyncVar {
   // with the mtx. This reduces contention for hot sync objects.
   SyncClock clock;
 
-  void Init(ThreadState *thr, uptr pc, uptr addr, u64 uid, bool save_stack);
+  void Init(ThreadState *thr, uptr pc, uptr addr, u64 uid);
   void Reset(Processor *proc);
 
   u64 GetId() const {
@@ -103,8 +103,10 @@ struct SyncVar {
   }
 };
 
-// MetaMap maps app addresses to heap block (MBlock) and sync var (SyncVar)
-// descriptors. It uses 1/2 direct shadow, see tsan_platform.h for the mapping.
+/* MetaMap allows to map arbitrary user pointers onto various descriptors.
+   Currently it maps pointers to heap block descriptors and sync var descs.
+   It uses 1/2 direct shadow, see tsan_platform.h.
+*/
 class MetaMap {
  public:
   MetaMap();
@@ -115,37 +117,26 @@ class MetaMap {
   void ResetRange(Processor *proc, uptr p, uptr sz);
   MBlock* GetBlock(uptr p);
 
-  SyncVar *GetSyncOrCreate(ThreadState *thr, uptr pc, uptr addr,
-                           bool save_stack) {
-    return GetSync(thr, pc, addr, true, save_stack);
-  }
-  SyncVar *GetSyncIfExists(uptr addr) {
-    return GetSync(nullptr, 0, addr, false, false);
-  }
+  SyncVar* GetOrCreateAndLock(ThreadState *thr, uptr pc,
+                              uptr addr, bool write_lock);
+  SyncVar* GetIfExistsAndLock(uptr addr, bool write_lock);
 
   void MoveMemory(uptr src, uptr dst, uptr sz);
 
   void OnProcIdle(Processor *proc);
 
-  struct MemoryStats {
-    uptr mem_block;
-    uptr sync_obj;
-  };
-
-  MemoryStats GetMemoryStats() const;
-
  private:
   static const u32 kFlagMask  = 3u << 30;
   static const u32 kFlagBlock = 1u << 30;
   static const u32 kFlagSync  = 2u << 30;
-  typedef DenseSlabAlloc<MBlock, 1 << 18, 1 << 12, kFlagMask> BlockAlloc;
-  typedef DenseSlabAlloc<SyncVar, 1 << 20, 1 << 10, kFlagMask> SyncAlloc;
+  typedef DenseSlabAlloc<MBlock, 1<<16, 1<<12> BlockAlloc;
+  typedef DenseSlabAlloc<SyncVar, 1<<16, 1<<10> SyncAlloc;
   BlockAlloc block_alloc_;
   SyncAlloc sync_alloc_;
   atomic_uint64_t uid_gen_;
 
-  SyncVar *GetSync(ThreadState *thr, uptr pc, uptr addr, bool create,
-                   bool save_stack);
+  SyncVar* GetAndLock(ThreadState *thr, uptr pc, uptr addr, bool write_lock,
+                      bool create);
 };
 
 }  // namespace __tsan

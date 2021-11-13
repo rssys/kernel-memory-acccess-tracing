@@ -5,11 +5,9 @@
 package gosym
 
 import (
-	"bytes"
-	"compress/gzip"
 	"debug/elf"
 	"internal/testenv"
-	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +28,7 @@ func dotest(t *testing.T) {
 		t.Skipf("skipping on non-AMD64 system %s", runtime.GOARCH)
 	}
 	var err error
-	pclineTempDir, err = os.MkdirTemp("", "pclinetest")
+	pclineTempDir, err = ioutil.TempDir("", "pclinetest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +55,7 @@ func endtest() {
 // These tests open and examine the test binary, and use elf.Open to do so.
 func skipIfNotELF(t *testing.T) {
 	switch runtime.GOOS {
-	case "dragonfly", "freebsd", "linux", "netbsd", "openbsd", "solaris", "illumos":
+	case "dragonfly", "freebsd", "linux", "netbsd", "openbsd", "solaris":
 		// OK.
 	default:
 		t.Skipf("skipping on non-ELF system %s", runtime.GOOS)
@@ -198,9 +196,6 @@ func TestLineAline(t *testing.T) {
 }
 
 func TestPCLine(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in -short mode")
-	}
 	dotest(t)
 	defer endtest()
 
@@ -264,53 +259,5 @@ func TestPCLine(t *testing.T) {
 			}
 		}
 		off = pc + 1 - text.Addr
-	}
-}
-
-// Test that we can parse a pclntab from 1.15.
-// The file was compiled in /tmp/hello.go:
-// [BEGIN]
-// package main
-//
-// func main() {
-//    println("hello")
-// }
-// [END]
-func Test115PclnParsing(t *testing.T) {
-	zippedDat, err := os.ReadFile("testdata/pcln115.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var gzReader *gzip.Reader
-	gzReader, err = gzip.NewReader(bytes.NewBuffer(zippedDat))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var dat []byte
-	dat, err = io.ReadAll(gzReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const textStart = 0x1001000
-	pcln := NewLineTable(dat, textStart)
-	var tab *Table
-	tab, err = NewTable(nil, pcln)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var f *Func
-	var pc uint64
-	pc, f, err = tab.LineToPC("/tmp/hello.go", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pcln.version != ver12 {
-		t.Fatal("Expected pcln to parse as an older version")
-	}
-	if pc != 0x105c280 {
-		t.Fatalf("expect pc = 0x105c280, got 0x%x", pc)
-	}
-	if f.Name != "main.main" {
-		t.Fatalf("expected to parse name as main.main, got %v", f.Name)
 	}
 }

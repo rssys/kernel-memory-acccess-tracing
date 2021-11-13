@@ -6,10 +6,7 @@
 
 package types
 
-import (
-	"go/constant"
-	"unicode"
-)
+import "go/constant"
 
 // Conversion type-checks the conversion T(x).
 // The result is in x.
@@ -17,33 +14,31 @@ func (check *Checker) conversion(x *operand, T Type) {
 	constArg := x.mode == constant_
 
 	var ok bool
-	var reason string
 	switch {
 	case constArg && isConstType(T):
 		// constant conversion
-		switch t := asBasic(T); {
+		switch t := T.Underlying().(*Basic); {
 		case representableConst(x.val, check, t, &x.val):
 			ok = true
 		case isInteger(x.typ) && isString(t):
-			codepoint := unicode.ReplacementChar
-			if i, ok := constant.Uint64Val(x.val); ok && i <= unicode.MaxRune {
-				codepoint = rune(i)
+			codepoint := int64(-1)
+			if i, ok := constant.Int64Val(x.val); ok {
+				codepoint = i
 			}
+			// If codepoint < 0 the absolute value is too large (or unknown) for
+			// conversion. This is the same as converting any other out-of-range
+			// value - let string(codepoint) do the work.
 			x.val = constant.MakeString(string(codepoint))
 			ok = true
 		}
-	case x.convertibleTo(check, T, &reason):
+	case x.convertibleTo(check, T):
 		// non-constant conversion
 		x.mode = value
 		ok = true
 	}
 
 	if !ok {
-		if reason != "" {
-			check.errorf(x, _InvalidConversion, "cannot convert %s to %s (%s)", x, T, reason)
-		} else {
-			check.errorf(x, _InvalidConversion, "cannot convert %s to %s", x, T)
-		}
+		check.errorf(x.pos(), "cannot convert %s to %s", x, T)
 		x.mode = invalid
 		return
 	}
@@ -60,8 +55,8 @@ func (check *Checker) conversion(x *operand, T Type) {
 		// - Keep untyped nil for untyped nil arguments.
 		// - For integer to string conversions, keep the argument type.
 		//   (See also the TODO below.)
-		if IsInterface(T) || constArg && !isConstType(T) || x.isNil() {
-			final = Default(x.typ) // default type of untyped nil is untyped nil
+		if IsInterface(T) || constArg && !isConstType(T) {
+			final = Default(x.typ)
 		} else if isInteger(x.typ) && isString(T) {
 			final = x.typ
 		}
@@ -84,17 +79,17 @@ func (check *Checker) conversion(x *operand, T Type) {
 // convertibleTo reports whether T(x) is valid.
 // The check parameter may be nil if convertibleTo is invoked through an
 // exported API call, i.e., when all methods have been type-checked.
-func (x *operand) convertibleTo(check *Checker, T Type, reason *string) bool {
+func (x *operand) convertibleTo(check *Checker, T Type) bool {
 	// "x is assignable to T"
-	if ok, _ := x.assignableTo(check, T, nil); ok {
+	if x.assignableTo(check, T, nil) {
 		return true
 	}
 
 	// "x's type and T have identical underlying types if tags are ignored"
 	V := x.typ
-	Vu := under(V)
-	Tu := under(T)
-	if check.identicalIgnoreTags(Vu, Tu) {
+	Vu := V.Underlying()
+	Tu := T.Underlying()
+	if IdenticalIgnoreTags(Vu, Tu) {
 		return true
 	}
 
@@ -102,14 +97,14 @@ func (x *operand) convertibleTo(check *Checker, T Type, reason *string) bool {
 	// have identical underlying types if tags are ignored"
 	if V, ok := V.(*Pointer); ok {
 		if T, ok := T.(*Pointer); ok {
-			if check.identicalIgnoreTags(under(V.base), under(T.base)) {
+			if IdenticalIgnoreTags(V.base.Underlying(), T.base.Underlying()) {
 				return true
 			}
 		}
 	}
 
 	// "x's type and T are both integer or floating point types"
-	if isIntegerOrFloat(V) && isIntegerOrFloat(T) {
+	if (isInteger(V) || isFloat(V)) && (isInteger(T) || isFloat(T)) {
 		return true
 	}
 
@@ -138,48 +133,31 @@ func (x *operand) convertibleTo(check *Checker, T Type, reason *string) bool {
 		return true
 	}
 
-	// "x is a slice, T is a pointer-to-array type,
-	// and the slice and array types have identical element types."
-	if s := asSlice(V); s != nil {
-		if p := asPointer(T); p != nil {
-			if a := asArray(p.Elem()); a != nil {
-				if check.identical(s.Elem(), a.Elem()) {
-					if check == nil || check.allowVersion(check.pkg, 1, 17) {
-						return true
-					}
-					if reason != nil {
-						*reason = "conversion of slices to array pointers requires go1.17 or later"
-					}
-				}
-			}
-		}
-	}
-
 	return false
 }
 
 func isUintptr(typ Type) bool {
-	t := asBasic(typ)
-	return t != nil && t.kind == Uintptr
+	t, ok := typ.Underlying().(*Basic)
+	return ok && t.kind == Uintptr
 }
 
 func isUnsafePointer(typ Type) bool {
-	// TODO(gri): Is this asBasic(typ) instead of typ.(*Basic) correct?
-	//            (The former calls under(), while the latter doesn't.)
+	// TODO(gri): Is this (typ.Underlying() instead of just typ) correct?
 	//            The spec does not say so, but gc claims it is. See also
 	//            issue 6326.
-	t := asBasic(typ)
-	return t != nil && t.kind == UnsafePointer
+	t, ok := typ.Underlying().(*Basic)
+	return ok && t.kind == UnsafePointer
 }
 
 func isPointer(typ Type) bool {
-	return asPointer(typ) != nil
+	_, ok := typ.Underlying().(*Pointer)
+	return ok
 }
 
 func isBytesOrRunes(typ Type) bool {
-	if s := asSlice(typ); s != nil {
-		t := asBasic(s.elem)
-		return t != nil && (t.kind == Byte || t.kind == Rune)
+	if s, ok := typ.(*Slice); ok {
+		t, ok := s.elem.Underlying().(*Basic)
+		return ok && (t.kind == Byte || t.kind == Rune)
 	}
 	return false
 }

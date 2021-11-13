@@ -1,5 +1,5 @@
 /* Language-dependent hooks for LTO.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -34,7 +34,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "debug.h"
 #include "lto-tree.h"
 #include "lto.h"
-#include "lto-common.h"
 #include "stringpool.h"
 #include "attribs.h"
 
@@ -247,7 +246,6 @@ static GTY(()) tree signed_size_type_node;
 int flag_isoc94;
 int flag_isoc99;
 int flag_isoc11;
-int flag_isoc2x;
 
 /* Attribute handlers.  */
 
@@ -791,6 +789,12 @@ static GTY(()) tree registered_builtin_types;
 
 /* Language hooks.  */
 
+static unsigned int
+lto_option_lang_mask (void)
+{
+  return CL_LTO;
+}
+
 static bool
 lto_complain_wrong_lang_p (const struct cl_option *option ATTRIBUTE_UNUSED)
 {
@@ -813,7 +817,6 @@ lto_init_options_struct (struct gcc_options *opts)
      safe choice.  This will pessimize Fortran code with LTO unless
      people specify a complex method manually or use -ffast-math.  */
   opts->x_flag_complex_method = 2;
-  opts->x_flag_default_complex_method = opts->x_flag_complex_method;
 }
 
 /* Handle command-line option SCODE.  If the option takes an argument, it is
@@ -897,7 +900,7 @@ lto_post_options (const char **pfilename ATTRIBUTE_UNUSED)
       lang_hooks.lto.end_section = lhd_end_section;
       if (flag_ltrans)
 	error ("%<-flinker-output=rel%> and %<-fltrans%> are mutually "
-	       "exclusive");
+	       "exclussive");
       break;
 
     case LTO_LINKER_OUTPUT_NOLTOREL: /* .o: incremental link producing asm  */
@@ -930,8 +933,7 @@ lto_post_options (const char **pfilename ATTRIBUTE_UNUSED)
 
   /* Excess precision other than "fast" requires front-end
      support.  */
-  if (flag_excess_precision == EXCESS_PRECISION_DEFAULT)
-    flag_excess_precision = EXCESS_PRECISION_FAST;
+  flag_excess_precision_cmdline = EXCESS_PRECISION_FAST;
 
   /* When partitioning, we can tear appart STRING_CSTs uses from the same
      TU into multiple partitions.  Without constant merging the constants
@@ -993,9 +995,6 @@ lto_type_for_mode (machine_mode mode, int unsigned_p)
     return unsigned_p ? unsigned_intTI_type_node : intTI_type_node;
 #endif
 
-  if (float16_type_node && mode == TYPE_MODE (float16_type_node))
-    return float16_type_node;
-
   if (mode == TYPE_MODE (float_type_node))
     return float_type_node;
 
@@ -1055,14 +1054,11 @@ lto_type_for_mode (machine_mode mode, int unsigned_p)
 	return build_vector_type_for_mode (inner_type, mode);
     }
 
-  if (dfloat32_type_node != NULL_TREE
-      && mode == TYPE_MODE (dfloat32_type_node))
+  if (mode == TYPE_MODE (dfloat32_type_node))
     return dfloat32_type_node;
-  if (dfloat64_type_node != NULL_TREE
-      && mode == TYPE_MODE (dfloat64_type_node))
+  if (mode == TYPE_MODE (dfloat64_type_node))
     return dfloat64_type_node;
-  if (dfloat128_type_node != NULL_TREE
-      && mode == TYPE_MODE (dfloat128_type_node))
+  if (mode == TYPE_MODE (dfloat128_type_node))
     return dfloat128_type_node;
 
   if (ALL_SCALAR_FIXED_POINT_MODE_P (mode))
@@ -1183,9 +1179,8 @@ lto_set_decl_assembler_name (tree decl)
     {
       const char *name = IDENTIFIER_POINTER (DECL_NAME (decl));
       char *label;
-      static unsigned long num;
 
-      ASM_FORMAT_PRIVATE_NAME (label, name, num++);
+      ASM_FORMAT_PRIVATE_NAME (label, name, DECL_UID (decl));
       id = get_identifier (label);
     }
 
@@ -1270,12 +1265,10 @@ lto_build_c_type_nodes (void)
       for (i = 0; i < NUM_INT_N_ENTS; i++)
 	if (int_n_enabled_p[i])
 	  {
-	    char name[50], altname[50];
+	    char name[50];
 	    sprintf (name, "__int%d unsigned", int_n_data[i].bitsize);
-	    sprintf (altname, "__int%d__ unsigned", int_n_data[i].bitsize);
 
-	    if (strcmp (name, SIZE_TYPE) == 0
-		|| strcmp (altname, SIZE_TYPE) == 0)
+	    if (strcmp (name, SIZE_TYPE) == 0)
 	      {
 		intmax_type_node = int_n_trees[i].signed_type;
 		uintmax_type_node = int_n_trees[i].unsigned_type;

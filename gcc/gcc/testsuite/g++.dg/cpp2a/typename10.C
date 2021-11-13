@@ -1,5 +1,5 @@
 // P0634R3
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 namespace N {
  // template<typename T> extern T::type v; // #1a

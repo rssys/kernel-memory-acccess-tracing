@@ -7,6 +7,7 @@ package types
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
 	"go/constant"
 	"go/token"
 )
@@ -36,9 +37,6 @@ type Object interface {
 	// color returns the object's color.
 	color() color
 
-	// setType sets the type of the object.
-	setType(Type)
-
 	// setOrder sets the order number of the object. It must be > 0.
 	setOrder(uint32)
 
@@ -61,7 +59,7 @@ type Object interface {
 // Id returns name if it is exported, otherwise it
 // returns the name qualified with the package path.
 func Id(pkg *Package, name string) string {
-	if token.IsExported(name) {
+	if ast.IsExported(name) {
 		return name
 	}
 	// unexported names need the package path for differentiation
@@ -141,7 +139,7 @@ func (obj *object) Type() Type { return obj.typ }
 // Exported reports whether the object is exported (starts with a capital letter).
 // It doesn't take into account whether the object is in a local (function) scope
 // or not.
-func (obj *object) Exported() bool { return token.IsExported(obj.name) }
+func (obj *object) Exported() bool { return ast.IsExported(obj.name) }
 
 // Id is a wrapper for Id(obj.Pkg(), obj.Name()).
 func (obj *object) Id() string { return Id(obj.pkg, obj.name) }
@@ -152,7 +150,6 @@ func (obj *object) color() color        { return obj.color_ }
 func (obj *object) scopePos() token.Pos { return obj.scopePos_ }
 
 func (obj *object) setParent(parent *Scope)   { obj.parent = parent }
-func (obj *object) setType(typ Type)          { obj.typ = typ }
 func (obj *object) setOrder(order uint32)     { assert(order > 0); obj.order_ = order }
 func (obj *object) setColor(color color)      { assert(color != white); obj.color_ = color }
 func (obj *object) setScopePos(pos token.Pos) { obj.scopePos_ = pos }
@@ -303,7 +300,7 @@ type Func struct {
 // NewFunc returns a new function with the given signature, representing
 // the function's type.
 func NewFunc(pos token.Pos, pkg *Package, name string, sig *Signature) *Func {
-	// don't store a (typed) nil signature
+	// don't store a nil signature
 	var typ Type
 	if sig != nil {
 		typ = sig
@@ -424,7 +421,7 @@ func writeObject(buf *bytes.Buffer, obj Object, qf Qualifier) {
 		if tname.IsAlias() {
 			buf.WriteString(" =")
 		} else {
-			typ = under(typ)
+			typ = typ.Underlying()
 		}
 	}
 

@@ -7,18 +7,53 @@ package time
 import "errors"
 
 // These are predefined layouts for use in Time.Format and time.Parse.
-// The reference time used in these layouts is the specific time stamp:
-//	01/02 03:04:05PM '06 -0700
-// (January 2, 15:04:05, 2006, in time zone seven hours west of GMT).
-// That value is recorded as the constant named Layout, listed below. As a Unix
-// time, this is 1136239445. Since MST is GMT-0700, the reference would be
-// printed by the Unix date command as:
+// The reference time used in the layouts is the specific time:
 //	Mon Jan 2 15:04:05 MST 2006
-// It is a regrettable historic error that the date uses the American convention
-// of putting the numerical month before the day.
+// which is Unix time 1136239445. Since MST is GMT-0700,
+// the reference time can be thought of as
+//	01/02 03:04:05PM '06 -0700
+// To define your own format, write down what the reference time would look
+// like formatted your way; see the values of constants like ANSIC,
+// StampMicro or Kitchen for examples. The model is to demonstrate what the
+// reference time looks like so that the Format and Parse methods can apply
+// the same transformation to a general time value.
 //
-// The example for Time.Format demonstrates the working of the layout string
-// in detail and is a good reference.
+// Some valid layouts are invalid time values for time.Parse, due to formats
+// such as _ for space padding and Z for zone information.
+//
+// Within the format string, an underscore _ represents a space that may be
+// replaced by a digit if the following number (a day) has two digits; for
+// compatibility with fixed-width Unix time formats.
+//
+// A decimal point followed by one or more zeros represents a fractional
+// second, printed to the given number of decimal places. A decimal point
+// followed by one or more nines represents a fractional second, printed to
+// the given number of decimal places, with trailing zeros removed.
+// When parsing (only), the input may contain a fractional second
+// field immediately after the seconds field, even if the layout does not
+// signify its presence. In that case a decimal point followed by a maximal
+// series of digits is parsed as a fractional second.
+//
+// Numeric time zone offsets format as follows:
+//	-0700  ±hhmm
+//	-07:00 ±hh:mm
+//	-07    ±hh
+// Replacing the sign in the format with a Z triggers
+// the ISO 8601 behavior of printing Z instead of an
+// offset for the UTC zone. Thus:
+//	Z0700  Z or ±hhmm
+//	Z07:00 Z or ±hh:mm
+//	Z07    Z or ±hh
+//
+// The recognized day of week formats are "Mon" and "Monday".
+// The recognized month formats are "Jan" and "January".
+//
+// Text in the format string that is not recognized as part of the reference
+// time is echoed verbatim during Format and expected to appear verbatim
+// in the input to Parse.
+//
+// The executable example for Time.Format demonstrates the working
+// of the layout string in detail and is a good reference.
 //
 // Note that the RFC822, RFC850, and RFC1123 formats should be applied
 // only to local times. Applying them to UTC times will use "UTC" as the
@@ -28,68 +63,10 @@ import "errors"
 // that insist on that format, and RFC3339 should be preferred for new protocols.
 // RFC3339, RFC822, RFC822Z, RFC1123, and RFC1123Z are useful for formatting;
 // when used with time.Parse they do not accept all the time formats
-// permitted by the RFCs and they do accept time formats not formally defined.
+// permitted by the RFCs.
 // The RFC3339Nano format removes trailing zeros from the seconds field
 // and thus may not sort correctly once formatted.
-//
-// Most programs can use one of the defined constants as the layout passed to
-// Format or Parse. The rest of this comment can be ignored unless you are
-// creating a custom layout string.
-//
-// To define your own format, write down what the reference time would look like
-// formatted your way; see the values of constants like ANSIC, StampMicro or
-// Kitchen for examples. The model is to demonstrate what the reference time
-// looks like so that the Format and Parse methods can apply the same
-// transformation to a general time value.
-//
-// Here is a summary of the components of a layout string. Each element shows by
-// example the formatting of an element of the reference time. Only these values
-// are recognized. Text in the layout string that is not recognized as part of
-// the reference time is echoed verbatim during Format and expected to appear
-// verbatim in the input to Parse.
-//
-//	Year: "2006" "06"
-//	Month: "Jan" "January"
-//	Textual day of the week: "Mon" "Monday"
-//	Numeric day of the month: "2" "_2" "02"
-//	Numeric day of the year: "__2" "002"
-//	Hour: "15" "3" "03" (PM or AM)
-//	Minute: "4" "04"
-//	Second: "5" "05"
-//	AM/PM mark: "PM"
-//
-// Numeric time zone offsets format as follows:
-//	"-0700"  ±hhmm
-//	"-07:00" ±hh:mm
-//	"-07"    ±hh
-// Replacing the sign in the format with a Z triggers
-// the ISO 8601 behavior of printing Z instead of an
-// offset for the UTC zone. Thus:
-//	"Z0700"  Z or ±hhmm
-//	"Z07:00" Z or ±hh:mm
-//	"Z07"    Z or ±hh
-//
-// Within the format string, the underscores in "_2" and "__2" represent spaces
-// that may be replaced by digits if the following number has multiple digits,
-// for compatibility with fixed-width Unix time formats. A leading zero represents
-// a zero-padded value.
-//
-// The formats  and 002 are space-padded and zero-padded
-// three-character day of year; there is no unpadded day of year format.
-//
-// A comma or decimal point followed by one or more zeros represents
-// a fractional second, printed to the given number of decimal places.
-// A comma or decimal point followed by one or more nines represents
-// a fractional second, printed to the given number of decimal places, with
-// trailing zeros removed.
-// For example "15:04:05,000" or "15:04:05.000" formats or parses with
-// millisecond precision.
-//
-// Some valid layouts are invalid time values for time.Parse, due to formats
-// such as _ for space padding and Z for zone information.
-//
 const (
-	Layout      = "01/02 03:04:05PM '06 -0700" // The reference time, in numerical order.
 	ANSIC       = "Mon Jan _2 15:04:05 2006"
 	UnixDate    = "Mon Jan _2 15:04:05 MST 2006"
 	RubyDate    = "Mon Jan 02 15:04:05 -0700 2006"
@@ -119,8 +96,6 @@ const (
 	stdDay                                         // "2"
 	stdUnderDay                                    // "_2"
 	stdZeroDay                                     // "02"
-	stdUnderYearDay                                // "__2"
-	stdZeroYearDay                                 // "002"
 	stdHour                  = iota + stdNeedClock // "15"
 	stdHour12                                      // "3"
 	stdZeroHour12                                  // "03"
@@ -195,12 +170,9 @@ func nextStdChunk(layout string) (prefix string, std int, suffix string) {
 				}
 			}
 
-		case '0': // 01, 02, 03, 04, 05, 06, 002
+		case '0': // 01, 02, 03, 04, 05, 06
 			if len(layout) >= i+2 && '1' <= layout[i+1] && layout[i+1] <= '6' {
 				return layout[0:i], std0x[layout[i+1]-'1'], layout[i+2:]
-			}
-			if len(layout) >= i+3 && layout[i+1] == '0' && layout[i+2] == '2' {
-				return layout[0:i], stdZeroYearDay, layout[i+3:]
 			}
 
 		case '1': // 15, 1
@@ -215,16 +187,13 @@ func nextStdChunk(layout string) (prefix string, std int, suffix string) {
 			}
 			return layout[0:i], stdDay, layout[i+1:]
 
-		case '_': // _2, _2006, __2
+		case '_': // _2, _2006
 			if len(layout) >= i+2 && layout[i+1] == '2' {
 				//_2006 is really a literal _, followed by stdLongYear
 				if len(layout) >= i+5 && layout[i+1:i+5] == "2006" {
 					return layout[0 : i+1], stdLongYear, layout[i+5:]
 				}
 				return layout[0:i], stdUnderDay, layout[i+2:]
-			}
-			if len(layout) >= i+3 && layout[i+1] == '_' && layout[i+2] == '2' {
-				return layout[0:i], stdUnderYearDay, layout[i+3:]
 			}
 
 		case '3':
@@ -280,7 +249,7 @@ func nextStdChunk(layout string) (prefix string, std int, suffix string) {
 				return layout[0:i], stdISO8601ShortTZ, layout[i+3:]
 			}
 
-		case '.', ',': // ,000, or .000, or ,999, or .999 - repeated digits for fractional seconds.
+		case '.': // .000 or .999 - repeated digits for fractional seconds.
 			if i+1 < len(layout) && (layout[i+1] == '0' || layout[i+1] == '9') {
 				ch := layout[i+1]
 				j := i + 1
@@ -495,66 +464,22 @@ func (t Time) String() string {
 	return s
 }
 
-// GoString implements fmt.GoStringer and formats t to be printed in Go source
-// code.
-func (t Time) GoString() string {
-	buf := []byte("time.Date(")
-	buf = appendInt(buf, t.Year(), 0)
-	month := t.Month()
-	if January <= month && month <= December {
-		buf = append(buf, ", time."...)
-		buf = append(buf, t.Month().String()...)
-	} else {
-		// It's difficult to construct a time.Time with a date outside the
-		// standard range but we might as well try to handle the case.
-		buf = appendInt(buf, int(month), 0)
-	}
-	buf = append(buf, ", "...)
-	buf = appendInt(buf, t.Day(), 0)
-	buf = append(buf, ", "...)
-	buf = appendInt(buf, t.Hour(), 0)
-	buf = append(buf, ", "...)
-	buf = appendInt(buf, t.Minute(), 0)
-	buf = append(buf, ", "...)
-	buf = appendInt(buf, t.Second(), 0)
-	buf = append(buf, ", "...)
-	buf = appendInt(buf, t.Nanosecond(), 0)
-	buf = append(buf, ", "...)
-	switch loc := t.Location(); loc {
-	case UTC, nil:
-		buf = append(buf, "time.UTC"...)
-	case Local:
-		buf = append(buf, "time.Local"...)
-	default:
-		// there are several options for how we could display this, none of
-		// which are great:
-		//
-		// - use Location(loc.name), which is not technically valid syntax
-		// - use LoadLocation(loc.name), which will cause a syntax error when
-		// embedded and also would require us to escape the string without
-		// importing fmt or strconv
-		// - try to use FixedZone, which would also require escaping the name
-		// and would represent e.g. "America/Los_Angeles" daylight saving time
-		// shifts inaccurately
-		// - use the pointer format, which is no worse than you'd get with the
-		// old fmt.Sprintf("%#v", t) format.
-		//
-		// Of these, Location(loc.name) is the least disruptive. This is an edge
-		// case we hope not to hit too often.
-		buf = append(buf, `time.Location(`...)
-		buf = append(buf, []byte(quote(loc.name))...)
-		buf = append(buf, `)`...)
-	}
-	buf = append(buf, ')')
-	return string(buf)
-}
-
-// Format returns a textual representation of the time value formatted according
-// to the layout defined by the argument. See the documentation for the
-// constant called Layout to see how to represent the layout format.
+// Format returns a textual representation of the time value formatted
+// according to layout, which defines the format by showing how the reference
+// time, defined to be
+//	Mon Jan 2 15:04:05 -0700 MST 2006
+// would be displayed if it were the value; it serves as an example of the
+// desired output. The same display rules will then be applied to the time
+// value.
 //
-// The executable example for Time.Format demonstrates the working
-// of the layout string in detail and is a good reference.
+// A fractional second is represented by adding a period and zeros
+// to the end of the seconds section of layout string, as in "15:04:05.000"
+// to format a time stamp with millisecond precision.
+//
+// Predefined layouts ANSIC, UnixDate, RFC3339 and others describe standard
+// and convenient representations of the reference time. For more information
+// about the formats and the definition of the reference time, see the
+// documentation for ANSIC and the other constants defined by this package.
 func (t Time) Format(layout string) string {
 	const bufSize = 64
 	var b []byte
@@ -578,7 +503,6 @@ func (t Time) AppendFormat(b []byte, layout string) []byte {
 		year  int = -1
 		month Month
 		day   int
-		yday  int
 		hour  int = -1
 		min   int
 		sec   int
@@ -596,8 +520,7 @@ func (t Time) AppendFormat(b []byte, layout string) []byte {
 
 		// Compute year, month, day if needed.
 		if year < 0 && std&stdNeedDate != 0 {
-			year, month, day, yday = absDate(abs, true)
-			yday++
+			year, month, day, _ = absDate(abs, true)
 		}
 
 		// Compute hour, minute, second if needed.
@@ -637,16 +560,6 @@ func (t Time) AppendFormat(b []byte, layout string) []byte {
 			b = appendInt(b, day, 0)
 		case stdZeroDay:
 			b = appendInt(b, day, 2)
-		case stdUnderYearDay:
-			if yday < 100 {
-				b = append(b, ' ')
-				if yday < 10 {
-					b = append(b, ' ')
-				}
-			}
-			b = appendInt(b, yday, 0)
-		case stdZeroYearDay:
-			b = appendInt(b, yday, 3)
 		case stdHour:
 			b = appendInt(b, hour, 2)
 		case stdHour12:
@@ -749,48 +662,8 @@ type ParseError struct {
 	Message    string
 }
 
-// These are borrowed from unicode/utf8 and strconv and replicate behavior in
-// that package, since we can't take a dependency on either.
-const (
-	lowerhex  = "0123456789abcdef"
-	runeSelf  = 0x80
-	runeError = '\uFFFD'
-)
-
 func quote(s string) string {
-	buf := make([]byte, 1, len(s)+2) // slice will be at least len(s) + quotes
-	buf[0] = '"'
-	for i, c := range s {
-		if c >= runeSelf || c < ' ' {
-			// This means you are asking us to parse a time.Duration or
-			// time.Location with unprintable or non-ASCII characters in it.
-			// We don't expect to hit this case very often. We could try to
-			// reproduce strconv.Quote's behavior with full fidelity but
-			// given how rarely we expect to hit these edge cases, speed and
-			// conciseness are better.
-			var width int
-			if c == runeError {
-				width = 1
-				if i+2 < len(s) && s[i:i+3] == string(runeError) {
-					width = 3
-				}
-			} else {
-				width = len(string(c))
-			}
-			for j := 0; j < width; j++ {
-				buf = append(buf, `\x`...)
-				buf = append(buf, lowerhex[s[i+j]>>4])
-				buf = append(buf, lowerhex[s[i+j]&0xF])
-			}
-		} else {
-			if c == '"' || c == '\\' {
-				buf = append(buf, '\\')
-			}
-			buf = append(buf, string(c)...)
-		}
-	}
-	buf = append(buf, '"')
-	return string(buf)
+	return "\"" + s + "\""
 }
 
 // Error returns the string representation of a ParseError.
@@ -815,7 +688,7 @@ func isDigit(s string, i int) bool {
 	return '0' <= c && c <= '9'
 }
 
-// getnum parses s[0:1] or s[0:2] (fixed forces s[0:2])
+// getnum parses s[0:1] or s[0:2] (fixed forces the latter)
 // as a decimal integer and returns the integer and the
 // remainder of the string.
 func getnum(s string, fixed bool) (int, string, error) {
@@ -829,20 +702,6 @@ func getnum(s string, fixed bool) (int, string, error) {
 		return int(s[0] - '0'), s[1:], nil
 	}
 	return int(s[0]-'0')*10 + int(s[1]-'0'), s[2:], nil
-}
-
-// getnum3 parses s[0:1], s[0:2], or s[0:3] (fixed forces s[0:3])
-// as a decimal integer and returns the integer and the remainder
-// of the string.
-func getnum3(s string, fixed bool) (int, string, error) {
-	var n, i int
-	for i = 0; i < 3 && isDigit(s, i); i++ {
-		n = n*10 + int(s[i]-'0')
-	}
-	if i == 0 || fixed && i != 3 {
-		return 0, s, errBad
-	}
-	return n, s[i:], nil
 }
 
 func cutspace(s string) string {
@@ -874,29 +733,26 @@ func skip(value, prefix string) (string, error) {
 }
 
 // Parse parses a formatted string and returns the time value it represents.
-// See the documentation for the constant called Layout to see how to
-// represent the format. The second argument must be parseable using
-// the format string (layout) provided as the first argument.
+// The layout defines the format by showing how the reference time,
+// defined to be
+//	Mon Jan 2 15:04:05 -0700 MST 2006
+// would be interpreted if it were the value; it serves as an example of
+// the input format. The same interpretation will then be made to the
+// input string.
 //
-// The example for Time.Format demonstrates the working of the layout string
-// in detail and is a good reference.
+// Predefined layouts ANSIC, UnixDate, RFC3339 and others describe standard
+// and convenient representations of the reference time. For more information
+// about the formats and the definition of the reference time, see the
+// documentation for ANSIC and the other constants defined by this package.
+// Also, the executable example for Time.Format demonstrates the working
+// of the layout string in detail and is a good reference.
 //
-// When parsing (only), the input may contain a fractional second
-// field immediately after the seconds field, even if the layout does not
-// signify its presence. In that case either a comma or a decimal point
-// followed by a maximal series of digits is parsed as a fractional second.
-//
-// Elements omitted from the layout are assumed to be zero or, when
+// Elements omitted from the value are assumed to be zero or, when
 // zero is impossible, one, so parsing "3:04pm" returns the time
 // corresponding to Jan 1, year 0, 15:04:00 UTC (note that because the year is
 // 0, this time is before the zero Time).
 // Years must be in the range 0000..9999. The day of the week is checked
 // for syntax but it is otherwise ignored.
-//
-// For layouts specifying the two-digit year 06, a value NN >= 69 will be treated
-// as 19NN and a value NN < 69 will be treated as 20NN.
-//
-// The remainder of this comment describes the handling of time zones.
 //
 // In the absence of a time zone indicator, Parse returns a time in UTC.
 //
@@ -936,9 +792,8 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 	// Time being constructed.
 	var (
 		year       int
-		month      int = -1
-		day        int = -1
-		yday       int = -1
+		month      int = 1 // January
+		day        int = 1
 		hour       int
 		min        int
 		sec        int
@@ -959,7 +814,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 		}
 		if std == 0 {
 			if len(value) != 0 {
-				return Time{}, &ParseError{alayout, avalue, "", value, ": extra text: " + quote(value)}
+				return Time{}, &ParseError{alayout, avalue, "", value, ": extra text: " + value}
 			}
 			break
 		}
@@ -971,12 +826,9 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 				err = errBad
 				break
 			}
-			hold := value
 			p, value = value[0:2], value[2:]
 			year, err = atoi(p)
-			if err != nil {
-				value = hold
-			} else if year >= 69 { // Unix time starts Dec 31 1969 in some time zones
+			if year >= 69 { // Unix time starts Dec 31 1969 in some time zones
 				year += 1900
 			} else {
 				year += 2000
@@ -996,7 +848,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 			month++
 		case stdNumMonth, stdZeroMonth:
 			month, value, err = getnum(value, std == stdZeroMonth)
-			if err == nil && (month <= 0 || 12 < month) {
+			if month <= 0 || 12 < month {
 				rangeErrString = "month"
 			}
 		case stdWeekDay:
@@ -1009,17 +861,10 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 				value = value[1:]
 			}
 			day, value, err = getnum(value, std == stdZeroDay)
-			// Note that we allow any one- or two-digit day here.
-			// The month, day, year combination is validated after we've completed parsing.
-		case stdUnderYearDay, stdZeroYearDay:
-			for i := 0; i < 2; i++ {
-				if std == stdUnderYearDay && len(value) > 0 && value[0] == ' ' {
-					value = value[1:]
-				}
+			if day < 0 {
+				// Note that we allow any one- or two-digit day here.
+				rangeErrString = "day"
 			}
-			yday, value, err = getnum3(value, std == stdZeroYearDay)
-			// Note that we allow any one-, two-, or three-digit year-day here.
-			// The year-day, year combination is validated after we've completed parsing.
 		case stdHour:
 			hour, value, err = getnum(value, false)
 			if hour < 0 || 24 <= hour {
@@ -1043,7 +888,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 			}
 			// Special case: do we have a fractional second but no
 			// fractional second in the format?
-			if len(value) >= 2 && commaOrPeriod(value[0]) && isDigit(value, 1) {
+			if len(value) >= 2 && value[0] == '.' && isDigit(value, 1) {
 				_, std, _ = nextStdChunk(layout)
 				std &= stdMask
 				if std == stdFracSecond0 || std == stdFracSecond9 {
@@ -1173,7 +1018,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 			value = value[ndigit:]
 
 		case stdFracSecond9:
-			if len(value) < 2 || !commaOrPeriod(value[0]) || value[1] < '0' || '9' < value[1] {
+			if len(value) < 2 || value[0] != '.' || value[1] < '0' || '9' < value[1] {
 				// Fractional second omitted.
 				break
 			}
@@ -1199,47 +1044,6 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 		hour = 0
 	}
 
-	// Convert yday to day, month.
-	if yday >= 0 {
-		var d int
-		var m int
-		if isLeap(year) {
-			if yday == 31+29 {
-				m = int(February)
-				d = 29
-			} else if yday > 31+29 {
-				yday--
-			}
-		}
-		if yday < 1 || yday > 365 {
-			return Time{}, &ParseError{alayout, avalue, "", value, ": day-of-year out of range"}
-		}
-		if m == 0 {
-			m = (yday-1)/31 + 1
-			if int(daysBefore[m]) < yday {
-				m++
-			}
-			d = yday - int(daysBefore[m-1])
-		}
-		// If month, day already seen, yday's m, d must match.
-		// Otherwise, set them from m, d.
-		if month >= 0 && month != m {
-			return Time{}, &ParseError{alayout, avalue, "", value, ": day-of-year does not match month"}
-		}
-		month = m
-		if day >= 0 && day != d {
-			return Time{}, &ParseError{alayout, avalue, "", value, ": day-of-year does not match day"}
-		}
-		day = d
-	} else {
-		if month < 0 {
-			month = int(January)
-		}
-		if day < 0 {
-			day = 1
-		}
-	}
-
 	// Validate the day of the month.
 	if day < 1 || day > daysIn(Month(month), year) {
 		return Time{}, &ParseError{alayout, avalue, "", value, ": day out of range"}
@@ -1255,7 +1059,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 
 		// Look for local zone with the given offset.
 		// If that zone was in effect at the given time, use it.
-		name, offset, _, _, _ := local.lookup(t.unixSec())
+		name, offset, _, _ := local.lookup(t.unixSec())
 		if offset == zoneOffset && (zoneName == "" || name == zoneName) {
 			t.setLoc(local)
 			return t, nil
@@ -1382,12 +1186,8 @@ func parseSignedOffset(value string) int {
 	return len(value) - len(rem)
 }
 
-func commaOrPeriod(b byte) bool {
-	return b == '.' || b == ','
-}
-
 func parseNanoseconds(value string, nbytes int) (ns int, rangeErrString string, err error) {
-	if !commaOrPeriod(value[0]) {
+	if value[0] != '.' {
 		err = errBad
 		return
 	}
@@ -1497,7 +1297,7 @@ func ParseDuration(s string) (Duration, error) {
 		return 0, nil
 	}
 	if s == "" {
-		return 0, errors.New("time: invalid duration " + quote(orig))
+		return 0, errors.New("time: invalid duration " + orig)
 	}
 	for s != "" {
 		var (
@@ -1509,13 +1309,13 @@ func ParseDuration(s string) (Duration, error) {
 
 		// The next character must be [0-9.]
 		if !(s[0] == '.' || '0' <= s[0] && s[0] <= '9') {
-			return 0, errors.New("time: invalid duration " + quote(orig))
+			return 0, errors.New("time: invalid duration " + orig)
 		}
 		// Consume [0-9]*
 		pl := len(s)
 		v, s, err = leadingInt(s)
 		if err != nil {
-			return 0, errors.New("time: invalid duration " + quote(orig))
+			return 0, errors.New("time: invalid duration " + orig)
 		}
 		pre := pl != len(s) // whether we consumed anything before a period
 
@@ -1529,7 +1329,7 @@ func ParseDuration(s string) (Duration, error) {
 		}
 		if !pre && !post {
 			// no digits (e.g. ".s" or "-.s")
-			return 0, errors.New("time: invalid duration " + quote(orig))
+			return 0, errors.New("time: invalid duration " + orig)
 		}
 
 		// Consume unit.
@@ -1541,17 +1341,17 @@ func ParseDuration(s string) (Duration, error) {
 			}
 		}
 		if i == 0 {
-			return 0, errors.New("time: missing unit in duration " + quote(orig))
+			return 0, errors.New("time: missing unit in duration " + orig)
 		}
 		u := s[:i]
 		s = s[i:]
 		unit, ok := unitMap[u]
 		if !ok {
-			return 0, errors.New("time: unknown unit " + quote(u) + " in duration " + quote(orig))
+			return 0, errors.New("time: unknown unit " + u + " in duration " + orig)
 		}
 		if v > (1<<63-1)/unit {
 			// overflow
-			return 0, errors.New("time: invalid duration " + quote(orig))
+			return 0, errors.New("time: invalid duration " + orig)
 		}
 		v *= unit
 		if f > 0 {
@@ -1560,13 +1360,13 @@ func ParseDuration(s string) (Duration, error) {
 			v += int64(float64(f) * (float64(unit) / scale))
 			if v < 0 {
 				// overflow
-				return 0, errors.New("time: invalid duration " + quote(orig))
+				return 0, errors.New("time: invalid duration " + orig)
 			}
 		}
 		d += v
 		if d < 0 {
 			// overflow
-			return 0, errors.New("time: invalid duration " + quote(orig))
+			return 0, errors.New("time: invalid duration " + orig)
 		}
 	}
 

@@ -1,6 +1,6 @@
 /* Routines required for instrumenting a program.  */
 /* Compile this one with gcc.  */
-/* Copyright (C) 1989-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -28,6 +28,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #if defined(inhibit_libc)
 
+#ifdef L_gcov_flush
+void __gcov_flush (void) {}
+#endif
+
 #ifdef L_gcov_reset
 void __gcov_reset (void) {}
 #endif
@@ -38,19 +42,29 @@ void __gcov_dump (void) {}
 
 #else
 
-extern __gthread_mutex_t __gcov_mx ATTRIBUTE_HIDDEN;
+/* Some functions we want to bind in this dynamic object, but have an
+   overridable global alias.  Unfortunately not all targets support
+   aliases, so we just have a forwarding function.  That'll be tail
+   called, so the cost is a single jump instruction.*/
 
-#ifdef L_gcov_lock_unlock
+#define ALIAS_void_fn(src,dst) \
+  void dst (void)	    \
+  { src (); }
+
+extern __gthread_mutex_t __gcov_flush_mx ATTRIBUTE_HIDDEN;
+extern __gthread_mutex_t __gcov_flush_mx ATTRIBUTE_HIDDEN;
+
+#ifdef L_gcov_flush
 #ifdef __GTHREAD_MUTEX_INIT
-__gthread_mutex_t __gcov_mx = __GTHREAD_MUTEX_INIT;
+__gthread_mutex_t __gcov_flush_mx = __GTHREAD_MUTEX_INIT;
 #define init_mx_once()
 #else
-__gthread_mutex_t __gcov_mx;
+__gthread_mutex_t __gcov_flush_mx;
 
 static void
 init_mx (void)
 {
-  __GTHREAD_MUTEX_INIT_FUNCTION (&__gcov_mx);
+  __GTHREAD_MUTEX_INIT_FUNCTION (&__gcov_flush_mx);
 }
 
 static void
@@ -61,23 +75,23 @@ init_mx_once (void)
 }
 #endif
 
-/* Lock critical section for __gcov_dump and __gcov_reset functions.  */
+/* Called before fork or exec - write out profile information gathered so
+   far and reset it to zero.  This avoids duplication or loss of the
+   profile information gathered so far.  */
 
 void
-__gcov_lock (void)
+__gcov_flush (void)
 {
   init_mx_once ();
-  __gthread_mutex_lock (&__gcov_mx);
+  __gthread_mutex_lock (&__gcov_flush_mx);
+
+  __gcov_dump_int ();
+  __gcov_reset_int ();
+
+  __gthread_mutex_unlock (&__gcov_flush_mx);
 }
 
-/* Unlock critical section for __gcov_dump and __gcov_reset functions.  */
-
-void
-__gcov_unlock (void)
-{
-  __gthread_mutex_unlock (&__gcov_mx);
-}
-#endif
+#endif /* L_gcov_flush */
 
 #ifdef L_gcov_reset
 
@@ -130,17 +144,7 @@ __gcov_reset_int (void)
     }
 }
 
-/* Exported function __gcov_reset.  */
-
-void
-__gcov_reset (void)
-{
-  __gcov_lock ();
-
-  __gcov_reset_int ();
-
-  __gcov_unlock ();
-}
+ALIAS_void_fn (__gcov_reset_int, __gcov_reset);
 
 #endif /* L_gcov_reset */
 
@@ -160,35 +164,22 @@ __gcov_dump_int (void)
     __gcov_dump_one (root);
 }
 
-/* Exported function __gcov_dump.  */
-
-void
-__gcov_dump (void)
-{
-  __gcov_lock ();
-
-  __gcov_dump_int ();
-
-  __gcov_unlock ();
-}
+ALIAS_void_fn (__gcov_dump_int, __gcov_dump);
 
 #endif /* L_gcov_dump */
 
 #ifdef L_gcov_fork
-/* A wrapper for the fork function.  We reset counters in the child
-   so that they are not counted twice.  */
+/* A wrapper for the fork function.  Flushes the accumulated profiling data, so
+   that they are not counted twice.  */
 
 pid_t
 __gcov_fork (void)
 {
   pid_t pid;
+  __gcov_flush ();
   pid = fork ();
   if (pid == 0)
-    {
-      __GTHREAD_MUTEX_INIT_FUNCTION (&__gcov_mx);
-      /* We do not need locking as we are the only thread in the child.  */
-      __gcov_reset_int ();
-    }
+    __GTHREAD_MUTEX_INIT_FUNCTION (&__gcov_flush_mx);
   return pid;
 }
 #endif
@@ -204,8 +195,7 @@ __gcov_execl (const char *path, char *arg, ...)
   unsigned i, length;
   char **args;
 
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
+  __gcov_flush ();
 
   va_start (ap, arg);
   va_copy (aq, ap);
@@ -221,10 +211,7 @@ __gcov_execl (const char *path, char *arg, ...)
     args[i] = va_arg (aq, char *);
   va_end (aq);
 
-  int ret = execv (path, args);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  return execv (path, args);
 }
 #endif
 
@@ -239,8 +226,7 @@ __gcov_execlp (const char *path, char *arg, ...)
   unsigned i, length;
   char **args;
 
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
+  __gcov_flush ();
 
   va_start (ap, arg);
   va_copy (aq, ap);
@@ -256,10 +242,7 @@ __gcov_execlp (const char *path, char *arg, ...)
     args[i] = va_arg (aq, char *);
   va_end (aq);
 
-  int ret = execvp (path, args);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  return execvp (path, args);
 }
 #endif
 
@@ -275,8 +258,7 @@ __gcov_execle (const char *path, char *arg, ...)
   char **args;
   char **envp;
 
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
+  __gcov_flush ();
 
   va_start (ap, arg);
   va_copy (aq, ap);
@@ -293,10 +275,7 @@ __gcov_execle (const char *path, char *arg, ...)
   envp = va_arg (aq, char **);
   va_end (aq);
 
-  int ret = execve (path, args, envp);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  return execve (path, args, envp);
 }
 #endif
 
@@ -307,12 +286,8 @@ __gcov_execle (const char *path, char *arg, ...)
 int
 __gcov_execv (const char *path, char *const argv[])
 {
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
-  int ret = execv (path, argv);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  __gcov_flush ();
+  return execv (path, argv);
 }
 #endif
 
@@ -323,12 +298,8 @@ __gcov_execv (const char *path, char *const argv[])
 int
 __gcov_execvp (const char *path, char *const argv[])
 {
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
-  int ret = execvp (path, argv);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  __gcov_flush ();
+  return execvp (path, argv);
 }
 #endif
 
@@ -339,12 +310,8 @@ __gcov_execvp (const char *path, char *const argv[])
 int
 __gcov_execve (const char *path, char *const argv[], char *const envp[])
 {
-  /* Dump counters only, they will be lost after exec.  */
-  __gcov_dump ();
-  int ret = execve (path, argv, envp);
-  /* We reach this code only when execv fails, reset counter then here.  */
-  __gcov_reset ();
-  return ret;
+  __gcov_flush ();
+  return execve (path, argv, envp);
 }
 #endif
 #endif /* inhibit_libc */

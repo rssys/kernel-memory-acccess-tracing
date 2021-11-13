@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 2000-2021, AdaCore                     --
+--                     Copyright (C) 2000-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -222,17 +222,15 @@ package body GNAT.Expect is
       Next_Filter    : Filter_List;
 
    begin
-      Close_Input (Descriptor);
+      if Descriptor.Input_Fd /= Invalid_FD then
+         Close (Descriptor.Input_Fd);
+      end if;
 
-      if Descriptor.Error_Fd /= Descriptor.Output_Fd
-        and then Descriptor.Error_Fd /= Invalid_FD
-      then
+      if Descriptor.Error_Fd /= Descriptor.Output_Fd then
          Close (Descriptor.Error_Fd);
       end if;
 
-      if Descriptor.Output_Fd /= Invalid_FD then
-         Close (Descriptor.Output_Fd);
-      end if;
+      Close (Descriptor.Output_Fd);
 
       --  ??? Should have timeouts for different signals
 
@@ -268,27 +266,6 @@ package body GNAT.Expect is
    begin
       Close (Descriptor, Status);
    end Close;
-
-   -----------------
-   -- Close_Input --
-   -----------------
-
-   procedure Close_Input (Pid : in out Process_Descriptor) is
-   begin
-      if Pid.Input_Fd /= Invalid_FD then
-         Close (Pid.Input_Fd);
-      end if;
-
-      if Pid.Output_Fd = Pid.Input_Fd then
-         Pid.Output_Fd := Invalid_FD;
-      end if;
-
-      if Pid.Error_Fd = Pid.Input_Fd then
-         Pid.Error_Fd := Invalid_FD;
-      end if;
-
-      Pid.Input_Fd := Invalid_FD;
-   end Close_Input;
 
    ------------
    -- Expect --
@@ -653,9 +630,7 @@ package body GNAT.Expect is
 
    begin
       for J in Descriptors'Range loop
-         if Descriptors (J) /= null
-           and then Descriptors (J).Output_Fd /= Invalid_FD
-         then
+         if Descriptors (J) /= null then
             Fds (Fds'First + Fds_Count) := Descriptors (J).Output_Fd;
             Fds_To_Descriptor (Fds'First + Fds_Count) := J;
             Fds_Count := Fds_Count + 1;
@@ -669,14 +644,6 @@ package body GNAT.Expect is
          end if;
       end loop;
 
-      if Fds_Count = 0 then
-         --  There are no descriptors to monitor, it means that process died.
-
-         Result := Expect_Process_Died;
-
-         return;
-      end if;
-
       declare
          Buffer : aliased String (1 .. Buffer_Size);
          --  Buffer used for input. This is allocated only once, not for
@@ -689,17 +656,8 @@ package body GNAT.Expect is
          --  Loop until we match or we have a timeout
 
          loop
-            --  Poll may be interrupted on Linux by a signal and need to be
-            --  repeated. We don't want to check for errno = EINTER, so just
-            --  attempt to call Poll a few times.
-
-            for J in 1 .. 3 loop
-               Num_Descriptors :=
-                 Poll
-                   (Fds'Address, Fds_Count, Timeout, D'Access, Is_Set'Address);
-
-               exit when Num_Descriptors /= -1;
-            end loop;
+            Num_Descriptors :=
+              Poll (Fds'Address, Fds_Count, Timeout, D'Access, Is_Set'Address);
 
             case Num_Descriptors is
 
@@ -709,7 +667,8 @@ package body GNAT.Expect is
                   Result := Expect_Internal_Error;
 
                   if D /= 0 then
-                     Close_Input (Descriptors (D).all);
+                     Close (Descriptors (D).Input_Fd);
+                     Descriptors (D).Input_Fd := Invalid_FD;
                   end if;
 
                   return;
@@ -733,24 +692,18 @@ package body GNAT.Expect is
                            Buffer_Size := 4096;
                         end if;
 
-                        --  Read may be interrupted on Linux by a signal and
-                        --  need to be repeated. We don't want to check for
-                        --  errno = EINTER, so just attempt to read a few
-                        --  times.
-
-                        for J in 1 .. 3 loop
-                           N := Read (Descriptors (D).Output_Fd,
-                                      Buffer'Address, Buffer_Size);
-
-                           exit when N > 0;
-                        end loop;
+                        N := Read (Descriptors (D).Output_Fd, Buffer'Address,
+                                   Buffer_Size);
 
                         --  Error or End of file
 
                         if N <= 0 then
-                           Close_Input (Descriptors (D).all);
-                           Result := Expect_Process_Died;
+                           --  ??? Note that ddd tries again up to three times
+                           --  in that case. See LiterateA.C:174
 
+                           Close (Descriptors (D).Input_Fd);
+                           Descriptors (D).Input_Fd := Invalid_FD;
+                           Result := Expect_Process_Died;
                            return;
 
                         else
@@ -972,7 +925,8 @@ package body GNAT.Expect is
          Send (Process, Input);
       end if;
 
-      Close_Input (Process);
+      Close (Process.Input_Fd);
+      Process.Input_Fd := Invalid_FD;
 
       declare
          Result : Expect_Match;
@@ -1181,12 +1135,6 @@ package body GNAT.Expect is
          Set_Up_Child_Communications
            (Descriptor, Pipe1, Pipe2, Pipe3, Command_With_Path.all,
             C_Arg_List'Address);
-
-         --  On Windows systems we need to release memory taken for Arg_List
-
-         for A of Arg_List loop
-            Free (A);
-         end loop;
       end if;
 
       Free (Command_With_Path);

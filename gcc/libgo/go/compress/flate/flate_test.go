@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"io"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -242,7 +243,7 @@ func TestStreams(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err = io.ReadAll(NewReader(bytes.NewReader(data)))
+		data, err = ioutil.ReadAll(NewReader(bytes.NewReader(data)))
 		if tc.want == "fail" {
 			if err == nil {
 				t.Errorf("#%d (%s): got nil error, want non-nil", i, tc.desc)
@@ -265,7 +266,7 @@ func TestTruncatedStreams(t *testing.T) {
 
 	for i := 0; i < len(data)-1; i++ {
 		r := NewReader(strings.NewReader(data[:i]))
-		_, err := io.Copy(io.Discard, r)
+		_, err := io.Copy(ioutil.Discard, r)
 		if err != io.ErrUnexpectedEOF {
 			t.Errorf("io.Copy(%d) on truncated stream: got %v, want %v", i, err, io.ErrUnexpectedEOF)
 		}

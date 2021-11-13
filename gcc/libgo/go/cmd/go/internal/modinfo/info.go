@@ -10,20 +10,18 @@ import "time"
 // and the fields are documented in the help text in ../list/list.go
 
 type ModulePublic struct {
-	Path       string        `json:",omitempty"` // module path
-	Version    string        `json:",omitempty"` // module version
-	Versions   []string      `json:",omitempty"` // available module versions
-	Replace    *ModulePublic `json:",omitempty"` // replaced by this module
-	Time       *time.Time    `json:",omitempty"` // time version was created
-	Update     *ModulePublic `json:",omitempty"` // available update (with -u)
-	Main       bool          `json:",omitempty"` // is this the main module?
-	Indirect   bool          `json:",omitempty"` // module is only indirectly needed by main module
-	Dir        string        `json:",omitempty"` // directory holding local copy of files, if any
-	GoMod      string        `json:",omitempty"` // path to go.mod file describing module, if any
-	GoVersion  string        `json:",omitempty"` // go version used in module
-	Retracted  []string      `json:",omitempty"` // retraction information, if any (with -retracted or -u)
-	Deprecated string        `json:",omitempty"` // deprecation message, if any (with -u)
-	Error      *ModuleError  `json:",omitempty"` // error loading module
+	Path      string        `json:",omitempty"` // module path
+	Version   string        `json:",omitempty"` // module version
+	Versions  []string      `json:",omitempty"` // available module versions
+	Replace   *ModulePublic `json:",omitempty"` // replaced by this module
+	Time      *time.Time    `json:",omitempty"` // time version was created
+	Update    *ModulePublic `json:",omitempty"` // available update (with -u)
+	Main      bool          `json:",omitempty"` // is this the main module?
+	Indirect  bool          `json:",omitempty"` // module is only indirectly needed by main module
+	Dir       string        `json:",omitempty"` // directory holding local copy of files, if any
+	GoMod     string        `json:",omitempty"` // path to go.mod file describing module, if any
+	Error     *ModuleError  `json:",omitempty"` // error loading module
+	GoVersion string        `json:",omitempty"` // go version used in module
 }
 
 type ModuleError struct {
@@ -32,33 +30,19 @@ type ModuleError struct {
 
 func (m *ModulePublic) String() string {
 	s := m.Path
-	versionString := func(mm *ModulePublic) string {
-		v := mm.Version
-		if len(mm.Retracted) == 0 {
-			return v
-		}
-		return v + " (retracted)"
-	}
-
 	if m.Version != "" {
-		s += " " + versionString(m)
+		s += " " + m.Version
 		if m.Update != nil {
-			s += " [" + versionString(m.Update) + "]"
+			s += " [" + m.Update.Version + "]"
 		}
-	}
-	if m.Deprecated != "" {
-		s += " (deprecated)"
 	}
 	if m.Replace != nil {
 		s += " => " + m.Replace.Path
 		if m.Replace.Version != "" {
-			s += " " + versionString(m.Replace)
+			s += " " + m.Replace.Version
 			if m.Replace.Update != nil {
-				s += " [" + versionString(m.Replace.Update) + "]"
+				s += " [" + m.Replace.Update.Version + "]"
 			}
-		}
-		if m.Replace.Deprecated != "" {
-			s += " (deprecated)"
 		}
 	}
 	return s

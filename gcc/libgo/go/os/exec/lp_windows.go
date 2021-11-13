@@ -6,7 +6,6 @@ package exec
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,7 @@ func chkStat(file string) error {
 		return err
 	}
 	if d.IsDir() {
-		return fs.ErrPermission
+		return os.ErrPermission
 	}
 	return nil
 }
@@ -48,7 +47,7 @@ func findExecutable(file string, exts []string) (string, error) {
 			return f, nil
 		}
 	}
-	return "", fs.ErrNotExist
+	return "", os.ErrNotExist
 }
 
 // LookPath searches for an executable named file in the

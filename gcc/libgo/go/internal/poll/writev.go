@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd
-// +build darwin dragonfly freebsd illumos linux netbsd openbsd
+// +build darwin dragonfly freebsd linux netbsd openbsd
 
 package poll
 
@@ -39,7 +38,7 @@ func (fd *FD) Writev(v *[][]byte) (int64, error) {
 			if len(chunk) == 0 {
 				continue
 			}
-			iovecs = append(iovecs, newIovecWithBase(&chunk[0]))
+			iovecs = append(iovecs, syscall.Iovec{Base: &chunk[0]})
 			if fd.IsStream && len(chunk) > 1<<30 {
 				iovecs[len(iovecs)-1].SetLen(1 << 30)
 				break // continue chunk on next writev
@@ -52,10 +51,7 @@ func (fd *FD) Writev(v *[][]byte) (int64, error) {
 		if len(iovecs) == 0 {
 			break
 		}
-		if fd.iovecs == nil {
-			fd.iovecs = new([]syscall.Iovec)
-		}
-		*fd.iovecs = iovecs // cache
+		fd.iovecs = &iovecs // cache
 
 		var wrote uintptr
 		wrote, err = writev(fd.Sysfd, iovecs)
@@ -65,14 +61,8 @@ func (fd *FD) Writev(v *[][]byte) (int64, error) {
 		TestHookDidWritev(int(wrote))
 		n += int64(wrote)
 		consume(v, int64(wrote))
-		for i := range iovecs {
-			iovecs[i] = syscall.Iovec{}
-		}
 		if err != nil {
-			if err == syscall.EINTR {
-				continue
-			}
-			if err == syscall.EAGAIN {
+			if err.(syscall.Errno) == syscall.EAGAIN {
 				if err = fd.pd.waitWrite(fd.isFile); err == nil {
 					continue
 				}

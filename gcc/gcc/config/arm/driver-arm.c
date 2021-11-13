@@ -1,5 +1,5 @@
 /* Subroutines for the gcc driver.
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -61,7 +61,6 @@ host_detect_local_cpu (int argc, const char **argv)
   FILE *f = NULL;
   bool arch;
   const struct vendor_cpu *cpu_table = NULL;
-  char *fcpu_info = NULL;
 
   if (argc < 1)
     goto not_found;
@@ -70,19 +69,14 @@ host_detect_local_cpu (int argc, const char **argv)
   if (!arch && strcmp (argv[0], "cpu") != 0 && strcmp (argv[0], "tune"))
     goto not_found;
 
-  fcpu_info = getenv ("GCC_CPUINFO");
-  if (fcpu_info)
-    f = fopen (fcpu_info, "r");
-  else
-    f = fopen ("/proc/cpuinfo", "r");
-
+  f = fopen ("/proc/cpuinfo", "r");
   if (f == NULL)
     goto not_found;
 
   while (fgets (buf, sizeof (buf), f) != NULL)
     {
       /* Find the vendor table associated with this implementer.  */
-      if (startswith (buf, "CPU implementer"))
+      if (strncmp (buf, "CPU implementer", sizeof ("CPU implementer") - 1) == 0)
 	{
 	  int i;
 	  for (i = 0; vendors_table[i].vendor_no != NULL; i++)
@@ -94,7 +88,7 @@ host_detect_local_cpu (int argc, const char **argv)
 	}
 
       /* Detect arch/cpu.  */
-      if (startswith (buf, "CPU part"))
+      if (strncmp (buf, "CPU part", sizeof ("CPU part") - 1) == 0)
 	{
 	  int i;
 

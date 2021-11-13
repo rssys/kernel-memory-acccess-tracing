@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // https://issues.dlang.org/show_bug.cgi?id=5305
 
 import std.math;

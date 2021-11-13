@@ -1,5 +1,5 @@
 /* Generate the machine mode enumeration and associated tables.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -53,7 +53,6 @@ struct mode_data
 
   const char *name;		/* printable mode name -- SI, not SImode */
   enum mode_class cl;		/* this mode class */
-  unsigned int order;		/* top-level sorting order */
   unsigned int precision;	/* size in bits, equiv to TYPE_PRECISION */
   unsigned int bytesize;	/* storage size in addressable units */
   unsigned int ncomponents;	/* number of subunits */
@@ -86,7 +85,7 @@ static struct mode_data *void_mode;
 
 static const struct mode_data blank_mode = {
   0, "<unknown>", MAX_MODE_CLASS,
-  0, -1U, -1U, -1U, -1U,
+  -1U, -1U, -1U, -1U,
   0, 0, 0, 0, 0, 0,
   "<unknown>", 0, 0, 0, 0, false, false, 0
 };
@@ -358,14 +357,6 @@ complete_mode (struct mode_data *m)
       m->component = 0;
       break;
 
-    case MODE_OPAQUE:
-      /* Opaque modes have size and precision.  */
-      validate_mode (m, OPTIONAL, SET, UNSET, UNSET, UNSET);
-
-      m->ncomponents = 1;
-      m->component = 0;
-      break;
-
     case MODE_PARTIAL_INT:
       /* A partial integer mode uses ->component to say what the
 	 corresponding full-size integer mode is, and may also
@@ -493,15 +484,14 @@ make_complex_modes (enum mode_class cl,
     }
 }
 
-/* For all modes in class CL, construct vector modes of width WIDTH,
-   having as many components as necessary.  ORDER is the sorting order
-   of the mode, with smaller numbers indicating a higher priority.  */
-#define VECTOR_MODES_WITH_PREFIX(PREFIX, C, W, ORDER) \
-  make_vector_modes (MODE_##C, #PREFIX, W, ORDER, __FILE__, __LINE__)
-#define VECTOR_MODES(C, W) VECTOR_MODES_WITH_PREFIX (V, C, W, 0)
+/* For all modes in class CL, construct vector modes of width
+   WIDTH, having as many components as necessary.  */
+#define VECTOR_MODES_WITH_PREFIX(PREFIX, C, W) \
+  make_vector_modes (MODE_##C, #PREFIX, W, __FILE__, __LINE__)
+#define VECTOR_MODES(C, W) VECTOR_MODES_WITH_PREFIX (V, C, W)
 static void ATTRIBUTE_UNUSED
 make_vector_modes (enum mode_class cl, const char *prefix, unsigned int width,
-		   unsigned int order, const char *file, unsigned int line)
+		   const char *file, unsigned int line)
 {
   struct mode_data *m;
   struct mode_data *v;
@@ -540,7 +530,6 @@ make_vector_modes (enum mode_class cl, const char *prefix, unsigned int width,
 	}
 
       v = new_mode (vclass, xstrdup (buf), file, line);
-      v->order = order;
       v->component = m;
       v->ncomponents = ncomponents;
     }
@@ -592,20 +581,6 @@ make_int_mode (const char *name,
 	       const char *file, unsigned int line)
 {
   struct mode_data *m = new_mode (MODE_INT, name, file, line);
-  m->bytesize = bytesize;
-  m->precision = precision;
-}
-
-#define OPAQUE_MODE(N, B)			\
-  make_opaque_mode (#N, -1U, B, __FILE__, __LINE__)
-
-static void ATTRIBUTE_UNUSED
-make_opaque_mode (const char *name,
-		  unsigned int precision,
-		  unsigned int bytesize,
-		  const char *file, unsigned int line)
-{
-  struct mode_data *m = new_mode (MODE_OPAQUE, name, file, line);
   m->bytesize = bytesize;
   m->precision = precision;
 }
@@ -749,15 +724,12 @@ make_partial_integer_mode (const char *base, const char *name,
 
 /* A single vector mode can be specified by naming its component
    mode and the number of components.  */
-#define VECTOR_MODE_WITH_PREFIX(PREFIX, C, M, N, ORDER) \
-  make_vector_mode (MODE_##C, #PREFIX, #M, N, ORDER, __FILE__, __LINE__);
-#define VECTOR_MODE(C, M, N) VECTOR_MODE_WITH_PREFIX(V, C, M, N, 0);
+#define VECTOR_MODE(C, M, N) \
+  make_vector_mode (MODE_##C, #M, N, __FILE__, __LINE__);
 static void ATTRIBUTE_UNUSED
 make_vector_mode (enum mode_class bclass,
-		  const char *prefix,
 		  const char *base,
 		  unsigned int ncomponents,
-		  unsigned int order,
 		  const char *file, unsigned int line)
 {
   struct mode_data *v;
@@ -781,7 +753,7 @@ make_vector_mode (enum mode_class bclass,
       return;
     }
 
-  if ((size_t)snprintf (namebuf, sizeof namebuf, "%s%u%s", prefix,
+  if ((size_t)snprintf (namebuf, sizeof namebuf, "V%u%s",
 			ncomponents, base) >= sizeof namebuf)
     {
       error ("%s:%d: mode name \"%s\" is too long",
@@ -790,7 +762,6 @@ make_vector_mode (enum mode_class bclass,
     }
 
   v = new_mode (vclass, xstrdup (namebuf), file, line);
-  v->order = order;
   v->ncomponents = ncomponents;
   v->component = component;
 }
@@ -860,11 +831,6 @@ cmp_modes (const void *a, const void *b)
 {
   const struct mode_data *const m = *(const struct mode_data *const*)a;
   const struct mode_data *const n = *(const struct mode_data *const*)b;
-
-  if (m->order > n->order)
-    return 1;
-  else if (m->order < n->order)
-    return -1;
 
   if (m->bytesize > n->bytesize)
     return 1;
@@ -1316,19 +1282,6 @@ enum machine_mode\n{");
   NUM_MACHINE_MODES = MAX_MACHINE_MODE\n\
 };\n");
 
-  /* Define a NUM_* macro for each mode class, giving the number of modes
-     in the class.  */
-  for (c = 0; c < MAX_MODE_CLASS; c++)
-    {
-      printf ("#define NUM_%s ", mode_class_names[c]);
-      if (modes[c])
-	printf ("(MAX_%s - MIN_%s + 1)\n", mode_class_names[c],
-		mode_class_names[c]);
-      else
-	printf ("0\n");
-    }
-  printf ("\n");
-
   /* I can't think of a better idea, can you?  */
   printf ("#define CONST_MODE_NUNITS%s\n", adj_nunits ? "" : " const");
   printf ("#define CONST_MODE_PRECISION%s\n", adj_nunits ? "" : " const");
@@ -1341,7 +1294,6 @@ enum machine_mode\n{");
 #endif
   printf ("#define CONST_MODE_IBIT%s\n", adj_ibit ? "" : " const");
   printf ("#define CONST_MODE_FBIT%s\n", adj_fbit ? "" : " const");
-  printf ("#define CONST_MODE_MASK%s\n", adj_nunits ? "" : " const");
   emit_max_int ();
 
   for_all_modes (c, m)
@@ -1579,8 +1531,8 @@ emit_mode_mask (void)
   int c;
   struct mode_data *m;
 
-  print_maybe_const_decl ("%sunsigned HOST_WIDE_INT", "mode_mask_array",
-			  "NUM_MACHINE_MODES", adj_nunits);
+  print_decl ("unsigned HOST_WIDE_INT", "mode_mask_array",
+	      "NUM_MACHINE_MODES");
   puts ("\
 #define MODE_MASK(m)                          \\\n\
   ((m) >= HOST_BITS_PER_WIDE_INT)             \\\n\
@@ -1737,20 +1689,6 @@ emit_mode_adjustments (void)
   struct mode_adjust *a;
   struct mode_data *m;
 
-  if (adj_nunits)
-    printf ("\n"
-	    "void\n"
-	    "adjust_mode_mask (machine_mode mode)\n"
-	    "{\n"
-	    "  unsigned int precision;\n"
-	    "  if (GET_MODE_PRECISION (mode).is_constant (&precision)\n"
-	    "      && precision < HOST_BITS_PER_WIDE_INT)\n"
-	    "    mode_mask_array[mode] = (HOST_WIDE_INT_1U << precision) - 1;"
-	    "\n"
-	    "  else\n"
-	    "    mode_mask_array[mode] = HOST_WIDE_INT_M1U;\n"
-	    "}\n");
-
   puts ("\
 \nvoid\
 \ninit_adjust_machine_modes (void)\
@@ -1768,11 +1706,10 @@ emit_mode_adjustments (void)
       printf ("    int old_factor = vector_element_size"
 	      " (mode_precision[E_%smode], mode_nunits[E_%smode]);\n",
 	      m->name, m->name);
-      printf ("    mode_precision[E_%smode] = ps * old_factor;\n", m->name);
+      printf ("    mode_precision[E_%smode] = ps * old_factor;\n",  m->name);
       printf ("    mode_size[E_%smode] = exact_div (mode_precision[E_%smode],"
 	      " BITS_PER_UNIT);\n", m->name, m->name);
       printf ("    mode_nunits[E_%smode] = ps;\n", m->name);
-      printf ("    adjust_mode_mask (E_%smode);\n", m->name);
       printf ("  }\n");
     }
 

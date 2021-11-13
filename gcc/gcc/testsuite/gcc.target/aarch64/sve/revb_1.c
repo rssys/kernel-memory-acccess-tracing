@@ -1,7 +1,9 @@
 /* { dg-do assemble { target aarch64_asm_sve_ok } } */
-/* { dg-options "-O -msve-vector-bits=256 --save-temps -mlittle-endian" } */
+/* { dg-options "-O -msve-vector-bits=256 --save-temps" } */
 
-typedef __INT8_TYPE__ vnx16qi __attribute__((vector_size (32)));
+#include <stdint.h>
+
+typedef int8_t vnx16qi __attribute__((vector_size (32)));
 
 #define MASK_2(X, Y) (X) ^ (Y), (X + 1) ^ (Y)
 #define MASK_4(X, Y) MASK_2 (X, Y), MASK_2 (X + 2, Y)

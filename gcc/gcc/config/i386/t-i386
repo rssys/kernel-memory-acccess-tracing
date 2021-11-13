@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2021 Free Software Foundation, Inc.
+# Copyright (C) 2008-2019 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -17,9 +17,7 @@
 # <http://www.gnu.org/licenses/>.
 
 OPTIONS_H_EXTRA += $(srcdir)/config/i386/stringop.def
-TM_H += $(srcdir)/config/i386/x86-tune.def \
-	$(srcdir)/common/config/i386/i386-cpuinfo.h \
-	$(srcdir)/config/i386/i386-isa.def
+TM_H += $(srcdir)/config/i386/x86-tune.def
 PASSES_EXTRA += $(srcdir)/config/i386/i386-passes.def
 
 i386-c.o: $(srcdir)/config/i386/i386-c.c
@@ -43,22 +41,6 @@ x86-tune-sched-core.o: $(srcdir)/config/i386/x86-tune-sched-core.c
 	  $(POSTCOMPILE)
 
 i386-d.o: $(srcdir)/config/i386/i386-d.c
-	$(COMPILE) $<
-	$(POSTCOMPILE)
-
-i386-options.o: $(srcdir)/config/i386/i386-options.c
-	$(COMPILE) $<
-	$(POSTCOMPILE)
-
-i386-builtins.o: $(srcdir)/config/i386/i386-builtins.c
-	$(COMPILE) $<
-	$(POSTCOMPILE)
-
-i386-expand.o: $(srcdir)/config/i386/i386-expand.c
-	$(COMPILE) $<
-	$(POSTCOMPILE)
-
-i386-features.o: $(srcdir)/config/i386/i386-features.c
 	$(COMPILE) $<
 	$(POSTCOMPILE)
 

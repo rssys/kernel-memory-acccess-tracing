@@ -1,7 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O0" } */
-/* { dg-additional-options "-fno-pic" { target { ! *-*-darwin* } } } */
-/* { dg-additional-options "-mdynamic-no-pic" { target { *-*-darwin* && ia32 } } } */
+/* { dg-options "-O0 -fno-pic" } */
 
 /* Verify that __attribute__((naked)) produces a naked function 
    that does not use ret to return but traps at the end.  */

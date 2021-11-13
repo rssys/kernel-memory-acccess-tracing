@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // PERMUTE_ARGS: -fPIC
 
 /* Test associative arrays */
@@ -512,7 +511,7 @@ int foo17()
         }catch(Error e){
             assert(e);
             return 0;
-        }catch(Throwable){
+        }catch{
             assert(0);
         }
         assert(0);

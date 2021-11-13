@@ -1,5 +1,5 @@
 // { dg-do compile }
-// { dg-options "-O2 -fdump-tree-optimized-vops -fno-inline-functions --param max-inline-insns-single=200" }
+// { dg-options "-O2 -fdump-tree-optimized-vops" }
 
 struct VBase;
 

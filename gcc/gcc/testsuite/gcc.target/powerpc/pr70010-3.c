@@ -1,6 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -maltivec -mno-vsx" } */
-/* { dg-require-effective-target powerpc_altivec_ok } */
+/* { dg-options "-O2 -mno-vsx" } */
 
 vector int c, a, b;
 

@@ -9,11 +9,11 @@ static void bar(int a, int *ptr)
 {
   do
   {
-    int b;
+    int b;   /* { dg-message "declared" } */
     if (b < 40) {
-      ptr[0] = b;
+      ptr[0] = b; /* { dg-warning "may be used uninitialized" } */
     }
-    b += 1; /* { dg-warning "is used uninitialized" } */
+    b += 1;
     ptr++;
   }
   while (--a != 0);

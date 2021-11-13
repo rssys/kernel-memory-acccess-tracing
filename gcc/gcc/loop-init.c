@@ -1,5 +1,5 @@
 /* Loop optimizer initialization routines and RTL loop optimization passes.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -33,7 +33,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa-loop-niter.h"
 #include "loop-unroll.h"
 #include "tree-scalar-evolution.h"
-#include "tree-cfgcleanup.h"
 
 
 /* Apply FLAGS to the loop state.  */
@@ -48,8 +47,7 @@ apply_loop_flags (unsigned flags)
 	 not work).  However, we avoid modifying cfg, which some
 	 passes may want.  */
       gcc_assert ((flags & ~(LOOPS_MAY_HAVE_MULTIPLE_LATCHES
-			     | LOOPS_HAVE_RECORDED_EXITS
-			     | LOOPS_HAVE_MARKED_IRREDUCIBLE_REGIONS)) == 0);
+			     | LOOPS_HAVE_RECORDED_EXITS)) == 0);
       loops_state_set (LOOPS_MAY_HAVE_MULTIPLE_LATCHES);
     }
   else
@@ -135,17 +133,12 @@ loop_optimizer_init (unsigned flags)
 /* Finalize loop structures.  */
 
 void
-loop_optimizer_finalize (struct function *fn, bool clean_loop_closed_phi)
+loop_optimizer_finalize (struct function *fn)
 {
+  struct loop *loop;
   basic_block bb;
 
   timevar_push (TV_LOOP_FINI);
-
-  if (clean_loop_closed_phi && loops_state_satisfies_p (fn, LOOP_CLOSED_SSA))
-    {
-      clean_up_loop_closed_phi (fn);
-      loops_state_clear (fn, LOOP_CLOSED_SSA);
-    }
 
   if (loops_state_satisfies_p (fn, LOOPS_HAVE_RECORDED_EXITS))
     release_recorded_exits (fn);
@@ -166,7 +159,7 @@ loop_optimizer_finalize (struct function *fn, bool clean_loop_closed_phi)
       goto loop_fini_done;
     }
 
-  for (auto loop : loops_list (fn, 0))
+  FOR_EACH_LOOP_FN (fn, loop, 0)
     free_simple_loop_desc (loop);
 
   /* Clean up.  */
@@ -201,7 +194,7 @@ fix_loop_structure (bitmap changed_bbs)
 {
   basic_block bb;
   int record_exits = 0;
-  class loop *loop;
+  struct loop *loop;
   unsigned old_nloops, i;
 
   timevar_push (TV_LOOP_INIT);
@@ -228,7 +221,7 @@ fix_loop_structure (bitmap changed_bbs)
      loops, so that when we remove the loops, we know that the loops inside
      are preserved, and do not waste time relinking loops that will be
      removed later.  */
-  for (auto loop : loops_list (cfun, LI_FROM_INNERMOST))
+  FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
     {
       /* Detect the case that the loop is no longer present even though
          it wasn't marked for removal.
@@ -244,7 +237,7 @@ fix_loop_structure (bitmap changed_bbs)
 
       while (loop->inner)
 	{
-	  class loop *ploop = loop->inner;
+	  struct loop *ploop = loop->inner;
 	  flow_loop_tree_node_remove (ploop);
 	  flow_loop_tree_node_add (loop_outer (loop), ploop);
 	}

@@ -2,24 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix
 // +build aix
 
 package runtime
 
-import (
-	"unsafe"
-)
-
-//extern sysconf
-func sysconf(int32) _C_long
+import "unsafe"
 
 type mOS struct {
 	waitsema uintptr // semaphore for parking on locks
-}
-
-func getProcID() uint64 {
-	return uint64(gettid())
 }
 
 //extern malloc
@@ -47,7 +37,7 @@ func clock_gettime(clock_id int64, timeout *timespec) int32
 
 //go:nosplit
 func semacreate(mp *m) {
-	if mp.waitsema != 0 {
+	if mp.mos.waitsema != 0 {
 		return
 	}
 
@@ -60,7 +50,7 @@ func semacreate(mp *m) {
 	if sem_init(sem, 0, 0) != 0 {
 		throw("sem_init")
 	}
-	mp.waitsema = uintptr(unsafe.Pointer(sem))
+	mp.mos.waitsema = uintptr(unsafe.Pointer(sem))
 }
 
 //go:nosplit
@@ -86,7 +76,7 @@ func semasleep(ns int64) int32 {
 		ts.tv_sec = timespec_sec_t(sec)
 		ts.tv_nsec = timespec_nsec_t(nsec)
 
-		if sem_timedwait((*semt)(unsafe.Pointer(_m_.waitsema)), &ts) != 0 {
+		if sem_timedwait((*semt)(unsafe.Pointer(_m_.mos.waitsema)), &ts) != 0 {
 			err := errno()
 			if err == _ETIMEDOUT || err == _EAGAIN || err == _EINTR {
 				return -1
@@ -97,7 +87,7 @@ func semasleep(ns int64) int32 {
 		return 0
 	}
 	for {
-		r1 := sem_wait((*semt)(unsafe.Pointer(_m_.waitsema)))
+		r1 := sem_wait((*semt)(unsafe.Pointer(_m_.mos.waitsema)))
 		if r1 == 0 {
 			break
 		}
@@ -111,14 +101,9 @@ func semasleep(ns int64) int32 {
 
 //go:nosplit
 func semawakeup(mp *m) {
-	if sem_post((*semt)(unsafe.Pointer(mp.waitsema))) != 0 {
+	if sem_post((*semt)(unsafe.Pointer(mp.mos.waitsema))) != 0 {
 		throw("sem_post")
 	}
-}
-
-func osinit() {
-	ncpu = int32(sysconf(__SC_NPROCESSORS_ONLN))
-	physPageSize = uintptr(sysconf(__SC_PAGE_SIZE))
 }
 
 const (

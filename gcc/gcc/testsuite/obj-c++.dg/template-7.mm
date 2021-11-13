@@ -3,7 +3,6 @@
 // Author: Fariborz Jahanian <fjahanian@apple.com>
 // { dg-do compile }
 // { dg-options "" }
-// { dg-additional-options "-Wno-objc-root-class" }
 typedef struct objc_class *Class;
 
 @interface Object

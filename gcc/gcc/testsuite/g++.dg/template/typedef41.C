@@ -2,7 +2,7 @@
 
 template<int> struct A
 {
-  typedef int ::X;		// { dg-error "15:typedef name" }
+  typedef int ::X;		// { dg-error "" }
 };
 
 A<0> a;

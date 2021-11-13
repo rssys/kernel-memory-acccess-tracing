@@ -1,6 +1,5 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target archs }*/
-/* { dg-options "-O3 -mll64" } */
+/* { dg-options "-O3" } */
 
 /* This tests checks if we use st w6,[reg] format.  */
 
@@ -15,4 +14,4 @@ int sigemptyset2 (sigset_t *set)
   return 0;
 }
 
-/* { dg-final { scan-assembler-times "std\\s*0,\\\[r" 1 } } */
+/* { dg-final { scan-assembler-times "st 0,\\\[r" 2 } } */

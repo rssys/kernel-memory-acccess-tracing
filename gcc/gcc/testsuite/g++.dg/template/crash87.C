@@ -17,7 +17,7 @@ template <bool name>
 class BUG2 : BUG
 {
 public:
- typedef BUG1_5<name> ptr; // { dg-error "BUG::name" }
+ typedef BUG1_5<name> ptr; // { dg-error "convert" }
 };
 
 int main()

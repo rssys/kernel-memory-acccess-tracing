@@ -1,9 +1,9 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -Winline -fopt-info-optimized-inline=stderr" } */
+/* { dg-options "-O2 -Winline" } */
 
 struct s { int a; };
 
-inline void f (x)
+inline void f (x)	/* { dg-warning "inlining .* mismatched arg" } */
      int x;
 {
   asm ("");
@@ -11,7 +11,7 @@ inline void f (x)
 
 void g (struct s x)
 {
-  f (x); 		/* { dg-optimized "Inlining f.* into g" } */
+  f (x); 		/* { dg-message "called from here" } */
 }
 
 void f (int x);		/* { dg-warning "follows non-prototype definition" } */

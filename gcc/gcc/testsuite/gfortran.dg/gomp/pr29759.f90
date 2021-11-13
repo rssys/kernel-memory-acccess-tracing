@@ -21,20 +21,20 @@ PROGRAM test_omp
 !$OMP END PARALLEL
 
 
-!$OMP PARALLEL &		! { dg-error "Failed to match clause" }
+!$OMP PARALLEL &		! { dg-error "Unclassifiable OpenMP" }
 !$    NUM_THREADS(2)
 !$OMP END PARALLEL		! { dg-error "Unexpected" }
 
-!$OMP PARALLEL &		! { dg-error "Failed to match clause" }
+!$OMP PARALLEL &		! { dg-error "Unclassifiable OpenMP" }
 !$    & NUM_THREADS(2)		! { dg-error "Invalid character" }
 !$OMP END PARALLEL		! { dg-error "Unexpected" }
 
-!$OMP PARALLEL &		! { dg-error "Failed to match clause" }
+!$OMP PARALLEL &		! { dg-error "Unclassifiable OpenMP" }
 !
 !$    NUM_THREADS(2)
 !$OMP END PARALLEL		! { dg-error "Unexpected" }
 
-!$OMP PARALLEL &		! { dg-error "Failed to match clause" }
+!$OMP PARALLEL &		! { dg-error "Unclassifiable OpenMP" }
 !
 !$    & NUM_THREADS(2)		! { dg-error "Invalid character" }
 !$OMP END PARALLEL		! { dg-error "Unexpected" }

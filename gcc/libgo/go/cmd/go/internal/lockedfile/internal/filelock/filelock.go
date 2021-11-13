@@ -9,7 +9,6 @@ package filelock
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 )
 
@@ -25,7 +24,7 @@ type File interface {
 	Fd() uintptr
 
 	// Stat returns the FileInfo structure describing file.
-	Stat() (fs.FileInfo, error)
+	Stat() (os.FileInfo, error)
 }
 
 // Lock places an advisory write lock on the file, blocking until it can be
@@ -88,7 +87,7 @@ var ErrNotSupported = errors.New("operation not supported")
 // underlyingError returns the underlying error for known os error types.
 func underlyingError(err error) error {
 	switch err := err.(type) {
-	case *fs.PathError:
+	case *os.PathError:
 		return err.Err
 	case *os.LinkError:
 		return err.Err

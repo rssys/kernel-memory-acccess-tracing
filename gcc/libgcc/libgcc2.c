@@ -1,6 +1,6 @@
 /* More subroutines needed by GCC output code on some machines.  */
 /* Compile this one with gcc.  */
-/* Copyright (C) 1989-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -75,9 +75,9 @@ __negdi2 (DWtype u)
 Wtype
 __addvSI3 (Wtype a, Wtype b)
 {
-  Wtype w;
+  const Wtype w = (UWtype) a + (UWtype) b;
 
-  if (__builtin_add_overflow (a, b, &w))
+  if (b >= 0 ? w < a : w > a)
     abort ();
 
   return w;
@@ -86,9 +86,9 @@ __addvSI3 (Wtype a, Wtype b)
 SItype
 __addvsi3 (SItype a, SItype b)
 {
-  SItype w;
+  const SItype w = (USItype) a + (USItype) b;
 
-  if (__builtin_add_overflow (a, b, &w))
+  if (b >= 0 ? w < a : w > a)
     abort ();
 
   return w;
@@ -100,9 +100,9 @@ __addvsi3 (SItype a, SItype b)
 DWtype
 __addvDI3 (DWtype a, DWtype b)
 {
-  DWtype w;
+  const DWtype w = (UDWtype) a + (UDWtype) b;
 
-  if (__builtin_add_overflow (a, b, &w))
+  if (b >= 0 ? w < a : w > a)
     abort ();
 
   return w;
@@ -113,9 +113,9 @@ __addvDI3 (DWtype a, DWtype b)
 Wtype
 __subvSI3 (Wtype a, Wtype b)
 {
-  Wtype w;
+  const Wtype w = (UWtype) a - (UWtype) b;
 
-  if (__builtin_sub_overflow (a, b, &w))
+  if (b >= 0 ? w > a : w < a)
     abort ();
 
   return w;
@@ -124,9 +124,9 @@ __subvSI3 (Wtype a, Wtype b)
 SItype
 __subvsi3 (SItype a, SItype b)
 {
-  SItype w;
+  const SItype w = (USItype) a - (USItype) b;
 
-  if (__builtin_sub_overflow (a, b, &w))
+  if (b >= 0 ? w > a : w < a)
     abort ();
 
   return w;
@@ -138,9 +138,9 @@ __subvsi3 (SItype a, SItype b)
 DWtype
 __subvDI3 (DWtype a, DWtype b)
 {
-  DWtype w;
+  const DWtype w = (UDWtype) a - (UDWtype) b;
 
-  if (__builtin_sub_overflow (a, b, &w))
+  if (b >= 0 ? w > a : w < a)
     abort ();
 
   return w;
@@ -151,20 +151,22 @@ __subvDI3 (DWtype a, DWtype b)
 Wtype
 __mulvSI3 (Wtype a, Wtype b)
 {
-  Wtype w;
+  const DWtype w = (DWtype) a * (DWtype) b;
 
-  if (__builtin_mul_overflow (a, b, &w))
+  if ((Wtype) (w >> W_TYPE_SIZE) != (Wtype) w >> (W_TYPE_SIZE - 1))
     abort ();
 
   return w;
 }
 #ifdef COMPAT_SIMODE_TRAPPING_ARITHMETIC
+#undef WORD_SIZE
+#define WORD_SIZE (sizeof (SItype) * __CHAR_BIT__)
 SItype
 __mulvsi3 (SItype a, SItype b)
 {
-  SItype w;
+  const DItype w = (DItype) a * (DItype) b;
 
-  if (__builtin_mul_overflow (a, b, &w))
+  if ((SItype) (w >> WORD_SIZE) != (SItype) w >> (WORD_SIZE-1))
     abort ();
 
   return w;
@@ -176,23 +178,23 @@ __mulvsi3 (SItype a, SItype b)
 Wtype
 __negvSI2 (Wtype a)
 {
-  Wtype w;
+  const Wtype w = -(UWtype) a;
 
-  if (__builtin_sub_overflow (0, a, &w))
+  if (a >= 0 ? w > 0 : w < 0)
     abort ();
 
-  return w;
+   return w;
 }
 #ifdef COMPAT_SIMODE_TRAPPING_ARITHMETIC
 SItype
 __negvsi2 (SItype a)
 {
-  SItype w;
+  const SItype w = -(USItype) a;
 
-  if (__builtin_sub_overflow (0, a, &w))
+  if (a >= 0 ? w > 0 : w < 0)
     abort ();
 
-  return w;
+   return w;
 }
 #endif /* COMPAT_SIMODE_TRAPPING_ARITHMETIC */
 #endif
@@ -201,9 +203,9 @@ __negvsi2 (SItype a)
 DWtype
 __negvDI2 (DWtype a)
 {
-  DWtype w;
+  const DWtype w = -(UDWtype) a;
 
-  if (__builtin_sub_overflow (0, a, &w))
+  if (a >= 0 ? w > 0 : w < 0)
     abort ();
 
   return w;
@@ -214,25 +216,37 @@ __negvDI2 (DWtype a)
 Wtype
 __absvSI2 (Wtype a)
 {
-  const Wtype v = 0 - (a < 0);
-  Wtype w;
+  Wtype w = a;
 
-  if (__builtin_add_overflow (a, v, &w))
+  if (a < 0)
+#ifdef L_negvsi2
+    w = __negvSI2 (a);
+#else
+    w = -(UWtype) a;
+
+  if (w < 0)
     abort ();
+#endif
 
-  return v ^ w;
+   return w;
 }
 #ifdef COMPAT_SIMODE_TRAPPING_ARITHMETIC
 SItype
 __absvsi2 (SItype a)
 {
-  const SItype v = 0 - (a < 0);
-  SItype w;
+  SItype w = a;
 
-  if (__builtin_add_overflow (a, v, &w))
+  if (a < 0)
+#ifdef L_negvsi2
+    w = __negvsi2 (a);
+#else
+    w = -(USItype) a;
+
+  if (w < 0)
     abort ();
+#endif
 
-  return v ^ w;
+   return w;
 }
 #endif /* COMPAT_SIMODE_TRAPPING_ARITHMETIC */
 #endif
@@ -241,13 +255,19 @@ __absvsi2 (SItype a)
 DWtype
 __absvDI2 (DWtype a)
 {
-  const DWtype v = 0 - (a < 0);
-  DWtype w;
+  DWtype w = a;
 
-  if (__builtin_add_overflow (a, v, &w))
+  if (a < 0)
+#ifdef L_negvdi2
+    w = __negvDI2 (a);
+#else
+    w = -(UDWtype) a;
+
+  if (w < 0)
     abort ();
+#endif
 
-  return v ^ w;
+  return w;
 }
 #endif
 
@@ -468,10 +488,10 @@ __ashrdi3 (DWtype u, shift_count_type b)
 SItype
 __bswapsi2 (SItype u)
 {
-  return ((((u) & 0xff000000u) >> 24)
-	  | (((u) & 0x00ff0000u) >>  8)
-	  | (((u) & 0x0000ff00u) <<  8)
-	  | (((u) & 0x000000ffu) << 24));
+  return ((((u) & 0xff000000) >> 24)
+	  | (((u) & 0x00ff0000) >>  8)
+	  | (((u) & 0x0000ff00) <<  8)
+	  | (((u) & 0x000000ff) << 24));
 }
 #endif
 #ifdef L_bswapdi2
@@ -933,7 +953,7 @@ __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
      aligns the divisor under the dividend and then perform number of
      test-subtract iterations which shift the dividend left. Number of
      iterations is k + 1 where k is the number of bit positions the
-     divisor must be shifted left to align it under the dividend.
+     divisor must be shifted left  to align it under the dividend.
      quotient bits can be saved in the rightmost positions of the dividend
      as it shifts left on each test-subtract iteration. */
 
@@ -945,7 +965,7 @@ __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
       k = lz1 - lz2;
       y = (y << k);
 
-      /* Dividend can exceed 2 ^ (width - 1) - 1 but still be less than the
+      /* Dividend can exceed 2 ^ (width − 1) − 1 but still be less than the
 	 aligned divisor. Normal iteration can drops the high order bit
 	 of the dividend. Therefore, first test-subtract iteration is a
 	 special case, saving its quotient bit in a separate location and
@@ -1305,15 +1325,37 @@ __udivdi3 (UDWtype n, UDWtype d)
 cmp_return_type
 __cmpdi2 (DWtype a, DWtype b)
 {
-  return (a > b) - (a < b) + 1;
+  const DWunion au = {.ll = a};
+  const DWunion bu = {.ll = b};
+
+  if (au.s.high < bu.s.high)
+    return 0;
+  else if (au.s.high > bu.s.high)
+    return 2;
+  if ((UWtype) au.s.low < (UWtype) bu.s.low)
+    return 0;
+  else if ((UWtype) au.s.low > (UWtype) bu.s.low)
+    return 2;
+  return 1;
 }
 #endif
 
 #ifdef L_ucmpdi2
 cmp_return_type
-__ucmpdi2 (UDWtype a, UDWtype b)
+__ucmpdi2 (DWtype a, DWtype b)
 {
-  return (a > b) - (a < b) + 1;
+  const DWunion au = {.ll = a};
+  const DWunion bu = {.ll = b};
+
+  if ((UWtype) au.s.high < (UWtype) bu.s.high)
+    return 0;
+  else if ((UWtype) au.s.high > (UWtype) bu.s.high)
+    return 2;
+  if ((UWtype) au.s.low < (UWtype) bu.s.low)
+    return 0;
+  else if ((UWtype) au.s.low > (UWtype) bu.s.low)
+    return 2;
+  return 1;
 }
 #endif
 
@@ -1834,7 +1876,7 @@ __fixunssfSI (SFtype a)
 TYPE
 NAME (TYPE x, int m)
 {
-  unsigned int n = m < 0 ? -(unsigned int) m : (unsigned int) m;
+  unsigned int n = m < 0 ? -m : m;
   TYPE y = n % 2 ? x : 1;
   while (n >>= 1)
     {
@@ -1860,62 +1902,33 @@ NAME (TYPE x, int m)
 #if defined(L_mulhc3) || defined(L_divhc3)
 # define MTYPE	HFtype
 # define CTYPE	HCtype
-# define AMTYPE SFtype
 # define MODE	hc
 # define CEXT	__LIBGCC_HF_FUNC_EXT__
 # define NOTRUNC (!__LIBGCC_HF_EXCESS_PRECISION__)
 #elif defined(L_mulsc3) || defined(L_divsc3)
 # define MTYPE	SFtype
 # define CTYPE	SCtype
-# define AMTYPE DFtype
 # define MODE	sc
 # define CEXT	__LIBGCC_SF_FUNC_EXT__
 # define NOTRUNC (!__LIBGCC_SF_EXCESS_PRECISION__)
-# define RBIG	(__LIBGCC_SF_MAX__ / 2)
-# define RMIN	(__LIBGCC_SF_MIN__)
-# define RMIN2	(__LIBGCC_SF_EPSILON__)
-# define RMINSCAL (1 / __LIBGCC_SF_EPSILON__)
-# define RMAX2	(RBIG * RMIN2)
 #elif defined(L_muldc3) || defined(L_divdc3)
 # define MTYPE	DFtype
 # define CTYPE	DCtype
 # define MODE	dc
 # define CEXT	__LIBGCC_DF_FUNC_EXT__
 # define NOTRUNC (!__LIBGCC_DF_EXCESS_PRECISION__)
-# define RBIG	(__LIBGCC_DF_MAX__ / 2)
-# define RMIN	(__LIBGCC_DF_MIN__)
-# define RMIN2	(__LIBGCC_DF_EPSILON__)
-# define RMINSCAL (1 / __LIBGCC_DF_EPSILON__)
-# define RMAX2  (RBIG * RMIN2)
 #elif defined(L_mulxc3) || defined(L_divxc3)
 # define MTYPE	XFtype
 # define CTYPE	XCtype
 # define MODE	xc
 # define CEXT	__LIBGCC_XF_FUNC_EXT__
 # define NOTRUNC (!__LIBGCC_XF_EXCESS_PRECISION__)
-# define RBIG	(__LIBGCC_XF_MAX__ / 2)
-# define RMIN	(__LIBGCC_XF_MIN__)
-# define RMIN2	(__LIBGCC_XF_EPSILON__)
-# define RMINSCAL (1 / __LIBGCC_XF_EPSILON__)
-# define RMAX2	(RBIG * RMIN2)
 #elif defined(L_multc3) || defined(L_divtc3)
 # define MTYPE	TFtype
 # define CTYPE	TCtype
 # define MODE	tc
 # define CEXT	__LIBGCC_TF_FUNC_EXT__
 # define NOTRUNC (!__LIBGCC_TF_EXCESS_PRECISION__)
-# if __LIBGCC_TF_MANT_DIG__ == 106
-#  define RBIG	(__LIBGCC_DF_MAX__ / 2)
-#  define RMIN	(__LIBGCC_DF_MIN__)
-#  define RMIN2  (__LIBGCC_DF_EPSILON__)
-#  define RMINSCAL (1 / __LIBGCC_DF_EPSILON__)
-# else
-#  define RBIG	(__LIBGCC_TF_MAX__ / 2)
-#  define RMIN	(__LIBGCC_TF_MIN__)
-#  define RMIN2	(__LIBGCC_TF_EPSILON__)
-#  define RMINSCAL (1 / __LIBGCC_TF_EPSILON__)
-# endif
-# define RMAX2	(RBIG * RMIN2)
 #else
 # error
 #endif
@@ -2023,136 +2036,30 @@ CONCAT3(__mul,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 CTYPE
 CONCAT3(__div,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 {
-#if defined(L_divhc3)						\
-  || (defined(L_divsc3) && defined(__LIBGCC_HAVE_HWDBL__) )
-
-  /* Half precision is handled with float precision.
-     float is handled with double precision when double precision
-     hardware is available.
-     Due to the additional precision, the simple complex divide
-     method (without Smith's method) is sufficient to get accurate
-     answers and runs slightly faster than Smith's method.  */
-
-  AMTYPE aa, bb, cc, dd;
-  AMTYPE denom;
-  MTYPE x, y;
-  CTYPE res;
-  aa = a;
-  bb = b;
-  cc = c;
-  dd = d;
-
-  denom = (cc * cc) + (dd * dd);
-  x = ((aa * cc) + (bb * dd)) / denom;
-  y = ((bb * cc) - (aa * dd)) / denom;
-
-#else
   MTYPE denom, ratio, x, y;
   CTYPE res;
 
-  /* double, extended, long double have significant potential
-     underflow/overflow errors that can be greatly reduced with
-     a limited number of tests and adjustments.  float is handled
-     the same way when no HW double is available.
-  */
-
-  /* Scale by max(c,d) to reduce chances of denominator overflowing.  */
+  /* ??? We can get better behavior from logarithmic scaling instead of
+     the division.  But that would mean starting to link libgcc against
+     libm.  We could implement something akin to ldexp/frexp as gcc builtins
+     fairly easily...  */
   if (FABS (c) < FABS (d))
     {
-      /* Prevent underflow when denominator is near max representable.  */
-      if (FABS (d) >= RBIG)
-	{
-	  a = a / 2;
-	  b = b / 2;
-	  c = c / 2;
-	  d = d / 2;
-	}
-      /* Avoid overflow/underflow issues when c and d are small.
-	 Scaling up helps avoid some underflows.
-	 No new overflow possible since c&d < RMIN2.  */
-      if (FABS (d) < RMIN2)
-	{
-	  a = a * RMINSCAL;
-	  b = b * RMINSCAL;
-	  c = c * RMINSCAL;
-	  d = d * RMINSCAL;
-	}
-      else
-	{
-	  if (((FABS (a) < RMIN) && (FABS (b) < RMAX2) && (FABS (d) < RMAX2))
-	      || ((FABS (b) < RMIN) && (FABS (a) < RMAX2)
-		  && (FABS (d) < RMAX2)))
-	    {
-	      a = a * RMINSCAL;
-	      b = b * RMINSCAL;
-	      c = c * RMINSCAL;
-	      d = d * RMINSCAL;
-	    }
-	}
       ratio = c / d;
       denom = (c * ratio) + d;
-      /* Choose alternate order of computation if ratio is subnormal.  */
-      if (FABS (ratio) > RMIN)
-	{
-	  x = ((a * ratio) + b) / denom;
-	  y = ((b * ratio) - a) / denom;
-	}
-      else
-	{
-	  x = ((c * (a / d)) + b) / denom;
-	  y = ((c * (b / d)) - a) / denom;
-	}
+      x = ((a * ratio) + b) / denom;
+      y = ((b * ratio) - a) / denom;
     }
   else
     {
-      /* Prevent underflow when denominator is near max representable.  */
-      if (FABS (c) >= RBIG)
-	{
-	  a = a / 2;
-	  b = b / 2;
-	  c = c / 2;
-	  d = d / 2;
-	}
-      /* Avoid overflow/underflow issues when both c and d are small.
-	 Scaling up helps avoid some underflows.
-	 No new overflow possible since both c&d are less than RMIN2.  */
-      if (FABS (c) < RMIN2)
-	{
-	  a = a * RMINSCAL;
-	  b = b * RMINSCAL;
-	  c = c * RMINSCAL;
-	  d = d * RMINSCAL;
-	}
-      else
-	{
-	  if (((FABS (a) < RMIN) && (FABS (b) < RMAX2) && (FABS (c) < RMAX2))
-	      || ((FABS (b) < RMIN) && (FABS (a) < RMAX2)
-		  && (FABS (c) < RMAX2)))
-	    {
-	      a = a * RMINSCAL;
-	      b = b * RMINSCAL;
-	      c = c * RMINSCAL;
-	      d = d * RMINSCAL;
-	    }
-	}
       ratio = d / c;
       denom = (d * ratio) + c;
-      /* Choose alternate order of computation if ratio is subnormal.  */
-      if (FABS (ratio) > RMIN)
-	{
-	  x = ((b * ratio) + a) / denom;
-	  y = (b - (a * ratio)) / denom;
-	}
-      else
-	{
-	  x = (a + (d * (b / c))) / denom;
-	  y = (b - (d * (a / c))) / denom;
-	}
+      x = ((b * ratio) + a) / denom;
+      y = (b - (a * ratio)) / denom;
     }
-#endif
 
-  /* Recover infinities and zeros that computed as NaN+iNaN; the only
-     cases are nonzero/zero, infinite/finite, and finite/infinite.  */
+  /* Recover infinities and zeros that computed as NaN+iNaN; the only cases
+     are nonzero/zero, infinite/finite, and finite/infinite.  */
   if (isnan (x) && isnan (y))
     {
       if (c == 0.0 && d == 0.0 && (!isnan (a) || !isnan (b)))

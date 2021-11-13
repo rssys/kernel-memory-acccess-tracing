@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -118,7 +119,7 @@ func TestDecoder(t *testing.T) {
 		testEqual(t, "Read from %q = length %v, want %v", p.encoded, count, len(p.decoded))
 		testEqual(t, "Decoding of %q = %q, want %q", p.encoded, string(dbuf[0:count]), p.decoded)
 		if err != io.EOF {
-			_, err = decoder.Read(dbuf)
+			count, err = decoder.Read(dbuf)
 		}
 		testEqual(t, "Read from %q = %v, want %v", p.encoded, err, io.EOF)
 	}
@@ -360,9 +361,9 @@ func TestBig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encoder.Close() = %v want nil", err)
 	}
-	decoded, err := io.ReadAll(NewDecoder(StdEncoding, encoded))
+	decoded, err := ioutil.ReadAll(NewDecoder(StdEncoding, encoded))
 	if err != nil {
-		t.Fatalf("io.ReadAll(NewDecoder(...)): %v", err)
+		t.Fatalf("ioutil.ReadAll(NewDecoder(...)): %v", err)
 	}
 
 	if !bytes.Equal(raw, decoded) {
@@ -427,29 +428,20 @@ LNEBUWIIDFON2CA3DBMJXXE5LNFY==
 	encodedShort := strings.ReplaceAll(encoded, "\n", "")
 
 	dec := NewDecoder(StdEncoding, strings.NewReader(encoded))
-	res1, err := io.ReadAll(dec)
+	res1, err := ioutil.ReadAll(dec)
 	if err != nil {
 		t.Errorf("ReadAll failed: %v", err)
 	}
 
 	dec = NewDecoder(StdEncoding, strings.NewReader(encodedShort))
 	var res2 []byte
-	res2, err = io.ReadAll(dec)
+	res2, err = ioutil.ReadAll(dec)
 	if err != nil {
 		t.Errorf("ReadAll failed: %v", err)
 	}
 
 	if !bytes.Equal(res1, res2) {
 		t.Error("Decoded results not equal")
-	}
-}
-
-func BenchmarkEncode(b *testing.B) {
-	data := make([]byte, 8192)
-	buf := make([]byte, StdEncoding.EncodedLen(len(data)))
-	b.SetBytes(int64(len(data)))
-	for i := 0; i < b.N; i++ {
-		StdEncoding.Encode(buf, data)
 	}
 }
 
@@ -461,15 +453,6 @@ func BenchmarkEncodeToString(b *testing.B) {
 	}
 }
 
-func BenchmarkDecode(b *testing.B) {
-	data := make([]byte, StdEncoding.EncodedLen(8192))
-	StdEncoding.Encode(data, make([]byte, 8192))
-	buf := make([]byte, 8192)
-	b.SetBytes(int64(len(data)))
-	for i := 0; i < b.N; i++ {
-		StdEncoding.Decode(buf, data)
-	}
-}
 func BenchmarkDecodeString(b *testing.B) {
 	data := StdEncoding.EncodeToString(make([]byte, 8192))
 	b.SetBytes(int64(len(data)))
@@ -556,52 +539,52 @@ func TestBufferedDecodingSameError(t *testing.T) {
 		// NBSWY3DPO5XXE3DE == helloworld
 		// Test with "ZZ" as extra input
 		{"helloworld", [][]string{
-			{"NBSW", "Y3DP", "O5XX", "E3DE", "ZZ"},
-			{"NBSWY3DPO5XXE3DE", "ZZ"},
-			{"NBSWY3DPO5XXE3DEZZ"},
-			{"NBS", "WY3", "DPO", "5XX", "E3D", "EZZ"},
-			{"NBSWY3DPO5XXE3", "DEZZ"},
+			[]string{"NBSW", "Y3DP", "O5XX", "E3DE", "ZZ"},
+			[]string{"NBSWY3DPO5XXE3DE", "ZZ"},
+			[]string{"NBSWY3DPO5XXE3DEZZ"},
+			[]string{"NBS", "WY3", "DPO", "5XX", "E3D", "EZZ"},
+			[]string{"NBSWY3DPO5XXE3", "DEZZ"},
 		}, io.ErrUnexpectedEOF},
 
 		// Test with "ZZY" as extra input
 		{"helloworld", [][]string{
-			{"NBSW", "Y3DP", "O5XX", "E3DE", "ZZY"},
-			{"NBSWY3DPO5XXE3DE", "ZZY"},
-			{"NBSWY3DPO5XXE3DEZZY"},
-			{"NBS", "WY3", "DPO", "5XX", "E3D", "EZZY"},
-			{"NBSWY3DPO5XXE3", "DEZZY"},
+			[]string{"NBSW", "Y3DP", "O5XX", "E3DE", "ZZY"},
+			[]string{"NBSWY3DPO5XXE3DE", "ZZY"},
+			[]string{"NBSWY3DPO5XXE3DEZZY"},
+			[]string{"NBS", "WY3", "DPO", "5XX", "E3D", "EZZY"},
+			[]string{"NBSWY3DPO5XXE3", "DEZZY"},
 		}, io.ErrUnexpectedEOF},
 
 		// Normal case, this is valid input
 		{"helloworld", [][]string{
-			{"NBSW", "Y3DP", "O5XX", "E3DE"},
-			{"NBSWY3DPO5XXE3DE"},
-			{"NBS", "WY3", "DPO", "5XX", "E3D", "E"},
-			{"NBSWY3DPO5XXE3", "DE"},
+			[]string{"NBSW", "Y3DP", "O5XX", "E3DE"},
+			[]string{"NBSWY3DPO5XXE3DE"},
+			[]string{"NBS", "WY3", "DPO", "5XX", "E3D", "E"},
+			[]string{"NBSWY3DPO5XXE3", "DE"},
 		}, nil},
 
 		// MZXW6YTB = fooba
 		{"fooba", [][]string{
-			{"MZXW6YTBZZ"},
-			{"MZXW6YTBZ", "Z"},
-			{"MZXW6YTB", "ZZ"},
-			{"MZXW6YT", "BZZ"},
-			{"MZXW6Y", "TBZZ"},
-			{"MZXW6Y", "TB", "ZZ"},
-			{"MZXW6", "YTBZZ"},
-			{"MZXW6", "YTB", "ZZ"},
-			{"MZXW6", "YT", "BZZ"},
+			[]string{"MZXW6YTBZZ"},
+			[]string{"MZXW6YTBZ", "Z"},
+			[]string{"MZXW6YTB", "ZZ"},
+			[]string{"MZXW6YT", "BZZ"},
+			[]string{"MZXW6Y", "TBZZ"},
+			[]string{"MZXW6Y", "TB", "ZZ"},
+			[]string{"MZXW6", "YTBZZ"},
+			[]string{"MZXW6", "YTB", "ZZ"},
+			[]string{"MZXW6", "YT", "BZZ"},
 		}, io.ErrUnexpectedEOF},
 
 		// Normal case, this is valid input
 		{"fooba", [][]string{
-			{"MZXW6YTB"},
-			{"MZXW6YT", "B"},
-			{"MZXW6Y", "TB"},
-			{"MZXW6", "YTB"},
-			{"MZXW6", "YT", "B"},
-			{"MZXW", "6YTB"},
-			{"MZXW", "6Y", "TB"},
+			[]string{"MZXW6YTB"},
+			[]string{"MZXW6YT", "B"},
+			[]string{"MZXW6Y", "TB"},
+			[]string{"MZXW6", "YTB"},
+			[]string{"MZXW6", "YT", "B"},
+			[]string{"MZXW", "6YTB"},
+			[]string{"MZXW", "6Y", "TB"},
 		}, nil},
 	}
 
@@ -618,7 +601,7 @@ func TestBufferedDecodingSameError(t *testing.T) {
 			}()
 
 			decoder := NewDecoder(StdEncoding, pr)
-			_, err := io.ReadAll(decoder)
+			_, err := ioutil.ReadAll(decoder)
 
 			if err != testcase.expected {
 				t.Errorf("Expected %v, got %v; case %s %+v", testcase.expected, err, testcase.prefix, chunks)
@@ -717,7 +700,7 @@ func TestDecodeReadAll(t *testing.T) {
 				encoded = strings.ReplaceAll(encoded, "=", "")
 			}
 
-			decReader, err := io.ReadAll(NewDecoder(encoding, strings.NewReader(encoded)))
+			decReader, err := ioutil.ReadAll(NewDecoder(encoding, strings.NewReader(encoded)))
 			if err != nil {
 				t.Errorf("NewDecoder error: %v", err)
 			}

@@ -13,13 +13,13 @@ package runtime
 func roundupsize(size uintptr) uintptr {
 	if size < _MaxSmallSize {
 		if size <= smallSizeMax-8 {
-			return uintptr(class_to_size[size_to_class8[divRoundUp(size, smallSizeDiv)]])
+			return uintptr(class_to_size[size_to_class8[(size+smallSizeDiv-1)/smallSizeDiv]])
 		} else {
-			return uintptr(class_to_size[size_to_class128[divRoundUp(size-smallSizeMax, largeSizeDiv)]])
+			return uintptr(class_to_size[size_to_class128[(size-smallSizeMax+largeSizeDiv-1)/largeSizeDiv]])
 		}
 	}
 	if size+_PageSize < size {
 		return size
 	}
-	return alignUp(size, _PageSize)
+	return round(size, _PageSize)
 }

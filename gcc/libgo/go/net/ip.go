@@ -12,10 +12,7 @@
 
 package net
 
-import (
-	"internal/bytealg"
-	"internal/itoa"
-)
+import "internal/bytealg"
 
 // IP address lengths (bytes).
 const (
@@ -34,10 +31,7 @@ const (
 // be an IPv4 address.
 type IP []byte
 
-// An IPMask is a bitmask that can be used to manipulate
-// IP addresses for IP addressing and routing.
-//
-// See type IPNet and func ParseCIDR for details.
+// An IP mask is an IP address.
 type IPMask []byte
 
 // An IPNet represents an IP network.
@@ -71,8 +65,8 @@ func IPv4Mask(a, b, c, d byte) IPMask {
 	return p
 }
 
-// CIDRMask returns an IPMask consisting of 'ones' 1 bits
-// followed by 0s up to a total length of 'bits' bits.
+// CIDRMask returns an IPMask consisting of `ones' 1 bits
+// followed by 0s up to a total length of `bits' bits.
 // For a mask of this form, CIDRMask is the inverse of IPMask.Size.
 func CIDRMask(ones, bits int) IPMask {
 	if bits != 8*IPv4len && bits != 8*IPv6len {
@@ -126,25 +120,6 @@ func (ip IP) IsLoopback() bool {
 		return ip4[0] == 127
 	}
 	return ip.Equal(IPv6loopback)
-}
-
-// IsPrivate reports whether ip is a private address, according to
-// RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses).
-func (ip IP) IsPrivate() bool {
-	if ip4 := ip.To4(); ip4 != nil {
-		// Following RFC 1918, Section 3. Private Address Space which says:
-		//   The Internet Assigned Numbers Authority (IANA) has reserved the
-		//   following three blocks of the IP address space for private internets:
-		//     10.0.0.0        -   10.255.255.255  (10/8 prefix)
-		//     172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
-		//     192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
-		return ip4[0] == 10 ||
-			(ip4[0] == 172 && ip4[1]&0xf0 == 16) ||
-			(ip4[0] == 192 && ip4[1] == 168)
-	}
-	// Following RFC 4193, Section 8. IANA Considerations which says:
-	//   The IANA has assigned the FC00::/7 prefix to "Unique Local Unicast".
-	return len(ip) == IPv6len && ip[0]&0xfe == 0xfc
 }
 
 // IsMulticast reports whether ip is a multicast address.
@@ -538,12 +513,12 @@ func (n *IPNet) Contains(ip IP) bool {
 // Network returns the address's network name, "ip+net".
 func (n *IPNet) Network() string { return "ip+net" }
 
-// String returns the CIDR notation of n like "192.0.2.0/24"
+// String returns the CIDR notation of n like "192.0.2.1/24"
 // or "2001:db8::/48" as defined in RFC 4632 and RFC 4291.
 // If the mask is not in the canonical form, it returns the
 // string which consists of an IP address, followed by a slash
 // character and a mask expressed as hexadecimal form with no
-// punctuation like "198.51.100.0/c000ff00".
+// punctuation like "198.51.100.1/c000ff00".
 func (n *IPNet) String() string {
 	nn, m := networkNumberAndMask(n)
 	if nn == nil || m == nil {
@@ -553,7 +528,7 @@ func (n *IPNet) String() string {
 	if l == -1 {
 		return nn.String() + "/" + m.String()
 	}
-	return nn.String() + "/" + itoa.Uitoa(uint(l))
+	return nn.String() + "/" + uitoa(uint(l))
 }
 
 // Parse IPv4 address (d.d.d.d).
@@ -574,10 +549,6 @@ func parseIPv4(s string) IP {
 		if !ok || n > 0xFF {
 			return nil
 		}
-		if c > 1 && s[0] == '0' {
-			// Reject non-zero components with leading zeroes.
-			return nil
-		}
 		s = s[c:]
 		p[i] = byte(n)
 	}
@@ -594,7 +565,7 @@ func parseIPv6Zone(s string) (IP, string) {
 	return parseIPv6(s), zone
 }
 
-// parseIPv6 parses s as a literal IPv6 address described in RFC 4291
+// parseIPv6Zone parses s as a literal IPv6 address described in RFC 4291
 // and RFC 5952.
 func parseIPv6(s string) (ip IP) {
 	ip = make(IP, IPv6len)
@@ -697,8 +668,8 @@ func parseIPv6(s string) (ip IP) {
 }
 
 // ParseIP parses s as an IP address, returning the result.
-// The string s can be in IPv4 dotted decimal ("192.0.2.1"), IPv6
-// ("2001:db8::68"), or IPv4-mapped IPv6 ("::ffff:192.0.2.1") form.
+// The string s can be in dotted decimal ("192.0.2.1")
+// or IPv6 ("2001:db8::68") form.
 // If s is not a valid textual representation of an IP address,
 // ParseIP returns nil.
 func ParseIP(s string) IP {

@@ -2,7 +2,6 @@
    used as method selectors.  */
 /* Author: Ziemowit Laski <zlaski@apple.com>.  */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 @interface Foo
 - (void)insertNewButtonImage:(Foo *)newButtonImage in:(Foo *)buttonCell;

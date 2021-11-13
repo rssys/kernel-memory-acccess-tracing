@@ -16,12 +16,13 @@ package math
 // Special cases are:
 //	Asin(±0) = ±0
 //	Asin(x) = NaN if x < -1 or x > 1
-func Asin(x float64) float64 {
-	return libc_asin(x)
-}
 
 //extern asin
 func libc_asin(float64) float64
+
+func Asin(x float64) float64 {
+	return libc_asin(x)
+}
 
 func asin(x float64) float64 {
 	if x == 0 {
@@ -53,12 +54,13 @@ func asin(x float64) float64 {
 //
 // Special case is:
 //	Acos(x) = NaN if x < -1 or x > 1
-func Acos(x float64) float64 {
-	return libc_acos(x)
-}
 
 //extern acos
 func libc_acos(float64) float64
+
+func Acos(x float64) float64 {
+	return libc_acos(x)
+}
 
 func acos(x float64) float64 {
 	return Pi/2 - Asin(x)

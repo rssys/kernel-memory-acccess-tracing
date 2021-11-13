@@ -1,5 +1,5 @@
 /* Support for GCC plugin mechanism.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -231,7 +231,7 @@ add_new_plugin (const char* plugin_name)
     {
       plugin = (struct plugin_name_args *) *slot;
       if (strcmp (plugin->full_name, plugin_name))
-	error ("plugin %qs was specified with different paths: %qs and %qs",
+        error ("plugin %s was specified with different paths:\n%s\n%s",
                plugin->base_name, plugin->full_name, plugin_name);
       return;
     }
@@ -290,8 +290,7 @@ parse_plugin_arg_opt (const char *arg)
 
   if (!key_start)
     {
-      error ("malformed option %<-fplugin-arg-%s%>: "
-	     "missing %<-<key>[=<value>]%>",
+      error ("malformed option %<-fplugin-arg-%s%> (missing -<key>[=<value>])",
              arg);
       return;
     }
@@ -497,7 +496,6 @@ register_callback (const char *plugin_name,
       case PLUGIN_EARLY_GIMPLE_PASSES_END:
       case PLUGIN_NEW_PASS:
       case PLUGIN_INCLUDE_FILE:
-      case PLUGIN_ANALYZER_INIT:
         {
           struct callback_info *new_callback;
           if (!callback)
@@ -578,7 +576,6 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
       case PLUGIN_EARLY_GIMPLE_PASSES_END:
       case PLUGIN_NEW_PASS:
       case PLUGIN_INCLUDE_FILE:
-      case PLUGIN_ANALYZER_INIT:
         {
           /* Iterate over every callback registered with this event and
              call it.  */
@@ -703,7 +700,7 @@ try_init_one_plugin (struct plugin_name_args *plugin)
   dl_handle = dlopen (plugin->full_name, RTLD_NOW | RTLD_GLOBAL);
   if (!dl_handle)
     {
-      error ("cannot load plugin %s: %s", plugin->full_name, dlerror ());
+      error ("cannot load plugin %s\n%s", plugin->full_name, dlerror ());
       return false;
     }
 
@@ -713,17 +710,17 @@ try_init_one_plugin (struct plugin_name_args *plugin)
   /* Check the plugin license.  */
   if (dlsym (dl_handle, str_license) == NULL)
     fatal_error (input_location,
-		 "plugin %s is not licensed under a GPL-compatible license"
-		 " %s", plugin->full_name, dlerror ());
+		 "plugin %s is not licensed under a GPL-compatible license\n"
+		 "%s", plugin->full_name, dlerror ());
 
-  PTR_UNION_AS_VOID_PTR (plugin_init_union)
-    = dlsym (dl_handle, str_plugin_init_func_name);
+  PTR_UNION_AS_VOID_PTR (plugin_init_union) =
+      dlsym (dl_handle, str_plugin_init_func_name);
   plugin_init = PTR_UNION_AS_CAST_PTR (plugin_init_union);
 
   if ((err = dlerror ()) != NULL)
     {
       dlclose(dl_handle);
-      error ("cannot find %s in plugin %s: %s", str_plugin_init_func_name,
+      error ("cannot find %s in plugin %s\n%s", str_plugin_init_func_name,
              plugin->full_name, err);
       return false;
     }
@@ -732,7 +729,7 @@ try_init_one_plugin (struct plugin_name_args *plugin)
   if ((*plugin_init) (plugin, &gcc_version))
     {
       dlclose(dl_handle);
-      error ("failed to initialize plugin %s", plugin->full_name);
+      error ("fail to initialize plugin %s", plugin->full_name);
       return false;
     }
   /* leak dl_handle on purpose to ensure the plugin is loaded for the

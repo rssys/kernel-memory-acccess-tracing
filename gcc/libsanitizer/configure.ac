@@ -29,8 +29,6 @@ GCC_LIBSTDCXX_RAW_CXX_FLAGS
 AM_INIT_AUTOMAKE(foreign no-dist)
 AM_MAINTAINER_MODE
 
-GCC_WITH_TOOLEXECLIBDIR
-
 # Calculate toolexeclibdir
 # Also toolexecdir, though it's only used in toolexeclibdir
 case ${version_specific_libs} in
@@ -46,14 +44,7 @@ case ${version_specific_libs} in
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_alias)'
-      case ${with_toolexeclibdir} in
-	no)
-	  toolexeclibdir='$(toolexecdir)/lib'
-	  ;;
-	*)
-	  toolexeclibdir=${with_toolexeclibdir}
-	  ;;
-      esac
+      toolexeclibdir='$(toolexecdir)/lib'
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_alias)'
       toolexeclibdir='$(libdir)'
@@ -96,11 +87,9 @@ fi
 # Get target configury.
 unset TSAN_SUPPORTED
 unset LSAN_SUPPORTED
-unset HWASAN_SUPPORTED
 . ${srcdir}/configure.tgt
 AM_CONDITIONAL(TSAN_SUPPORTED, [test "x$TSAN_SUPPORTED" = "xyes"])
 AM_CONDITIONAL(LSAN_SUPPORTED, [test "x$LSAN_SUPPORTED" = "xyes"])
-AM_CONDITIONAL(HWASAN_SUPPORTED, [test "x$HWASAN_SUPPORTED" = "xyes"])
 
 # Check for functions needed.
 AC_CHECK_FUNCS(clock_getres clock_gettime clock_settime lstat readlink)
@@ -121,10 +110,6 @@ AC_CHECK_LIB(dl, dlsym,
 # Set up the set of additional libraries that we need to link against for libasan.
 link_libasan=$link_sanitizer_common
 AC_SUBST(link_libasan)
-
-# Set up the set of additional libraries that we need to link against for libhwasan.
-link_libhwasan=$link_sanitizer_common
-AC_SUBST(link_libhwasan)
 
 # Set up the set of additional libraries that we need to link against for libtsan.
 link_libtsan=$link_sanitizer_common
@@ -295,6 +280,12 @@ else
   # When built as a GCC target library, we can't do a link test.
   AC_EGREP_HEADER([dl_iterate_phdr], [link.h], [have_dl_iterate_phdr=yes],
 		  [have_dl_iterate_phdr=no])
+  case "${host}" in
+  *-*-solaris2.10*)
+    # Avoid dl_iterate_phdr on Solaris 10, where it is in the
+    # header file but is only in -ldl.
+    have_dl_iterate_phdr=no ;;
+  esac
 fi
 if test "$have_dl_iterate_phdr" = "yes"; then
   AC_DEFINE(HAVE_DL_ITERATE_PHDR, 1, [Define if dl_iterate_phdr is available.])
@@ -369,21 +360,6 @@ _EOF
 
 if test "x$TSAN_SUPPORTED" = "xyes"; then
   AC_CONFIG_FILES(AC_FOREACH([DIR], [tsan], [DIR/Makefile ]), 
-    [cat > vpsed$$ << \_EOF
-s!`test -f '$<' || echo '$(srcdir)/'`!!
-_EOF
-    sed -f vpsed$$ $ac_file > tmp$$
-    mv tmp$$ $ac_file
-    rm vpsed$$
-    echo 'MULTISUBDIR =' >> $ac_file
-    ml_norecursion=yes
-    . ${multi_basedir}/config-ml.in
-    AS_UNSET([ml_norecursion])
-])
-fi
-
-if test "x$HWASAN_SUPPORTED" = "xyes"; then
-  AC_CONFIG_FILES(AC_FOREACH([DIR], [hwasan], [DIR/Makefile ]), 
     [cat > vpsed$$ << \_EOF
 s!`test -f '$<' || echo '$(srcdir)/'`!!
 _EOF

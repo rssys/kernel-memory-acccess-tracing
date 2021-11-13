@@ -1,4 +1,4 @@
-/* { dg-do compile { target { nonpic } } } */
+/* { dg-do compile } */
 /* { dg-options "-O2" }  */
 
 struct X

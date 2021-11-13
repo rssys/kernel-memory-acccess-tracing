@@ -1,6 +1,6 @@
 // Reference-counted versatile string base -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -31,7 +31,6 @@
 #define _RC_STRING_BASE_H 1
 
 #include <ext/atomicity.h>
-#include <ext/alloc_traits.h>
 #include <bits/stl_iterator_base_funcs.h>
 
 namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
@@ -121,8 +120,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _CharT            _M_align;
 	};
 
-	typedef typename __alloc_traits<_Alloc>::template rebind<_Rep>::other
-	  _Rep_alloc_type;
+	typedef typename _Alloc::template rebind<_Rep>::other _Rep_alloc_type;
 
  	_CharT*
 	_M_refdata() throw()
@@ -231,8 +229,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_S_construct_aux(_InIterator __beg, _InIterator __end,
 			 const _Alloc& __a, std::__false_type)
 	{
-	  typedef typename std::iterator_traits<_InIterator>::iterator_category
-	    _Tag;
+	  typedef typename iterator_traits<_InIterator>::iterator_category _Tag;
 	  return _S_construct(__beg, __end, __a, _Tag());
 	}
 
@@ -719,6 +716,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       return false;
     }
 
+#ifdef _GLIBCXX_USE_WCHAR_T
   template<>
     inline bool
     __rc_string_base<wchar_t, std::char_traits<wchar_t>,
@@ -729,6 +727,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	return true;
       return false;
     }
+#endif
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace

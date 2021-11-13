@@ -1,4 +1,4 @@
-! { dg-do run { target fd_truncate } }
+! { dg-do run }
 ! PR69456 Namelist value with trailing sign is ignored without error
 implicit none
 integer :: ios

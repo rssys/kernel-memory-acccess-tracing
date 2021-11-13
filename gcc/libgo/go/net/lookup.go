@@ -27,7 +27,8 @@ var protocols = map[string]int{
 }
 
 // services contains minimal mappings between services names and port
-// numbers for platforms that don't have a complete list of port numbers.
+// numbers for platforms that don't have a complete list of port numbers
+// (some Solaris distros, nacl, etc).
 //
 // See https://www.iana.org/assignments/service-names-port-numbers
 //
@@ -166,9 +167,6 @@ func (r *Resolver) getLookupGroup() *singleflight.Group {
 
 // LookupHost looks up the given host using the local resolver.
 // It returns a slice of that host's addresses.
-//
-// LookupHost uses context.Background internally; to specify the context, use
-// Resolver.LookupHost.
 func LookupHost(host string) (addrs []string, err error) {
 	return DefaultResolver.LookupHost(context.Background(), host)
 }
@@ -179,7 +177,7 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) (addrs []string,
 	// Make sure that no matter what we do later, host=="" is rejected.
 	// parseIP, for example, does accept empty strings.
 	if host == "" {
-		return nil, &DNSError{Err: errNoSuchHost.Error(), Name: host, IsNotFound: true}
+		return nil, &DNSError{Err: errNoSuchHost.Error(), Name: host}
 	}
 	if ip, _ := parseIPZone(host); ip != nil {
 		return []string{host}, nil
@@ -205,31 +203,6 @@ func LookupIP(host string) ([]IP, error) {
 // It returns a slice of that host's IPv4 and IPv6 addresses.
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]IPAddr, error) {
 	return r.lookupIPAddr(ctx, "ip", host)
-}
-
-// LookupIP looks up host for the given network using the local resolver.
-// It returns a slice of that host's IP addresses of the type specified by
-// network.
-// network must be one of "ip", "ip4" or "ip6".
-func (r *Resolver) LookupIP(ctx context.Context, network, host string) ([]IP, error) {
-	afnet, _, err := parseNetwork(ctx, network, false)
-	if err != nil {
-		return nil, err
-	}
-	switch afnet {
-	case "ip", "ip4", "ip6":
-	default:
-		return nil, UnknownNetworkError(network)
-	}
-	addrs, err := r.internetAddrList(ctx, afnet, host)
-	if err != nil {
-		return nil, err
-	}
-	ips := make([]IP, 0, len(addrs))
-	for _, addr := range addrs {
-		ips = append(ips, addr.(*IPAddr).IP)
-	}
-	return ips, nil
 }
 
 // onlyValuesCtx is a context that uses an underlying context
@@ -265,7 +238,7 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, network, host string) ([]IP
 	// Make sure that no matter what we do later, host=="" is rejected.
 	// parseIP, for example, does accept empty strings.
 	if host == "" {
-		return nil, &DNSError{Err: errNoSuchHost.Error(), Name: host, IsNotFound: true}
+		return nil, &DNSError{Err: errNoSuchHost.Error(), Name: host}
 	}
 	if ip, zone := parseIPZone(host); ip != nil {
 		return []IPAddr{{IP: ip, Zone: zone}}, nil
@@ -282,7 +255,7 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, network, host string) ([]IP
 		resolverFunc = alt
 	}
 
-	// We don't want a cancellation of ctx to affect the
+	// We don't want a cancelation of ctx to affect the
 	// lookupGroup operation. Otherwise if our context gets
 	// canceled it might cause an error to be returned to a lookup
 	// using a completely different context. However we need to preserve
@@ -356,9 +329,6 @@ func ipAddrsEface(addrs []IPAddr) []interface{} {
 }
 
 // LookupPort looks up the port for the given network and service.
-//
-// LookupPort uses context.Background internally; to specify the context, use
-// Resolver.LookupPort.
 func LookupPort(network, service string) (port int, err error) {
 	return DefaultResolver.LookupPort(context.Background(), network, service)
 }
@@ -395,14 +365,8 @@ func (r *Resolver) LookupPort(ctx context.Context, network, service string) (por
 // LookupCNAME does not return an error if host does not
 // contain DNS "CNAME" records, as long as host resolves to
 // address records.
-//
-// The returned canonical name is validated to be a properly
-// formatted presentation-format domain name.
-//
-// LookupCNAME uses context.Background internally; to specify the context, use
-// Resolver.LookupCNAME.
 func LookupCNAME(host string) (cname string, err error) {
-	return DefaultResolver.LookupCNAME(context.Background(), host)
+	return DefaultResolver.lookupCNAME(context.Background(), host)
 }
 
 // LookupCNAME returns the canonical name for the given host.
@@ -415,18 +379,8 @@ func LookupCNAME(host string) (cname string, err error) {
 // LookupCNAME does not return an error if host does not
 // contain DNS "CNAME" records, as long as host resolves to
 // address records.
-//
-// The returned canonical name is validated to be a properly
-// formatted presentation-format domain name.
-func (r *Resolver) LookupCNAME(ctx context.Context, host string) (string, error) {
-	cname, err := r.lookupCNAME(ctx, host)
-	if err != nil {
-		return "", err
-	}
-	if !isDomainName(cname) {
-		return "", &DNSError{Err: errMalformedDNSRecordsDetail, Name: host}
-	}
-	return cname, nil
+func (r *Resolver) LookupCNAME(ctx context.Context, host string) (cname string, err error) {
+	return r.lookupCNAME(ctx, host)
 }
 
 // LookupSRV tries to resolve an SRV query of the given service,
@@ -438,13 +392,8 @@ func (r *Resolver) LookupCNAME(ctx context.Context, host string) (string, error)
 // That is, it looks up _service._proto.name. To accommodate services
 // publishing SRV records under non-standard names, if both service
 // and proto are empty strings, LookupSRV looks up name directly.
-//
-// The returned service names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
 func LookupSRV(service, proto, name string) (cname string, addrs []*SRV, err error) {
-	return DefaultResolver.LookupSRV(context.Background(), service, proto, name)
+	return DefaultResolver.lookupSRV(context.Background(), service, proto, name)
 }
 
 // LookupSRV tries to resolve an SRV query of the given service,
@@ -456,121 +405,31 @@ func LookupSRV(service, proto, name string) (cname string, addrs []*SRV, err err
 // That is, it looks up _service._proto.name. To accommodate services
 // publishing SRV records under non-standard names, if both service
 // and proto are empty strings, LookupSRV looks up name directly.
-//
-// The returned service names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
-func (r *Resolver) LookupSRV(ctx context.Context, service, proto, name string) (string, []*SRV, error) {
-	cname, addrs, err := r.lookupSRV(ctx, service, proto, name)
-	if err != nil {
-		return "", nil, err
-	}
-	if cname != "" && !isDomainName(cname) {
-		return "", nil, &DNSError{Err: "SRV header name is invalid", Name: name}
-	}
-	filteredAddrs := make([]*SRV, 0, len(addrs))
-	for _, addr := range addrs {
-		if addr == nil {
-			continue
-		}
-		if !isDomainName(addr.Target) {
-			continue
-		}
-		filteredAddrs = append(filteredAddrs, addr)
-	}
-	if len(addrs) != len(filteredAddrs) {
-		return cname, filteredAddrs, &DNSError{Err: errMalformedDNSRecordsDetail, Name: name}
-	}
-	return cname, filteredAddrs, nil
+func (r *Resolver) LookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*SRV, err error) {
+	return r.lookupSRV(ctx, service, proto, name)
 }
 
 // LookupMX returns the DNS MX records for the given domain name sorted by preference.
-//
-// The returned mail server names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
-//
-// LookupMX uses context.Background internally; to specify the context, use
-// Resolver.LookupMX.
 func LookupMX(name string) ([]*MX, error) {
-	return DefaultResolver.LookupMX(context.Background(), name)
+	return DefaultResolver.lookupMX(context.Background(), name)
 }
 
 // LookupMX returns the DNS MX records for the given domain name sorted by preference.
-//
-// The returned mail server names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
 func (r *Resolver) LookupMX(ctx context.Context, name string) ([]*MX, error) {
-	records, err := r.lookupMX(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	filteredMX := make([]*MX, 0, len(records))
-	for _, mx := range records {
-		if mx == nil {
-			continue
-		}
-		// Bypass the hostname validity check for targets which contain only a dot,
-		// as this is used to represent a 'Null' MX record.
-		if mx.Host != "." && !isDomainName(mx.Host) {
-			continue
-		}
-		filteredMX = append(filteredMX, mx)
-	}
-	if len(records) != len(filteredMX) {
-		return filteredMX, &DNSError{Err: errMalformedDNSRecordsDetail, Name: name}
-	}
-	return filteredMX, nil
+	return r.lookupMX(ctx, name)
 }
 
 // LookupNS returns the DNS NS records for the given domain name.
-//
-// The returned name server names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
-//
-// LookupNS uses context.Background internally; to specify the context, use
-// Resolver.LookupNS.
 func LookupNS(name string) ([]*NS, error) {
-	return DefaultResolver.LookupNS(context.Background(), name)
+	return DefaultResolver.lookupNS(context.Background(), name)
 }
 
 // LookupNS returns the DNS NS records for the given domain name.
-//
-// The returned name server names are validated to be properly
-// formatted presentation-format domain names. If the response contains
-// invalid names, those records are filtered out and an error
-// will be returned alongside the the remaining results, if any.
 func (r *Resolver) LookupNS(ctx context.Context, name string) ([]*NS, error) {
-	records, err := r.lookupNS(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	filteredNS := make([]*NS, 0, len(records))
-	for _, ns := range records {
-		if ns == nil {
-			continue
-		}
-		if !isDomainName(ns.Host) {
-			continue
-		}
-		filteredNS = append(filteredNS, ns)
-	}
-	if len(records) != len(filteredNS) {
-		return filteredNS, &DNSError{Err: errMalformedDNSRecordsDetail, Name: name}
-	}
-	return filteredNS, nil
+	return r.lookupNS(ctx, name)
 }
 
 // LookupTXT returns the DNS TXT records for the given domain name.
-//
-// LookupTXT uses context.Background internally; to specify the context, use
-// Resolver.LookupTXT.
 func LookupTXT(name string) ([]string, error) {
 	return DefaultResolver.lookupTXT(context.Background(), name)
 }
@@ -583,43 +442,14 @@ func (r *Resolver) LookupTXT(ctx context.Context, name string) ([]string, error)
 // LookupAddr performs a reverse lookup for the given address, returning a list
 // of names mapping to that address.
 //
-// The returned names are validated to be properly formatted presentation-format
-// domain names. If the response contains invalid names, those records are filtered
-// out and an error will be returned alongside the the remaining results, if any.
-//
 // When using the host C library resolver, at most one result will be
 // returned. To bypass the host resolver, use a custom Resolver.
-//
-// LookupAddr uses context.Background internally; to specify the context, use
-// Resolver.LookupAddr.
 func LookupAddr(addr string) (names []string, err error) {
-	return DefaultResolver.LookupAddr(context.Background(), addr)
+	return DefaultResolver.lookupAddr(context.Background(), addr)
 }
 
 // LookupAddr performs a reverse lookup for the given address, returning a list
 // of names mapping to that address.
-//
-// The returned names are validated to be properly formatted presentation-format
-// domain names. If the response contains invalid names, those records are filtered
-// out and an error will be returned alongside the the remaining results, if any.
-func (r *Resolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {
-	names, err := r.lookupAddr(ctx, addr)
-	if err != nil {
-		return nil, err
-	}
-	filteredNames := make([]string, 0, len(names))
-	for _, name := range names {
-		if isDomainName(name) {
-			filteredNames = append(filteredNames, name)
-		}
-	}
-	if len(names) != len(filteredNames) {
-		return filteredNames, &DNSError{Err: errMalformedDNSRecordsDetail, Name: addr}
-	}
-	return filteredNames, nil
+func (r *Resolver) LookupAddr(ctx context.Context, addr string) (names []string, err error) {
+	return r.lookupAddr(ctx, addr)
 }
-
-// errMalformedDNSRecordsDetail is the DNSError detail which is returned when a Resolver.Lookup...
-// method recieves DNS records which contain invalid DNS names. This may be returned alongside
-// results which have had the malformed records filtered out.
-var errMalformedDNSRecordsDetail = "DNS response contained records which contain invalid names"

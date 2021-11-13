@@ -1,4 +1,4 @@
-/* { dg-do run { xfail { ! aarch64*-*-* } } } */
+/* { dg-do run { xfail *-*-* } } */
 /* { dg-options "-g" } */
 /* { dg-require-effective-target alloca } */
 

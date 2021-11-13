@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---           Copyright (C) 1992-2021, Free Software Foundation, Inc.        --
+--           Copyright (C) 1992-2019, Free Software Foundation, Inc.        --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,41 +29,18 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Ada.Wide_Text_IO.Integer_Aux;
-with System.Img_BIU; use System.Img_BIU;
-with System.Img_Uns; use System.Img_Uns;
-with System.Img_LLB; use System.Img_LLB;
-with System.Img_LLU; use System.Img_LLU;
-with System.Img_LLW; use System.Img_LLW;
-with System.Img_WIU; use System.Img_WIU;
-with System.Val_Uns; use System.Val_Uns;
-with System.Val_LLU; use System.Val_LLU;
-with System.WCh_Con; use System.WCh_Con;
-with System.WCh_WtS; use System.WCh_WtS;
+with Ada.Wide_Text_IO.Modular_Aux;
+
+with System.Unsigned_Types; use System.Unsigned_Types;
+with System.WCh_Con;        use System.WCh_Con;
+with System.WCh_WtS;        use System.WCh_WtS;
 
 package body Ada.Wide_Text_IO.Modular_IO is
 
-   package Aux_Uns is new
-     Ada.Wide_Text_IO.Integer_Aux
-       (Unsigned,
-        Scan_Unsigned,
-        Set_Image_Unsigned,
-        Set_Image_Width_Unsigned,
-        Set_Image_Based_Unsigned);
+   subtype TFT is Ada.Wide_Text_IO.File_Type;
+   --  File type required for calls to routines in Aux
 
-   package Aux_LLU is new
-     Ada.Wide_Text_IO.Integer_Aux
-       (Long_Long_Unsigned,
-        Scan_Long_Long_Unsigned,
-        Set_Image_Long_Long_Unsigned,
-        Set_Image_Width_Long_Long_Unsigned,
-        Set_Image_Based_Long_Long_Unsigned);
-
-   Need_LLU : constant Boolean := Num'Base'Size > Unsigned'Size;
-   --  Throughout this generic body, we distinguish between the case where type
-   --  Unsigned is acceptable, and where a Long_Long_Unsigned is needed. This
-   --  Boolean is used to test for these cases and since it is a constant, only
-   --  code for the relevant case will be included in the instance.
+   package Aux renames Ada.Wide_Text_IO.Modular_Aux;
 
    ---------
    -- Get --
@@ -74,15 +51,11 @@ package body Ada.Wide_Text_IO.Modular_IO is
       Item  : out Num;
       Width : Field := 0)
    is
-      --  We depend on a range check to get Data_Error
-
-      pragma Unsuppress (Range_Check);
-
    begin
-      if Need_LLU then
-         Aux_LLU.Get (File, Long_Long_Unsigned (Item), Width);
+      if Num'Size > Unsigned'Size then
+         Aux.Get_LLU (TFT (File), Long_Long_Unsigned (Item), Width);
       else
-         Aux_Uns.Get (File, Unsigned (Item), Width);
+         Aux.Get_Uns (TFT (File), Unsigned (Item), Width);
       end if;
 
    exception
@@ -94,7 +67,7 @@ package body Ada.Wide_Text_IO.Modular_IO is
       Width : Field := 0)
    is
    begin
-      Get (Current_In, Item, Width);
+      Get (Current_Input, Item, Width);
    end Get;
 
    procedure Get
@@ -102,10 +75,6 @@ package body Ada.Wide_Text_IO.Modular_IO is
       Item : out Num;
       Last : out Positive)
    is
-      --  We depend on a range check to get Data_Error
-
-      pragma Unsuppress (Range_Check);
-
       S : constant String := Wide_String_To_String (From, WCEM_Upper);
       --  String on which we do the actual conversion. Note that the method
       --  used for wide character encoding is irrelevant, since if there is
@@ -113,10 +82,10 @@ package body Ada.Wide_Text_IO.Modular_IO is
       --  Aux.Gets will raise Data_Error in any case.
 
    begin
-      if Need_LLU then
-         Aux_LLU.Gets (S, Long_Long_Unsigned (Item), Last);
+      if Num'Size > Unsigned'Size then
+         Aux.Gets_LLU (S, Long_Long_Unsigned (Item), Last);
       else
-         Aux_Uns.Gets (S, Unsigned (Item), Last);
+         Aux.Gets_Uns (S, Unsigned (Item), Last);
       end if;
 
    exception
@@ -134,10 +103,10 @@ package body Ada.Wide_Text_IO.Modular_IO is
       Base  : Number_Base := Default_Base)
    is
    begin
-      if Need_LLU then
-         Aux_LLU.Put (File, Long_Long_Unsigned (Item), Width, Base);
+      if Num'Size > Unsigned'Size then
+         Aux.Put_LLU (TFT (File), Long_Long_Unsigned (Item), Width, Base);
       else
-         Aux_Uns.Put (File, Unsigned (Item), Width, Base);
+         Aux.Put_Uns (TFT (File), Unsigned (Item), Width, Base);
       end if;
    end Put;
 
@@ -147,7 +116,7 @@ package body Ada.Wide_Text_IO.Modular_IO is
       Base  : Number_Base := Default_Base)
    is
    begin
-      Put (Current_Out, Item, Width, Base);
+      Put (Current_Output, Item, Width, Base);
    end Put;
 
    procedure Put
@@ -158,10 +127,10 @@ package body Ada.Wide_Text_IO.Modular_IO is
       S : String (To'First .. To'Last);
 
    begin
-      if Need_LLU then
-         Aux_LLU.Puts (S, Long_Long_Unsigned (Item), Base);
+      if Num'Size > Unsigned'Size then
+         Aux.Puts_LLU (S, Long_Long_Unsigned (Item), Base);
       else
-         Aux_Uns.Puts (S, Unsigned (Item), Base);
+         Aux.Puts_Uns (S, Unsigned (Item), Base);
       end if;
 
       for J in S'Range loop

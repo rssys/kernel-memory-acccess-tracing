@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *            Copyright (C) 1992-2021, Free Software Foundation, Inc.       *
+ *            Copyright (C) 1992-2019, Free Software Foundation, Inc.       *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -23,9 +23,8 @@
  *                                                                          *
  ****************************************************************************/
 
-/* This is the C header that corresponds to the Ada package specification for
-   Uintp.  It was created manually from uintp.ads and must be kept synchronized
-   with changes in this file.  */
+/* This file corresponds to the Ada package specification Uintp.  It was
+   created manually from the files uintp.ads and uintp.adb.  */
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,13 +98,14 @@ extern Boolean UI_Lt			(Uint, Uint);
 
    For efficiency, this method is used only for integer values larger than the
    constant Uint_Bias.  If a Uint is less than this constant, then it contains
-   the integer value itself.  */
+   the integer value itself.  The origin of the Uints_Ptr table is adjusted so
+   that a Uint value of Uint_Bias indexes the first element.  */
 
-#define Uints_Ptr uintp__uints__table
-extern struct Uint_Entry (*Uints_Ptr)[];
+#define Uints_Ptr (uintp__uints__table - Uint_Table_Start)
+extern struct Uint_Entry *uintp__uints__table;
 
 #define Udigits_Ptr uintp__udigits__table
-extern int (*Udigits_Ptr)[];
+extern int *uintp__udigits__table;
 
 #ifdef __cplusplus
 }

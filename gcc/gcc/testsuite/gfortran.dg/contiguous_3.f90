@@ -1,5 +1,5 @@
 ! { dg-do compile }
-! { dg-options "-O0 -fdump-tree-original" }
+! { dg-options "-fdump-tree-original" }
 !
 ! PR fortran/40632
 !

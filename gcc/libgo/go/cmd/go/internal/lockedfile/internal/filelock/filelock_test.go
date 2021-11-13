@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js && !plan9
-// +build !js,!plan9
+// +build !js,!nacl,!plan9
 
 package filelock_test
 
 import (
 	"fmt"
 	"internal/testenv"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,9 +51,9 @@ func mustTempFile(t *testing.T) (f *os.File, remove func()) {
 	t.Helper()
 
 	base := filepath.Base(t.Name())
-	f, err := os.CreateTemp("", base)
+	f, err := ioutil.TempFile("", base)
 	if err != nil {
-		t.Fatalf(`os.CreateTemp("", %q) = %v`, base, err)
+		t.Fatalf(`ioutil.TempFile("", %q) = %v`, base, err)
 	}
 	t.Logf("fd %d = %s", f.Fd(), f.Name())
 
@@ -159,9 +159,7 @@ func TestRLockExcludesOnlyLock(t *testing.T) {
 	f2 := mustOpen(t, f.Name())
 	defer f2.Close()
 
-	doUnlockTF := false
-	switch runtime.GOOS {
-	case "aix", "solaris":
+	if runtime.GOOS == "solaris" || runtime.GOOS == "aix" {
 		// When using POSIX locks (as on Solaris), we can't safely read-lock the
 		// same inode through two different descriptors at the same time: when the
 		// first descriptor is closed, the second descriptor would still be open but
@@ -169,9 +167,8 @@ func TestRLockExcludesOnlyLock(t *testing.T) {
 		lockF2 := mustBlock(t, "RLock", f2)
 		unlock(t, f)
 		lockF2(t)
-	default:
+	} else {
 		rLock(t, f2)
-		doUnlockTF = true
 	}
 
 	other := mustOpen(t, f.Name())
@@ -179,7 +176,7 @@ func TestRLockExcludesOnlyLock(t *testing.T) {
 	lockOther := mustBlock(t, "Lock", other)
 
 	unlock(t, f2)
-	if doUnlockTF {
+	if runtime.GOOS != "solaris" && runtime.GOOS != "aix" {
 		unlock(t, f)
 	}
 	lockOther(t)

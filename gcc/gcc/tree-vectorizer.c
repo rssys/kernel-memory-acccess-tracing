@@ -1,5 +1,5 @@
 /* Vectorizer
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
 
 This file is part of GCC.
@@ -81,7 +81,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-pretty-print.h"
 #include "opt-problem.h"
 #include "internal-fn.h"
-#include "tree-ssa-sccvn.h"
+
 
 /* Loop or bb location, with hotness information.  */
 dump_user_location_t vect_location;
@@ -98,10 +98,11 @@ auto_purge_vect_location::~auto_purge_vect_location ()
 /* Dump a cost entry according to args to F.  */
 
 void
-dump_stmt_cost (FILE *f, int count, enum vect_cost_for_stmt kind,
-		stmt_vec_info stmt_info, tree, int misalign, unsigned cost,
+dump_stmt_cost (FILE *f, void *data, int count, enum vect_cost_for_stmt kind,
+		stmt_vec_info stmt_info, int misalign, unsigned cost,
 		enum vect_cost_model_location where)
 {
+  fprintf (f, "%p ", data);
   if (stmt_info)
     {
       print_gimple_expr (f, STMT_VINFO_STMT (stmt_info), 0, TDF_SLIM);
@@ -187,9 +188,8 @@ dump_stmt_cost (FILE *f, int count, enum vect_cost_for_stmt kind,
 
 /* For mapping simduid to vectorization factor.  */
 
-class simduid_to_vf : public free_ptr_hash<simduid_to_vf>
+struct simduid_to_vf : free_ptr_hash<simduid_to_vf>
 {
-public:
   unsigned int simduid;
   poly_uint64 vf;
 
@@ -288,7 +288,10 @@ adjust_simduid_builtins (hash_table<simduid_to_vf> *htab)
 		       : BUILT_IN_GOMP_ORDERED_END);
 		  gimple *g
 		    = gimple_build_call (builtin_decl_explicit (bcode), 0);
-		  gimple_move_vops (g, stmt);
+		  tree vdef = gimple_vdef (stmt);
+		  gimple_set_vdef (g, vdef);
+		  SSA_NAME_DEF_STMT (vdef) = g;
+		  gimple_set_vuse (g, gimple_vuse (stmt));
 		  gsi_replace (&i, g, true);
 		  continue;
 		}
@@ -456,25 +459,29 @@ shrink_simd_arrays
 /* Initialize the vec_info with kind KIND_IN and target cost data
    TARGET_COST_DATA_IN.  */
 
-vec_info::vec_info (vec_info::vec_kind kind_in, vec_info_shared *shared_)
+vec_info::vec_info (vec_info::vec_kind kind_in, void *target_cost_data_in,
+		    vec_info_shared *shared_)
   : kind (kind_in),
     shared (shared_),
-    stmt_vec_info_ro (false)
+    target_cost_data (target_cost_data_in)
 {
   stmt_vec_infos.create (50);
 }
 
 vec_info::~vec_info ()
 {
-  for (slp_instance &instance : slp_instances)
-    vect_free_slp_instance (instance);
+  slp_instance instance;
+  unsigned int i;
 
+  FOR_EACH_VEC_ELT (slp_instances, i, instance)
+    vect_free_slp_instance (instance, true);
+
+  destroy_cost_data (target_cost_data);
   free_stmt_vec_infos ();
 }
 
 vec_info_shared::vec_info_shared ()
-  : n_stmts (0),
-    datarefs (vNULL),
+  : datarefs (vNULL),
     datarefs_copy (vNULL),
     ddrs (vNULL)
 {
@@ -504,8 +511,7 @@ vec_info_shared::check_datarefs ()
     return;
   gcc_assert (datarefs.length () == datarefs_copy.length ());
   for (unsigned i = 0; i < datarefs.length (); ++i)
-    if (memcmp (&datarefs_copy[i], datarefs[i],
-		offsetof (data_reference, alt_indices)) != 0)
+    if (memcmp (&datarefs_copy[i], datarefs[i], sizeof (data_reference)) != 0)
       gcc_unreachable ();
 }
 
@@ -517,19 +523,6 @@ vec_info::add_stmt (gimple *stmt)
 {
   stmt_vec_info res = new_stmt_vec_info (stmt);
   set_vinfo_for_stmt (stmt, res);
-  return res;
-}
-
-/* Record that STMT belongs to the vectorizable region.  Create a new
-   stmt_vec_info and mark VECINFO as being related and return the new
-   stmt_vec_info.  */
-
-stmt_vec_info
-vec_info::add_pattern_stmt (gimple *stmt, stmt_vec_info stmt_info)
-{
-  stmt_vec_info res = new_stmt_vec_info (stmt);
-  set_vinfo_for_stmt (stmt, res, false);
-  STMT_VINFO_RELATED_STMT (res) = stmt_info;
   return res;
 }
 
@@ -611,8 +604,8 @@ vec_info::remove_stmt (stmt_vec_info stmt_info)
 {
   gcc_assert (!stmt_info->pattern_stmt_p);
   set_vinfo_for_stmt (stmt_info->stmt, NULL);
-  unlink_stmt_vdef (stmt_info->stmt);
   gimple_stmt_iterator si = gsi_for_stmt (stmt_info->stmt);
+  unlink_stmt_vdef (stmt_info->stmt);
   gsi_remove (&si, true);
   release_defs (stmt_info->stmt);
   free_stmt_vec_info (stmt_info);
@@ -628,50 +621,10 @@ vec_info::replace_stmt (gimple_stmt_iterator *gsi, stmt_vec_info stmt_info,
 {
   gimple *old_stmt = stmt_info->stmt;
   gcc_assert (!stmt_info->pattern_stmt_p && old_stmt == gsi_stmt (*gsi));
-  gimple_set_uid (new_stmt, gimple_uid (old_stmt));
+  set_vinfo_for_stmt (old_stmt, NULL);
+  set_vinfo_for_stmt (new_stmt, stmt_info);
   stmt_info->stmt = new_stmt;
   gsi_replace (gsi, new_stmt, true);
-}
-
-/* Insert stmts in SEQ on the VEC_INFO region entry.  If CONTEXT is
-   not NULL it specifies whether to use the sub-region entry
-   determined by it, currently used for loop vectorization to insert
-   on the inner loop entry vs. the outer loop entry.  */
-
-void
-vec_info::insert_seq_on_entry (stmt_vec_info context, gimple_seq seq)
-{
-  if (loop_vec_info loop_vinfo = dyn_cast <loop_vec_info> (this))
-    {
-      class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
-      basic_block new_bb;
-      edge pe;
-
-      if (context && nested_in_vect_loop_p (loop, context))
-	loop = loop->inner;
-
-      pe = loop_preheader_edge (loop);
-      new_bb = gsi_insert_seq_on_edge_immediate (pe, seq);
-      gcc_assert (!new_bb);
-    }
-  else
-    {
-      bb_vec_info bb_vinfo = as_a <bb_vec_info> (this);
-      gimple_stmt_iterator gsi_region_begin
-	= gsi_after_labels (bb_vinfo->bbs[0]);
-      gsi_insert_seq_before (&gsi_region_begin, seq, GSI_SAME_STMT);
-    }
-}
-
-/* Like insert_seq_on_entry but just inserts the single stmt NEW_STMT.  */
-
-void
-vec_info::insert_on_entry (stmt_vec_info context, gimple *new_stmt)
-{
-  gimple_seq seq = NULL;
-  gimple_stmt_iterator gsi = gsi_start (seq);
-  gsi_insert_before_without_update (&gsi, new_stmt, GSI_SAME_STMT);
-  insert_seq_on_entry (context, seq);
 }
 
 /* Create and initialize a new stmt_vec_info struct for STMT.  */
@@ -679,29 +632,23 @@ vec_info::insert_on_entry (stmt_vec_info context, gimple *new_stmt)
 stmt_vec_info
 vec_info::new_stmt_vec_info (gimple *stmt)
 {
-  stmt_vec_info res = XCNEW (class _stmt_vec_info);
+  stmt_vec_info res = XCNEW (struct _stmt_vec_info);
+  res->vinfo = this;
   res->stmt = stmt;
 
   STMT_VINFO_TYPE (res) = undef_vec_info_type;
   STMT_VINFO_RELEVANT (res) = vect_unused_in_scope;
   STMT_VINFO_VECTORIZABLE (res) = true;
-  STMT_VINFO_REDUC_TYPE (res) = TREE_CODE_REDUCTION;
-  STMT_VINFO_REDUC_CODE (res) = ERROR_MARK;
-  STMT_VINFO_REDUC_FN (res) = IFN_LAST;
-  STMT_VINFO_REDUC_IDX (res) = -1;
-  STMT_VINFO_SLP_VECT_ONLY (res) = false;
-  STMT_VINFO_SLP_VECT_ONLY_PATTERN (res) = false;
-  STMT_VINFO_VEC_STMTS (res) = vNULL;
-  res->reduc_initial_values = vNULL;
-  res->reduc_scalar_results = vNULL;
+  STMT_VINFO_VEC_REDUCTION_TYPE (res) = TREE_CODE_REDUCTION;
+  STMT_VINFO_VEC_CONST_COND_REDUC_CODE (res) = ERROR_MARK;
 
-  if (is_a <loop_vec_info> (this)
-      && gimple_code (stmt) == GIMPLE_PHI
+  if (gimple_code (stmt) == GIMPLE_PHI
       && is_loop_header_bb_p (gimple_bb (stmt)))
     STMT_VINFO_DEF_TYPE (res) = vect_unknown_def_type;
   else
     STMT_VINFO_DEF_TYPE (res) = vect_internal_def;
 
+  STMT_VINFO_SAME_ALIGN_REFS (res).create (0);
   STMT_SLP_TYPE (res) = loop_vect;
 
   /* This is really "uninitialized" until vect_compute_data_ref_alignment.  */
@@ -713,12 +660,11 @@ vec_info::new_stmt_vec_info (gimple *stmt)
 /* Associate STMT with INFO.  */
 
 void
-vec_info::set_vinfo_for_stmt (gimple *stmt, stmt_vec_info info, bool check_ro)
+vec_info::set_vinfo_for_stmt (gimple *stmt, stmt_vec_info info)
 {
   unsigned int uid = gimple_uid (stmt);
   if (uid == 0)
     {
-      gcc_assert (!check_ro || !stmt_vec_info_ro);
       gcc_checking_assert (info);
       uid = stmt_vec_infos.length () + 1;
       gimple_set_uid (stmt, uid);
@@ -736,7 +682,9 @@ vec_info::set_vinfo_for_stmt (gimple *stmt, stmt_vec_info info, bool check_ro)
 void
 vec_info::free_stmt_vec_infos (void)
 {
-  for (stmt_vec_info &info : stmt_vec_infos)
+  unsigned int i;
+  stmt_vec_info info;
+  FOR_EACH_VEC_ELT (stmt_vec_infos, i, info)
     if (info != NULL)
       free_stmt_vec_info (info);
   stmt_vec_infos.release ();
@@ -755,79 +703,16 @@ vec_info::free_stmt_vec_info (stmt_vec_info stmt_info)
 	release_ssa_name (lhs);
     }
 
-  stmt_info->reduc_initial_values.release ();
-  stmt_info->reduc_scalar_results.release ();
+  STMT_VINFO_SAME_ALIGN_REFS (stmt_info).release ();
   STMT_VINFO_SIMD_CLONE_INFO (stmt_info).release ();
-  STMT_VINFO_VEC_STMTS (stmt_info).release ();
   free (stmt_info);
-}
-
-/* Returns true if S1 dominates S2.  */
-
-bool
-vect_stmt_dominates_stmt_p (gimple *s1, gimple *s2)
-{
-  basic_block bb1 = gimple_bb (s1), bb2 = gimple_bb (s2);
-
-  /* If bb1 is NULL, it should be a GIMPLE_NOP def stmt of an (D)
-     SSA_NAME.  Assume it lives at the beginning of function and
-     thus dominates everything.  */
-  if (!bb1 || s1 == s2)
-    return true;
-
-  /* If bb2 is NULL, it doesn't dominate any stmt with a bb.  */
-  if (!bb2)
-    return false;
-
-  if (bb1 != bb2)
-    return dominated_by_p (CDI_DOMINATORS, bb2, bb1);
-
-  /* PHIs in the same basic block are assumed to be
-     executed all in parallel, if only one stmt is a PHI,
-     it dominates the other stmt in the same basic block.  */
-  if (gimple_code (s1) == GIMPLE_PHI)
-    return true;
-
-  if (gimple_code (s2) == GIMPLE_PHI)
-    return false;
-
-  /* Inserted vectorized stmts all have UID 0 while the original stmts
-     in the IL have UID increasing within a BB.  Walk from both sides
-     until we find the other stmt or a stmt with UID != 0.  */
-  gimple_stmt_iterator gsi1 = gsi_for_stmt (s1);
-  while (gimple_uid (gsi_stmt (gsi1)) == 0)
-    {
-      gsi_next (&gsi1);
-      if (gsi_end_p (gsi1))
-	return false;
-      if (gsi_stmt (gsi1) == s2)
-	return true;
-    }
-  if (gimple_uid (gsi_stmt (gsi1)) == -1u)
-    return false;
-
-  gimple_stmt_iterator gsi2 = gsi_for_stmt (s2);
-  while (gimple_uid (gsi_stmt (gsi2)) == 0)
-    {
-      gsi_prev (&gsi2);
-      if (gsi_end_p (gsi2))
-	return false;
-      if (gsi_stmt (gsi2) == s1)
-	return true;
-    }
-  if (gimple_uid (gsi_stmt (gsi2)) == -1u)
-    return false;
-
-  if (gimple_uid (gsi_stmt (gsi1)) <= gimple_uid (gsi_stmt (gsi2)))
-    return true;
-  return false;
 }
 
 /* A helper function to free scev and LOOP niter information, as well as
    clear loop constraint LOOP_C_FINITE.  */
 
 void
-vect_free_loop_info_assumptions (class loop *loop)
+vect_free_loop_info_assumptions (struct loop *loop)
 {
   scev_reset_htab ();
   /* We need to explicitly reset upper bound information since they are
@@ -841,16 +726,15 @@ vect_free_loop_info_assumptions (class loop *loop)
 /* If LOOP has been versioned during ifcvt, return the internal call
    guarding it.  */
 
-gimple *
-vect_loop_vectorized_call (class loop *loop, gcond **cond)
+static gimple *
+vect_loop_vectorized_call (struct loop *loop)
 {
   basic_block bb = loop_preheader_edge (loop)->src;
   gimple *g;
   do
     {
       g = last_stmt (bb);
-      if ((g && gimple_code (g) == GIMPLE_COND)
-	  || !single_succ_p (bb))
+      if (g)
 	break;
       if (!single_pred_p (bb))
 	break;
@@ -859,8 +743,6 @@ vect_loop_vectorized_call (class loop *loop, gcond **cond)
   while (1);
   if (g && gimple_code (g) == GIMPLE_COND)
     {
-      if (cond)
-	*cond = as_a <gcond *> (g);
       gimple_stmt_iterator gsi = gsi_for_stmt (g);
       gsi_prev (&gsi);
       if (!gsi_end_p (gsi))
@@ -879,11 +761,11 @@ vect_loop_vectorized_call (class loop *loop, gcond **cond)
    internal call.  */
 
 static gimple *
-vect_loop_dist_alias_call (class loop *loop)
+vect_loop_dist_alias_call (struct loop *loop)
 {
   basic_block bb;
   basic_block entry;
-  class loop *outer, *orig;
+  struct loop *outer, *orig;
   gimple_stmt_iterator gsi;
   gimple *g;
 
@@ -938,7 +820,7 @@ set_uid_loop_bbs (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
   tree arg = gimple_call_arg (loop_vectorized_call, 1);
   basic_block *bbs;
   unsigned int i;
-  class loop *scalar_loop = get_loop (cfun, tree_to_shwi (arg));
+  struct loop *scalar_loop = get_loop (cfun, tree_to_shwi (arg));
 
   LOOP_VINFO_SCALAR_LOOP (loop_vinfo) = scalar_loop;
   gcc_checking_assert (vect_loop_vectorized_call (scalar_loop)
@@ -976,55 +858,12 @@ set_uid_loop_bbs (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
   free (bbs);
 }
 
-/* Generate vectorized code for LOOP and its epilogues.  */
-
-static void
-vect_transform_loops (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
-		      loop_p loop, gimple *loop_vectorized_call)
-{
-  loop_vec_info loop_vinfo = loop_vec_info_for_loop (loop);
-
-  if (loop_vectorized_call)
-    set_uid_loop_bbs (loop_vinfo, loop_vectorized_call);
-
-  unsigned HOST_WIDE_INT bytes;
-  if (dump_enabled_p ())
-    {
-      if (GET_MODE_SIZE (loop_vinfo->vector_mode).is_constant (&bytes))
-	dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, vect_location,
-			 "loop vectorized using %wu byte vectors\n", bytes);
-      else
-	dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, vect_location,
-			 "loop vectorized using variable length vectors\n");
-    }
-
-  loop_p new_loop = vect_transform_loop (loop_vinfo,
-					 loop_vectorized_call);
-  /* Now that the loop has been vectorized, allow it to be unrolled
-     etc.  */
-  loop->force_vectorize = false;
-
-  if (loop->simduid)
-    {
-      simduid_to_vf *simduid_to_vf_data = XNEW (simduid_to_vf);
-      if (!simduid_to_vf_htab)
-	simduid_to_vf_htab = new hash_table<simduid_to_vf> (15);
-      simduid_to_vf_data->simduid = DECL_UID (loop->simduid);
-      simduid_to_vf_data->vf = loop_vinfo->vectorization_factor;
-      *simduid_to_vf_htab->find_slot (simduid_to_vf_data, INSERT)
-	  = simduid_to_vf_data;
-    }
-
-  /* Epilogue of vectorized loop must be vectorized too.  */
-  if (new_loop)
-    vect_transform_loops (simduid_to_vf_htab, new_loop, NULL);
-}
-
 /* Try to vectorize LOOP.  */
 
 static unsigned
 try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
-		      unsigned *num_vectorized_loops, loop_p loop,
+		      unsigned *num_vectorized_loops,
+		      loop_p loop, loop_vec_info orig_loop_vinfo,
 		      gimple *loop_vectorized_call,
 		      gimple *loop_dist_alias_call)
 {
@@ -1032,7 +871,6 @@ try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
   vec_info_shared shared;
   auto_purge_vect_location sentinel;
   vect_location = find_loop_location (loop);
-
   if (LOCATION_LOCUS (vect_location.get_location_t ()) != UNKNOWN_LOCATION
       && dump_enabled_p ())
     dump_printf (MSG_NOTE | MSG_PRIORITY_INTERNALS,
@@ -1041,7 +879,8 @@ try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
 		 LOCATION_LINE (vect_location.get_location_t ()));
 
   /* Try to analyze the loop, retaining an opt_problem if dump_enabled_p.  */
-  opt_loop_vec_info loop_vinfo = vect_analyze_loop (loop, &shared);
+  opt_loop_vec_info loop_vinfo
+    = vect_analyze_loop (loop, orig_loop_vinfo, &shared);
   loop->aux = loop_vinfo;
 
   if (!loop_vinfo)
@@ -1094,17 +933,15 @@ try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
 	      gimple_set_uid (stmt, -1);
 	      gimple_set_visited (stmt, false);
 	    }
-	  if (!require_loop_vectorize)
+	  if (!require_loop_vectorize && vect_slp_bb (bb))
 	    {
-	      tree arg = gimple_call_arg (loop_vectorized_call, 1);
-	      class loop *scalar_loop = get_loop (cfun, tree_to_shwi (arg));
-	      if (vect_slp_if_converted_bb (bb, scalar_loop))
-		{
-		  fold_loop_internal_call (loop_vectorized_call,
-					   boolean_true_node);
-		  loop_vectorized_call = NULL;
-		  ret |= TODO_cleanup_cfg | TODO_update_ssa_only_virtuals;
-		}
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "basic block vectorized\n");
+	      fold_loop_internal_call (loop_vectorized_call,
+				       boolean_true_node);
+	      loop_vectorized_call = NULL;
+	      ret |= TODO_cleanup_cfg | TODO_update_ssa_only_virtuals;
 	    }
 	}
       /* If outer loop vectorization fails for LOOP_VECTORIZED guarded
@@ -1125,21 +962,55 @@ try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
       return ret;
     }
 
+  if (loop_vectorized_call)
+    set_uid_loop_bbs (loop_vinfo, loop_vectorized_call);
+
+  unsigned HOST_WIDE_INT bytes;
+  if (dump_enabled_p ())
+    {
+      if (current_vector_size.is_constant (&bytes))
+	dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, vect_location,
+			 "loop vectorized using %wu byte vectors\n", bytes);
+      else
+	dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, vect_location,
+			 "loop vectorized using variable length vectors\n");
+    }
+
+  loop_p new_loop = vect_transform_loop (loop_vinfo);
   (*num_vectorized_loops)++;
-  /* Transform LOOP and its epilogues.  */
-  vect_transform_loops (simduid_to_vf_htab, loop, loop_vectorized_call);
+  /* Now that the loop has been vectorized, allow it to be unrolled
+     etc.  */
+  loop->force_vectorize = false;
+
+  if (loop->simduid)
+    {
+      simduid_to_vf *simduid_to_vf_data = XNEW (simduid_to_vf);
+      if (!simduid_to_vf_htab)
+	simduid_to_vf_htab = new hash_table<simduid_to_vf> (15);
+      simduid_to_vf_data->simduid = DECL_UID (loop->simduid);
+      simduid_to_vf_data->vf = loop_vinfo->vectorization_factor;
+      *simduid_to_vf_htab->find_slot (simduid_to_vf_data, INSERT)
+	  = simduid_to_vf_data;
+    }
 
   if (loop_vectorized_call)
     {
       fold_loop_internal_call (loop_vectorized_call, boolean_true_node);
+      loop_vectorized_call = NULL;
       ret |= TODO_cleanup_cfg;
     }
   if (loop_dist_alias_call)
     {
       tree value = gimple_call_arg (loop_dist_alias_call, 1);
       fold_loop_internal_call (loop_dist_alias_call, value);
+      loop_dist_alias_call = NULL;
       ret |= TODO_cleanup_cfg;
     }
+
+  /* Epilogue of vectorized loop must be vectorized too.  */
+  if (new_loop)
+    ret |= try_vectorize_loop_1 (simduid_to_vf_htab, num_vectorized_loops,
+				 new_loop, loop_vinfo, NULL, NULL);
 
   return ret;
 }
@@ -1155,7 +1026,8 @@ try_vectorize_loop (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
 	|| loop->force_vectorize))
     return 0;
 
-  return try_vectorize_loop_1 (simduid_to_vf_htab, num_vectorized_loops, loop,
+  return try_vectorize_loop_1 (simduid_to_vf_htab, num_vectorized_loops,
+			       loop, NULL,
 			       vect_loop_vectorized_call (loop),
 			       vect_loop_dist_alias_call (loop));
 }
@@ -1171,7 +1043,7 @@ vectorize_loops (void)
   unsigned int i;
   unsigned int num_vectorized_loops = 0;
   unsigned int vect_loops_num;
-  class loop *loop;
+  struct loop *loop;
   hash_table<simduid_to_vf> *simduid_to_vf_htab = NULL;
   hash_table<simd_array_to_simduid> *simd_array_to_simduid_htab = NULL;
   bool any_ifcvt_loops = false;
@@ -1183,8 +1055,6 @@ vectorize_loops (void)
   if (vect_loops_num <= 1)
     return 0;
 
-  vect_slp_init ();
-
   if (cfun->has_simduid_loops)
     note_simd_array_uses (&simd_array_to_simduid_htab);
 
@@ -1193,7 +1063,7 @@ vectorize_loops (void)
   /* If some loop was duplicated, it gets bigger number
      than all previously defined loops.  This fact allows us to run
      only over initial loops skipping newly generated ones.  */
-  for (auto loop : loops_list (cfun, 0))
+  FOR_EACH_LOOP (loop, 0)
     if (loop->dont_vectorize)
       {
 	any_ifcvt_loops = true;
@@ -1212,7 +1082,7 @@ vectorize_loops (void)
 		  loop4 (copy of loop2)
 		else
 		  loop5 (copy of loop4)
-	   If loops' iteration gives us loop3 first (which has
+	   If FOR_EACH_LOOP gives us loop3 first (which has
 	   dont_vectorize set), make sure to process loop1 before loop4;
 	   so that we can prevent vectorization of loop4 if loop1
 	   is successfully vectorized.  */
@@ -1224,7 +1094,7 @@ vectorize_loops (void)
 		&& vect_loop_vectorized_call (loop->inner))
 	      {
 		tree arg = gimple_call_arg (loop_vectorized_call, 0);
-		class loop *vector_loop
+		struct loop *vector_loop
 		  = get_loop (cfun, tree_to_shwi (arg));
 		if (vector_loop && vector_loop != loop)
 		  {
@@ -1276,29 +1146,6 @@ vectorize_loops (void)
 	  }
       }
 
-  /* Fold IFN_GOMP_SIMD_{VF,LANE,LAST_LANE,ORDERED_{START,END}} builtins.  */
-  if (cfun->has_simduid_loops)
-    {
-      adjust_simduid_builtins (simduid_to_vf_htab);
-      /* Avoid stale SCEV cache entries for the SIMD_LANE defs.  */
-      scev_reset ();
-    }
-  /* Shrink any "omp array simd" temporary arrays to the
-     actual vectorization factors.  */
-  if (simd_array_to_simduid_htab)
-    shrink_simd_arrays (simd_array_to_simduid_htab, simduid_to_vf_htab);
-  delete simduid_to_vf_htab;
-  cfun->has_simduid_loops = false;
-
-  if (num_vectorized_loops > 0)
-    {
-      /* If we vectorized any loop only virtual SSA form needs to be updated.
-	 ???  Also while we try hard to update loop-closed SSA form we fail
-	 to properly do this in some corner-cases (see PR56286).  */
-      rewrite_into_loop_closed_ssa (NULL, TODO_update_ssa_only_virtuals);
-      ret |= TODO_cleanup_cfg;
-    }
-
   for (i = 1; i < number_of_loops (cfun); i++)
     {
       loop_vec_info loop_vinfo;
@@ -1313,21 +1160,28 @@ vectorize_loops (void)
       if (has_mask_store
 	  && targetm.vectorize.empty_mask_is_expensive (IFN_MASK_STORE))
 	optimize_mask_stores (loop);
-
-      auto_bitmap exit_bbs;
-      /* Perform local CSE, this esp. helps because we emit code for
-	 predicates that need to be shared for optimal predicate usage.
-	 However reassoc will re-order them and prevent CSE from working
-	 as it should.  CSE only the loop body, not the entry.  */
-      bitmap_set_bit (exit_bbs, single_exit (loop)->dest->index);
-
-      edge entry = EDGE_PRED (loop_preheader_edge (loop)->src, 0);
-      do_rpo_vn (cfun, entry, exit_bbs);
-
       loop->aux = NULL;
     }
 
-  vect_slp_fini ();
+  /* Fold IFN_GOMP_SIMD_{VF,LANE,LAST_LANE,ORDERED_{START,END}} builtins.  */
+  if (cfun->has_simduid_loops)
+    adjust_simduid_builtins (simduid_to_vf_htab);
+
+  /* Shrink any "omp array simd" temporary arrays to the
+     actual vectorization factors.  */
+  if (simd_array_to_simduid_htab)
+    shrink_simd_arrays (simd_array_to_simduid_htab, simduid_to_vf_htab);
+  delete simduid_to_vf_htab;
+  cfun->has_simduid_loops = false;
+
+  if (num_vectorized_loops > 0)
+    {
+      /* If we vectorized any loop only virtual SSA form needs to be updated.
+	 ???  Also while we try hard to update loop-closed SSA form we fail
+	 to properly do this in some corner-cases (see PR56286).  */
+      rewrite_into_loop_closed_ssa (NULL, TODO_update_ssa_only_virtuals);
+      return TODO_cleanup_cfg;
+    }
 
   return ret;
 }
@@ -1438,13 +1292,6 @@ pass_slp_vectorize::execute (function *fun)
   /* Mark all stmts as not belonging to the current region and unvisited.  */
   FOR_EACH_BB_FN (bb, fun)
     {
-      for (gphi_iterator gsi = gsi_start_phis (bb); !gsi_end_p (gsi);
-	   gsi_next (&gsi))
-	{
-	  gphi *stmt = gsi.phi ();
-	  gimple_set_uid (stmt, -1);
-	  gimple_set_visited (stmt, false);
-	}
       for (gimple_stmt_iterator gsi = gsi_start_bb (bb); !gsi_end_p (gsi);
 	   gsi_next (&gsi))
 	{
@@ -1454,11 +1301,12 @@ pass_slp_vectorize::execute (function *fun)
 	}
     }
 
-  vect_slp_init ();
-
-  vect_slp_function (fun);
-
-  vect_slp_fini ();
+  FOR_EACH_BB_FN (bb, fun)
+    {
+      if (vect_slp_bb (bb))
+	if (dump_enabled_p ())
+	  dump_printf_loc (MSG_NOTE, vect_location, "basic block vectorized\n");
+    }
 
   if (!in_loop_pipeline)
     {
@@ -1496,8 +1344,7 @@ get_vec_alignment_for_array_type (tree type)
   gcc_assert (TREE_CODE (type) == ARRAY_TYPE);
   poly_uint64 array_size, vector_size;
 
-  tree scalar_type = strip_array_types (type);
-  tree vectype = get_related_vectype_for_scalar_type (VOIDmode, scalar_type);
+  tree vectype = get_vectype_for_scalar_type (strip_array_types (type));
   if (!vectype
       || !poly_int_tree_p (TYPE_SIZE (type), &array_size)
       || !poly_int_tree_p (TYPE_SIZE (vectype), &vector_size)
@@ -1664,317 +1511,4 @@ simple_ipa_opt_pass *
 make_pass_ipa_increase_alignment (gcc::context *ctxt)
 {
   return new pass_ipa_increase_alignment (ctxt);
-}
-
-/* If the condition represented by T is a comparison or the SSA name
-   result of a comparison, extract the comparison's operands.  Represent
-   T as NE_EXPR <T, 0> otherwise.  */
-
-void
-scalar_cond_masked_key::get_cond_ops_from_tree (tree t)
-{
-  if (TREE_CODE_CLASS (TREE_CODE (t)) == tcc_comparison)
-    {
-      this->code = TREE_CODE (t);
-      this->op0 = TREE_OPERAND (t, 0);
-      this->op1 = TREE_OPERAND (t, 1);
-      this->inverted_p = false;
-      return;
-    }
-
-  if (TREE_CODE (t) == SSA_NAME)
-    if (gassign *stmt = dyn_cast<gassign *> (SSA_NAME_DEF_STMT (t)))
-      {
-	tree_code code = gimple_assign_rhs_code (stmt);
-	if (TREE_CODE_CLASS (code) == tcc_comparison)
-	  {
-	    this->code = code;
-	    this->op0 = gimple_assign_rhs1 (stmt);
-	    this->op1 = gimple_assign_rhs2 (stmt);
-	    this->inverted_p = false;
-	    return;
-	  }
-	else if (code == BIT_NOT_EXPR)
-	  {
-	    tree n_op = gimple_assign_rhs1 (stmt);
-	    if ((stmt = dyn_cast<gassign *> (SSA_NAME_DEF_STMT (n_op))))
-	      {
-		code = gimple_assign_rhs_code (stmt);
-		if (TREE_CODE_CLASS (code) == tcc_comparison)
-		  {
-		    this->code = code;
-		    this->op0 = gimple_assign_rhs1 (stmt);
-		    this->op1 = gimple_assign_rhs2 (stmt);
-		    this->inverted_p = true;
-		    return;
-		  }
-	      }
-	  }
-      }
-
-  this->code = NE_EXPR;
-  this->op0 = t;
-  this->op1 = build_zero_cst (TREE_TYPE (t));
-  this->inverted_p = false;
-}
-
-/* See the comment above the declaration for details.  */
-
-unsigned int
-vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
-			     stmt_vec_info stmt_info, tree vectype,
-			     int misalign, vect_cost_model_location where)
-{
-  unsigned int cost
-    = builtin_vectorization_cost (kind, vectype, misalign) * count;
-  return record_stmt_cost (stmt_info, where, cost);
-}
-
-/* See the comment above the declaration for details.  */
-
-void
-vector_costs::finish_cost (const vector_costs *)
-{
-  gcc_assert (!m_finished);
-  m_finished = true;
-}
-
-/* Record a base cost of COST units against WHERE.  If STMT_INFO is
-   nonnull, use it to adjust the cost based on execution frequency
-   (where appropriate).  */
-
-unsigned int
-vector_costs::record_stmt_cost (stmt_vec_info stmt_info,
-				vect_cost_model_location where,
-				unsigned int cost)
-{
-  cost = adjust_cost_for_freq (stmt_info, where, cost);
-  m_costs[where] += cost;
-  return cost;
-}
-
-/* COST is the base cost we have calculated for an operation in location WHERE.
-   If STMT_INFO is nonnull, use it to adjust the cost based on execution
-   frequency (where appropriate).  Return the adjusted cost.  */
-
-unsigned int
-vector_costs::adjust_cost_for_freq (stmt_vec_info stmt_info,
-				    vect_cost_model_location where,
-				    unsigned int cost)
-{
-  /* Statements in an inner loop relative to the loop being
-     vectorized are weighted more heavily.  The value here is
-     arbitrary and could potentially be improved with analysis.  */
-  if (where == vect_body
-      && stmt_info
-      && stmt_in_inner_loop_p (m_vinfo, stmt_info))
-    {
-      loop_vec_info loop_vinfo = as_a<loop_vec_info> (m_vinfo);
-      cost *= LOOP_VINFO_INNER_LOOP_COST_FACTOR (loop_vinfo);
-    }
-  return cost;
-}
-
-/* See the comment above the declaration for details.  */
-
-bool
-vector_costs::better_main_loop_than_p (const vector_costs *other) const
-{
-  int diff = compare_inside_loop_cost (other);
-  if (diff != 0)
-    return diff < 0;
-
-  /* If there's nothing to choose between the loop bodies, see whether
-     there's a difference in the prologue and epilogue costs.  */
-  diff = compare_outside_loop_cost (other);
-  if (diff != 0)
-    return diff < 0;
-
-  return false;
-}
-
-
-/* See the comment above the declaration for details.  */
-
-bool
-vector_costs::better_epilogue_loop_than_p (const vector_costs *other,
-					   loop_vec_info main_loop) const
-{
-  loop_vec_info this_loop_vinfo = as_a<loop_vec_info> (this->m_vinfo);
-  loop_vec_info other_loop_vinfo = as_a<loop_vec_info> (other->m_vinfo);
-
-  poly_int64 this_vf = LOOP_VINFO_VECT_FACTOR (this_loop_vinfo);
-  poly_int64 other_vf = LOOP_VINFO_VECT_FACTOR (other_loop_vinfo);
-
-  poly_uint64 main_poly_vf = LOOP_VINFO_VECT_FACTOR (main_loop);
-  unsigned HOST_WIDE_INT main_vf;
-  unsigned HOST_WIDE_INT other_factor, this_factor, other_cost, this_cost;
-  /* If we can determine how many iterations are left for the epilogue
-     loop, that is if both the main loop's vectorization factor and number
-     of iterations are constant, then we use them to calculate the cost of
-     the epilogue loop together with a 'likely value' for the epilogues
-     vectorization factor.  Otherwise we use the main loop's vectorization
-     factor and the maximum poly value for the epilogue's.  If the target
-     has not provided with a sensible upper bound poly vectorization
-     factors are likely to be favored over constant ones.  */
-  if (main_poly_vf.is_constant (&main_vf)
-      && LOOP_VINFO_NITERS_KNOWN_P (main_loop))
-    {
-      unsigned HOST_WIDE_INT niters
-	= LOOP_VINFO_INT_NITERS (main_loop) % main_vf;
-      HOST_WIDE_INT other_likely_vf
-	= estimated_poly_value (other_vf, POLY_VALUE_LIKELY);
-      HOST_WIDE_INT this_likely_vf
-	= estimated_poly_value (this_vf, POLY_VALUE_LIKELY);
-
-      /* If the epilogue is using partial vectors we account for the
-	 partial iteration here too.  */
-      other_factor = niters / other_likely_vf;
-      if (LOOP_VINFO_USING_PARTIAL_VECTORS_P (other_loop_vinfo)
-	  && niters % other_likely_vf != 0)
-	other_factor++;
-
-      this_factor = niters / this_likely_vf;
-      if (LOOP_VINFO_USING_PARTIAL_VECTORS_P (this_loop_vinfo)
-	  && niters % this_likely_vf != 0)
-	this_factor++;
-    }
-  else
-    {
-      unsigned HOST_WIDE_INT main_vf_max
-	= estimated_poly_value (main_poly_vf, POLY_VALUE_MAX);
-
-      other_factor = main_vf_max / estimated_poly_value (other_vf,
-						       POLY_VALUE_MAX);
-      this_factor = main_vf_max / estimated_poly_value (this_vf,
-						       POLY_VALUE_MAX);
-
-      /* If the loop is not using partial vectors then it will iterate one
-	 time less than one that does.  It is safe to subtract one here,
-	 because the main loop's vf is always at least 2x bigger than that
-	 of an epilogue.  */
-      if (!LOOP_VINFO_USING_PARTIAL_VECTORS_P (other_loop_vinfo))
-	other_factor -= 1;
-      if (!LOOP_VINFO_USING_PARTIAL_VECTORS_P (this_loop_vinfo))
-	this_factor -= 1;
-    }
-
-  /* Compute the costs by multiplying the inside costs with the factor and
-     add the outside costs for a more complete picture.  The factor is the
-     amount of times we are expecting to iterate this epilogue.  */
-  other_cost = other->body_cost () * other_factor;
-  this_cost = this->body_cost () * this_factor;
-  other_cost += other->outside_cost ();
-  this_cost += this->outside_cost ();
-  return this_cost < other_cost;
-}
-
-/* A <=>-style subroutine of better_main_loop_than_p.  Check whether we can
-   determine the return value of better_main_loop_than_p by comparing the
-   inside (loop body) costs of THIS and OTHER.  Return:
-
-   * -1 if better_main_loop_than_p should return true.
-   * 1 if better_main_loop_than_p should return false.
-   * 0 if we can't decide.  */
-
-int
-vector_costs::compare_inside_loop_cost (const vector_costs *other) const
-{
-  loop_vec_info this_loop_vinfo = as_a<loop_vec_info> (this->m_vinfo);
-  loop_vec_info other_loop_vinfo = as_a<loop_vec_info> (other->m_vinfo);
-
-  struct loop *loop = LOOP_VINFO_LOOP (this_loop_vinfo);
-  gcc_assert (LOOP_VINFO_LOOP (other_loop_vinfo) == loop);
-
-  poly_int64 this_vf = LOOP_VINFO_VECT_FACTOR (this_loop_vinfo);
-  poly_int64 other_vf = LOOP_VINFO_VECT_FACTOR (other_loop_vinfo);
-
-  /* Limit the VFs to what is likely to be the maximum number of iterations,
-     to handle cases in which at least one loop_vinfo is fully-masked.  */
-  HOST_WIDE_INT estimated_max_niter = likely_max_stmt_executions_int (loop);
-  if (estimated_max_niter != -1)
-    {
-      if (known_le (estimated_max_niter, this_vf))
-	this_vf = estimated_max_niter;
-      if (known_le (estimated_max_niter, other_vf))
-	other_vf = estimated_max_niter;
-    }
-
-  /* Check whether the (fractional) cost per scalar iteration is lower or
-     higher: this_inside_cost / this_vf vs. other_inside_cost / other_vf.  */
-  poly_int64 rel_this = this_loop_vinfo->vector_costs->body_cost () * other_vf;
-  poly_int64 rel_other
-    = other_loop_vinfo->vector_costs->body_cost () * this_vf;
-
-  HOST_WIDE_INT est_rel_this_min
-    = estimated_poly_value (rel_this, POLY_VALUE_MIN);
-  HOST_WIDE_INT est_rel_this_max
-    = estimated_poly_value (rel_this, POLY_VALUE_MAX);
-
-  HOST_WIDE_INT est_rel_other_min
-    = estimated_poly_value (rel_other, POLY_VALUE_MIN);
-  HOST_WIDE_INT est_rel_other_max
-    = estimated_poly_value (rel_other, POLY_VALUE_MAX);
-
-  /* Check first if we can make out an unambigous total order from the minimum
-     and maximum estimates.  */
-  if (est_rel_this_min < est_rel_other_min
-      && est_rel_this_max < est_rel_other_max)
-    return -1;
-
-  if (est_rel_other_min < est_rel_this_min
-      && est_rel_other_max < est_rel_this_max)
-    return 1;
-
-  /* When other_loop_vinfo uses a variable vectorization factor,
-     we know that it has a lower cost for at least one runtime VF.
-     However, we don't know how likely that VF is.
-
-     One option would be to compare the costs for the estimated VFs.
-     The problem is that that can put too much pressure on the cost
-     model.  E.g. if the estimated VF is also the lowest possible VF,
-     and if other_loop_vinfo is 1 unit worse than this_loop_vinfo
-     for the estimated VF, we'd then choose this_loop_vinfo even
-     though (a) this_loop_vinfo might not actually be better than
-     other_loop_vinfo for that VF and (b) it would be significantly
-     worse at larger VFs.
-
-     Here we go for a hacky compromise: pick this_loop_vinfo if it is
-     no more expensive than other_loop_vinfo even after doubling the
-     estimated other_loop_vinfo VF.  For all but trivial loops, this
-     ensures that we only pick this_loop_vinfo if it is significantly
-     better than other_loop_vinfo at the estimated VF.  */
-  if (est_rel_other_min != est_rel_this_min
-      || est_rel_other_max != est_rel_this_max)
-    {
-      HOST_WIDE_INT est_rel_this_likely
-	= estimated_poly_value (rel_this, POLY_VALUE_LIKELY);
-      HOST_WIDE_INT est_rel_other_likely
-	= estimated_poly_value (rel_other, POLY_VALUE_LIKELY);
-
-      return est_rel_this_likely * 2 <= est_rel_other_likely ? -1 : 1;
-    }
-
-  return 0;
-}
-
-/* A <=>-style subroutine of better_main_loop_than_p, used when there is
-   nothing to choose between the inside (loop body) costs of THIS and OTHER.
-   Check whether we can determine the return value of better_main_loop_than_p
-   by comparing the outside (prologue and epilogue) costs of THIS and OTHER.
-   Return:
-
-   * -1 if better_main_loop_than_p should return true.
-   * 1 if better_main_loop_than_p should return false.
-   * 0 if we can't decide.  */
-
-int
-vector_costs::compare_outside_loop_cost (const vector_costs *other) const
-{
-  auto this_outside_cost = this->outside_cost ();
-  auto other_outside_cost = other->outside_cost ();
-  if (this_outside_cost != other_outside_cost)
-    return this_outside_cost < other_outside_cost ? -1 : 1;
-
-  return 0;
 }

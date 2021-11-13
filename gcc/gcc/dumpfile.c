@@ -1,5 +1,5 @@
 /* Dump infrastructure for optimizations and intermediate representation.
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -39,7 +39,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h" /* for "current_pass".  */
 #include "optinfo-emit-json.h"
 #include "stringpool.h" /* for get_identifier.  */
-#include "spellcheck.h"
 
 /* If non-NULL, return one past-the-end of the matching SUBPART of
    the WHOLE string.  */
@@ -103,9 +102,8 @@ static struct dump_file_info dump_files[TDI_end] =
   DUMP_FILE_INFO (".gimple", "tree-gimple", DK_tree, 0),
   DUMP_FILE_INFO (".nested", "tree-nested", DK_tree, 0),
   DUMP_FILE_INFO (".lto-stream-out", "ipa-lto-stream-out", DK_ipa, 0),
-  DUMP_FILE_INFO (".profile-report", "profile-report", DK_ipa, 0),
 #define FIRST_AUTO_NUMBERED_DUMP 1
-#define FIRST_ME_AUTO_NUMBERED_DUMP 5
+#define FIRST_ME_AUTO_NUMBERED_DUMP 4
 
   DUMP_FILE_INFO (NULL, "lang-all", DK_lang, 0),
   DUMP_FILE_INFO (NULL, "tree-all", DK_tree, 0),
@@ -117,7 +115,6 @@ static struct dump_file_info dump_files[TDI_end] =
    in dumpfile.h and opt_info_options below. */
 static const kv_pair<dump_flags_t> dump_options[] =
 {
-  {"none", TDF_NONE},
   {"address", TDF_ADDRESS},
   {"asmname", TDF_ASMNAME},
   {"slim", TDF_SLIM},
@@ -492,14 +489,6 @@ dump_loc (dump_flags_t dump_kind, FILE *dfile, location_t loc)
 static void
 dump_loc (dump_flags_t dump_kind, pretty_printer *pp, location_t loc)
 {
-  /* Disable warnings about missing quoting in GCC diagnostics for
-     the pp_printf calls.  Their format strings aren't used to format
-     diagnostics so don't need to follow GCC diagnostic conventions.  */
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-diag"
-#endif
-
   if (dump_kind)
     {
       if (LOCATION_LOCUS (loc) > BUILTINS_LOCATION)
@@ -515,10 +504,6 @@ dump_loc (dump_flags_t dump_kind, pretty_printer *pp, location_t loc)
       for (unsigned i = 0; i < get_dump_scope_depth (); i++)
 	pp_character (pp, ' ');
     }
-
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic pop
-#endif
 }
 
 /* Implementation of dump_context member functions.  */
@@ -1130,12 +1115,8 @@ dump_context::begin_scope (const char *name,
   if (m_test_pp && apply_dump_filter_p (MSG_NOTE, m_test_pp_flags))
     ::dump_loc (MSG_NOTE, m_test_pp, src_loc);
 
-  /* Format multiple consecutive punctuation characters via %s to
-     avoid -Wformat-diag in the pp_printf call below whose output
-     isn't used for diagnostic output.  */
   pretty_printer pp;
-  pp_printf (&pp, "%s %s %s", "===", name, "===");
-  pp_newline (&pp);
+  pp_printf (&pp, "=== %s ===\n", name);
   optinfo_item *item
     = new optinfo_item (OPTINFO_ITEM_KIND_TEXT, UNKNOWN_LOCATION,
 			xstrdup (pp_formatted_text (&pp)));
@@ -1550,17 +1531,21 @@ FILE *
 gcc::dump_manager::
 dump_begin (int phase, dump_flags_t *flag_ptr, int part)
 {
+  char *name;
+  struct dump_file_info *dfi;
+  FILE *stream;
+
   if (phase == TDI_none || !dump_phase_enabled_p (phase))
     return NULL;
 
-  char *name = get_dump_file_name (phase, part);
+  name = get_dump_file_name (phase, part);
   if (!name)
     return NULL;
-  struct dump_file_info *dfi = get_dump_file_info (phase);
+  dfi = get_dump_file_info (phase);
 
   /* We do not support re-opening of dump files with parts.  This would require
      tracking pstate per part of the dump file.  */
-  FILE *stream = dump_open (name, part != -1 || dfi->pstate < 0);
+  stream = dump_open (name, part != -1 || dfi->pstate < 0);
   if (stream)
     dfi->pstate = 1;
   free (name);
@@ -1785,19 +1770,28 @@ gcc::dump_manager::update_dfi_for_opt_info (dump_file_info *dfi) const
   return true;
 }
 
-/* Helper routine to parse -<dump format>[=filename]
-   and return the corresponding dump flag.  If POS_P is non-NULL,
-   assign start of filename into *POS_P.  */
+/* Parse ARG as a dump switch. Return nonzero if it is, and store the
+   relevant details in the dump_files array.  */
 
-dump_flags_t
-parse_dump_option (const char *option_value, const char **pos_p)
+int
+gcc::dump_manager::
+dump_switch_p_1 (const char *arg, struct dump_file_info *dfi, bool doglob)
 {
+  const char *option_value;
   const char *ptr;
   dump_flags_t flags;
 
+  if (doglob && !dfi->glob)
+    return 0;
+
+  option_value = skip_leading_substring (arg, doglob ? dfi->glob : dfi->swtch);
+  if (!option_value)
+    return 0;
+
+  if (*option_value && *option_value != '-' && *option_value != '=')
+    return 0;
+
   ptr = option_value;
-  if (pos_p)
-    *pos_p = NULL;
 
   /* Retain "user-facing" and "internals" messages, but filter out
      those from an opt_problem being re-emitted at the top level
@@ -1811,13 +1805,14 @@ parse_dump_option (const char *option_value, const char **pos_p)
       const char *end_ptr;
       const char *eq_ptr;
       unsigned length;
+
       while (*ptr == '-')
 	ptr++;
       end_ptr = strchr (ptr, '-');
       eq_ptr = strchr (ptr, '=');
 
-      if (eq_ptr && (!end_ptr || end_ptr > eq_ptr))
-	end_ptr = eq_ptr;
+      if (eq_ptr && !end_ptr)
+        end_ptr = eq_ptr;
 
       if (!end_ptr)
 	end_ptr = ptr + strlen (ptr);
@@ -1826,59 +1821,25 @@ parse_dump_option (const char *option_value, const char **pos_p)
       for (option_ptr = dump_options; option_ptr->name; option_ptr++)
 	if (strlen (option_ptr->name) == length
 	    && !memcmp (option_ptr->name, ptr, length))
-	  {
-	    flags |= option_ptr->value;
+          {
+            flags |= option_ptr->value;
 	    goto found;
-	  }
+          }
 
       if (*ptr == '=')
-	{
+        {
           /* Interpret rest of the argument as a dump filename.  This
              filename overrides other command line filenames.  */
-	  if (pos_p)
-	    *pos_p = ptr + 1;
-	  break;
-	}
+          if (dfi->pfilename)
+            free (CONST_CAST (char *, dfi->pfilename));
+          dfi->pfilename = xstrdup (ptr + 1);
+          break;
+        }
       else
-      {
-	warning (0, "ignoring unknown option %q.*s",
-		 length, ptr);
-	flags = TDF_ERROR;
-      }
-    found:
+        warning (0, "ignoring unknown option %q.*s in %<-fdump-%s%>",
+                 length, ptr, dfi->swtch);
+    found:;
       ptr = end_ptr;
-  }
-
-  return flags;
-}
-
-/* Parse ARG as a dump switch.  Return nonzero if it is, and store the
-   relevant details in the dump_files array.  */
-
-int
-gcc::dump_manager::
-dump_switch_p_1 (const char *arg, struct dump_file_info *dfi, bool doglob)
-{
-  const char *option_value;
-  dump_flags_t flags = TDF_NONE;
-
-  if (doglob && !dfi->glob)
-    return 0;
-
-  option_value = skip_leading_substring (arg, doglob ? dfi->glob : dfi->swtch);
-  if (!option_value)
-    return 0;
-
-  if (*option_value && *option_value != '-' && *option_value != '=')
-    return 0;
-
-  const char *filename;
-  flags = parse_dump_option (option_value, &filename);
-  if (filename)
-    {
-      if (dfi->pfilename)
-  free (CONST_CAST (char *, dfi->pfilename));
-      dfi->pfilename = xstrdup (filename);
     }
 
   dfi->pstate = -1;
@@ -1892,7 +1853,7 @@ dump_switch_p_1 (const char *arg, struct dump_file_info *dfi, bool doglob)
   return 1;
 }
 
-void
+int
 gcc::dump_manager::
 dump_switch_p (const char *arg)
 {
@@ -1914,20 +1875,8 @@ dump_switch_p (const char *arg)
     for (i = 0; i < m_extra_dump_files_in_use; i++)
       any |= dump_switch_p_1 (arg, &m_extra_dump_files[i], true);
 
-  if (!any)
-    {
-      auto_vec<const char *> candidates;
-      for (size_t i = TDI_none + 1; i != TDI_end; i++)
-	candidates.safe_push (dump_files[i].swtch);
-      for (size_t i = 0; i < m_extra_dump_files_in_use; i++)
-	candidates.safe_push (m_extra_dump_files[i].swtch);
-      const char *hint = find_closest_string (arg, &candidates);
-      if (hint)
-	error ("unrecognized command-line option %<-fdump-%s%>; "
-	       "did you mean %<-fdump-%s%>?", arg, hint);
-      else
-	error ("unrecognized command-line option %<-fdump-%s%>", arg);
-    }
+
+  return any;
 }
 
 /* Parse ARG as a -fopt-info switch and store flags, optgroup_flags
@@ -2095,34 +2044,6 @@ enable_rtl_dump_file (void)
   return num_enabled > 0;
 }
 
-/* debug_dump_context's ctor.  Temporarily override the dump_context
-   (to forcibly enable output to stderr).  */
-
-debug_dump_context::debug_dump_context (FILE *f)
-: m_context (),
-  m_saved (&dump_context::get ()),
-  m_saved_flags (dump_flags),
-  m_saved_pflags (pflags),
-  m_saved_file (dump_file)
-{
-  set_dump_file (f);
-  dump_context::s_current = &m_context;
-  pflags = dump_flags = MSG_ALL_KINDS | MSG_ALL_PRIORITIES;
-  dump_context::get ().refresh_dumps_are_enabled ();
-}
-
-/* debug_dump_context's dtor.  Restore the saved dump_context.  */
-
-debug_dump_context::~debug_dump_context ()
-{
-  set_dump_file (m_saved_file);
-  dump_context::s_current = m_saved;
-  dump_flags = m_saved_flags;
-  pflags = m_saved_pflags;
-  dump_context::get ().refresh_dumps_are_enabled ();
-}
-
-
 #if CHECKING_P
 
 namespace selftest {
@@ -2134,7 +2055,7 @@ temp_dump_context::temp_dump_context (bool forcibly_enable_optinfo,
 				      bool forcibly_enable_dumping,
 				      dump_flags_t test_pp_flags)
 : m_context (),
-  m_saved (&dump_context::get ())
+  m_saved (&dump_context ().get ())
 {
   dump_context::s_current = &m_context;
   if (forcibly_enable_optinfo)

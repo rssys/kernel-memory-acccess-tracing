@@ -1,7 +1,6 @@
 /* Test simple ObjC types casts.  */
 /* Author: Nicola Pero <nicola@brainstorm.co.uk>.  */
 /* { dg-do compile } */
-// { dg-additional-options "-Wno-objc-root-class" }
 
 #include <objc/objc.h>
 

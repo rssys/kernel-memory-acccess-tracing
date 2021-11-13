@@ -11,9 +11,9 @@
 
 module core.sys.windows.stacktrace;
 version (Windows):
-@system:
 
 import core.demangle;
+import core.runtime;
 import core.stdc.stdlib;
 import core.stdc.string;
 import core.sys.windows.dbghelp;
@@ -217,6 +217,11 @@ private:
         // do ... while so that we don't skip the first stackframe
         do
         {
+            if ( stackframe.AddrPC.Offset == stackframe.AddrReturn.Offset )
+            {
+                debug(PRINTF) printf("Endless callstack\n");
+                break;
+            }
             if (frameNum >= skip)
             {
                 result ~= stackframe.AddrPC.Offset;
@@ -250,23 +255,26 @@ private:
         char[][] trace;
         foreach (pc; addresses)
         {
-            char[] res;
-            if (dbghelp.SymGetSymFromAddr64(hProcess, pc, null, symbol) &&
-                *symbol.Name.ptr)
+            if ( pc != 0 )
             {
-                DWORD disp;
-                IMAGEHLP_LINEA64 line=void;
-                line.SizeOfStruct = IMAGEHLP_LINEA64.sizeof;
+                char[] res;
+                if (dbghelp.SymGetSymFromAddr64(hProcess, pc, null, symbol) &&
+                    *symbol.Name.ptr)
+                {
+                    DWORD disp;
+                    IMAGEHLP_LINEA64 line=void;
+                    line.SizeOfStruct = IMAGEHLP_LINEA64.sizeof;
 
-                if (dbghelp.SymGetLineFromAddr64(hProcess, pc, &disp, &line))
-                    res = formatStackFrame(cast(void*)pc, symbol.Name.ptr,
-                                           line.FileName, line.LineNumber);
+                    if (dbghelp.SymGetLineFromAddr64(hProcess, pc, &disp, &line))
+                        res = formatStackFrame(cast(void*)pc, symbol.Name.ptr,
+                                               line.FileName, line.LineNumber);
+                    else
+                        res = formatStackFrame(cast(void*)pc, symbol.Name.ptr);
+                }
                 else
-                    res = formatStackFrame(cast(void*)pc, symbol.Name.ptr);
+                    res = formatStackFrame(cast(void*)pc);
+                trace ~= res;
             }
-            else
-                res = formatStackFrame(cast(void*)pc);
-            trace ~= res;
         }
         return trace;
     }
@@ -299,7 +307,7 @@ private:
     }
 
     static char[] formatStackFrame(void* pc, char* symName,
-                                   const scope char* fileName, uint lineNum)
+                                   in char* fileName, uint lineNum)
     {
         import core.stdc.stdio : snprintf;
         char[11] buf=void;

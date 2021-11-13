@@ -1,5 +1,5 @@
 /* Analyze RTL for GNU compiler.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -24,7 +24,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "backend.h"
 #include "target.h"
 #include "rtl.h"
-#include "rtlanal.h"
 #include "tree.h"
 #include "predict.h"
 #include "df.h"
@@ -37,7 +36,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "addresses.h"
 #include "rtl-iter.h"
 #include "hard-reg-set.h"
-#include "function-abi.h"
 
 /* Forward declarations */
 static void set_of_1 (rtx, const_rtx, void *);
@@ -98,7 +96,7 @@ generic_subrtx_iterator <T>::add_single_to_queue (array_type &array,
       /* A previous iteration might also have moved from the stack to the
 	 heap, in which case the heap array will already be big enough.  */
       if (vec_safe_length (array.heap) <= i)
-	vec_safe_grow (array.heap, i + 1, true);
+	vec_safe_grow (array.heap, i + 1);
       base = array.heap->address ();
       memcpy (base, array.stack, sizeof (array.stack));
       base[LOCAL_ELEMS] = x;
@@ -464,17 +462,12 @@ rtx_addr_can_trap_p_1 (const_rtx x, poly_int64 offset, poly_int64 size,
 		       machine_mode mode, bool unaligned_mems)
 {
   enum rtx_code code = GET_CODE (x);
-  gcc_checking_assert (mode == BLKmode
-		       || mode == VOIDmode
-		       || known_size_p (size));
+  gcc_checking_assert (mode == BLKmode || known_size_p (size));
   poly_int64 const_x1;
 
   /* The offset must be a multiple of the mode size if we are considering
      unaligned memory references on strict alignment machines.  */
-  if (STRICT_ALIGNMENT
-      && unaligned_mems
-      && mode != BLKmode
-      && mode != VOIDmode)
+  if (STRICT_ALIGNMENT && unaligned_mems && mode != BLKmode)
     {
       poly_int64 actual_offset = offset;
 
@@ -818,9 +811,10 @@ rtx_addr_varies_p (const_rtx x, bool for_alias)
 /* Return the CALL in X if there is one.  */
 
 rtx
-get_call_rtx_from (const rtx_insn *insn)
+get_call_rtx_from (rtx x)
 {
-  rtx x = PATTERN (insn);
+  if (INSN_P (x))
+    x = PATTERN (x);
   if (GET_CODE (x) == PARALLEL)
     x = XVECEXP (x, 0, 0);
   if (GET_CODE (x) == SET)
@@ -828,24 +822,6 @@ get_call_rtx_from (const rtx_insn *insn)
   if (GET_CODE (x) == CALL && MEM_P (XEXP (x, 0)))
     return x;
   return NULL_RTX;
-}
-
-/* Get the declaration of the function called by INSN.  */
-
-tree
-get_call_fndecl (const rtx_insn *insn)
-{
-  rtx note, datum;
-
-  note = find_reg_note (insn, REG_CALL_DECL, NULL_RTX);
-  if (note == NULL_RTX)
-    return NULL_TREE;
-
-  datum = XEXP (note, 0);
-  if (datum != NULL_RTX)
-    return SYMBOL_REF_DECL (datum);
-
-  return NULL_TREE;
 }
 
 /* Return the value of the integer term in X, if one is apparent;
@@ -996,6 +972,7 @@ count_occurrences (const_rtx x, const_rtx find, int count_dest)
     case SYMBOL_REF:
     case CODE_LABEL:
     case PC:
+    case CC0:
       return 0;
 
     case EXPR_LIST:
@@ -1089,6 +1066,7 @@ reg_mentioned_p (const_rtx reg, const_rtx in)
       /* These codes have no constituent expressions
 	 and are unique.  */
     case SCRATCH:
+    case CC0:
     case PC:
       return 0;
 
@@ -1171,10 +1149,11 @@ reg_referenced_p (const_rtx x, const_rtx body)
       if (reg_overlap_mentioned_p (x, SET_SRC (body)))
 	return 1;
 
-      /* If the destination is anything other than PC, a REG or a SUBREG
+      /* If the destination is anything other than CC0, PC, a REG or a SUBREG
 	 of a REG that occupies all of the REG, the insn references X if
 	 it is mentioned in the destination.  */
-      if (GET_CODE (SET_DEST (body)) != PC
+      if (GET_CODE (SET_DEST (body)) != CC0
+	  && GET_CODE (SET_DEST (body)) != PC
 	  && !REG_P (SET_DEST (body))
 	  && ! (GET_CODE (SET_DEST (body)) == SUBREG
 		&& REG_P (SUBREG_REG (SET_DEST (body)))
@@ -1217,6 +1196,10 @@ reg_referenced_p (const_rtx x, const_rtx body)
       if (MEM_P (XEXP (body, 0)))
 	if (reg_overlap_mentioned_p (x, XEXP (XEXP (body, 0), 0)))
 	  return 1;
+      return 0;
+
+    case CLOBBER_HIGH:
+      gcc_assert (REG_P (XEXP (body, 0)));
       return 0;
 
     case COND_EXEC:
@@ -1270,8 +1253,8 @@ reg_set_p (const_rtx reg, const_rtx insn)
 	  || (CALL_P (insn)
 	      && ((REG_P (reg)
 		   && REGNO (reg) < FIRST_PSEUDO_REGISTER
-		   && (insn_callee_abi (as_a<const rtx_insn *> (insn))
-		       .clobbers_reg_p (GET_MODE (reg), REGNO (reg))))
+		   && overlaps_hard_reg_set_p (regs_invalidated_by_call,
+					       GET_MODE (reg), REGNO (reg)))
 		  || MEM_P (reg)
 		  || find_reg_fusage (insn, CLOBBER, reg)))))
     return true;
@@ -1321,6 +1304,7 @@ modified_between_p (const_rtx x, const rtx_insn *start, const rtx_insn *end)
       return 0;
 
     case PC:
+    case CC0:
       return 1;
 
     case MEM:
@@ -1375,6 +1359,7 @@ modified_in_p (const_rtx x, const_rtx insn)
       return 0;
 
     case PC:
+    case CC0:
       return 1;
 
     case MEM:
@@ -1439,7 +1424,11 @@ set_of_1 (rtx x, const_rtx pat, void *data1)
 {
   struct set_of_data *const data = (struct set_of_data *) (data1);
   if (rtx_equal_p (x, data->pat)
-      || (!MEM_P (x) && reg_overlap_mentioned_p (data->pat, x)))
+      || (GET_CODE (pat) == CLOBBER_HIGH
+	  && REGNO(data->pat) == REGNO(XEXP (pat, 0))
+	  && reg_is_clobbered_by_clobber_high (data->pat, XEXP (pat, 0)))
+      || (GET_CODE (pat) != CLOBBER_HIGH && !MEM_P (x)
+	  && reg_overlap_mentioned_p (data->pat, x)))
     data->found = pat;
 }
 
@@ -1451,43 +1440,8 @@ set_of (const_rtx pat, const_rtx insn)
   struct set_of_data data;
   data.found = NULL_RTX;
   data.pat = pat;
-  note_pattern_stores (INSN_P (insn) ? PATTERN (insn) : insn, set_of_1, &data);
+  note_stores (INSN_P (insn) ? PATTERN (insn) : insn, set_of_1, &data);
   return data.found;
-}
-
-/* Check whether instruction pattern PAT contains a SET with the following
-   properties:
-
-   - the SET is executed unconditionally; and
-   - either:
-     - the destination of the SET is a REG that contains REGNO; or
-     - both:
-       - the destination of the SET is a SUBREG of such a REG; and
-       - writing to the subreg clobbers all of the SUBREG_REG
-	 (in other words, read_modify_subreg_p is false).
-
-   If PAT does have a SET like that, return the set, otherwise return null.
-
-   This is intended to be an alternative to single_set for passes that
-   can handle patterns with multiple_sets.  */
-rtx
-simple_regno_set (rtx pat, unsigned int regno)
-{
-  if (GET_CODE (pat) == PARALLEL)
-    {
-      int last = XVECLEN (pat, 0) - 1;
-      for (int i = 0; i < last; ++i)
-	if (rtx set = simple_regno_set (XVECEXP (pat, 0, i), regno))
-	  return set;
-
-      pat = XVECEXP (pat, 0, last);
-    }
-
-  if (GET_CODE (pat) == SET
-      && covers_regno_no_parallel_p (SET_DEST (pat), regno))
-    return pat;
-
-  return nullptr;
 }
 
 /* Add all hard register in X to *PSET.  */
@@ -1515,20 +1469,22 @@ record_hard_reg_sets (rtx x, const_rtx pat ATTRIBUTE_UNUSED, void *data)
 }
 
 /* Examine INSN, and compute the set of hard registers written by it.
-   Store it in *PSET.  Should only be called after reload.
-
-   IMPLICIT is true if we should include registers that are fully-clobbered
-   by calls.  This should be used with caution, since it doesn't include
-   partially-clobbered registers.  */
+   Store it in *PSET.  Should only be called after reload.  */
 void
 find_all_hard_reg_sets (const rtx_insn *insn, HARD_REG_SET *pset, bool implicit)
 {
   rtx link;
 
   CLEAR_HARD_REG_SET (*pset);
-  note_stores (insn, record_hard_reg_sets, pset);
-  if (CALL_P (insn) && implicit)
-    *pset |= insn_callee_abi (insn).full_reg_clobbers ();
+  note_stores (PATTERN (insn), record_hard_reg_sets, pset);
+  if (CALL_P (insn))
+    {
+      if (implicit)
+	IOR_HARD_REG_SET (*pset, call_used_reg_set);
+
+      for (link = CALL_INSN_FUNCTION_USAGE (insn); link; link = XEXP (link, 1))
+	record_hard_reg_sets (XEXP (link, 0), NULL, pset);
+    }
   for (link = REG_NOTES (insn); link; link = XEXP (link, 1))
     if (REG_NOTE_KIND (link) == REG_INC)
       record_hard_reg_sets (XEXP (link, 0), NULL, pset);
@@ -1561,6 +1517,7 @@ single_set_2 (const rtx_insn *insn, const_rtx pat)
 	    {
 	    case USE:
 	    case CLOBBER:
+	    case CLOBBER_HIGH:
 	      break;
 
 	    case SET:
@@ -1655,10 +1612,6 @@ set_noop_p (const_rtx set)
 	return 0;
       src = SUBREG_REG (src);
       dst = SUBREG_REG (dst);
-      if (GET_MODE (src) != GET_MODE (dst))
-	/* It is hard to tell whether subregs refer to the same bits, so act
-	   conservatively and return 0.  */
-	return 0;
     }
 
   /* It is a NOOP if destination overlaps with selected src vector
@@ -1671,18 +1624,12 @@ set_noop_p (const_rtx set)
       int i;
       rtx par = XEXP (src, 1);
       rtx src0 = XEXP (src, 0);
-      poly_int64 c0;
-      if (!poly_int_rtx_p (XVECEXP (par, 0, 0), &c0))
-	return 0;
+      poly_int64 c0 = rtx_to_poly_int64 (XVECEXP (par, 0, 0));
       poly_int64 offset = GET_MODE_UNIT_SIZE (GET_MODE (src0)) * c0;
 
       for (i = 1; i < XVECLEN (par, 0); i++)
-	{
-	  poly_int64 c0i;
-	  if (!poly_int_rtx_p (XVECEXP (par, 0, i), &c0i)
-	      || maybe_ne (c0i, c0 + i))
-	    return 0;
-	}
+	if (maybe_ne (rtx_to_poly_int64 (XVECEXP (par, 0, i)), c0 + i))
+	  return 0;
       return
 	REG_CAN_CHANGE_MODE_P (REGNO (dst), GET_MODE (src0), GET_MODE (dst))
 	&& simplify_subreg_regno (REGNO (src0), GET_MODE (src0),
@@ -1704,6 +1651,10 @@ noop_move_p (const rtx_insn *insn)
   if (INSN_CODE (insn) == NOOP_MOVE_INSN_CODE)
     return 1;
 
+  /* Insns carrying these notes are useful later on.  */
+  if (find_reg_note (insn, REG_EQUAL, NULL_RTX))
+    return 0;
+
   /* Check the code to be executed for COND_EXEC.  */
   if (GET_CODE (pat) == COND_EXEC)
     pat = COND_EXEC_CODE (pat);
@@ -1720,7 +1671,9 @@ noop_move_p (const rtx_insn *insn)
 	{
 	  rtx tem = XVECEXP (pat, 0, i);
 
-	  if (GET_CODE (tem) == USE || GET_CODE (tem) == CLOBBER)
+	  if (GET_CODE (tem) == USE
+	      || GET_CODE (tem) == CLOBBER
+	      || GET_CODE (tem) == CLOBBER_HIGH)
 	    continue;
 
 	  if (GET_CODE (tem) != SET || ! set_noop_p (tem))
@@ -1912,6 +1865,7 @@ reg_overlap_mentioned_p (const_rtx x, const_rtx in)
 
     case SCRATCH:
     case PC:
+    case CC0:
       return reg_mentioned_p (x, in);
 
     case PARALLEL:
@@ -1937,7 +1891,7 @@ reg_overlap_mentioned_p (const_rtx x, const_rtx in)
    ignored by note_stores, but passed to FUN.
 
    FUN receives three arguments:
-   1. the REG, MEM or PC being stored in or clobbered,
+   1. the REG, MEM, CC0 or PC being stored in or clobbered,
    2. the SET or CLOBBER rtx that does the store,
    3. the pointer DATA provided to note_stores.
 
@@ -1945,15 +1899,16 @@ reg_overlap_mentioned_p (const_rtx x, const_rtx in)
   the SUBREG will be passed.  */
 
 void
-note_pattern_stores (const_rtx x,
-		     void (*fun) (rtx, const_rtx, void *), void *data)
+note_stores (const_rtx x, void (*fun) (rtx, const_rtx, void *), void *data)
 {
   int i;
 
   if (GET_CODE (x) == COND_EXEC)
     x = COND_EXEC_CODE (x);
 
-  if (GET_CODE (x) == SET || GET_CODE (x) == CLOBBER)
+  if (GET_CODE (x) == SET
+      || GET_CODE (x) == CLOBBER
+      || GET_CODE (x) == CLOBBER_HIGH)
     {
       rtx dest = SET_DEST (x);
 
@@ -1978,22 +1933,7 @@ note_pattern_stores (const_rtx x,
 
   else if (GET_CODE (x) == PARALLEL)
     for (i = XVECLEN (x, 0) - 1; i >= 0; i--)
-      note_pattern_stores (XVECEXP (x, 0, i), fun, data);
-}
-
-/* Same, but for an instruction.  If the instruction is a call, include
-   any CLOBBERs in its CALL_INSN_FUNCTION_USAGE.  */
-
-void
-note_stores (const rtx_insn *insn,
-	     void (*fun) (rtx, const_rtx, void *), void *data)
-{
-  if (CALL_P (insn))
-    for (rtx link = CALL_INSN_FUNCTION_USAGE (insn);
-	 link; link = XEXP (link, 1))
-      if (GET_CODE (XEXP (link, 0)) == CLOBBER)
-	note_pattern_stores (XEXP (link, 0), fun, data);
-  note_pattern_stores (PATTERN (insn), fun, data);
+      note_stores (XVECEXP (x, 0, i), fun, data);
 }
 
 /* Like notes_stores, but call FUN for each expression that is being
@@ -2084,310 +2024,10 @@ note_uses (rtx *pbody, void (*fun) (rtx *, void *), void *data)
       return;
     }
 }
-
-/* Try to add a description of REG X to this object, stopping once
-   the REF_END limit has been reached.  FLAGS is a bitmask of
-   rtx_obj_reference flags that describe the context.  */
-
-void
-rtx_properties::try_to_add_reg (const_rtx x, unsigned int flags)
-{
-  if (REG_NREGS (x) != 1)
-    flags |= rtx_obj_flags::IS_MULTIREG;
-  machine_mode mode = GET_MODE (x);
-  unsigned int start_regno = REGNO (x);
-  unsigned int end_regno = END_REGNO (x);
-  for (unsigned int regno = start_regno; regno < end_regno; ++regno)
-    if (ref_iter != ref_end)
-      *ref_iter++ = rtx_obj_reference (regno, flags, mode,
-				       regno - start_regno);
-}
-
-/* Add a description of destination X to this object.  FLAGS is a bitmask
-   of rtx_obj_reference flags that describe the context.
-
-   This routine accepts all rtxes that can legitimately appear in a
-   SET_DEST.  */
-
-void
-rtx_properties::try_to_add_dest (const_rtx x, unsigned int flags)
-{
-  /* If we have a PARALLEL, SET_DEST is a list of EXPR_LIST expressions,
-     each of whose first operand is a register.  */
-  if (__builtin_expect (GET_CODE (x) == PARALLEL, 0))
-    {
-      for (int i = XVECLEN (x, 0) - 1; i >= 0; --i)
-	if (rtx dest = XEXP (XVECEXP (x, 0, i), 0))
-	  try_to_add_dest (dest, flags);
-      return;
-    }
-
-  unsigned int base_flags = flags & rtx_obj_flags::STICKY_FLAGS;
-  flags |= rtx_obj_flags::IS_WRITE;
-  for (;;)
-    if (GET_CODE (x) == ZERO_EXTRACT)
-      {
-	try_to_add_src (XEXP (x, 1), base_flags);
-	try_to_add_src (XEXP (x, 2), base_flags);
-	flags |= rtx_obj_flags::IS_READ;
-	x = XEXP (x, 0);
-      }
-    else if (GET_CODE (x) == STRICT_LOW_PART)
-      {
-	flags |= rtx_obj_flags::IS_READ;
-	x = XEXP (x, 0);
-      }
-    else if (GET_CODE (x) == SUBREG)
-      {
-	flags |= rtx_obj_flags::IN_SUBREG;
-	if (read_modify_subreg_p (x))
-	  flags |= rtx_obj_flags::IS_READ;
-	x = SUBREG_REG (x);
-      }
-    else
-      break;
-
-  if (MEM_P (x))
-    {
-      if (ref_iter != ref_end)
-	*ref_iter++ = rtx_obj_reference (MEM_REGNO, flags, GET_MODE (x));
-
-      unsigned int addr_flags = base_flags | rtx_obj_flags::IN_MEM_STORE;
-      if (flags & rtx_obj_flags::IS_READ)
-	addr_flags |= rtx_obj_flags::IN_MEM_LOAD;
-      try_to_add_src (XEXP (x, 0), addr_flags);
-      return;
-    }
-
-  if (__builtin_expect (REG_P (x), 1))
-    {
-      /* We want to keep sp alive everywhere -  by making all
-	 writes to sp also use sp. */
-      if (REGNO (x) == STACK_POINTER_REGNUM)
-	flags |= rtx_obj_flags::IS_READ;
-      try_to_add_reg (x, flags);
-      return;
-    }
-}
-
-/* Try to add a description of source X to this object, stopping once
-   the REF_END limit has been reached.  FLAGS is a bitmask of
-   rtx_obj_reference flags that describe the context.
-
-   This routine accepts all rtxes that can legitimately appear in a SET_SRC.  */
-
-void
-rtx_properties::try_to_add_src (const_rtx x, unsigned int flags)
-{
-  unsigned int base_flags = flags & rtx_obj_flags::STICKY_FLAGS;
-  subrtx_iterator::array_type array;
-  FOR_EACH_SUBRTX (iter, array, x, NONCONST)
-    {
-      const_rtx x = *iter;
-      rtx_code code = GET_CODE (x);
-      if (code == REG)
-	try_to_add_reg (x, flags | rtx_obj_flags::IS_READ);
-      else if (code == MEM)
-	{
-	  if (MEM_VOLATILE_P (x))
-	    has_volatile_refs = true;
-
-	  if (!MEM_READONLY_P (x) && ref_iter != ref_end)
-	    {
-	      auto mem_flags = flags | rtx_obj_flags::IS_READ;
-	      *ref_iter++ = rtx_obj_reference (MEM_REGNO, mem_flags,
-					       GET_MODE (x));
-	    }
-
-	  try_to_add_src (XEXP (x, 0),
-			  base_flags | rtx_obj_flags::IN_MEM_LOAD);
-	  iter.skip_subrtxes ();
-	}
-      else if (code == SUBREG)
-	{
-	  try_to_add_src (SUBREG_REG (x), flags | rtx_obj_flags::IN_SUBREG);
-	  iter.skip_subrtxes ();
-	}
-      else if (code == UNSPEC_VOLATILE)
-	has_volatile_refs = true;
-      else if (code == ASM_INPUT || code == ASM_OPERANDS)
-	{
-	  has_asm = true;
-	  if (MEM_VOLATILE_P (x))
-	    has_volatile_refs = true;
-	}
-      else if (code == PRE_INC
-	       || code == PRE_DEC
-	       || code == POST_INC
-	       || code == POST_DEC
-	       || code == PRE_MODIFY
-	       || code == POST_MODIFY)
-	{
-	  has_pre_post_modify = true;
-
-	  unsigned int addr_flags = (base_flags
-				     | rtx_obj_flags::IS_PRE_POST_MODIFY
-				     | rtx_obj_flags::IS_READ);
-	  try_to_add_dest (XEXP (x, 0), addr_flags);
-	  if (code == PRE_MODIFY || code == POST_MODIFY)
-	    iter.substitute (XEXP (XEXP (x, 1), 1));
-	  else
-	    iter.skip_subrtxes ();
-	}
-      else if (code == CALL)
-	has_call = true;
-    }
-}
-
-/* Try to add a description of instruction pattern PAT to this object,
-   stopping once the REF_END limit has been reached.  */
-
-void
-rtx_properties::try_to_add_pattern (const_rtx pat)
-{
-  switch (GET_CODE (pat))
-    {
-    case COND_EXEC:
-      try_to_add_src (COND_EXEC_TEST (pat));
-      try_to_add_pattern (COND_EXEC_CODE (pat));
-      break;
-
-    case PARALLEL:
-      {
-	int last = XVECLEN (pat, 0) - 1;
-	for (int i = 0; i < last; ++i)
-	  try_to_add_pattern (XVECEXP (pat, 0, i));
-	try_to_add_pattern (XVECEXP (pat, 0, last));
-	break;
-      }
-
-    case ASM_OPERANDS:
-      for (int i = 0, len = ASM_OPERANDS_INPUT_LENGTH (pat); i < len; ++i)
-	try_to_add_src (ASM_OPERANDS_INPUT (pat, i));
-      break;
-
-    case CLOBBER:
-      try_to_add_dest (XEXP (pat, 0), rtx_obj_flags::IS_CLOBBER);
-      break;
-
-    case SET:
-      try_to_add_dest (SET_DEST (pat));
-      try_to_add_src (SET_SRC (pat));
-      break;
-
-    default:
-      /* All the other possibilities never store and can use a normal
-	 rtx walk.  This includes:
-
-	 - USE
-	 - TRAP_IF
-	 - PREFETCH
-	 - UNSPEC
-	 - UNSPEC_VOLATILE.  */
-      try_to_add_src (pat);
-      break;
-    }
-}
-
-/* Try to add a description of INSN to this object, stopping once
-   the REF_END limit has been reached.  INCLUDE_NOTES is true if the
-   description should include REG_EQUAL and REG_EQUIV notes; all such
-   references will then be marked with rtx_obj_flags::IN_NOTE.
-
-   For calls, this description includes all accesses in
-   CALL_INSN_FUNCTION_USAGE.  It also include all implicit accesses
-   to global registers by the target function.  However, it does not
-   include clobbers performed by the target function; callers that want
-   this information should instead use the function_abi interface.  */
-
-void
-rtx_properties::try_to_add_insn (const rtx_insn *insn, bool include_notes)
-{
-  if (CALL_P (insn))
-    {
-      /* Non-const functions can read from global registers.  Impure
-	 functions can also set them.
-
-	 Adding the global registers first removes a situation in which
-	 a fixed-form clobber of register R could come before a real set
-	 of register R.  */
-      if (!hard_reg_set_empty_p (global_reg_set)
-	  && !RTL_CONST_CALL_P (insn))
-	{
-	  unsigned int flags = rtx_obj_flags::IS_READ;
-	  if (!RTL_PURE_CALL_P (insn))
-	    flags |= rtx_obj_flags::IS_WRITE;
-	  for (unsigned int regno = 0; regno < FIRST_PSEUDO_REGISTER; ++regno)
-	    /* As a special case, the stack pointer is invariant across calls
-	       even if it has been marked global; see the corresponding
-	       handling in df_get_call_refs.  */
-	    if (regno != STACK_POINTER_REGNUM
-		&& global_regs[regno]
-		&& ref_iter != ref_end)
-	      *ref_iter++ = rtx_obj_reference (regno, flags,
-					       reg_raw_mode[regno], 0);
-	}
-      /* Untyped calls implicitly set all function value registers.
-	 Again, we add them first in case the main pattern contains
-	 a fixed-form clobber.  */
-      if (find_reg_note (insn, REG_UNTYPED_CALL, NULL_RTX))
-	for (unsigned int regno = 0; regno < FIRST_PSEUDO_REGISTER; ++regno)
-	  if (targetm.calls.function_value_regno_p (regno)
-	      && ref_iter != ref_end)
-	    *ref_iter++ = rtx_obj_reference (regno, rtx_obj_flags::IS_WRITE,
-					     reg_raw_mode[regno], 0);
-      if (ref_iter != ref_end && !RTL_CONST_CALL_P (insn))
-	{
-	  auto mem_flags = rtx_obj_flags::IS_READ;
-	  if (!RTL_PURE_CALL_P (insn))
-	    mem_flags |= rtx_obj_flags::IS_WRITE;
-	  *ref_iter++ = rtx_obj_reference (MEM_REGNO, mem_flags, BLKmode);
-	}
-      try_to_add_pattern (PATTERN (insn));
-      for (rtx link = CALL_INSN_FUNCTION_USAGE (insn); link;
-	   link = XEXP (link, 1))
-	{
-	  rtx x = XEXP (link, 0);
-	  if (GET_CODE (x) == CLOBBER)
-	    try_to_add_dest (XEXP (x, 0), rtx_obj_flags::IS_CLOBBER);
-	  else if (GET_CODE (x) == USE)
-	    try_to_add_src (XEXP (x, 0));
-	}
-    }
-  else
-    try_to_add_pattern (PATTERN (insn));
-
-  if (include_notes)
-    for (rtx note = REG_NOTES (insn); note; note = XEXP (note, 1))
-      if (REG_NOTE_KIND (note) == REG_EQUAL
-	  || REG_NOTE_KIND (note) == REG_EQUIV)
-	try_to_add_note (XEXP (note, 0));
-}
-
-/* Grow the storage by a bit while keeping the contents of the first
-   START elements.  */
-
-void
-vec_rtx_properties_base::grow (ptrdiff_t start)
-{
-  /* The same heuristic that vec uses.  */
-  ptrdiff_t new_elems = (ref_end - ref_begin) * 3 / 2;
-  if (ref_begin == m_storage)
-    {
-      ref_begin = XNEWVEC (rtx_obj_reference, new_elems);
-      if (start)
-	memcpy (ref_begin, m_storage, start * sizeof (rtx_obj_reference));
-    }
-  else
-    ref_begin = reinterpret_cast<rtx_obj_reference *>
-      (xrealloc (ref_begin, new_elems * sizeof (rtx_obj_reference)));
-  ref_iter = ref_begin + start;
-  ref_end = ref_begin + new_elems;
-}
 
 /* Return nonzero if X's old contents don't survive after INSN.
-   This will be true if X is a register and X dies in INSN or because
-   INSN entirely sets X.
+   This will be true if X is (cc0) or if X is a register and
+   X dies in INSN or because INSN entirely sets X.
 
    "Entirely set" means set directly and not through a SUBREG, or
    ZERO_EXTRACT, so no trace of the old contents remains.
@@ -2407,6 +2047,10 @@ dead_or_set_p (const rtx_insn *insn, const_rtx x)
 {
   unsigned int regno, end_regno;
   unsigned int i;
+
+  /* Can't use cc0_rtx below since this file is used by genattrtab.c.  */
+  if (GET_CODE (x) == CC0)
+    return 1;
 
   gcc_assert (REG_P (x));
 
@@ -2707,6 +2351,8 @@ alloc_reg_note (enum reg_note kind, rtx datum, rtx list)
   gcc_checking_assert (!int_reg_note_p (kind));
   switch (kind)
     {
+    case REG_CC_SETTER:
+    case REG_CC_USER:
     case REG_LABEL_TARGET:
     case REG_LABEL_OPERAND:
     case REG_TM:
@@ -2809,11 +2455,10 @@ remove_note (rtx_insn *insn, const_rtx note)
 }
 
 /* Remove REG_EQUAL and/or REG_EQUIV notes if INSN has such notes.
-   If NO_RESCAN is false and any notes were removed, call
-   df_notes_rescan.  Return true if any note has been removed.  */
+   Return true if any note has been removed.  */
 
 bool
-remove_reg_equal_equiv_notes (rtx_insn *insn, bool no_rescan)
+remove_reg_equal_equiv_notes (rtx_insn *insn)
 {
   rtx *loc;
   bool ret = false;
@@ -2830,8 +2475,6 @@ remove_reg_equal_equiv_notes (rtx_insn *insn, bool no_rescan)
       else
 	loc = &XEXP (*loc, 1);
     }
-  if (ret && !no_rescan)
-    df_notes_rescan (insn);
   return ret;
 }
 
@@ -2951,6 +2594,7 @@ volatile_insn_p (const_rtx x)
     case SYMBOL_REF:
     case CONST:
     CASE_CONST_ANY:
+    case CC0:
     case PC:
     case REG:
     case SCRATCH:
@@ -3011,6 +2655,7 @@ volatile_refs_p (const_rtx x)
     case SYMBOL_REF:
     case CONST:
     CASE_CONST_ANY:
+    case CC0:
     case PC:
     case REG:
     case SCRATCH:
@@ -3070,6 +2715,7 @@ side_effects_p (const_rtx x)
     case SYMBOL_REF:
     case CONST:
     CASE_CONST_ANY:
+    case CC0:
     case PC:
     case REG:
     case SCRATCH:
@@ -3157,6 +2803,7 @@ may_trap_p_1 (const_rtx x, unsigned flags)
     case LABEL_REF:
     case CONST:
     case PC:
+    case CC0:
     case REG:
     case SCRATCH:
       return 0;
@@ -3261,7 +2908,6 @@ may_trap_p_1 (const_rtx x, unsigned flags)
       break;
 
     case FIX:
-    case UNSIGNED_FIX:
       /* Conversion of floating point might trap.  */
       if (flag_trapping_math && HONOR_NANS (XEXP (x, 0)))
 	return 1;
@@ -3354,6 +3000,64 @@ int
 may_trap_or_fault_p (const_rtx x)
 {
   return may_trap_p_1 (x, 1);
+}
+
+/* Return nonzero if X contains a comparison that is not either EQ or NE,
+   i.e., an inequality.  */
+
+int
+inequality_comparisons_p (const_rtx x)
+{
+  const char *fmt;
+  int len, i;
+  const enum rtx_code code = GET_CODE (x);
+
+  switch (code)
+    {
+    case REG:
+    case SCRATCH:
+    case PC:
+    case CC0:
+    CASE_CONST_ANY:
+    case CONST:
+    case LABEL_REF:
+    case SYMBOL_REF:
+      return 0;
+
+    case LT:
+    case LTU:
+    case GT:
+    case GTU:
+    case LE:
+    case LEU:
+    case GE:
+    case GEU:
+      return 1;
+
+    default:
+      break;
+    }
+
+  len = GET_RTX_LENGTH (code);
+  fmt = GET_RTX_FORMAT (code);
+
+  for (i = 0; i < len; i++)
+    {
+      if (fmt[i] == 'e')
+	{
+	  if (inequality_comparisons_p (XEXP (x, i)))
+	    return 1;
+	}
+      else if (fmt[i] == 'E')
+	{
+	  int j;
+	  for (j = XVECLEN (x, i) - 1; j >= 0; j--)
+	    if (inequality_comparisons_p (XVECEXP (x, i, j)))
+	      return 1;
+	}
+    }
+
+  return 0;
 }
 
 /* Replace any occurrence of FROM in X with TO.  The function does
@@ -3566,23 +3270,6 @@ tablejump_p (const rtx_insn *insn, rtx_insn **labelp,
   if (tablep)
     *tablep = as_a <rtx_jump_table_data *> (table);
   return true;
-}
-
-/* For INSN known to satisfy tablejump_p, determine if it actually is a
-   CASESI.  Return the insn pattern if so, NULL_RTX otherwise.  */
-
-rtx
-tablejump_casesi_pattern (const rtx_insn *insn)
-{
-  rtx tmp;
-
-  if ((tmp = single_set (insn)) != NULL
-      && SET_DEST (tmp) == pc_rtx
-      && GET_CODE (SET_SRC (tmp)) == IF_THEN_ELSE
-      && GET_CODE (XEXP (SET_SRC (tmp), 2)) == LABEL_REF)
-    return tmp;
-
-  return NULL_RTX;
 }
 
 /* A subroutine of computed_jump_p, return 1 if X contains a REG or MEM or
@@ -3924,31 +3611,23 @@ loc_mentioned_in_p (rtx *loc, const_rtx in)
   return 0;
 }
 
-/* Reinterpret a subreg as a bit extraction from an integer and return
-   the position of the least significant bit of the extracted value.
-   In other words, if the extraction were performed as a shift right
-   and mask, return the number of bits to shift right.
-
-   The outer value of the subreg has OUTER_BYTES bytes and starts at
-   byte offset SUBREG_BYTE within an inner value of INNER_BYTES bytes.  */
+/* Helper function for subreg_lsb.  Given a subreg's OUTER_MODE, INNER_MODE,
+   and SUBREG_BYTE, return the bit offset where the subreg begins
+   (counting from the least significant bit of the operand).  */
 
 poly_uint64
-subreg_size_lsb (poly_uint64 outer_bytes,
-		 poly_uint64 inner_bytes,
-		 poly_uint64 subreg_byte)
+subreg_lsb_1 (machine_mode outer_mode,
+	      machine_mode inner_mode,
+	      poly_uint64 subreg_byte)
 {
   poly_uint64 subreg_end, trailing_bytes, byte_pos;
 
   /* A paradoxical subreg begins at bit position 0.  */
-  gcc_checking_assert (ordered_p (outer_bytes, inner_bytes));
-  if (maybe_gt (outer_bytes, inner_bytes))
-    {
-      gcc_checking_assert (known_eq (subreg_byte, 0U));
-      return 0;
-    }
+  if (paradoxical_subreg_p (outer_mode, inner_mode))
+    return 0;
 
-  subreg_end = subreg_byte + outer_bytes;
-  trailing_bytes = inner_bytes - subreg_end;
+  subreg_end = subreg_byte + GET_MODE_SIZE (outer_mode);
+  trailing_bytes = GET_MODE_SIZE (inner_mode) - subreg_end;
   if (WORDS_BIG_ENDIAN && BYTES_BIG_ENDIAN)
     byte_pos = trailing_bytes;
   else if (!WORDS_BIG_ENDIAN && !BYTES_BIG_ENDIAN)
@@ -4286,7 +3965,9 @@ simplify_subreg_regno (unsigned int xregno, machine_mode xmode,
   /* Give the backend a chance to disallow the mode change.  */
   if (GET_MODE_CLASS (xmode) != MODE_COMPLEX_INT
       && GET_MODE_CLASS (xmode) != MODE_COMPLEX_FLOAT
-      && !REG_CAN_CHANGE_MODE_P (xregno, xmode, ymode))
+      && !REG_CAN_CHANGE_MODE_P (xregno, xmode, ymode)
+      /* We can use mode change in LRA for some transformations.  */
+      && ! lra_in_progress)
     return -1;
 
   /* We shouldn't simplify stack-related registers.  */
@@ -4324,17 +4005,6 @@ simplify_subreg_regno (unsigned int xregno, machine_mode xmode,
     return -1;
 
   return (int) yregno;
-}
-
-/* A wrapper around simplify_subreg_regno that uses subreg_lowpart_offset
-   (xmode, ymode) as the offset.  */
-
-int
-lowpart_subreg_regno (unsigned int regno, machine_mode xmode,
-		      machine_mode ymode)
-{
-  poly_uint64 offset = subreg_lowpart_offset (xmode, ymode);
-  return simplify_subreg_regno (regno, xmode, offset, ymode);
 }
 
 /* Return the final regno that a subreg expression refers to.  */
@@ -4453,7 +4123,7 @@ find_first_parameter_load (rtx_insn *call_insn, rtx_insn *boundary)
       if (INSN_P (before))
 	{
 	  int nregs_old = parm.nregs;
-	  note_stores (before, parms_set, &parm);
+	  note_stores (PATTERN (before), parms_set, &parm);
 	  /* If we found something that did not set a parameter reg,
 	     we're done.  Do not keep going, as that might result
 	     in hoisting an insn before the setting of a pseudo
@@ -4553,23 +4223,18 @@ rtx_cost (rtx x, machine_mode mode, enum rtx_code outer_code,
   const char *fmt;
   int total;
   int factor;
-  unsigned mode_size;
 
   if (x == 0)
     return 0;
 
-  if (GET_CODE (x) == SET)
-    /* A SET doesn't have a mode, so let's look at the SET_DEST to get
-       the mode for the factor.  */
-    mode = GET_MODE (SET_DEST (x));
-  else if (GET_MODE (x) != VOIDmode)
+  if (GET_MODE (x) != VOIDmode)
     mode = GET_MODE (x);
-
-  mode_size = estimated_poly_value (GET_MODE_SIZE (mode));
 
   /* A size N times larger than UNITS_PER_WORD likely needs N times as
      many insns, taking N times as long.  */
-  factor = mode_size > UNITS_PER_WORD ? mode_size / UNITS_PER_WORD : 1;
+  factor = estimated_poly_value (GET_MODE_SIZE (mode)) / UNITS_PER_WORD;
+  if (factor == 0)
+    factor = 1;
 
   /* Compute the default costs of certain things.
      Note that targetm.rtx_costs can override the defaults.  */
@@ -4594,6 +4259,14 @@ rtx_cost (rtx x, machine_mode mode, enum rtx_code outer_code,
       /* Used in combine.c as a marker.  */
       total = 0;
       break;
+    case SET:
+      /* A SET doesn't have a mode, so let's look at the SET_DEST to get
+	 the mode for the factor.  */
+      mode = GET_MODE (SET_DEST (x));
+      factor = estimated_poly_value (GET_MODE_SIZE (mode)) / UNITS_PER_WORD;
+      if (factor == 0)
+	factor = 1;
+      /* FALLTHRU */
     default:
       total = factor * COSTS_N_INSNS (1);
     }
@@ -4882,7 +4555,7 @@ nonzero_bits1 (const_rtx x, scalar_int_mode mode, const_rtx known_x,
 	  /* If PUSH_ROUNDING is defined, it is possible for the
 	     stack to be momentarily aligned only to that amount,
 	     so we pick the least alignment.  */
-	  if (x == stack_pointer_rtx && targetm.calls.push_argument (0))
+	  if (x == stack_pointer_rtx && PUSH_ARGS)
 	    {
 	      poly_uint64 rounded_1 = PUSH_ROUNDING (poly_int64 (1));
 	      alignment = MIN (known_alignment (rounded_1), alignment);
@@ -5073,17 +4746,11 @@ nonzero_bits1 (const_rtx x, scalar_int_mode mode, const_rtx known_x,
 	    gcc_unreachable ();
 	  }
 
-	/* Note that mode_width <= HOST_BITS_PER_WIDE_INT, see above.  */
 	if (result_width < mode_width)
 	  nonzero &= (HOST_WIDE_INT_1U << result_width) - 1;
 
 	if (result_low > 0)
-	  {
-	    if (result_low < HOST_BITS_PER_WIDE_INT)
-	      nonzero &= ~((HOST_WIDE_INT_1U << result_low) - 1);
-	    else
-	      nonzero = 0;
-	  }
+	  nonzero &= ~((HOST_WIDE_INT_1U << result_low) - 1);
       }
       break;
 
@@ -5824,7 +5491,7 @@ seq_cost (const rtx_insn *seq, bool speed)
    canonical form to simplify testing by callers.  Specifically:
 
    (1) The code will always be a comparison operation (EQ, NE, GT, etc.).
-   (2) Both operands will be machine operands.
+   (2) Both operands will be machine operands; (cc0) will have been replaced.
    (3) If an operand is a constant, it will be the second operand.
    (4) (LE x const) will be replaced with (LT x <const+1>) and similarly
        for GE, GEU, and LEU.
@@ -5886,6 +5553,22 @@ canonicalize_condition (rtx_insn *insn, rtx cond, int reverse,
     {
       /* Set nonzero when we find something of interest.  */
       rtx x = 0;
+
+      /* If comparison with cc0, import actual comparison from compare
+	 insn.  */
+      if (op0 == cc0_rtx)
+	{
+	  if ((prev = prev_nonnote_insn (prev)) == 0
+	      || !NONJUMP_INSN_P (prev)
+	      || (set = single_set (prev)) == 0
+	      || SET_DEST (set) != cc0_rtx)
+	    return 0;
+
+	  op0 = SET_SRC (set);
+	  op1 = CONST0_RTX (GET_MODE (op0));
+	  if (earliest)
+	    *earliest = prev;
+	}
 
       /* If this is a COMPARE, pick up the two things being compared.  */
       if (GET_CODE (op0) == COMPARE)
@@ -6074,6 +5757,10 @@ canonicalize_condition (rtx_insn *insn, rtx cond, int reverse,
 	  break;
 	}
     }
+
+  /* Never return CC0; return zero instead.  */
+  if (CC0_P (op0))
+    return 0;
 
   /* We promised to return a comparison.  */
   rtx ret = gen_rtx_fmt_ee (code, VOIDmode, op0, op1);
@@ -6915,78 +6602,31 @@ tls_referenced_p (const_rtx x)
   return false;
 }
 
-/* Process recursively X of INSN and add REG_INC notes if necessary.  */
-void
-add_auto_inc_notes (rtx_insn *insn, rtx x)
-{
-  enum rtx_code code = GET_CODE (x);
-  const char *fmt;
-  int i, j;
-
-  if (code == MEM && auto_inc_p (XEXP (x, 0)))
-    {
-      add_reg_note (insn, REG_INC, XEXP (XEXP (x, 0), 0));
-      return;
-    }
-
-  /* Scan all X sub-expressions.  */
-  fmt = GET_RTX_FORMAT (code);
-  for (i = GET_RTX_LENGTH (code) - 1; i >= 0; i--)
-    {
-      if (fmt[i] == 'e')
-	add_auto_inc_notes (insn, XEXP (x, i));
-      else if (fmt[i] == 'E')
-	for (j = XVECLEN (x, i) - 1; j >= 0; j--)
-	  add_auto_inc_notes (insn, XVECEXP (x, i, j));
-    }
-}
-
-/* Return true if X is register asm.  */
+/* Return true if reg REGNO with mode REG_MODE would be clobbered by the
+   clobber_high operand in CLOBBER_HIGH_OP.  */
 
 bool
-register_asm_p (const_rtx x)
+reg_is_clobbered_by_clobber_high (unsigned int regno, machine_mode reg_mode,
+				  const_rtx clobber_high_op)
 {
-  return (REG_P (x)
-	  && REG_EXPR (x) != NULL_TREE
-	  && HAS_DECL_ASSEMBLER_NAME_P (REG_EXPR (x))
-	  && DECL_ASSEMBLER_NAME_SET_P (REG_EXPR (x))
-	  && DECL_REGISTER (REG_EXPR (x)));
-}
+  unsigned int clobber_regno = REGNO (clobber_high_op);
+  machine_mode clobber_mode = GET_MODE (clobber_high_op);
+  unsigned char regno_nregs = hard_regno_nregs (regno, reg_mode);
 
-/* Return true if, for all OP of mode OP_MODE:
+  /* Clobber high should always span exactly one register.  */
+  gcc_assert (REG_NREGS (clobber_high_op) == 1);
 
-     (vec_select:RESULT_MODE OP SEL)
+  /* Clobber high needs to match with one of the registers in X.  */
+  if (clobber_regno < regno || clobber_regno >= regno + regno_nregs)
+    return false;
 
-   is equivalent to the highpart RESULT_MODE of OP.  */
+  gcc_assert (reg_mode != BLKmode && clobber_mode != BLKmode);
 
-bool
-vec_series_highpart_p (machine_mode result_mode, machine_mode op_mode, rtx sel)
-{
-  int nunits;
-  if (GET_MODE_NUNITS (op_mode).is_constant (&nunits)
-      && targetm.can_change_mode_class (op_mode, result_mode, ALL_REGS))
-    {
-      int offset = BYTES_BIG_ENDIAN ? 0 : nunits - XVECLEN (sel, 0);
-      return rtvec_series_p (XVEC (sel, 0), offset);
-    }
-  return false;
-}
+  if (reg_mode == VOIDmode)
+    return clobber_mode != VOIDmode;
 
-/* Return true if, for all OP of mode OP_MODE:
-
-     (vec_select:RESULT_MODE OP SEL)
-
-   is equivalent to the lowpart RESULT_MODE of OP.  */
-
-bool
-vec_series_lowpart_p (machine_mode result_mode, machine_mode op_mode, rtx sel)
-{
-  int nunits;
-  if (GET_MODE_NUNITS (op_mode).is_constant (&nunits)
-      && targetm.can_change_mode_class (op_mode, result_mode, ALL_REGS))
-    {
-      int offset = BYTES_BIG_ENDIAN ? nunits - XVECLEN (sel, 0) : 0;
-      return rtvec_series_p (XVEC (sel, 0), offset);
-    }
-  return false;
+  /* Clobber high will clobber if its size might be greater than the size of
+     register regno.  */
+  return maybe_gt (exact_div (GET_MODE_SIZE (reg_mode), regno_nregs),
+		 GET_MODE_SIZE (clobber_mode));
 }

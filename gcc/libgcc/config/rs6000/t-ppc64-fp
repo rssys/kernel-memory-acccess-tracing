@@ -1,1 +1,2 @@
-LIB2_SIDITI_CONV_FUNCS = yes
+# Can be used unconditionally, wrapped in __powerpc64__ || __64BIT__ __ppc64__.
+LIB2ADD += $(srcdir)/config/rs6000/ppc64-fp.c

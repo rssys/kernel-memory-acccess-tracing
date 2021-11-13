@@ -37,14 +37,8 @@
     FAIL (n, 56);						\
   ret.x = s##n.x;						\
   ++j;
-#ifdef CXX14_VS_CXX17
-struct empty_base {};
-#define EMPTY_BASE : public empty_base
-#else
-#define EMPTY_BASE
-#endif
 #define TX(n, type, attrs, fields, ops) 			\
-type S##n EMPTY_BASE { fields } attrs;				\
+type S##n { fields } attrs;					\
 extern type S##n s##n;						\
 type S##n a##n[5];						\
 type S##n							\

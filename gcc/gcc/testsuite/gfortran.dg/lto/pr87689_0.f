@@ -1,4 +1,4 @@
-! { dg-lto-do run }
+! { dg-lto-run }
 ! PR 87689 - this used to fail for POWER, plus it used to
 ! give warnings about mismatches with LTO.
 ! Original test case by Judicaël Grasset.

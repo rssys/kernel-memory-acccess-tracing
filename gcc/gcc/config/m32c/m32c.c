@@ -1,5 +1,5 @@
 /* Target Code for R8C/M16C/M32C
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2019 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -48,7 +48,6 @@
 #include "expr.h"
 #include "tm-constrs.h"
 #include "builtins.h"
-#include "opts.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -77,11 +76,12 @@ static struct machine_function *m32c_init_machine_status (void);
 static void m32c_insert_attributes (tree, tree *);
 static bool m32c_legitimate_address_p (machine_mode, rtx, bool);
 static bool m32c_addr_space_legitimate_address_p (machine_mode, rtx, bool, addr_space_t);
-static rtx m32c_function_arg (cumulative_args_t, const function_arg_info &);
-static bool m32c_pass_by_reference (cumulative_args_t,
-				    const function_arg_info &);
-static void m32c_function_arg_advance (cumulative_args_t,
-				       const function_arg_info &);
+static rtx m32c_function_arg (cumulative_args_t, machine_mode,
+			      const_tree, bool);
+static bool m32c_pass_by_reference (cumulative_args_t, machine_mode,
+				    const_tree, bool);
+static void m32c_function_arg_advance (cumulative_args_t, machine_mode,
+				       const_tree, bool);
 static unsigned int m32c_function_arg_boundary (machine_mode, const_tree);
 static int m32c_pushm_popm (Push_Pop_Type);
 static bool m32c_strict_argument_naming (cumulative_args_t);
@@ -342,7 +342,8 @@ reduce_class (reg_class_t original_class, reg_class_t limiting_class,
   if (original_class == limiting_class)
     return original_class;
 
-  cc = reg_class_contents[original_class] & reg_class_contents[limiting_class];
+  cc = reg_class_contents[original_class];
+  AND_HARD_REG_SET (cc, reg_class_contents[limiting_class]);
 
   for (i = 0; i < LIM_REG_CLASSES; i++)
     {
@@ -413,7 +414,7 @@ static void
 m32c_option_override (void)
 {
   /* We limit memregs to 0..16, and provide a default.  */
-  if (OPTION_SET_P (target_memregs))
+  if (global_options_set.x_target_memregs)
     {
       if (target_memregs < 0 || target_memregs > 16)
 	error ("invalid target memregs value %<%d%>", target_memregs);
@@ -1115,7 +1116,7 @@ need_to_save (int regno)
 	  ))
     return 1;
   if (df_regs_ever_live_p (regno)
-      && (!call_used_or_fixed_reg_p (regno) || cfun->machine->is_interrupt))
+      && (!call_used_regs[regno] || cfun->machine->is_interrupt))
     return 1;
   return 0;
 }
@@ -1297,9 +1298,6 @@ m32c_push_rounding (poly_int64 n)
   return (n + 1) & ~1;
 }
 
-#undef TARGET_PUSH_ARGUMENT
-#define TARGET_PUSH_ARGUMENT hook_bool_uint_true
-
 /* Passing Arguments in Registers */
 
 /* Implements TARGET_FUNCTION_ARG.  Arguments are passed partly in
@@ -1322,7 +1320,8 @@ m32c_push_rounding (poly_int64 n)
 #undef TARGET_FUNCTION_ARG
 #define TARGET_FUNCTION_ARG m32c_function_arg
 static rtx
-m32c_function_arg (cumulative_args_t ca_v, const function_arg_info &arg)
+m32c_function_arg (cumulative_args_t ca_v,
+		   machine_mode mode, const_tree type, bool named)
 {
   CUMULATIVE_ARGS *ca = get_cumulative_args (ca_v);
 
@@ -1330,38 +1329,38 @@ m32c_function_arg (cumulative_args_t ca_v, const function_arg_info &arg)
   rtx rv = NULL_RTX;
 #if DEBUG0
   fprintf (stderr, "func_arg %d (%s, %d)\n",
-	   ca->parm_num, mode_name[arg.mode], arg.named);
-  debug_tree (arg.type);
+	   ca->parm_num, mode_name[mode], named);
+  debug_tree ((tree)type);
 #endif
 
-  if (arg.end_marker_p ())
+  if (mode == VOIDmode)
     return GEN_INT (0);
 
-  if (ca->force_mem || !arg.named)
+  if (ca->force_mem || !named)
     {
 #if DEBUG0
       fprintf (stderr, "func arg: force %d named %d, mem\n", ca->force_mem,
-	       arg.named);
+	       named);
 #endif
       return NULL_RTX;
     }
 
-  if (arg.type && INTEGRAL_TYPE_P (arg.type) && POINTER_TYPE_P (arg.type))
+  if (type && INTEGRAL_TYPE_P (type) && POINTER_TYPE_P (type))
     return NULL_RTX;
 
-  if (arg.aggregate_type_p ())
+  if (type && AGGREGATE_TYPE_P (type))
     return NULL_RTX;
 
   switch (ca->parm_num)
     {
     case 1:
-      if (GET_MODE_SIZE (arg.mode) == 1 || GET_MODE_SIZE (arg.mode) == 2)
-	rv = gen_rtx_REG (arg.mode, TARGET_A16 ? R1_REGNO : R0_REGNO);
+      if (GET_MODE_SIZE (mode) == 1 || GET_MODE_SIZE (mode) == 2)
+	rv = gen_rtx_REG (mode, TARGET_A16 ? R1_REGNO : R0_REGNO);
       break;
 
     case 2:
-      if (TARGET_A16 && GET_MODE_SIZE (arg.mode) == 2)
-	rv = gen_rtx_REG (arg.mode, R2_REGNO);
+      if (TARGET_A16 && GET_MODE_SIZE (mode) == 2)
+	rv = gen_rtx_REG (mode, R2_REGNO);
       break;
     }
 
@@ -1374,7 +1373,10 @@ m32c_function_arg (cumulative_args_t ca_v, const function_arg_info &arg)
 #undef TARGET_PASS_BY_REFERENCE
 #define TARGET_PASS_BY_REFERENCE m32c_pass_by_reference
 static bool
-m32c_pass_by_reference (cumulative_args_t, const function_arg_info &)
+m32c_pass_by_reference (cumulative_args_t ca ATTRIBUTE_UNUSED,
+			machine_mode mode ATTRIBUTE_UNUSED,
+			const_tree type ATTRIBUTE_UNUSED,
+			bool named ATTRIBUTE_UNUSED)
 {
   return 0;
 }
@@ -1402,7 +1404,9 @@ m32c_init_cumulative_args (CUMULATIVE_ARGS * ca,
 #define TARGET_FUNCTION_ARG_ADVANCE m32c_function_arg_advance
 static void
 m32c_function_arg_advance (cumulative_args_t ca_v,
-			   const function_arg_info &)
+			   machine_mode mode ATTRIBUTE_UNUSED,
+			   const_tree type ATTRIBUTE_UNUSED,
+			   bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *ca = get_cumulative_args (ca_v);
 
@@ -2155,7 +2159,8 @@ m32c_register_move_cost (machine_mode mode, reg_class_t from,
   HARD_REG_SET cc;
 
 /* FIXME: pick real values, but not 2 for now.  */
-  cc = reg_class_contents[from] | reg_class_contents[(int) to];
+  COPY_HARD_REG_SET (cc, reg_class_contents[(int) from]);
+  IOR_HARD_REG_SET (cc, reg_class_contents[(int) to]);
 
   if (mode == QImode
       && hard_reg_set_intersect_p (cc, reg_class_contents[R23_REGS]))
@@ -3587,7 +3592,7 @@ m32c_expand_setmemhi(rtx *operands)
    addresses, not [mem] syntax.  $0 is the destination (MEM:BLK), $1
    is the source (MEM:BLK), and $2 the count (HI).  */
 int
-m32c_expand_cpymemhi(rtx *operands)
+m32c_expand_movmemhi(rtx *operands)
 {
   rtx desta, srca, count;
   rtx desto, srco, counto;
@@ -3615,9 +3620,9 @@ m32c_expand_cpymemhi(rtx *operands)
     {
       count = copy_to_mode_reg (HImode, GEN_INT (INTVAL (count) / 2));
       if (TARGET_A16)
-	emit_insn (gen_cpymemhi_whi_op (desto, srco, counto, desta, srca, count));
+	emit_insn (gen_movmemhi_whi_op (desto, srco, counto, desta, srca, count));
       else
-	emit_insn (gen_cpymemhi_wpsi_op (desto, srco, counto, desta, srca, count));
+	emit_insn (gen_movmemhi_wpsi_op (desto, srco, counto, desta, srca, count));
       return 1;
     }
 
@@ -3627,9 +3632,9 @@ m32c_expand_cpymemhi(rtx *operands)
     count = copy_to_mode_reg (HImode, count);
 
   if (TARGET_A16)
-    emit_insn (gen_cpymemhi_bhi_op (desto, srco, counto, desta, srca, count));
+    emit_insn (gen_movmemhi_bhi_op (desto, srco, counto, desta, srca, count));
   else
-    emit_insn (gen_cpymemhi_bpsi_op (desto, srco, counto, desta, srca, count));
+    emit_insn (gen_movmemhi_bpsi_op (desto, srco, counto, desta, srca, count));
 
   return 1;
 }

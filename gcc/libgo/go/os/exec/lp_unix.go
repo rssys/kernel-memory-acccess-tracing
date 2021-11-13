@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || linux || netbsd || openbsd || solaris
-// +build aix darwin dragonfly freebsd hurd linux netbsd openbsd solaris
+// +build aix darwin dragonfly freebsd hurd linux nacl netbsd openbsd solaris
 
 package exec
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +24,7 @@ func findExecutable(file string) error {
 	if m := d.Mode(); !m.IsDir() && m&0111 != 0 {
 		return nil
 	}
-	return fs.ErrPermission
+	return os.ErrPermission
 }
 
 // LookPath searches for an executable named file in the

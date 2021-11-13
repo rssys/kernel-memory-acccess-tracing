@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // REQUIRED_ARGS:
 // EXTRA_FILES: extra-files/test15.txt
 
@@ -901,12 +900,12 @@ void test49()
 
 void foo50(int[] f, ...)
 {
-    foreach(size_t i, TypeInfo ti; _arguments) { }
+    foreach(int i, TypeInfo ti; _arguments) { }
 }
 
 void bar50(out int[] f, ...)
 {
-    foreach(size_t i, TypeInfo ti; _arguments) { }
+    foreach(int i, TypeInfo ti; _arguments) { }
 }
 
 void test50()

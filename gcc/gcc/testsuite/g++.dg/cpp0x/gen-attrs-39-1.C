@@ -2,8 +2,7 @@
 
 int fragile_block(void) {
   typedef 
-  [[gnu::aligned (16)]] // { dg-error "standard attributes in middle of decl-specifiers" }
-// { dg-warning "attribute ignored" "" { target *-*-* } .-1 }
+  [[gnu::aligned (16)]] // { dg-warning "ignored" }
   struct  {
     int i;
   } XmmUint16;

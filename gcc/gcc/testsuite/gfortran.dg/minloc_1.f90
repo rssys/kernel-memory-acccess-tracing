@@ -1,5 +1,6 @@
 ! { dg-do run }
 ! { dg-add-options ieee }
+! { dg-skip-if "NaN not supported" { spu-*-* } }
   real :: a(3), nan, minf, pinf
   integer :: ia(1)
   real, allocatable :: c(:)

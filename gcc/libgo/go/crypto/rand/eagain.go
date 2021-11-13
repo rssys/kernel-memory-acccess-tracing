@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || linux || netbsd || openbsd || solaris
-// +build aix darwin dragonfly freebsd hurd linux netbsd openbsd solaris
+// +build aix darwin dragonfly freebsd hurd linux nacl netbsd openbsd solaris
 
 package rand
 
 import (
-	"io/fs"
+	"os"
 	"syscall"
 )
 
@@ -19,7 +18,7 @@ func init() {
 // unixIsEAGAIN reports whether err is a syscall.EAGAIN wrapped in a PathError.
 // See golang.org/issue/9205
 func unixIsEAGAIN(err error) bool {
-	if pe, ok := err.(*fs.PathError); ok {
+	if pe, ok := err.(*os.PathError); ok {
 		if errno, ok := pe.Err.(syscall.Errno); ok && errno == syscall.EAGAIN {
 			return true
 		}

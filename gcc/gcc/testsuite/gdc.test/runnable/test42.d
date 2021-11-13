@@ -1,18 +1,8 @@
-/* RUNNABLE_PHOBOS_TEST
-REQUIRED_ARGS:
-TEST_OUTPUT:
----
-success
-myInt int
-myBool bool
-i
-s
-C6test42__T4T219TiZ1C
-C6test427test219FZ8__mixin11C
----
-*/
+// REQUIRED_ARGS:
+//
 
 module test42;
+
 import std.stdio;
 import core.stdc.stdio;
 import std.string;
@@ -62,7 +52,7 @@ void test3()
 {
     auto i = mixin("__LINE__");
     writefln("%d", i);
-    assert(i == 63);
+    assert(i == 53);
 }
 
 /***************************************************/
@@ -1102,17 +1092,17 @@ void test71()
 {
     size_t s = Foo71!(
 "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-~ "When dealing with complex template tuples, it's very easy to overflow the
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"helloabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+"When dealing with complex template tuples, it's very easy to overflow the
 maximum symbol length allowed by OPTLINK.  This is, simply put, a damn shame,
 because it prevents otherwise completely legal code from compiling and linking
 with DMDWin, whereas it works perfectly fine when using DMDNix or GDC.
@@ -1692,13 +1682,54 @@ void test101()
 
 /***************************************************/
 
+version(GNU)
+{
+int x103;
+
+void external(int a, ...)
+{
+    va_list ap;
+    va_start(ap, a);
+    auto ext = va_arg!int(ap);
+    printf("external: %d\n", ext);
+    x103 = ext;
+    va_end(ap);
+}
+
+class C103
+{
+    void method ()
+    {
+        void internal (int a, ...)
+        {
+            va_list ap;
+            va_start(ap, a);
+        auto internal = va_arg!int(ap);
+            printf("internal: %d\n", internal);
+            x103 = internal;
+            va_end(ap);
+        }
+
+        internal (0, 43);
+        assert(x103 == 43);
+    }
+}
+
+void test103()
+{
+    external(0, 42);
+    assert(x103 == 42);
+    (new C103).method ();
+}
+}
+else version(X86)
+{
 int x103;
 
 void external(...)
 {
-    int arg = va_arg!int(_argptr);
-    printf("external: %d\n", arg);
-    x103 = arg;
+    printf("external: %d\n", *cast (int *) _argptr);
+    x103 = *cast (int *) _argptr;
 }
 
 class C103
@@ -1707,9 +1738,8 @@ class C103
     {
         void internal (...)
         {
-            int arg = va_arg!int(_argptr);
-            printf("internal: %d\n", arg);
-            x103 = arg;
+            printf("internal: %d\n", *cast (int *)_argptr);
+            x103 = *cast (int *) _argptr;
         }
 
         internal (43);
@@ -1723,6 +1753,14 @@ void test103()
     assert(x103 == 42);
     (new C103).method ();
 }
+}
+else version(X86_64)
+{
+    pragma(msg, "Not ported to x86-64 compatible varargs, yet.");
+    void test103() {}
+}
+else
+    static assert(false, "Unknown platform");
 
 /***************************************************/
 
@@ -1990,7 +2028,7 @@ struct Foobar;
 int test124()
 {   int result;
     dchar[] aa;
-    alias size_t foo_t;
+    alias uint foo_t;
 
     foreach (foo_t i, dchar d; aa)
     {
@@ -3517,7 +3555,7 @@ void test215()
     enum assocarrayliteral = Q!( [1:2] ).q.stringof;
     enum complex80 = Q!( 1+1.0i ).q.stringof;
     //enum dottype = Q!( C.Object.toString ).q.stringof;
-    enum halt = 0.stringof;    // ICE w/ -release
+    enum halt = (assert(0), 0).stringof;    // ICE w/ -release
     //enum remove = Q!( [1:2].remove(1) ).q.stringof;
     enum templat = Q!( Q ).q.stringof;
 }

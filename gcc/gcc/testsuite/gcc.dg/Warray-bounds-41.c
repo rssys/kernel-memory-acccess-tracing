@@ -1,9 +1,8 @@
 /* PR tree-optimization/89662- -Warray-bounds ICE on void* arithmetic
    { dg-do compile }
-   { dg-require-effective-target alloca }
    { dg-options "-O2 -Wall" } */
 
-static void* vptr (void *c)
+void* vptr (void *c)
 {
   return c;
 }
@@ -31,3 +30,4 @@ void test_vptr_arith_vla_var (int n)
   char c[n];
   sink (vptr (c) - 1);    /* { dg-warning "\\\[-Warray-bounds" "pr82608" { xfail *-*-* } } */
 }
+

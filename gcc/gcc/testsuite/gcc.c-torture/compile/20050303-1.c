@@ -1,6 +1,5 @@
 /* { dg-require-effective-target int32plus } */
 /* { dg-require-effective-target size32plus } */
-/* { dg-require-stack-size "128*1024" } */
 
 void crc()
 {

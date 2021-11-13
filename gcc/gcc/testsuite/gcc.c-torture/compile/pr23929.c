@@ -1,5 +1,4 @@
 /* PR tree-optimization/23929 */
-/* { dg-require-stack-size "2048+8" } */
 
 extern void bar (char *);
 

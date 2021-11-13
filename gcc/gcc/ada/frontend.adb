@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -25,50 +25,47 @@
 
 with System.Strings; use System.Strings;
 
-with Atree;          use Atree;
+with Atree;    use Atree;
 with Checks;
 with CStand;
-with Debug;          use Debug;
+with Debug;    use Debug;
 with Elists;
 with Exp_Dbug;
 with Exp_Unst;
 with Fmap;
 with Fname.UF;
-with Ghost;          use Ghost;
-with Inline;         use Inline;
-with Lib;            use Lib;
-with Lib.Load;       use Lib.Load;
+with Ghost;    use Ghost;
+with Inline;   use Inline;
+with Lib;      use Lib;
+with Lib.Load; use Lib.Load;
 with Lib.Xref;
-with Live;           use Live;
-with Namet;          use Namet;
-with Nlists;         use Nlists;
-with Opt;            use Opt;
+with Live;     use Live;
+with Namet;    use Namet;
+with Nlists;   use Nlists;
+with Opt;      use Opt;
 with Osint;
 with Par;
 with Prep;
 with Prepcomp;
-with Restrict;       use Restrict;
-with Rident;         use Rident;
+with Restrict; use Restrict;
+with Rident;   use Rident;
 with Rtsfind;
-with Snames;         use Snames;
+with Snames;   use Snames;
 with Sprint;
-with Scn;            use Scn;
-with Sem;            use Sem;
+with Scn;      use Scn;
+with Sem;      use Sem;
 with Sem_Aux;
 with Sem_Ch8;
 with Sem_SCIL;
-with Sem_Elab;       use Sem_Elab;
-with Sem_Prag;       use Sem_Prag;
+with Sem_Elab; use Sem_Elab;
+with Sem_Prag; use Sem_Prag;
 with Sem_Warn;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Sinfo.Utils;    use Sinfo.Utils;
-with Sinput;         use Sinput;
-with Sinput.L;       use Sinput.L;
+with Sinfo;    use Sinfo;
+with Sinput;   use Sinput;
+with Sinput.L; use Sinput.L;
 with SCIL_LL;
-with Tbuild;         use Tbuild;
-with Types;          use Types;
-with VAST;
+with Tbuild;   use Tbuild;
+with Types;    use Types;
 
 procedure Frontend is
 begin
@@ -384,16 +381,6 @@ begin
          Warn_On_Non_Local_Exception := True;
       end if;
 
-      --  Disable Initialize_Scalars for runtime files to avoid circular
-      --  dependencies.
-
-      if Initialize_Scalars
-        and then Fname.Is_Predefined_File_Name (File_Name (Main_Source_File))
-      then
-         Initialize_Scalars   := False;
-         Init_Or_Norm_Scalars := Normalize_Scalars;
-      end if;
-
       --  Now on to the semantics. Skip if in syntax only mode
 
       if Operating_Mode /= Check_Syntax then
@@ -425,15 +412,14 @@ begin
 
             --  Cleanup processing after completing main analysis
 
-            --  In GNATprove_Mode we do not perform most expansions but body
-            --  instantiation is needed.
+            --  Comment needed for ASIS mode test and GNATprove mode test???
 
             pragma Assert
               (Operating_Mode = Generate_Code
                 or else Operating_Mode = Check_Semantics);
 
             if Operating_Mode = Generate_Code
-              or else GNATprove_Mode
+              or else (ASIS_Mode or GNATprove_Mode)
             then
                Instantiate_Bodies;
             end if;
@@ -506,9 +492,7 @@ begin
 
    --  Qualify all entity names in inner packages, package bodies, etc
 
-   if not GNATprove_Mode then
-      Exp_Dbug.Qualify_All_Entity_Names;
-   end if;
+   Exp_Dbug.Qualify_All_Entity_Names;
 
    --  SCIL backend requirement. Check that SCIL nodes associated with
    --  dispatching calls reference subprogram calls.
@@ -516,12 +500,6 @@ begin
    if Generate_SCIL then
       pragma Debug (Sem_SCIL.Check_SCIL_Nodes (Cunit (Main_Unit)));
       null;
-   end if;
-
-   --  Verify the validity of the tree
-
-   if Debug_Flag_Underscore_VV then
-      VAST.Check_Tree (Cunit (Main_Unit));
    end if;
 
    --  Dump the source now. Note that we do this as soon as the analysis

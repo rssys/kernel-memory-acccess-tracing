@@ -1,5 +1,5 @@
 /* Hooks for cfg representation specific functions.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <s.pop@laposte.net>
 
 This file is part of GCC.
@@ -58,9 +58,8 @@ typedef int_hash <unsigned short, 0> dependence_hash;
 
 /* Optional data for duplicate_block.   */
 
-class copy_bb_data
+struct copy_bb_data
 {
-public:
   copy_bb_data() : dependence_map (NULL) {}
   ~copy_bb_data () { delete dependence_map; }
 
@@ -166,9 +165,10 @@ struct cfg_hooks
 
   /* A hook for duplicating loop in CFG, currently this is used
      in loop versioning.  */
-  bool (*cfg_hook_duplicate_loop_body_to_header_edge) (class loop *, edge,
-						       unsigned, sbitmap, edge,
-						       vec<edge> *, int);
+  bool (*cfg_hook_duplicate_loop_to_header_edge) (struct loop *, edge,
+						  unsigned, sbitmap,
+						  edge, vec<edge> *,
+						  int);
 
   /* Add condition to new basic block and update CFG used in loop
      versioning.  */
@@ -249,11 +249,12 @@ extern bool block_ends_with_condjump_p (const_basic_block bb);
 extern int flow_call_edges_add (sbitmap);
 extern void execute_on_growing_pred (edge);
 extern void execute_on_shrinking_pred (edge);
-extern bool
-cfg_hook_duplicate_loop_body_to_header_edge (class loop *loop, edge,
-					     unsigned int ndupl,
-					     sbitmap wont_exit, edge orig,
-					     vec<edge> *to_remove, int flags);
+extern bool cfg_hook_duplicate_loop_to_header_edge (struct loop *loop, edge,
+						    unsigned int ndupl,
+						    sbitmap wont_exit,
+						    edge orig,
+						    vec<edge> *to_remove,
+						    int flags);
 
 extern void lv_flush_pending_stmts (edge);
 extern void extract_cond_bb_edges (basic_block, edge *, edge*);
@@ -264,7 +265,7 @@ extern void lv_add_condition_to_bb (basic_block, basic_block, basic_block,
 
 extern bool can_copy_bbs_p (basic_block *, unsigned);
 extern void copy_bbs (basic_block *, unsigned, basic_block *,
-		      edge *, unsigned, edge *, class loop *,
+		      edge *, unsigned, edge *, struct loop *,
 		      basic_block, bool);
 
 void profile_record_check_consistency (profile_record *);

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,7 @@ func TestChunk(t *testing.T) {
 	}
 
 	r := NewChunkedReader(&b)
-	data, err := io.ReadAll(r)
+	data, err := ioutil.ReadAll(r)
 	if err != nil {
 		t.Logf(`data: "%s"`, data)
 		t.Fatalf("ReadAll from reader: %v", err)
@@ -176,7 +177,7 @@ func TestChunkReadingIgnoresExtensions(t *testing.T) {
 		"17;someext\r\n" + // token without value
 		"world! 0123456789abcdef\r\n" +
 		"0;someextension=sometoken\r\n" // token=token
-	data, err := io.ReadAll(NewChunkedReader(strings.NewReader(in)))
+	data, err := ioutil.ReadAll(NewChunkedReader(strings.NewReader(in)))
 	if err != nil {
 		t.Fatalf("ReadAll = %q, %v", data, err)
 	}

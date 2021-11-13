@@ -242,7 +242,7 @@ stdlib (void *p, void *q, __SIZE_TYPE__ sz)
 {
   abort (); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
-  void *p1 = calloc (sz, 1); /* { dg-warning "incompatible implicit" } */
+  calloc (sz, 1); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
   exit (1); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
@@ -252,11 +252,11 @@ stdlib (void *p, void *q, __SIZE_TYPE__ sz)
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
   llabs (1LL); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
-  void *p2 = malloc (sz); /* { dg-warning "incompatible implicit" } */
+  malloc (sz); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
-  void *p3 = realloc (p, sz); /* { dg-warning "incompatible implicit" } */
+  realloc (p, sz); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
-  void *p4 = aligned_alloc (sz, sz); /* { dg-warning "incompatible implicit" } */
+  aligned_alloc (sz, sz); /* { dg-warning "incompatible implicit" } */
   /* { dg-message "include ..stdlib.h.." "" { target *-*-* } .-1 } */
 }
 

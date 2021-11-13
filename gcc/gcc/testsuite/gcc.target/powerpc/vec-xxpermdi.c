@@ -1,5 +1,4 @@
-/* { dg-do run } */
-/* { dg-require-effective-target vsx_hw } */
+/* { dg-do run { target { powerpc64*-*-* && vsx_hw } } } */
 /* { dg-options "-O2 -mvsx" } */
 
 /* Added for PR79261 to test that vec_xxpermdi works correctly for

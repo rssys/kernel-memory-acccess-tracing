@@ -10,10 +10,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
-	exec "internal/execabs"
 	"io"
-	"io/fs"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -73,20 +73,20 @@ type Repo interface {
 	// ReadZip downloads a zip file for the subdir subdirectory
 	// of the given revision to a new file in a given temporary directory.
 	// It should refuse to read more than maxSize bytes.
-	// It returns a ReadCloser for a streamed copy of the zip file.
-	// All files in the zip file are expected to be
+	// It returns a ReadCloser for a streamed copy of the zip file,
+	// along with the actual subdirectory (possibly shorter than subdir)
+	// contained in the zip file. All files in the zip file are expected to be
 	// nested in a single top-level directory, whose name is not specified.
-	ReadZip(rev, subdir string, maxSize int64) (zip io.ReadCloser, err error)
+	ReadZip(rev, subdir string, maxSize int64) (zip io.ReadCloser, actualSubdir string, err error)
 
-	// RecentTag returns the most recent tag on rev or one of its predecessors
-	// with the given prefix. allowed may be used to filter out unwanted versions.
-	RecentTag(rev, prefix string, allowed func(string) bool) (tag string, err error)
-
-	// DescendsFrom reports whether rev or any of its ancestors has the given tag.
-	//
-	// DescendsFrom must return true for any tag returned by RecentTag for the
-	// same revision.
-	DescendsFrom(rev, tag string) (bool, error)
+	// RecentTag returns the most recent tag at or before the given rev
+	// with the given prefix. It should make a best-effort attempt to
+	// find a tag that is a valid semantic version (following the prefix),
+	// or else the result is not useful to the caller, but it need not
+	// incur great expense in doing so. For example, the git implementation
+	// of RecentTag limits git's search to tags matching the glob expression
+	// "v[0-9]*.[0-9]*.[0-9]*" (after the prefix).
+	RecentTag(rev, prefix string) (tag string, err error)
 }
 
 // A Rev describes a single revision in a source code repository.
@@ -103,32 +103,6 @@ type FileRev struct {
 	Rev  string // requested revision
 	Data []byte // file data
 	Err  error  // error if any; os.IsNotExist(Err)==true if rev exists but file does not exist in that rev
-}
-
-// UnknownRevisionError is an error equivalent to fs.ErrNotExist, but for a
-// revision rather than a file.
-type UnknownRevisionError struct {
-	Rev string
-}
-
-func (e *UnknownRevisionError) Error() string {
-	return "unknown revision " + e.Rev
-}
-func (UnknownRevisionError) Is(err error) bool {
-	return err == fs.ErrNotExist
-}
-
-// ErrNoCommits is an error equivalent to fs.ErrNotExist indicating that a given
-// repository or module contains no commits.
-var ErrNoCommits error = noCommitsError{}
-
-type noCommitsError struct{}
-
-func (noCommitsError) Error() string {
-	return "no commits"
-}
-func (noCommitsError) Is(err error) bool {
-	return err == fs.ErrNotExist
 }
 
 // AllHex reports whether the revision rev is entirely lower-case hexadecimal digits.
@@ -152,11 +126,15 @@ func ShortenSHA1(rev string) string {
 	return rev
 }
 
+// WorkRoot is the root of the cached work directory.
+// It is set by cmd/go/internal/modload.InitMod.
+var WorkRoot string
+
 // WorkDir returns the name of the cached work directory to use for the
 // given repository type and name.
 func WorkDir(typ, name string) (dir, lockfile string, err error) {
-	if cfg.GOMODCACHE == "" {
-		return "", "", fmt.Errorf("neither GOPATH nor GOMODCACHE are set")
+	if WorkRoot == "" {
+		return "", "", fmt.Errorf("codehost.WorkRoot not set")
 	}
 
 	// We name the work directory for the SHA256 hash of the type and name.
@@ -168,7 +146,7 @@ func WorkDir(typ, name string) (dir, lockfile string, err error) {
 		return "", "", fmt.Errorf("codehost.WorkDir: type cannot contain colon")
 	}
 	key := typ + ":" + name
-	dir = filepath.Join(cfg.GOMODCACHE, "cache/vcs", fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
+	dir = filepath.Join(WorkRoot, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
 
 	if cfg.BuildX {
 		fmt.Fprintf(os.Stderr, "mkdir -p %s # %s %s\n", filepath.Dir(dir), typ, name)
@@ -188,7 +166,7 @@ func WorkDir(typ, name string) (dir, lockfile string, err error) {
 	}
 	defer unlock()
 
-	data, err := os.ReadFile(dir + ".info")
+	data, err := ioutil.ReadFile(dir + ".info")
 	info, err2 := os.Stat(dir)
 	if err == nil && err2 == nil && info.IsDir() {
 		// Info file and directory both already exist: reuse.
@@ -210,7 +188,7 @@ func WorkDir(typ, name string) (dir, lockfile string, err error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(dir+".info", []byte(key), 0666); err != nil {
+	if err := ioutil.WriteFile(dir+".info", []byte(key), 0666); err != nil {
 		os.RemoveAll(dir)
 		return "", "", err
 	}
@@ -263,9 +241,6 @@ func RunWithStdin(dir string, stdin io.Reader, cmdline ...interface{}) ([]byte, 
 	}
 
 	cmd := str.StringList(cmdline...)
-	if os.Getenv("TESTGOVCS") == "panic" {
-		panic(fmt.Sprintf("use of vcs: %v", cmd))
-	}
 	if cfg.BuildX {
 		text := new(strings.Builder)
 		if dir != "" {

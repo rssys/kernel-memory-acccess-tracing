@@ -1,4 +1,4 @@
-/* Copyright (C) 2016-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2016-2019 Free Software Foundation, Inc.
 
    This file is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free
@@ -23,7 +23,6 @@ extern bool gcn_can_split_p (machine_mode, rtx);
 extern bool gcn_constant64_p (rtx);
 extern bool gcn_constant_p (rtx);
 extern rtx gcn_convert_mask_mode (rtx reg);
-extern unsigned int gcn_dwarf_register_number (unsigned int regno);
 extern char * gcn_expand_dpp_shr_insn (machine_mode, const char *, int, int);
 extern void gcn_expand_epilogue ();
 extern rtx gcn_expand_scaled_offsets (addr_space_t as, rtx base, rtx offsets,
@@ -38,11 +37,9 @@ extern rtx gcn_full_exec ();
 extern rtx gcn_full_exec_reg ();
 extern rtx gcn_gen_undef (machine_mode);
 extern bool gcn_global_address_p (rtx);
-extern tree gcn_goacc_adjust_private_decl (location_t, tree var, int level);
-extern tree gcn_goacc_create_worker_broadcast_record (tree record_type,
-						      bool sender,
-						      const char *name,
-						      unsigned HOST_WIDE_INT offset);
+extern tree gcn_goacc_adjust_propagation_record (tree record_type, bool sender,
+						 const char *name);
+extern void gcn_goacc_adjust_gangprivate_decl (tree var);
 extern void gcn_goacc_reduction (gcall *call);
 extern bool gcn_hard_regno_rename_ok (unsigned int from_reg,
 				      unsigned int to_reg);
@@ -54,7 +51,7 @@ extern int gcn_hard_regno_nregs (int regno, machine_mode mode);
 extern void gcn_hsa_declare_function_name (FILE *file, const char *name,
 					   tree decl);
 extern HOST_WIDE_INT gcn_initial_elimination_offset (int, int);
-extern bool gcn_inline_constant64_p (rtx, bool);
+extern bool gcn_inline_constant64_p (rtx);
 extern bool gcn_inline_constant_p (rtx);
 extern int gcn_inline_fp_constant_p (rtx, bool);
 extern reg_class gcn_mode_code_base_reg_class (machine_mode, addr_space_t,

@@ -1,5 +1,5 @@
 /* Simple bitmaps.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -139,8 +139,7 @@ sbitmap_realloc (sbitmap src, unsigned int n_elms)
 sbitmap *
 sbitmap_vector_alloc (unsigned int n_vecs, unsigned int n_elms)
 {
-  unsigned int i, size;
-  size_t amt, bytes, vector_bytes, elm_bytes, offset;
+  unsigned int i, bytes, offset, elm_bytes, size, amt, vector_bytes;
   sbitmap *bitmap_vector;
 
   size = SBITMAP_SET_SIZE (n_elms);

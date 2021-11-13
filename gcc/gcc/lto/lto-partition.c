@@ -1,5 +1,5 @@
 /* LTO partitioning logic routines.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -29,6 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "stringpool.h"
 #include "cgraph.h"
 #include "lto-streamer.h"
+#include "params.h"
 #include "symbol-summary.h"
 #include "tree-vrp.h"
 #include "ipa-prop.h"
@@ -162,7 +163,7 @@ add_symbol_to_partition_1 (ltrans_partition part, symtab_node *node)
       if (dump_file)
 	fprintf (dump_file,
 		 "Symbol node %s now used in multiple partitions\n",
-		 node->dump_name ());
+		 node->name ());
     }
   node->aux = (void *)((size_t)node->aux + 1);
 
@@ -170,7 +171,7 @@ add_symbol_to_partition_1 (ltrans_partition part, symtab_node *node)
     {
       struct cgraph_edge *e;
       if (!node->alias && c == SYMBOL_PARTITION)
-	part->insns += ipa_size_summaries->get (cnode)->size;
+	part->insns += ipa_fn_summaries->get (cnode)->size;
 
       /* Add all inline clones and callees that are duplicated.  */
       for (e = cnode->callees; e; e = e->next_callee)
@@ -181,7 +182,7 @@ add_symbol_to_partition_1 (ltrans_partition part, symtab_node *node)
 
       /* Add all thunks associated with the function.  */
       for (e = cnode->callers; e; e = e->next_caller)
-	if (e->caller->thunk && !e->caller->inlined_to)
+	if (e->caller->thunk.thunk_p && !e->caller->global.inlined_to)
 	  add_symbol_to_partition_1 (part, e->caller);
     }
 
@@ -232,8 +233,8 @@ contained_in_symbol (symtab_node *node)
   if (cgraph_node *cnode = dyn_cast <cgraph_node *> (node))
     {
       cnode = cnode->function_symbol ();
-      if (cnode->inlined_to)
-	cnode = cnode->inlined_to;
+      if (cnode->global.inlined_to)
+	cnode = cnode->global.inlined_to;
       return cnode;
     }
   else if (varpool_node *vnode = dyn_cast <varpool_node *> (node))
@@ -290,7 +291,7 @@ undo_partition (ltrans_partition partition, unsigned int n_nodes)
 
       if (!node->alias && (cnode = dyn_cast <cgraph_node *> (node))
           && node->get_partitioning_class () == SYMBOL_PARTITION)
-	partition->insns -= ipa_size_summaries->get (cnode)->size;
+	partition->insns -= ipa_fn_summaries->get (cnode)->size;
       lto_symtab_encoder_delete_node (partition->encoder, node);
       node->aux = (void *)((size_t)node->aux - 1);
     }
@@ -372,9 +373,38 @@ lto_max_map (void)
     new_partition ("empty");
 }
 
-/* Helper function for qsort; sort nodes by order.  */
+/* Helper function for qsort; sort nodes by order. noreorder functions must have
+   been removed earlier.  */
 static int
 node_cmp (const void *pa, const void *pb)
+{
+  const struct cgraph_node *a = *(const struct cgraph_node * const *) pa;
+  const struct cgraph_node *b = *(const struct cgraph_node * const *) pb;
+
+  /* Profile reorder flag enables function reordering based on first execution
+     of a function. All functions with profile are placed in ascending
+     order at the beginning.  */
+
+  if (flag_profile_reorder_functions)
+  {
+    /* Functions with time profile are sorted in ascending order.  */
+    if (a->tp_first_run && b->tp_first_run)
+      return a->tp_first_run != b->tp_first_run
+	? a->tp_first_run - b->tp_first_run
+        : a->order - b->order;
+
+    /* Functions with time profile are sorted before the functions
+       that do not have the profile.  */
+    if (a->tp_first_run || b->tp_first_run)
+      return b->tp_first_run - a->tp_first_run;
+  }
+
+  return b->order - a->order;
+}
+
+/* Helper function for qsort; sort nodes by order.  */
+static int
+varpool_node_cmp (const void *pa, const void *pb)
 {
   const symtab_node *a = *static_cast<const symtab_node * const *> (pa);
   const symtab_node *b = *static_cast<const symtab_node * const *> (pb);
@@ -389,7 +419,7 @@ add_sorted_nodes (vec<symtab_node *> &next_nodes, ltrans_partition partition)
   unsigned i;
   symtab_node *node;
 
-  next_nodes.qsort (node_cmp);
+  next_nodes.qsort (varpool_node_cmp);
   FOR_EACH_VEC_ELT (next_nodes, i, node)
     if (!symbol_partitioned_p (node))
       add_symbol_to_partition (partition, node);
@@ -499,7 +529,7 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 	else
 	  order.safe_push (node);
 	if (!node->alias)
-	  total_size += ipa_size_summaries->get (node)->size;
+	  total_size += ipa_fn_summaries->get (node)->size;
       }
 
   original_total_size = total_size;
@@ -509,17 +539,17 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
      unit tends to import a lot of global trees defined there.  We should
      get better about minimizing the function bounday, but until that
      things works smoother if we order in source order.  */
-  order.qsort (tp_first_run_node_cmp);
+  order.qsort (node_cmp);
   noreorder.qsort (node_cmp);
 
   if (dump_file)
     {
       for (unsigned i = 0; i < order.length (); i++)
 	fprintf (dump_file, "Balanced map symbol order:%s:%u\n",
-		 order[i]->dump_name (), order[i]->tp_first_run);
+		 order[i]->name (), order[i]->tp_first_run);
       for (unsigned i = 0; i < noreorder.length (); i++)
 	fprintf (dump_file, "Balanced map symbol no_reorder:%s:%u\n",
-		 noreorder[i]->dump_name (), noreorder[i]->tp_first_run);
+		 noreorder[i]->name (), noreorder[i]->tp_first_run);
     }
 
   /* Collect all variables that should not be reordered.  */
@@ -528,16 +558,16 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 	&& vnode->no_reorder)
       varpool_order.safe_push (vnode);
   n_varpool_nodes = varpool_order.length ();
-  varpool_order.qsort (node_cmp);
+  varpool_order.qsort (varpool_node_cmp);
 
   /* Compute partition size and create the first partition.  */
-  if (param_min_partition_size > max_partition_size)
+  if (PARAM_VALUE (MIN_PARTITION_SIZE) > max_partition_size)
     fatal_error (input_location, "min partition size cannot be greater "
 		 "than max partition size");
 
   partition_size = total_size / n_lto_partitions;
-  if (partition_size < param_min_partition_size)
-    partition_size = param_min_partition_size;
+  if (partition_size < PARAM_VALUE (MIN_PARTITION_SIZE))
+    partition_size = PARAM_VALUE (MIN_PARTITION_SIZE);
   npartitions = 1;
   partition = new_partition ("");
   if (dump_file)
@@ -593,8 +623,7 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 
 	      last_visited_node++;
 
-	      gcc_assert (node->definition || node->weakref
-			  || node->declare_variant_alt);
+	      gcc_assert (node->definition || node->weakref);
 
 	      /* Compute boundary cost of callgraph edges.  */
 	      for (edge = node->callees; edge; edge = edge->next_callee)
@@ -705,7 +734,7 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 		int index;
 
 		node = dyn_cast <cgraph_node *> (ref->referring);
-		gcc_assert (node->definition || node->declare_variant_alt);
+		gcc_assert (node->definition);
 		index = lto_symtab_encoder_lookup (partition->encoder,
 						   node);
 		if (index != LCC_NOT_FOUND
@@ -737,10 +766,10 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 	  best_noreorder_pos = noreorder_pos;
 	}
       if (dump_file)
-	fprintf (dump_file, "Step %i: added %s, size %i, "
+	fprintf (dump_file, "Step %i: added %s/%i, size %i, "
 		 "cost %" PRId64 "/%" PRId64 " "
 		 "best %" PRId64 "/%" PRId64", step %i\n", i,
-		 order[i]->dump_name (),
+		 order[i]->name (), order[i]->order,
 		 partition->insns, cost, internal,
 		 best_cost, best_internal, best_i);
       /* Partition is too large, unwind into step when best cost was reached and
@@ -790,8 +819,8 @@ lto_balanced_map (int n_lto_partitions, int max_partition_size)
 	    fprintf (dump_file,
 		     "Total size: %" PRId64 " partition_size: %" PRId64 "\n",
 		     total_size, partition_size);
-	  if (partition_size < param_min_partition_size)
-	    partition_size = param_min_partition_size;
+	  if (partition_size < PARAM_VALUE (MIN_PARTITION_SIZE))
+	    partition_size = PARAM_VALUE (MIN_PARTITION_SIZE);
 	  npartitions ++;
 	}
     }
@@ -852,9 +881,7 @@ must_not_rename (symtab_node *node, const char *name)
   /* Avoid mangling of already mangled clones. 
      ???  should have a flag whether a symbol has a 'private' name already,
      since we produce some symbols like that i.e. for global constructors
-     that are not really clones.
-     ???  it is what unique_name means.  We only need to set it when doing
-     private symbols.  */
+     that are not really clones.  */
   if (node->unique_name)
     {
       if (dump_file)
@@ -997,15 +1024,11 @@ promote_symbol (symtab_node *node)
      defined by the non-LTO part.  */
   privatize_symbol_name (node);
   TREE_PUBLIC (node->decl) = 1;
-  /* After privatization the node should not conflict with any other symbol,
-     so it is prevailing.  This is important to keep binds_to_current_def_p
-     to work across partitions.  */
-  node->resolution = LDPR_PREVAILING_DEF_IRONLY;
   DECL_VISIBILITY (node->decl) = VISIBILITY_HIDDEN;
   DECL_VISIBILITY_SPECIFIED (node->decl) = true;
   if (dump_file)
     fprintf (dump_file,
-	     "Promoting as hidden: %s (%s)\n", node->dump_name (),
+	     "Promoting as hidden: %s (%s)\n", node->name (),
 	     IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (node->decl)));
 
   /* Promoting a symbol also promotes all transparent aliases with exception
@@ -1089,7 +1112,7 @@ rename_statics (lto_symtab_encoder_t encoder, symtab_node *node)
 
   if (dump_file)
     fprintf (dump_file,
-	    "Renaming statics with asm name: %s\n", node->dump_name ());
+	    "Renaming statics with asm name: %s\n", node->name ());
 
   /* Assign every symbol in the set that shares the same ASM name an unique
      mangled name.  */

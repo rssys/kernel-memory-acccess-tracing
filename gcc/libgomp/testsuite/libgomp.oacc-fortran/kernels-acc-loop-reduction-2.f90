@@ -1,5 +1,3 @@
-! { dg-do run }
-!
 program foo
 
   IMPLICIT NONE
@@ -7,7 +5,7 @@ program foo
 
   call bar (vol)
 
-  if (vol .ne. 4) stop 1
+  if (vol .ne. 4) call abort
 end program foo
 
 subroutine bar(vol)

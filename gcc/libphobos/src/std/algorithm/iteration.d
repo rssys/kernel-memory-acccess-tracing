@@ -769,9 +769,9 @@ private struct MapResult(alias fun, Range)
     string  s1 = "hello world!";
     dstring s2 = "日本語";
     dstring s3 = "hello world!"d;
-    auto ms1 = map!(toUpper)(s1);
-    auto ms2 = map!(toUpper)(s2);
-    auto ms3 = map!(toUpper)(s3);
+    auto ms1 = map!(std.ascii.toUpper)(s1);
+    auto ms2 = map!(std.ascii.toUpper)(s2);
+    auto ms3 = map!(std.ascii.toUpper)(s3);
     static assert(!is(ms1[0])); //narrow strings can't be indexed
     assert(ms2[0] == '日');
     assert(ms3[0] == 'H');
@@ -3151,7 +3151,7 @@ The number of seeds must be correspondingly increased.
     static assert(!is(typeof(reduce!(min, max)(tuple(c), "hello"))));
     //"Seed (dchar, dchar, dchar) does not have the correct amount of fields (should be 2)"
     static assert(!is(typeof(reduce!(min, max)(tuple(c, c, c), "hello"))));
-    //"Incompatible function/seed/element: all(alias pred = "a")/int/dchar"
+    //"Incompatable function/seed/element: all(alias pred = "a")/int/dchar"
     static assert(!is(typeof(reduce!all(1, "hello"))));
     static assert(!is(typeof(reduce!(all, all)(tuple(1, 1), "hello"))));
 }
@@ -3620,7 +3620,7 @@ The number of seeds must be correspondingly increased.
     static assert(!__traits(compiles, cumulativeFold!(min, max)("hello", tuple(c))));
     //"Seed (dchar, dchar, dchar) does not have the correct amount of fields (should be 2)"
     static assert(!__traits(compiles, cumulativeFold!(min, max)("hello", tuple(c, c, c))));
-    //"Incompatible function/seed/element: all(alias pred = "a")/int/dchar"
+    //"Incompatable function/seed/element: all(alias pred = "a")/int/dchar"
     static assert(!__traits(compiles, cumulativeFold!all("hello", 1)));
     static assert(!__traits(compiles, cumulativeFold!(all, all)("hello", tuple(1, 1))));
 }
@@ -4450,7 +4450,7 @@ private struct SplitterResult(alias isTerminator, Range)
         ["là", "dove", "terminava", "quella", "valle"]
     ));
     assert(equal(
-        splitter!(isWhite)("là dove terminava quella valle"),
+        splitter!(std.uni.isWhite)("là dove terminava quella valle"),
         ["là", "dove", "terminava", "quella", "valle"]
     ));
     assert(equal(splitter!"a=='本'"("日本語"), ["日", "語"]));

@@ -434,11 +434,11 @@ func TestPaletted(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer f.Close()
-	video001, err := png.Decode(f)
+	src, err := png.Decode(f)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	b := video001.Bounds()
+	b := src.Bounds()
 
 	cgaPalette := color.Palette{
 		color.RGBA{0x00, 0x00, 0x00, 0xff},
@@ -450,25 +450,19 @@ func TestPaletted(t *testing.T) {
 		"src":             Src,
 		"floyd-steinberg": FloydSteinberg,
 	}
-	sources := map[string]image.Image{
-		"uniform":  &image.Uniform{color.RGBA{0xff, 0x7f, 0xff, 0xff}},
-		"video001": video001,
-	}
 
+loop:
 	for dName, d := range drawers {
-	loop:
-		for sName, src := range sources {
-			dst0 := image.NewPaletted(b, cgaPalette)
-			dst1 := image.NewPaletted(b, cgaPalette)
-			d.Draw(dst0, b, src, image.Point{})
-			d.Draw(embeddedPaletted{dst1}, b, src, image.Point{})
-			for y := b.Min.Y; y < b.Max.Y; y++ {
-				for x := b.Min.X; x < b.Max.X; x++ {
-					if !eq(dst0.At(x, y), dst1.At(x, y)) {
-						t.Errorf("%s / %s: at (%d, %d), %v versus %v",
-							dName, sName, x, y, dst0.At(x, y), dst1.At(x, y))
-						continue loop
-					}
+		dst0 := image.NewPaletted(b, cgaPalette)
+		dst1 := image.NewPaletted(b, cgaPalette)
+		d.Draw(dst0, b, src, image.Point{})
+		d.Draw(embeddedPaletted{dst1}, b, src, image.Point{})
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if !eq(dst0.At(x, y), dst1.At(x, y)) {
+					t.Errorf("%s: at (%d, %d), %v versus %v",
+						dName, x, y, dst0.At(x, y), dst1.At(x, y))
+					continue loop
 				}
 			}
 		}

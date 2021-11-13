@@ -7,7 +7,7 @@
 --                                  B o d y                                 --
 --                                                                          --
 --            Copyright (C) 1991-2017, Florida State University             --
---                     Copyright (C) 1995-2021, AdaCore                     --
+--                     Copyright (C) 1995-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,6 +30,10 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
+pragma Polling (Off);
+--  Turn off polling, we do not want ATC polling to take place during tasking
+--  operations. It causes infinite loops and other problems.
+
 with System.Task_Primitives.Operations;
 with System.Soft_Links.Tasking;
 
@@ -47,7 +51,7 @@ package body System.Tasking.Protected_Objects is
    -- Local Data --
    ----------------
 
-   Locking_Policy : constant Character;
+   Locking_Policy : Character;
    pragma Import (C, Locking_Policy, "__gl_locking_policy");
 
    -------------------------

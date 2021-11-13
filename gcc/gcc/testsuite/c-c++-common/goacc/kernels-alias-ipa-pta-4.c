@@ -16,7 +16,6 @@ foo (void)
   }
 }
 
-/* XFAIL: see PR middle-end/95622; fails if ENABLE_OFFLOAD is set.  */
-/* { dg-final { scan-tree-dump-times "(?n)= 0;$" 2 "optimized" { xfail offloading_enabled } } } */
+/* { dg-final { scan-tree-dump-times "(?n)= 0;$" 2 "optimized" } } */
 /* { dg-final { scan-tree-dump-times "(?n)= 1;$" 1 "optimized" } } */
-/* { dg-final { scan-tree-dump-times "(?n)= \\*_\[0-9\];$" 0 "optimized" { xfail offloading_enabled } } } */
+/* { dg-final { scan-tree-dump-times "(?n)= \\*_\[0-9\];$" 0 "optimized" } } */

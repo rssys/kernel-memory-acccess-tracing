@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 typedef unsigned int GLenum;
 typedef unsigned char GLboolean;
 typedef int GLint;

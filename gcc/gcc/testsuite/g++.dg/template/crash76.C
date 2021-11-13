@@ -7,7 +7,7 @@ template<typename> struct A
 
 template<typename T> struct B
 {
-  using A<T>::X::Y; // { dg-error "not a class" }
+  using A<T>::X::Y; // { dg-error "not a base type" }
 };
 
 B<int> b;

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !plan9 && !windows && !gccgo
-// +build !plan9,!windows,!gccgo
+// +build !plan9,!windows
+// +build !gccgo
 
 package main
 
@@ -50,13 +50,13 @@ void pprofCgoThreadTraceback(void* parg) {
 	arg->buf[0] = (uintptr_t)(cpuHogThread) + 0x10;
 	arg->buf[1] = (uintptr_t)(cpuHogThread2) + 0x4;
 	arg->buf[2] = 0;
-	__sync_add_and_fetch(&cpuHogThreadCount, 1);
+	__atomic_add_fetch(&cpuHogThreadCount, 1, __ATOMIC_SEQ_CST);
 }
 
 // getCPUHogThreadCount fetches the number of times we've seen cpuHogThread
 // in the traceback.
 int getCPUHogThreadCount() {
-	return __sync_add_and_fetch(&cpuHogThreadCount, 0);
+	return __atomic_load(&cpuHogThreadCount, __ATOMIC_SEQ_CST);
 }
 
 static void* cpuHogDriver(void* arg __attribute__ ((unused))) {
@@ -75,6 +75,7 @@ import "C"
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -97,7 +98,7 @@ func CgoPprofThreadNoTraceback() {
 }
 
 func pprofThread() {
-	f, err := os.CreateTemp("", "prof")
+	f, err := ioutil.TempFile("", "prof")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

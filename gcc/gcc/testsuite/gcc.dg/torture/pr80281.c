@@ -1,4 +1,4 @@
-/* { dg-do run } */
+/* { dg-run } */
 /* { dg-require-effective-target int32plus } */
 
 int

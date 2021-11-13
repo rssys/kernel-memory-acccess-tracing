@@ -1,9 +1,4 @@
-TEST_OUTPUT:
----
-fail_compilation/test16188.d(1): Error: no identifier for declarator `TEST_OUTPUT`
-fail_compilation/test16188.d(1): Error: declaration expected, not `:`
-fail_compilation/test16188.d(18): Error: unrecognized declaration
----
+/* PERMUTE_ARGS:
  */
 
 // https://issues.dlang.org/show_bug.cgi?id=16188

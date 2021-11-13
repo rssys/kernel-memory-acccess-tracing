@@ -1,5 +1,5 @@
 /* RTL dead code elimination.
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -174,6 +174,7 @@ deletable_insn_p (rtx_insn *insn, bool fast, bitmap arg_stores)
       return false;
 
     case CLOBBER:
+    case CLOBBER_HIGH:
       if (fast)
 	{
 	  /* A CLOBBER of a dead pseudo register serves no purpose.
@@ -243,7 +244,10 @@ static void
 mark_nonreg_stores_1 (rtx dest, const_rtx pattern, void *data)
 {
   if (GET_CODE (pattern) != CLOBBER && !REG_P (dest))
-    mark_insn ((rtx_insn *) data, true);
+    {
+      gcc_checking_assert (GET_CODE (pattern) != CLOBBER_HIGH);
+      mark_insn ((rtx_insn *) data, true);
+    }
 }
 
 
@@ -254,19 +258,22 @@ static void
 mark_nonreg_stores_2 (rtx dest, const_rtx pattern, void *data)
 {
   if (GET_CODE (pattern) != CLOBBER && !REG_P (dest))
-    mark_insn ((rtx_insn *) data, false);
+    {
+      gcc_checking_assert (GET_CODE (pattern) != CLOBBER_HIGH);
+      mark_insn ((rtx_insn *) data, false);
+    }
 }
 
 
-/* Mark INSN if it stores to a non-register destination.  */
+/* Mark INSN if BODY stores to a non-register destination.  */
 
 static void
-mark_nonreg_stores (rtx_insn *insn, bool fast)
+mark_nonreg_stores (rtx body, rtx_insn *insn, bool fast)
 {
   if (fast)
-    note_stores (insn, mark_nonreg_stores_1, insn);
+    note_stores (body, mark_nonreg_stores_1, insn);
   else
-    note_stores (insn, mark_nonreg_stores_2, insn);
+    note_stores (body, mark_nonreg_stores_2, insn);
 }
 
 
@@ -684,7 +691,7 @@ prescan_insns_for_dce (bool fast)
 	    if (arg_stores && bitmap_bit_p (arg_stores, INSN_UID (insn)))
 	      continue;
 	    if (deletable_insn_p (insn, fast, arg_stores))
-	      mark_nonreg_stores (insn, fast);
+	      mark_nonreg_stores (PATTERN (insn), insn, fast);
 	    else
 	      mark_insn (insn, fast);
 	  }

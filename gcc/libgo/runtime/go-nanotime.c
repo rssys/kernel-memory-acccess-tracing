@@ -8,11 +8,11 @@
 
 #include "runtime.h"
 
-int64 runtime_nanotime1 (void)
+int64 runtime_nanotime (void)
   __attribute__ ((no_split_stack));
 
 int64
-runtime_nanotime1 (void)
+runtime_nanotime (void)
 {
   struct timespec ts;
 

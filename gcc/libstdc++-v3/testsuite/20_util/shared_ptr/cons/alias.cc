@@ -1,6 +1,6 @@
 // { dg-do run { target c++11 } }
 
-// Copyright (C) 2007-2021 Free Software Foundation, Inc.
+// Copyright (C) 2007-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -36,12 +36,13 @@ struct B : A
   A a;
 };
 
+void deletefunc(A* p) { delete p; }
+
 // 20.6.6.2.1 shared_ptr constructors [util.smartptr.shared.const]
 
 // Aliasing constructors
 
-void
-test01()
+int test01()
 {
   bool test = true;
 
@@ -54,9 +55,11 @@ test01()
   std::shared_ptr<bool> b2(b1);
   VERIFY( b2.use_count() == 0 );
   VERIFY( b1.get() == b2.get() );
+
+  return 0;
 }
 
-void
+int
 test02()
 {
   std::shared_ptr<A> a(new A);
@@ -66,9 +69,11 @@ test02()
   std::shared_ptr<int> i2(i1);
   VERIFY( i2.use_count() == 3 );
   VERIFY( i2.get() == &a->i );
+
+  return 0;
 }
 
-void
+int
 test03()
 {
   std::shared_ptr<B> b(new B);
@@ -84,6 +89,8 @@ test03()
 
   a3 = a2;
   VERIFY( a3.get() == &b->a );
+
+  return 0;
 }
 
 int
@@ -92,4 +99,5 @@ main()
   test01();
   test02();
   test03();
+  return 0;
 }

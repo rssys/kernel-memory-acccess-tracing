@@ -1,6 +1,6 @@
 // Support routines for the -*- C++ -*- dynamic memory management.
 
-// Copyright (C) 1997-2021 Free Software Foundation, Inc.
+// Copyright (C) 1997-2019 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -26,6 +26,7 @@
 #include <bits/c++config.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <bits/exception_defines.h>
 #include <bit>
 #include "new"
 
@@ -43,7 +44,6 @@ using std::new_handler;
 using std::bad_alloc;
 
 #if ! _GLIBCXX_HOSTED
-using std::size_t;
 extern "C"
 {
 # if _GLIBCXX_HAVE_ALIGNED_ALLOC
@@ -54,10 +54,6 @@ extern "C"
   void *posix_memalign(void **, size_t alignment, size_t size);
 # elif _GLIBCXX_HAVE_MEMALIGN
   void *memalign(size_t alignment, size_t size);
-# else
-  // A freestanding C runtime may not provide "malloc" -- but there is no
-  // other reasonable way to implement "operator new".
-  void *malloc(size_t);
 # endif
 }
 #endif
@@ -87,6 +83,12 @@ aligned_alloc (std::size_t al, std::size_t sz)
 static inline void*
 aligned_alloc (std::size_t al, std::size_t sz)
 {
+#ifdef __sun
+  // Solaris 10 memalign requires that alignment is greater than or equal to
+  // the size of a word.
+  if (al < sizeof(int))
+    al = sizeof(int);
+#endif
   return memalign (al, sz);
 }
 #else // !HAVE__ALIGNED_MALLOC && !HAVE_POSIX_MEMALIGN && !HAVE_MEMALIGN
@@ -119,7 +121,7 @@ operator new (std::size_t sz, std::align_val_t al)
 
   /* Alignment must be a power of two.  */
   /* XXX This should be checked by the compiler (PR 86878).  */
-  if (__builtin_expect (!std::__has_single_bit(align), false))
+  if (__builtin_expect (!std::__ispow2(align), false))
     _GLIBCXX_THROW_OR_ABORT(bad_alloc());
 
   /* malloc (0) is unpredictable; avoid it.  */

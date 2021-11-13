@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 #define type unsigned short
 
 type glob0, glob1;

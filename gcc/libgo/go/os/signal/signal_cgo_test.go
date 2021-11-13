@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build (darwin || dragonfly || freebsd || (linux && !android) || netbsd || openbsd) && cgo
 // +build darwin dragonfly freebsd linux,!android netbsd openbsd
 // +build cgo
 
@@ -18,10 +17,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
-	ptypkg "os/signal/internal/pty"
+	"os/signal/internal/pty"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,20 +71,20 @@ func TestTerminalSignal(t *testing.T) {
 	// The test only fails when using a "slow device," in this
 	// case a pseudo-terminal.
 
-	pty, procTTYName, err := ptypkg.Open()
+	master, sname, err := pty.Open()
 	if err != nil {
-		ptyErr := err.(*ptypkg.PtyError)
+		ptyErr := err.(*pty.PtyError)
 		if ptyErr.FuncName == "posix_openpt" && ptyErr.Errno == syscall.EACCES {
 			t.Skip("posix_openpt failed with EACCES, assuming chroot and skipping")
 		}
 		t.Fatal(err)
 	}
-	defer pty.Close()
-	procTTY, err := os.OpenFile(procTTYName, os.O_RDWR, 0)
+	defer master.Close()
+	slave, err := os.OpenFile(sname, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer procTTY.Close()
+	defer slave.Close()
 
 	// Start an interactive shell.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -94,34 +92,34 @@ func TestTerminalSignal(t *testing.T) {
 	cmd := exec.CommandContext(ctx, bash, "--norc", "--noprofile", "-i")
 	// Clear HISTFILE so that we don't read or clobber the user's bash history.
 	cmd.Env = append(os.Environ(), "HISTFILE=")
-	cmd.Stdin = procTTY
-	cmd.Stdout = procTTY
-	cmd.Stderr = procTTY
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:  true,
 		Setctty: true,
-		Ctty:    0,
+		Ctty:    int(slave.Fd()),
 	}
 
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := procTTY.Close(); err != nil {
-		t.Errorf("closing procTTY: %v", err)
+	if err := slave.Close(); err != nil {
+		t.Errorf("closing slave: %v", err)
 	}
 
 	progReady := make(chan bool)
 	sawPrompt := make(chan bool, 10)
 	const prompt = "prompt> "
 
-	// Read data from pty in the background.
+	// Read data from master in the background.
 	var wg sync.WaitGroup
 	wg.Add(1)
 	defer wg.Wait()
 	go func() {
 		defer wg.Done()
-		input := bufio.NewReader(pty)
+		input := bufio.NewReader(master)
 		var line, handled []byte
 		for {
 			b, err := input.ReadByte()
@@ -129,14 +127,14 @@ func TestTerminalSignal(t *testing.T) {
 				if len(line) > 0 || len(handled) > 0 {
 					t.Logf("%q", append(handled, line...))
 				}
-				if perr, ok := err.(*fs.PathError); ok {
+				if perr, ok := err.(*os.PathError); ok {
 					err = perr.Err
 				}
-				// EOF means pty is closed.
+				// EOF means master is closed.
 				// EIO means child process is done.
-				// "file already closed" means deferred close of pty has happened.
+				// "file already closed" means deferred close of master has happened.
 				if err != io.EOF && err != syscall.EIO && !strings.Contains(err.Error(), "file already closed") {
-					t.Logf("error reading from pty: %v", err)
+					t.Logf("error reading from master: %v", err)
 				}
 				return
 			}
@@ -163,7 +161,7 @@ func TestTerminalSignal(t *testing.T) {
 	}()
 
 	// Set the bash prompt so that we can see it.
-	if _, err := pty.Write([]byte("PS1='" + prompt + "'\n")); err != nil {
+	if _, err := master.Write([]byte("PS1='" + prompt + "'\n")); err != nil {
 		t.Fatalf("setting prompt: %v", err)
 	}
 	select {
@@ -174,7 +172,7 @@ func TestTerminalSignal(t *testing.T) {
 
 	// Start a small program that reads from stdin
 	// (namely the code at the top of this function).
-	if _, err := pty.Write([]byte("GO_TEST_TERMINAL_SIGNALS=1 " + os.Args[0] + " -test.run=TestTerminalSignal\n")); err != nil {
+	if _, err := master.Write([]byte("GO_TEST_TERMINAL_SIGNALS=1 " + os.Args[0] + " -test.run=TestTerminalSignal\n")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,7 +190,7 @@ func TestTerminalSignal(t *testing.T) {
 	time.Sleep(pause)
 
 	// Send a ^Z to stop the program.
-	if _, err := pty.Write([]byte{26}); err != nil {
+	if _, err := master.Write([]byte{26}); err != nil {
 		t.Fatalf("writing ^Z to pty: %v", err)
 	}
 
@@ -204,7 +202,7 @@ func TestTerminalSignal(t *testing.T) {
 	}
 
 	// Restart the stopped program.
-	if _, err := pty.Write([]byte("fg\n")); err != nil {
+	if _, err := master.Write([]byte("fg\n")); err != nil {
 		t.Fatalf("writing %q to pty: %v", "fg", err)
 	}
 
@@ -219,7 +217,7 @@ func TestTerminalSignal(t *testing.T) {
 
 	// Write some data for the program to read,
 	// which should cause it to exit.
-	if _, err := pty.Write([]byte{'\n'}); err != nil {
+	if _, err := master.Write([]byte{'\n'}); err != nil {
 		t.Fatalf("writing %q to pty: %v", "\n", err)
 	}
 
@@ -231,7 +229,7 @@ func TestTerminalSignal(t *testing.T) {
 	}
 
 	// Exit the shell with the program's exit status.
-	if _, err := pty.Write([]byte("exit $?\n")); err != nil {
+	if _, err := master.Write([]byte("exit $?\n")); err != nil {
 		t.Fatalf("writing %q to pty: %v", "exit", err)
 	}
 

@@ -1,5 +1,4 @@
 /* { dg-do run { target cet } } */
-/* { dg-require-effective-target trampolines } */
 /* { dg-options "-O2 -fcf-protection=branch" } */
 
 void callme (void (*callback) (void));

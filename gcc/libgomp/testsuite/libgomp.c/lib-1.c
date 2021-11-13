@@ -1,5 +1,3 @@
-/* { dg-additional-options "-Wno-deprecated-declarations" } */
-
 #include <stdlib.h>
 #include <omp.h>
 

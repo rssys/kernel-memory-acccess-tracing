@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on Xilinx MicroBlaze.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
    Contributed by Michael Eager <eager@eagercon.com>.
 
@@ -51,7 +51,6 @@
 #include "cfgloop.h"
 #include "insn-addr.h"
 #include "cfgrtl.h"
-#include "opts.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -992,7 +991,7 @@ static rtx
 microblaze_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
 			       machine_mode mode ATTRIBUTE_UNUSED)
 {
-  rtx xinsn = x, result;
+  register rtx xinsn = x, result;
 
   if (GET_CODE (xinsn) == CONST
       && flag_pic && pic_address_needs_scratch (xinsn))
@@ -1012,10 +1011,10 @@ microblaze_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
 
   if (GET_CODE (xinsn) == PLUS)
     {
-      rtx xplus0 = XEXP (xinsn, 0);
-      rtx xplus1 = XEXP (xinsn, 1);
-      enum rtx_code code0 = GET_CODE (xplus0);
-      enum rtx_code code1 = GET_CODE (xplus1);
+      register rtx xplus0 = XEXP (xinsn, 0);
+      register rtx xplus1 = XEXP (xinsn, 1);
+      register enum rtx_code code0 = GET_CODE (xplus0);
+      register enum rtx_code code1 = GET_CODE (xplus1);
 
       if (code0 != REG && code1 == REG)
 	{
@@ -1251,7 +1250,7 @@ microblaze_block_move_loop (rtx dest, rtx src, HOST_WIDE_INT length)
     microblaze_block_move_straight (dest, src, leftover);
 }
 
-/* Expand a cpymemsi instruction.  */
+/* Expand a movmemsi instruction.  */
 
 bool
 microblaze_expand_block_move (rtx dest, rtx src, rtx length, rtx align_rtx)
@@ -1544,28 +1543,29 @@ init_cumulative_args (CUMULATIVE_ARGS * cum, tree fntype,
 
 static void
 microblaze_function_arg_advance (cumulative_args_t cum_v,
-				 const function_arg_info &arg)
+				 machine_mode mode,
+				 const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
   cum->arg_number++;
-  switch (arg.mode)
+  switch (mode)
     {
     case E_VOIDmode:
       break;
 
     default:
-      gcc_assert (GET_MODE_CLASS (arg.mode) == MODE_COMPLEX_INT
-		  || GET_MODE_CLASS (arg.mode) == MODE_COMPLEX_FLOAT);
+      gcc_assert (GET_MODE_CLASS (mode) == MODE_COMPLEX_INT
+	  || GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT);
 
       cum->gp_reg_found = 1;
-      cum->arg_words += ((GET_MODE_SIZE (arg.mode) + UNITS_PER_WORD - 1)
+      cum->arg_words += ((GET_MODE_SIZE (mode) + UNITS_PER_WORD - 1)
 			 / UNITS_PER_WORD);
       break;
 
     case E_BLKmode:
       cum->gp_reg_found = 1;
-      cum->arg_words += ((int_size_in_bytes (arg.type) + UNITS_PER_WORD - 1)
+      cum->arg_words += ((int_size_in_bytes (type) + UNITS_PER_WORD - 1)
 			 / UNITS_PER_WORD);
       break;
 
@@ -1596,11 +1596,13 @@ microblaze_function_arg_advance (cumulative_args_t cum_v,
     }
 }
 
-/* Return an RTL expression containing the register for the given argument
+/* Return an RTL expression containing the register for the given mode,
    or 0 if the argument is to be passed on the stack.  */
 
 static rtx
-microblaze_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
+microblaze_function_arg (cumulative_args_t cum_v, machine_mode mode, 
+			 const_tree type ATTRIBUTE_UNUSED,
+			 bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
@@ -1609,7 +1611,7 @@ microblaze_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
   int *arg_words = &cum->arg_words;
 
   cum->last_arg_fp = 0;
-  switch (arg.mode)
+  switch (mode)
     {
     case E_SFmode:
     case E_DFmode:
@@ -1622,8 +1624,8 @@ microblaze_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
       regbase = GP_ARG_FIRST;
       break;
     default:
-      gcc_assert (GET_MODE_CLASS (arg.mode) == MODE_COMPLEX_INT
-		  || GET_MODE_CLASS (arg.mode) == MODE_COMPLEX_FLOAT);
+      gcc_assert (GET_MODE_CLASS (mode) == MODE_COMPLEX_INT
+	  || GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT);
       /* FALLTHRU */
     case E_BLKmode:
       regbase = GP_ARG_FIRST;
@@ -1636,10 +1638,10 @@ microblaze_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
     {
       gcc_assert (regbase != -1);
 
-      ret = gen_rtx_REG (arg.mode, regbase + *arg_words);
+      ret = gen_rtx_REG (mode, regbase + *arg_words);
     }
 
-  if (arg.end_marker_p ())
+  if (mode == VOIDmode)
     {
       if (cum->num_adjusts > 0)
 	ret = gen_rtx_PARALLEL ((machine_mode) cum->fp_code,
@@ -1651,25 +1653,30 @@ microblaze_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
 
 /* Return number of bytes of argument to put in registers. */
 static int
-function_arg_partial_bytes (cumulative_args_t cum_v,
-			    const function_arg_info &arg)
+function_arg_partial_bytes (cumulative_args_t cum_v, machine_mode mode,	
+			    tree type, bool named ATTRIBUTE_UNUSED)	
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
-  if ((arg.mode == BLKmode
-       || GET_MODE_CLASS (arg.mode) != MODE_COMPLEX_INT
-       || GET_MODE_CLASS (arg.mode) != MODE_COMPLEX_FLOAT)
+  if ((mode == BLKmode
+       || GET_MODE_CLASS (mode) != MODE_COMPLEX_INT
+       || GET_MODE_CLASS (mode) != MODE_COMPLEX_FLOAT)
       && cum->arg_words < MAX_ARGS_IN_REGISTERS)
     {
-      int words = ((arg.promoted_size_in_bytes () + UNITS_PER_WORD - 1)
-		   / UNITS_PER_WORD);
+      int words;
+      if (mode == BLKmode)
+	words = ((int_size_in_bytes (type) + UNITS_PER_WORD - 1)
+		 / UNITS_PER_WORD);
+      else
+	words = (GET_MODE_SIZE (mode) + UNITS_PER_WORD - 1) / UNITS_PER_WORD;
+
       if (words + cum->arg_words <= MAX_ARGS_IN_REGISTERS)
 	return 0;		/* structure fits in registers */
 
       return (MAX_ARGS_IN_REGISTERS - cum->arg_words) * UNITS_PER_WORD;
     }
 
-  else if (arg.mode == DImode && cum->arg_words == MAX_ARGS_IN_REGISTERS - 1)
+  else if (mode == DImode && cum->arg_words == MAX_ARGS_IN_REGISTERS - 1)
     return UNITS_PER_WORD;
 
   return 0;
@@ -1737,12 +1744,12 @@ microblaze_version_to_int (const char *version)
 static void
 microblaze_option_override (void)
 {
-  int i, start;
-  int regno;
-  machine_mode mode;
+  register int i, start;
+  register int regno;
+  register machine_mode mode;
   int ver;
 
-  microblaze_section_threshold = (OPTION_SET_P (g_switch_value)
+  microblaze_section_threshold = (global_options_set.x_g_switch_value
 				  ? g_switch_value
 				  : MICROBLAZE_DEFAULT_GVALUE);
 
@@ -1892,11 +1899,11 @@ microblaze_option_override (void)
   for (mode = VOIDmode;
        mode != MAX_MACHINE_MODE; mode = (machine_mode) ((int) mode + 1))
     {
-      int size = GET_MODE_SIZE (mode);
+      register int size = GET_MODE_SIZE (mode);
 
       for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
 	{
-	  int ok;
+	  register int ok;
 
 	  if (mode == CCmode)
 	    {
@@ -2013,7 +2020,7 @@ microblaze_must_save_register (int regno)
       (regno == MB_ABI_PIC_ADDR_REGNUM) && df_regs_ever_live_p (regno))
     return 1;
 
-  if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
+  if (df_regs_ever_live_p (regno) && !call_used_regs[regno])
     return 1;
 
   if (frame_pointer_needed && (regno == HARD_FRAME_POINTER_REGNUM))
@@ -2036,7 +2043,7 @@ microblaze_must_save_register (int regno)
     {
       if (df_regs_ever_live_p (regno) 
 	  || regno == MB_ABI_MSR_SAVE_REG
-	  || ((interrupt_handler || fast_interrupt)
+	  || (interrupt_handler
               && (regno == MB_ABI_ASM_TEMP_REGNUM
 	          || regno == MB_ABI_EXCEPTION_RETURN_ADDR_REGNUM)))
 	return 1;
@@ -2268,7 +2275,7 @@ microblaze_initial_elimination_offset (int from, int to)
 void
 print_operand (FILE * file, rtx op, int letter)
 {
-  enum rtx_code code;
+  register enum rtx_code code;
 
   if (PRINT_OPERAND_PUNCT_VALID_P (letter))
     {
@@ -2407,7 +2414,7 @@ print_operand (FILE * file, rtx op, int letter)
 
   else if (code == REG || code == SUBREG)
     {
-      int regnum;
+      register int regnum;
 
       if (code == REG)
 	regnum = REGNO (op);
@@ -2432,7 +2439,7 @@ print_operand (FILE * file, rtx op, int letter)
         rtx mem_reg = XEXP (op, 0);
         if (GET_CODE (mem_reg) == REG)
         {
-            int regnum = REGNO (mem_reg);
+            register int regnum = REGNO (mem_reg);
             fprintf (file, "%s", reg_names[regnum]);
         }
       }
@@ -2469,7 +2476,7 @@ print_operand (FILE * file, rtx op, int letter)
 	  unsigned long value_long;
 	  REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (op),
 				       value_long);
-	  fprintf (file, "0x%lx", value_long);
+	  fprintf (file, HOST_WIDE_INT_PRINT_HEX, value_long);
 	}
       else
 	{
@@ -2528,7 +2535,7 @@ print_operand (FILE * file, rtx op, int letter)
       print_operand_address (file, XEXP (op, 0));
     }
   else if (letter == 'm')
-    fprintf (file, "%ld", (1L << INTVAL (op)));
+    fprintf (file, HOST_WIDE_INT_PRINT_DEC, (1L << INTVAL (op)));
   else
     output_addr_const (file, op);
 }
@@ -2914,8 +2921,8 @@ microblaze_expand_prologue (void)
 	  passed_mode = Pmode;
 	}
 
-      function_arg_info arg (passed_type, passed_mode, /*named=*/true);
-      entry_parm = targetm.calls.function_arg (args_so_far, arg);
+      entry_parm = targetm.calls.function_arg (args_so_far, passed_mode,
+					       passed_type, true);
 
       if (entry_parm)
 	{
@@ -2935,7 +2942,8 @@ microblaze_expand_prologue (void)
 	  break;
 	}
 
-      targetm.calls.function_arg_advance (args_so_far, arg);
+      targetm.calls.function_arg_advance (args_so_far, passed_mode,
+					  passed_type, true);
 
       next_arg = TREE_CHAIN (cur_arg);
       if (next_arg == 0)
@@ -2949,8 +2957,8 @@ microblaze_expand_prologue (void)
 
   /* Split parallel insn into a sequence of insns.  */
 
-  next_arg_reg = targetm.calls.function_arg (args_so_far,
-					     function_arg_info::end_marker ());
+  next_arg_reg = targetm.calls.function_arg (args_so_far, VOIDmode,
+					     void_type_node, true);
   if (next_arg_reg != 0 && GET_CODE (next_arg_reg) == PARALLEL)
     {
       rtvec adjust = XVEC (next_arg_reg, 0);
@@ -3304,7 +3312,6 @@ microblaze_asm_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
         HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
         tree function)
 {
-  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk_fndecl));
   rtx this_rtx, funexp;
   rtx_insn *insn;
 
@@ -3360,11 +3367,9 @@ microblaze_asm_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
      "borrowed" from rs6000.c.  */
   insn = get_insns ();
   shorten_branches (insn);
-  assemble_start_function (thunk_fndecl, fnname);
   final_start_function (insn, file, 1);
   final (insn, file, 1);
   final_end_function ();
-  assemble_end_function (thunk_fndecl, fnname);
 
   reload_completed = 0;
   epilogue_completed = 0;

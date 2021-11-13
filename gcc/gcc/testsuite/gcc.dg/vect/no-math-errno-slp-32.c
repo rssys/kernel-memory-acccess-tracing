@@ -13,4 +13,4 @@ void foo(void)
    }
 }
 
-/* { dg-final { scan-tree-dump "pattern recognized" "vect" } } */
+/* { dg-final { scan-tree-dump "pattern recognized" "vect" { xfail spu*-*-* } } } */

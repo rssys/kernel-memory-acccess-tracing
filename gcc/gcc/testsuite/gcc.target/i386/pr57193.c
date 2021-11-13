@@ -1,7 +1,6 @@
 /* { dg-do compile } */
 /* { dg-options "-O2 -msse2 -mno-sse3 -mtune=generic" } */
-/* XFAIL the test due to PR87716.  */
-/* { dg-final { scan-assembler-times "movdqa" 2 { xfail *-*-* } } } */
+/* { dg-final { scan-assembler-times "movdqa" 2 } } */
 
 #include <emmintrin.h>
 

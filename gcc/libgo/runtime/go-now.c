@@ -8,7 +8,7 @@
 
 #include "runtime.h"
 
-// Return current time.  This is the implementation of runtime.walltime().
+// Return current time.  This is the implementation of time.walltime().
 
 struct walltime_ret
 {

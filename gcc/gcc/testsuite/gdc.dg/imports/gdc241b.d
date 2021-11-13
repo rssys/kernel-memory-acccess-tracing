@@ -1,4 +1,3 @@
-module imports.gdc241b;
 
 class C241 { }
 

@@ -1,5 +1,5 @@
 ! { dg-do compile }
-! { dg-options "-g -fdec-structure -std=legacy" }
+! { dg-options "-g -fdec-structure" }
 !
 ! Test a regression where typespecs of unions containing character buffers of
 ! different lengths where copied, resulting in a bad gimple tree state.

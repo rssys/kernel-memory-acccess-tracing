@@ -9,11 +9,10 @@
  */
 module core.sys.windows.snmp;
 version (Windows):
-@system:
 
-import core.sys.windows.basetsd /+: HANDLE+/;
-import core.sys.windows.windef /+: BOOL, BYTE, DWORD, INT, LONG, UINT, ULONG+/;
-import core.sys.windows.winnt /+: LPSTR, LPVOID, ULARGE_INTEGER, VOID+/;
+private import core.sys.windows.basetsd /+: HANDLE+/;
+private import core.sys.windows.windef /+: BOOL, BYTE, DWORD, INT, LONG, UINT, ULONG+/;
+private import core.sys.windows.winnt /+: LPSTR, LPVOID, ULARGE_INTEGER, VOID+/;
 
 // These are not documented on MSDN
 enum {

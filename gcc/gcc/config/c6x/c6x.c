@@ -1,5 +1,5 @@
 /* Target Code for TI C6X
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Contributed by Andrew Jenner <andrew@codesourcery.com>
    Contributed by Bernd Schmidt <bernds@codesourcery.com>
 
@@ -55,12 +55,9 @@
 #include "sel-sched.h"
 #include "debug.h"
 #include "hw-doloop.h"
-#include "function-abi.h"
 #include "regrename.h"
 #include "dumpfile.h"
 #include "builtins.h"
-#include "flags.h"
-#include "opts.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -222,7 +219,7 @@ c6x_option_override (void)
 {
   unsigned i;
 
-  if (OPTION_SET_P (c6x_arch_option))
+  if (global_options_set.x_c6x_arch_option)
     {
       c6x_arch = all_isas[c6x_arch_option].type;
       c6x_insn_mask &= ~C6X_INSNS_ALL_CPU_BITS;
@@ -441,7 +438,8 @@ c6x_output_file_unwind (FILE * f)
     {
       if (flag_unwind_tables || flag_exceptions)
 	{
-	  if (dwarf_debuginfo_p ())
+	  if (write_symbols == DWARF2_DEBUG
+	      || write_symbols == VMS_AND_DWARF2_DEBUG)
 	    asm_fprintf (f, "\t.cfi_sections .debug_frame, .c6xabi.exidx\n");
 	  else
 	    asm_fprintf (f, "\t.cfi_sections .c6xabi.exidx\n");
@@ -501,15 +499,16 @@ c6x_init_cumulative_args (CUMULATIVE_ARGS *cum, const_tree fntype, rtx libname,
     }
 }
 
-/* Implement TARGET_FUNCTION_ARG.  */
+/* Implements the macro FUNCTION_ARG defined in c6x.h.  */
 
 static rtx
-c6x_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
+c6x_function_arg (cumulative_args_t cum_v, machine_mode mode,
+		  const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   if (cum->count >= cum->nregs)
     return NULL_RTX;
-  if (tree type = arg.type)
+  if (type)
     {
       HOST_WIDE_INT size = int_size_in_bytes (type);
       if (TARGET_BIG_ENDIAN && AGGREGATE_TYPE_P (type))
@@ -520,15 +519,18 @@ c6x_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
 	      rtx reg2 = gen_rtx_REG (SImode, argument_registers[cum->count]);
 	      rtvec vec = gen_rtvec (2, gen_rtx_EXPR_LIST (VOIDmode, reg1, const0_rtx),
 				     gen_rtx_EXPR_LIST (VOIDmode, reg2, GEN_INT (4)));
-	      return gen_rtx_PARALLEL (arg.mode, vec);
+	      return gen_rtx_PARALLEL (mode, vec);
 	    }
 	}
     }
-  return gen_rtx_REG (arg.mode, argument_registers[cum->count]);
+  return gen_rtx_REG (mode, argument_registers[cum->count]);
 }
 
 static void
-c6x_function_arg_advance (cumulative_args_t cum_v, const function_arg_info &)
+c6x_function_arg_advance (cumulative_args_t cum_v,
+			  machine_mode mode ATTRIBUTE_UNUSED,
+			  const_tree type ATTRIBUTE_UNUSED,
+			  bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   cum->count++;
@@ -637,16 +639,18 @@ c6x_function_value_regno_p (const unsigned int regno)
 }
 
 /* Types larger than 64 bit, and variable sized types, are passed by
-   reference.  The callee must copy them; see TARGET_CALLEE_COPIES.  */
+   reference.  The callee must copy them; see c6x_callee_copies.  */
 
 static bool
-c6x_pass_by_reference (cumulative_args_t, const function_arg_info &arg)
+c6x_pass_by_reference (cumulative_args_t cum_v ATTRIBUTE_UNUSED,
+		       machine_mode mode, const_tree type,
+		       bool named ATTRIBUTE_UNUSED)
 {
   int size = -1;
-  if (arg.type)
-    size = int_size_in_bytes (arg.type);
-  else if (arg.mode != VOIDmode)
-    size = GET_MODE_SIZE (arg.mode);
+  if (type)
+    size = int_size_in_bytes (type);
+  else if (mode != VOIDmode)
+    size = GET_MODE_SIZE (mode);
   return size > 2 * UNITS_PER_WORD || size == -1;
 }
 
@@ -669,6 +673,17 @@ c6x_return_in_msb (const_tree valtype)
 {
   HOST_WIDE_INT size = int_size_in_bytes (valtype);
   return TARGET_BIG_ENDIAN && AGGREGATE_TYPE_P (valtype) && size == 3;
+}
+
+/* Implement TARGET_CALLEE_COPIES.  */
+
+static bool
+c6x_callee_copies (cumulative_args_t cum_v ATTRIBUTE_UNUSED,
+		   machine_mode mode ATTRIBUTE_UNUSED,
+		   const_tree type ATTRIBUTE_UNUSED,
+		   bool named ATTRIBUTE_UNUSED)
+{
+  return true;
 }
 
 /* Return the type to use as __builtin_va_list.  */
@@ -726,10 +741,9 @@ c6x_initialize_trampoline (rtx tramp, tree fndecl, rtx cxt)
     }
 #ifdef CLEAR_INSN_CACHE
   tramp = XEXP (tramp, 0);
-  maybe_emit_call_builtin___clear_cache (tramp,
-					 plus_constant (Pmode,
-							tramp,
-							TRAMPOLINE_SIZE));
+  emit_library_call (gen_rtx_SYMBOL_REF (Pmode, "__gnu_clear_cache"),
+		     LCT_NORMAL, VOIDmode, tramp, Pmode,
+		     plus_constant (Pmode, tramp, TRAMPOLINE_SIZE), Pmode);
 #endif
 }
 
@@ -755,12 +769,10 @@ c6x_output_mi_thunk (FILE *file ATTRIBUTE_UNUSED,
 		     tree thunk ATTRIBUTE_UNUSED, HOST_WIDE_INT delta,
 		     HOST_WIDE_INT vcall_offset, tree function)
 {
-  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk));
   rtx xops[5];
   /* The this parameter is passed as the first argument.  */
   rtx this_rtx = gen_rtx_REG (Pmode, REG_A4);
 
-  assemble_start_function (thunk, fnname);
   c6x_current_insn = NULL;
 
   xops[4] = XEXP (DECL_RTL (function), 0);
@@ -839,7 +851,6 @@ c6x_output_mi_thunk (FILE *file ATTRIBUTE_UNUSED,
       output_asm_insn ("nop 4", xops);
       output_asm_insn ("add .d1 %2, %1, %2", xops);
     }
-  assemble_end_function (thunk, fnname);
 }
 
 /* Return true if EXP goes in small data/bss.  */
@@ -863,14 +874,14 @@ c6x_in_small_data_p (const_tree exp)
       const char *section = DECL_SECTION_NAME (exp);
 
       if (strcmp (section, ".neardata") == 0
-	  || startswith (section, ".neardata.")
-	  || startswith (section, ".gnu.linkonce.s.")
+	  || strncmp (section, ".neardata.", 10) == 0
+	  || strncmp (section, ".gnu.linkonce.s.", 16) == 0
 	  || strcmp (section, ".bss") == 0
-	  || startswith (section, ".bss.")
-	  || startswith (section, ".gnu.linkonce.sb.")
+	  || strncmp (section, ".bss.", 5) == 0
+	  || strncmp (section, ".gnu.linkonce.sb.", 17) == 0
 	  || strcmp (section, ".rodata") == 0
-	  || startswith (section, ".rodata.")
-	  || startswith (section, ".gnu.linkonce.s2."))
+	  || strncmp (section, ".rodata.", 8) == 0
+	  || strncmp (section, ".gnu.linkonce.s2.", 17) == 0)
 	return true;
     }
   else
@@ -1064,18 +1075,10 @@ c6x_section_type_flags (tree decl, const char *name, int reloc)
   unsigned int flags = 0;
 
   if (strcmp (name, ".far") == 0
-      || startswith (name, ".far."))
+      || strncmp (name, ".far.", 5) == 0)
     flags |= SECTION_BSS;
 
   flags |= default_section_type_flags (decl, name, reloc);
-
-  /* The ".far" section will be declared with @nobits elsewhere.
-     But when declared via this path it will not have the @nobits
-     flag because of SECTION_NOTYPE.  This causes linker warnings
-     due to the mismatched attribute.  Clearing SECTION_NOTYPE
-     for the ".far" section is sufficient to fix this problem.  */
-  if (strcmp (name, ".far") == 0)
-    flags &= ~SECTION_NOTYPE;
 
   return flags;
 }
@@ -1091,13 +1094,15 @@ c6x_call_saved_register_used (tree call_expr)
   cumulative_args_t cum;
   HARD_REG_SET call_saved_regset;
   tree parameter;
+  machine_mode mode;
+  tree type;
   rtx parm_rtx;
   int i;
 
   INIT_CUMULATIVE_ARGS (cum_v, NULL, NULL, 0, 0);
   cum = pack_cumulative_args (&cum_v);
 
-  call_saved_regset = ~call_used_or_fixed_regs;
+  COMPL_HARD_REG_SET (call_saved_regset, call_used_reg_set);
   for (i = 0; i < call_expr_nargs (call_expr); i++)
     {
       parameter = CALL_EXPR_ARG (call_expr, i);
@@ -1108,12 +1113,21 @@ c6x_call_saved_register_used (tree call_expr)
       if (TREE_CODE (parameter) == ERROR_MARK)
 	return true;
 
-      function_arg_info arg (TREE_TYPE (parameter), /*named=*/true);
-      apply_pass_by_reference_rules (&cum_v, arg);
+      type = TREE_TYPE (parameter);
+      gcc_assert (type);
 
-       parm_rtx = c6x_function_arg (cum, arg);
+      mode = TYPE_MODE (type);
+      gcc_assert (mode);
 
-       c6x_function_arg_advance (cum, arg);
+      if (pass_by_reference (&cum_v, mode, type, true))
+ 	{
+ 	  mode = Pmode;
+ 	  type = build_pointer_type (type);
+ 	}
+
+       parm_rtx = c6x_function_arg (cum, mode, type, 0);
+
+       c6x_function_arg_advance (cum, mode, type, 0);
 
        if (!parm_rtx)
 	 continue;
@@ -1160,13 +1174,13 @@ c6x_function_ok_for_sibcall (tree decl, tree exp)
       /* When compiling for DSBT, the calling function must be local,
 	 so that when we reload B14 in the sibcall epilogue, it will
 	 not change its value.  */
+      struct cgraph_local_info *this_func;
 
       if (!decl)
 	/* Not enough information.  */
 	return false;
 
-      cgraph_node *this_func
-	= cgraph_node::local_info_node (current_function_decl);
+      this_func = cgraph_node::local_info (current_function_decl);
       return this_func->local;
     }
 
@@ -1669,10 +1683,10 @@ c6x_valid_mask_p (HOST_WIDE_INT val)
   return true;
 }
 
-/* Expand a block move for a cpymemM pattern.  */
+/* Expand a block move for a movmemM pattern.  */
 
 bool
-c6x_expand_cpymem (rtx dst, rtx src, rtx count_exp, rtx align_exp,
+c6x_expand_movmem (rtx dst, rtx src, rtx count_exp, rtx align_exp,
 		   rtx expected_align_exp ATTRIBUTE_UNUSED,
 		   rtx expected_size_exp ATTRIBUTE_UNUSED)
 {
@@ -2518,13 +2532,14 @@ struct c6x_frame
 static bool
 must_reload_pic_reg_p (void)
 {
+  struct cgraph_local_info *i = NULL;
+
   if (!TARGET_DSBT)
     return false;
 
-  cgraph_node *local_info_node
-    = cgraph_node::local_info_node (current_function_decl);
-  if ((crtl->uses_pic_offset_table || !crtl->is_leaf)
-      && !local_info_node->local)
+  i = cgraph_node::local_info (current_function_decl);
+
+  if ((crtl->uses_pic_offset_table || !crtl->is_leaf) && !i->local)
     return true;
   return false;
 }
@@ -2534,7 +2549,8 @@ static int
 c6x_save_reg (unsigned int regno)
 {
   return ((df_regs_ever_live_p (regno)
-	   && !call_used_or_fixed_reg_p (regno))
+	   && !call_used_regs[regno]
+	   && !fixed_regs[regno])
 	  || (regno == RETURN_ADDR_REGNO
 	      && (df_regs_ever_live_p (regno)
 		  || !crtl->is_leaf))
@@ -3473,7 +3489,7 @@ try_rename_operands (rtx_insn *head, rtx_insn *tail, unit_req_table reqs,
     }
 
   /* If we get here, we can do the renaming.  */
-  unavailable = ~reg_class_contents[super_class];
+  COMPL_HARD_REG_SET (unavailable, reg_class_contents[(int) super_class]);
 
   old_reg = this_head->regno;
   best_reg =
@@ -3700,7 +3716,7 @@ insn_set_clock (rtx insn, int cycle)
   unsigned uid = INSN_UID (insn);
 
   if (uid >= INSN_INFO_LENGTH)
-    insn_info.safe_grow (uid * 5 / 4 + 10, true);
+    insn_info.safe_grow (uid * 5 / 4 + 10);
 
   INSN_INFO_ENTRY (uid).clock = cycle;
   INSN_INFO_ENTRY (uid).new_cond = NULL;
@@ -4309,7 +4325,7 @@ clobber_cond_1 (rtx x, const_rtx pat ATTRIBUTE_UNUSED, void *data1)
    only those jumps which are still in flight.  */
 
 static void
-maybe_clobber_cond (rtx_insn *insn, int clock_var)
+maybe_clobber_cond (rtx insn, int clock_var)
 {
   int n, idx;
   idx = ss.jump_cycle_index;
@@ -4334,7 +4350,7 @@ maybe_clobber_cond (rtx_insn *insn, int clock_var)
 	  continue;
 	}
 
-      note_stores (insn, clobber_cond_1, ss.jump_cond + idx);
+      note_stores (PATTERN (insn), clobber_cond_1, ss.jump_cond + idx);
       for (link = REG_NOTES (insn); link; link = XEXP (link, 1))
 	if (REG_NOTE_KIND (link) == REG_INC)
 	  clobber_cond_1 (XEXP (link, 0), NULL_RTX, ss.jump_cond + idx);
@@ -5602,8 +5618,7 @@ hwloop_optimize (hwloop_info loop)
       int j;
       rtx_insn *this_iter;
 
-      copy_bb_data id;
-      this_iter = duplicate_insn_chain (head_insn, tail_insn, NULL, &id);
+      this_iter = duplicate_insn_chain (head_insn, tail_insn);
       j = 0;
       while (this_iter)
 	{
@@ -6635,7 +6650,7 @@ c6x_expand_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
   size_t i;
   const struct builtin_description *d;
   tree fndecl = TREE_OPERAND (CALL_EXPR_FN (exp), 0);
-  unsigned int fcode = DECL_MD_FUNCTION_CODE (fndecl);
+  unsigned int fcode = DECL_FUNCTION_CODE (fndecl);
 
   for (i = 0, d = bdesc_2arg; i < ARRAY_SIZE (bdesc_2arg); i++, d++)
     if (d->code == fcode)
@@ -6679,28 +6694,6 @@ c6x_modes_tieable_p (machine_mode mode1, machine_mode mode2)
 	      && GET_MODE_SIZE (mode2) <= UNITS_PER_WORD));
 }
 
-/* Implement REGNO_REG_CLASS.  */
-
-enum reg_class
-c6x_regno_reg_class (int reg)
-{
-  if (reg >= REG_A1 && reg <= REG_A2)
-    return PREDICATE_A_REGS;
-
-  if (reg == REG_A0 && TARGET_INSNS_64)
-    return PREDICATE_A_REGS;
-
-  if (reg >= REG_B0 && reg <= REG_B2)
-    return PREDICATE_B_REGS;
-
-  if (A_REGNO_P (reg))
-    return NONPREDICATE_A_REGS;
-
-  if (call_used_or_fixed_reg_p (reg))
-    return CALL_USED_B_REGS;
-
-  return B_REGS;
-}
 
 /* Target Structure.  */
 
@@ -6727,7 +6720,7 @@ c6x_regno_reg_class (int reg)
 #undef TARGET_PASS_BY_REFERENCE
 #define TARGET_PASS_BY_REFERENCE c6x_pass_by_reference
 #undef TARGET_CALLEE_COPIES
-#define TARGET_CALLEE_COPIES hook_bool_CUMULATIVE_ARGS_arg_info_true
+#define TARGET_CALLEE_COPIES c6x_callee_copies
 #undef TARGET_STRUCT_VALUE_RTX
 #define TARGET_STRUCT_VALUE_RTX c6x_struct_value_rtx
 #undef TARGET_FUNCTION_OK_FOR_SIBCALL

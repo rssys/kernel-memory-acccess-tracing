@@ -1,4 +1,4 @@
-! { dg-do run }
+! { dg-do run { xfail i?86-*-freebsd* } }
 
   use :: ieee_arithmetic
   implicit none

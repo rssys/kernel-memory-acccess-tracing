@@ -1,6 +1,4 @@
 /* { dg-options "-fno-early-inlining" } */
-/* { dg-require-effective-target non_strict_prototype } */
-
 void
 bar ()
 {

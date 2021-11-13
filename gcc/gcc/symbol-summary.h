@@ -1,5 +1,5 @@
 /* Callgraph summary data structure.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Martin Liska
 
 This file is part of GCC.
@@ -28,75 +28,29 @@ class function_summary_base
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  function_summary_base (symbol_table *symtab,
-			 cgraph_node_hook symtab_insertion,
-			 cgraph_node_hook symtab_removal,
-			 cgraph_2node_hook symtab_duplication
-			 CXX_MEM_STAT_INFO):
-  m_symtab (symtab), m_symtab_insertion (symtab_insertion),
-  m_symtab_removal (symtab_removal),
-  m_symtab_duplication (symtab_duplication),
-  m_symtab_insertion_hook (NULL), m_symtab_duplication_hook (NULL),
-  m_allocator ("function summary" PASS_MEM_STAT)
-  {
-    enable_insertion_hook ();
-    m_symtab_removal_hook
-      = m_symtab->add_cgraph_removal_hook (m_symtab_removal, this);
-    enable_duplication_hook ();
-  }
+  function_summary_base (symbol_table *symtab): m_symtab (symtab),
+  m_insertion_enabled (true), m_released (false)
+  {}
 
   /* Basic implementation of insert operation.  */
-  virtual void insert (cgraph_node *, T *)
-  {
-    /* In most cases, it makes no sense to create summaries without
-       initializing them.  */
-    gcc_unreachable ();
-  }
+  virtual void insert (cgraph_node *, T *) {}
 
   /* Basic implementation of removal operation.  */
   virtual void remove (cgraph_node *, T *) {}
 
   /* Basic implementation of duplication operation.  */
-  virtual void duplicate (cgraph_node *, cgraph_node *, T *, T *)
-  {
-    /* It makes no sense to not copy anything during duplication.  */
-    gcc_unreachable ();
-  }
+  virtual void duplicate (cgraph_node *, cgraph_node *, T *, T *) {}
 
   /* Enable insertion hook invocation.  */
   void enable_insertion_hook ()
   {
-    if (m_symtab_insertion_hook == NULL)
-      m_symtab_insertion_hook
-	= m_symtab->add_cgraph_insertion_hook (m_symtab_insertion, this);
+    m_insertion_enabled = true;
   }
 
   /* Enable insertion hook invocation.  */
   void disable_insertion_hook ()
   {
-    if (m_symtab_insertion_hook != NULL)
-      {
-	m_symtab->remove_cgraph_insertion_hook (m_symtab_insertion_hook);
-	m_symtab_insertion_hook = NULL;
-      }
-  }
-
-  /* Enable duplication hook invocation.  */
-  void enable_duplication_hook ()
-  {
-    if (m_symtab_duplication_hook == NULL)
-      m_symtab_duplication_hook
-	= m_symtab->add_cgraph_duplication_hook (m_symtab_duplication, this);
-  }
-
-  /* Enable duplication hook invocation.  */
-  void disable_duplication_hook ()
-  {
-    if (m_symtab_duplication_hook != NULL)
-      {
-	m_symtab->remove_cgraph_duplication_hook (m_symtab_duplication_hook);
-	m_symtab_duplication_hook = NULL;
-      }
+    m_insertion_enabled = false;
   }
 
 protected:
@@ -105,31 +59,23 @@ protected:
   {
     /* Call gcc_internal_because we do not want to call finalizer for
        a type T.  We call dtor explicitly.  */
-    return is_ggc () ? new (ggc_internal_alloc (sizeof (T))) T ()
-		     : m_allocator.allocate () ;
+    return is_ggc () ? new (ggc_internal_alloc (sizeof (T))) T () : new T () ;
   }
 
   /* Release an item that is stored within map.  */
   void release (T *item)
   {
     if (is_ggc ())
-      ggc_delete (item);
+      {
+	item->~T ();
+	ggc_free (item);
+      }
     else
-      m_allocator.remove (item);
+      delete item;
   }
 
   /* Unregister all call-graph hooks.  */
   void unregister_hooks ();
-
-  /* Symbol table the summary is registered to.  */
-  symbol_table *m_symtab;
-
-  /* Insertion function defined by a summary.  */
-  cgraph_node_hook m_symtab_insertion;
-  /* Removal function defined by a summary.  */
-  cgraph_node_hook m_symtab_removal;
-  /* Duplication function defined by a summary.  */
-  cgraph_2node_hook m_symtab_duplication;
 
   /* Internal summary insertion hook pointer.  */
   cgraph_node_hook_list *m_symtab_insertion_hook;
@@ -137,22 +83,26 @@ protected:
   cgraph_node_hook_list *m_symtab_removal_hook;
   /* Internal summary duplication hook pointer.  */
   cgraph_2node_hook_list *m_symtab_duplication_hook;
+  /* Symbol table the summary is registered to.  */
+  symbol_table *m_symtab;
+
+  /* Indicates if insertion hook is enabled.  */
+  bool m_insertion_enabled;
+  /* Indicates if the summary is released.  */
+  bool m_released;
 
 private:
   /* Return true when the summary uses GGC memory for allocation.  */
   virtual bool is_ggc () = 0;
-
-  /* Object allocator for heap allocation.  */
-  object_allocator<T> m_allocator;
 };
 
 template <typename T>
 void
 function_summary_base<T>::unregister_hooks ()
 {
-  disable_insertion_hook ();
+  m_symtab->remove_cgraph_insertion_hook (m_symtab_insertion_hook);
   m_symtab->remove_cgraph_removal_hook (m_symtab_removal_hook);
-  disable_duplication_hook ();
+  m_symtab->remove_cgraph_duplication_hook (m_symtab_duplication_hook);
 }
 
 /* We want to pass just pointer types as argument for function_summary
@@ -181,17 +131,24 @@ class GTY((user)) function_summary <T *>: public function_summary_base<T>
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  function_summary (symbol_table *symtab, bool ggc = false CXX_MEM_STAT_INFO);
+  function_summary (symbol_table *symtab, bool ggc = false);
 
   /* Destructor.  */
-  virtual ~function_summary ();
+  virtual ~function_summary ()
+  {
+    release ();
+  }
+
+  /* Destruction method that can be called for GGC purpose.  */
+  using function_summary_base<T>::release;
+  void release ();
 
   /* Traverses all summarys with a function F called with
      ARG as argument.  */
   template<typename Arg, bool (*f)(const T &, Arg)>
   void traverse (Arg a) const
   {
-    m_map.template traverse <f> (a);
+    m_map.traverse <f> (a);
   }
 
   /* Getter for summary callgraph node pointer.  If a summary for a node
@@ -265,23 +222,35 @@ private:
 };
 
 template <typename T>
-function_summary<T *>::function_summary (symbol_table *symtab, bool ggc
-					 MEM_STAT_DECL):
-  function_summary_base<T> (symtab, function_summary::symtab_insertion,
-			    function_summary::symtab_removal,
-			    function_summary::symtab_duplication
-			    PASS_MEM_STAT),
-  m_ggc (ggc), m_map (13, ggc, true, GATHER_STATISTICS PASS_MEM_STAT) {}
+function_summary<T *>::function_summary (symbol_table *symtab, bool ggc):
+  function_summary_base<T> (symtab), m_ggc (ggc), m_map (13, ggc)
+{
+  this->m_symtab_insertion_hook
+    = this->m_symtab->add_cgraph_insertion_hook (function_summary::symtab_insertion,
+						 this);
+  this->m_symtab_removal_hook
+    = this->m_symtab->add_cgraph_removal_hook (function_summary::symtab_removal,
+					       this);
+  this->m_symtab_duplication_hook
+    = this->m_symtab->add_cgraph_duplication_hook (function_summary::symtab_duplication,
+						   this);
+}
 
 template <typename T>
-function_summary<T *>::~function_summary ()
+void
+function_summary<T *>::release ()
 {
+  if (this->m_released)
+    return;
+
   this->unregister_hooks ();
 
   /* Release all summaries.  */
   typedef typename hash_map <map_hash, T *>::iterator map_iterator;
   for (map_iterator it = m_map.begin (); it != m_map.end (); ++it)
     this->release ((*it).second);
+
+  this->m_released = true;
 }
 
 template <typename T>
@@ -290,7 +259,9 @@ function_summary<T *>::symtab_insertion (cgraph_node *node, void *data)
 {
   gcc_checking_assert (node->get_uid ());
   function_summary *summary = (function_summary <T *> *) (data);
-  summary->insert (node, summary->get_create (node));
+
+  if (summary->m_insertion_enabled)
+    summary->insert (node, summary->get_create (node));
 }
 
 template <typename T>
@@ -324,16 +295,19 @@ gt_ggc_mx(function_summary<T *>* const &summary)
 
 template <typename T>
 void
-gt_pch_nx (function_summary<T *> *const &)
+gt_pch_nx(function_summary<T *>* const &summary)
 {
-  gcc_unreachable ();
+  gcc_checking_assert (summary->m_ggc);
+  gt_pch_nx (&summary->m_map);
 }
 
 template <typename T>
 void
-gt_pch_nx (function_summary<T *> *const &, gt_pointer_operator, void *)
+gt_pch_nx(function_summary<T *>* const& summary, gt_pointer_operator op,
+	  void *cookie)
 {
-  gcc_unreachable ();
+  gcc_checking_assert (summary->m_ggc);
+  gt_pch_nx (&summary->m_map, op, cookie);
 }
 
 /* Help template from std c++11.  */
@@ -369,10 +343,17 @@ class GTY((user)) fast_function_summary <T *, V>
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  fast_function_summary (symbol_table *symtab CXX_MEM_STAT_INFO);
+  fast_function_summary (symbol_table *symtab);
 
   /* Destructor.  */
-  virtual ~fast_function_summary ();
+  virtual ~fast_function_summary ()
+  {
+    release ();
+  }
+
+  /* Destruction method that can be called for GGC purpose.  */
+  using function_summary_base<T>::release;
+  void release ();
 
   /* Traverses all summarys with a function F called with
      ARG as argument.  */
@@ -381,7 +362,7 @@ public:
   {
     for (unsigned i = 0; i < m_vector->length (); i++)
       if ((*m_vector[i]) != NULL)
-	f ((*m_vector)[i], a);
+	f ((*m_vector)[i]);
   }
 
   /* Getter for summary callgraph node pointer.  If a summary for a node
@@ -451,27 +432,38 @@ private:
 };
 
 template <typename T, typename V>
-fast_function_summary<T *, V>::fast_function_summary (symbol_table *symtab
-						      MEM_STAT_DECL):
-  function_summary_base<T> (symtab,
-			    fast_function_summary::symtab_insertion,
-			    fast_function_summary::symtab_removal,
-			    fast_function_summary::symtab_duplication
-			    PASS_MEM_STAT), m_vector (NULL)
+fast_function_summary<T *, V>::fast_function_summary (symbol_table *symtab):
+  function_summary_base<T> (symtab), m_vector (NULL)
 {
-  vec_alloc (m_vector, 13 PASS_MEM_STAT);
+  vec_alloc (m_vector, 13);
+  this->m_symtab_insertion_hook
+    = this->m_symtab->add_cgraph_insertion_hook (fast_function_summary::symtab_insertion,
+						 this);
+  this->m_symtab_removal_hook
+    = this->m_symtab->add_cgraph_removal_hook (fast_function_summary::symtab_removal,
+					       this);
+  this->m_symtab_duplication_hook
+    = this->m_symtab->add_cgraph_duplication_hook (fast_function_summary::symtab_duplication,
+						   this);
 }
 
 template <typename T, typename V>
-fast_function_summary<T *, V>::~fast_function_summary ()
+void
+fast_function_summary<T *, V>::release ()
 {
+  if (this->m_released)
+    return;
+
   this->unregister_hooks ();
 
   /* Release all summaries.  */
   for (unsigned i = 0; i < m_vector->length (); i++)
     if ((*m_vector)[i] != NULL)
       this->release ((*m_vector)[i]);
+
   vec_free (m_vector);
+
+  this->m_released = true;
 }
 
 template <typename T, typename V>
@@ -480,7 +472,9 @@ fast_function_summary<T *, V>::symtab_insertion (cgraph_node *node, void *data)
 {
   gcc_checking_assert (node->get_uid ());
   fast_function_summary *summary = (fast_function_summary <T *, V> *) (data);
-  summary->insert (node, summary->get_create (node));
+
+  if (summary->m_insertion_enabled)
+    summary->insert (node, summary->get_create (node));
 }
 
 template <typename T, typename V>
@@ -546,17 +540,18 @@ gt_ggc_mx (fast_function_summary<T *, va_gc>* const &summary)
 
 template <typename T>
 void
-gt_pch_nx (fast_function_summary<T *, va_gc> *const &)
+gt_pch_nx (fast_function_summary<T *, va_gc>* const &summary)
 {
-  gcc_unreachable ();
+  gt_pch_nx (summary->m_vector);
 }
 
 template <typename T>
 void
-gt_pch_nx (fast_function_summary<T *, va_gc> *const &, gt_pointer_operator,
-	   void *)
+gt_pch_nx (fast_function_summary<T *, va_gc>* const& summary,
+	   gt_pointer_operator op,
+	   void *cookie)
 {
-  gcc_unreachable ();
+  gt_pch_nx (summary->m_vector, op, cookie);
 }
 
 /* Base class for call_summary and fast_call_summary classes.  */
@@ -566,45 +561,15 @@ class call_summary_base
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  call_summary_base (symbol_table *symtab, cgraph_edge_hook symtab_removal,
-		     cgraph_2edge_hook symtab_duplication CXX_MEM_STAT_INFO):
-  m_symtab (symtab), m_symtab_removal (symtab_removal),
-  m_symtab_duplication (symtab_duplication), m_symtab_duplication_hook (NULL),
-  m_initialize_when_cloning (false),
-  m_allocator ("call summary" PASS_MEM_STAT)
-  {
-    m_symtab_removal_hook
-      = m_symtab->add_edge_removal_hook (m_symtab_removal, this);
-    enable_duplication_hook ();
-  }
+  call_summary_base (symbol_table *symtab): m_symtab (symtab),
+  m_initialize_when_cloning (true), m_released (false)
+  {}
 
   /* Basic implementation of removal operation.  */
   virtual void remove (cgraph_edge *, T *) {}
 
   /* Basic implementation of duplication operation.  */
-  virtual void duplicate (cgraph_edge *, cgraph_edge *, T *, T *)
-  {
-    gcc_unreachable ();
-  }
-
-  /* Enable duplication hook invocation.  */
-  void enable_duplication_hook ()
-  {
-    if (m_symtab_duplication_hook == NULL)
-      m_symtab_duplication_hook
-	= m_symtab->add_edge_duplication_hook (m_symtab_duplication,
-					       this);
-  }
-
-  /* Enable duplication hook invocation.  */
-  void disable_duplication_hook ()
-  {
-    if (m_symtab_duplication_hook != NULL)
-      {
-	m_symtab->remove_edge_duplication_hook (m_symtab_duplication_hook);
-	m_symtab_duplication_hook = NULL;
-      }
-  }
+  virtual void duplicate (cgraph_edge *, cgraph_edge *, T *, T *) {}
 
 protected:
   /* Allocates new data that are stored within map.  */
@@ -612,17 +577,19 @@ protected:
   {
     /* Call gcc_internal_because we do not want to call finalizer for
        a type T.  We call dtor explicitly.  */
-    return is_ggc () ? new (ggc_internal_alloc (sizeof (T))) T ()
-		     : m_allocator.allocate ();
+    return is_ggc () ? new (ggc_internal_alloc (sizeof (T))) T () : new T () ;
   }
 
   /* Release an item that is stored within map.  */
   void release (T *item)
   {
     if (is_ggc ())
-      ggc_delete (item);
+      {
+	item->~T ();
+	ggc_free (item);
+      }
     else
-      m_allocator.remove (item);
+      delete item;
   }
 
   /* Unregister all call-graph hooks.  */
@@ -631,24 +598,18 @@ protected:
   /* Symbol table the summary is registered to.  */
   symbol_table *m_symtab;
 
-  /* Removal function defined by a summary.  */
-  cgraph_edge_hook m_symtab_removal;
-  /* Duplication function defined by a summary.  */
-  cgraph_2edge_hook m_symtab_duplication;
-
   /* Internal summary removal hook pointer.  */
   cgraph_edge_hook_list *m_symtab_removal_hook;
   /* Internal summary duplication hook pointer.  */
   cgraph_2edge_hook_list *m_symtab_duplication_hook;
   /* Initialize summary for an edge that is cloned.  */
   bool m_initialize_when_cloning;
+  /* Indicates if the summary is released.  */
+  bool m_released;
 
 private:
   /* Return true when the summary uses GGC memory for allocation.  */
   virtual bool is_ggc () = 0;
-
-  /* Object allocator for heap allocation.  */
-  object_allocator<T> m_allocator;
 };
 
 template <typename T>
@@ -656,7 +617,7 @@ void
 call_summary_base<T>::unregister_hooks ()
 {
   m_symtab->remove_edge_removal_hook (m_symtab_removal_hook);
-  disable_duplication_hook ();
+  m_symtab->remove_edge_duplication_hook (m_symtab_duplication_hook);
 }
 
 /* An impossible class templated by non-pointers so, which makes sure that only
@@ -676,21 +637,33 @@ class GTY((user)) call_summary <T *>: public call_summary_base<T>
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  call_summary (symbol_table *symtab, bool ggc = false
-		CXX_MEM_STAT_INFO)
-  : call_summary_base<T> (symtab, call_summary::symtab_removal,
-			  call_summary::symtab_duplication PASS_MEM_STAT),
-    m_ggc (ggc), m_map (13, ggc, true, GATHER_STATISTICS PASS_MEM_STAT) {}
+  call_summary (symbol_table *symtab, bool ggc = false)
+  : call_summary_base<T> (symtab), m_ggc (ggc), m_map (13, ggc)
+  {
+    this->m_symtab_removal_hook
+      = this->m_symtab->add_edge_removal_hook (call_summary::symtab_removal,
+					       this);
+    this->m_symtab_duplication_hook
+      = this->m_symtab->add_edge_duplication_hook (call_summary::symtab_duplication,
+						   this);
+  }
 
   /* Destructor.  */
-  virtual ~call_summary ();
+  virtual ~call_summary ()
+  {
+    release ();
+  }
+
+  /* Destruction method that can be called for GGC purpose.  */
+  using call_summary_base<T>::release;
+  void release ();
 
   /* Traverses all summarys with an edge E called with
      ARG as argument.  */
   template<typename Arg, bool (*f)(const T &, Arg)>
   void traverse (Arg a) const
   {
-    m_map.template traverse <f> (a);
+    m_map.traverse <f> (a);
   }
 
   /* Getter for summary callgraph edge pointer.
@@ -761,14 +734,20 @@ private:
 };
 
 template <typename T>
-call_summary<T *>::~call_summary ()
+void
+call_summary<T *>::release ()
 {
+  if (this->m_released)
+    return;
+
   this->unregister_hooks ();
 
   /* Release all summaries.  */
   typedef typename hash_map <map_hash, T *>::iterator map_iterator;
   for (map_iterator it = m_map.begin (); it != m_map.end (); ++it)
     this->release ((*it).second);
+
+  this->m_released = true;
 }
 
 template <typename T>
@@ -807,16 +786,19 @@ gt_ggc_mx(call_summary<T *>* const &summary)
 
 template <typename T>
 void
-gt_pch_nx (call_summary<T *> *const &)
+gt_pch_nx(call_summary<T *>* const &summary)
 {
-  gcc_unreachable ();
+  gcc_checking_assert (summary->m_ggc);
+  gt_pch_nx (&summary->m_map);
 }
 
 template <typename T>
 void
-gt_pch_nx (call_summary<T *> *const &, gt_pointer_operator, void *)
+gt_pch_nx(call_summary<T *>* const& summary, gt_pointer_operator op,
+	  void *cookie)
 {
-  gcc_unreachable ();
+  gcc_checking_assert (summary->m_ggc);
+  gt_pch_nx (&summary->m_map, op, cookie);
 }
 
 /* We want to pass just pointer types as argument for fast_call_summary
@@ -837,16 +819,27 @@ class GTY((user)) fast_call_summary <T *, V>: public call_summary_base<T>
 {
 public:
   /* Default construction takes SYMTAB as an argument.  */
-  fast_call_summary (symbol_table *symtab CXX_MEM_STAT_INFO)
-  : call_summary_base<T> (symtab, fast_call_summary::symtab_removal,
-			  fast_call_summary::symtab_duplication PASS_MEM_STAT),
-    m_vector (NULL)
+  fast_call_summary (symbol_table *symtab)
+  : call_summary_base<T> (symtab), m_vector (NULL)
   {
-    vec_alloc (m_vector, 13 PASS_MEM_STAT);
+    vec_alloc (m_vector, 13);
+    this->m_symtab_removal_hook
+      = this->m_symtab->add_edge_removal_hook (fast_call_summary::symtab_removal,
+					       this);
+    this->m_symtab_duplication_hook
+      = this->m_symtab->add_edge_duplication_hook (fast_call_summary::symtab_duplication,
+						   this);
   }
 
   /* Destructor.  */
-  virtual ~fast_call_summary ();
+  virtual ~fast_call_summary ()
+  {
+    release ();
+  }
+
+  /* Destruction method that can be called for GGC purpose.  */
+  using call_summary_base<T>::release;
+  void release ();
 
   /* Traverses all summarys with an edge F called with
      ARG as argument.  */
@@ -855,7 +848,7 @@ public:
   {
     for (unsigned i = 0; i < m_vector->length (); i++)
       if ((*m_vector[i]) != NULL)
-	f ((*m_vector)[i], a);
+	f ((*m_vector)[i]);
   }
 
   /* Getter for summary callgraph edge pointer.
@@ -922,15 +915,22 @@ private:
 };
 
 template <typename T, typename V>
-fast_call_summary<T *, V>::~fast_call_summary ()
+void
+fast_call_summary<T *, V>::release ()
 {
+  if (this->m_released)
+    return;
+
   this->unregister_hooks ();
 
   /* Release all summaries.  */
   for (unsigned i = 0; i < m_vector->length (); i++)
     if ((*m_vector)[i] != NULL)
       this->release ((*m_vector)[i]);
+
   vec_free (m_vector);
+
+  this->m_released = true;
 }
 
 template <typename T, typename V>
@@ -970,21 +970,21 @@ fast_call_summary<T *, V>::is_ggc ()
 
 template <typename T>
 void
-gt_ggc_mx (fast_call_summary<T *, va_heap>* const &summary ATTRIBUTE_UNUSED)
+gt_ggc_mx (fast_call_summary<T *, va_heap>* const &summary)
 {
 }
 
 template <typename T>
 void
-gt_pch_nx (fast_call_summary<T *, va_heap>* const &summary ATTRIBUTE_UNUSED)
+gt_pch_nx (fast_call_summary<T *, va_heap>* const &summary)
 {
 }
 
 template <typename T>
 void
-gt_pch_nx (fast_call_summary<T *, va_heap>* const& summary ATTRIBUTE_UNUSED,
-	   gt_pointer_operator op ATTRIBUTE_UNUSED,
-	   void *cookie ATTRIBUTE_UNUSED)
+gt_pch_nx (fast_call_summary<T *, va_heap>* const& summary,
+	   gt_pointer_operator op,
+	   void *cookie)
 {
 }
 
@@ -998,16 +998,18 @@ gt_ggc_mx (fast_call_summary<T *, va_gc>* const &summary)
 
 template <typename T>
 void
-gt_pch_nx (fast_call_summary<T *, va_gc> *const &)
+gt_pch_nx (fast_call_summary<T *, va_gc>* const &summary)
 {
-  gcc_unreachable ();
+  gt_pch_nx (&summary->m_vector);
 }
 
 template <typename T>
 void
-gt_pch_nx (fast_call_summary<T *, va_gc> *const &, gt_pointer_operator, void *)
+gt_pch_nx (fast_call_summary<T *, va_gc>* const& summary,
+	   gt_pointer_operator op,
+	   void *cookie)
 {
-  gcc_unreachable ();
+  gt_pch_nx (&summary->m_vector, op, cookie);
 }
 
 #endif  /* GCC_SYMBOL_SUMMARY_H  */

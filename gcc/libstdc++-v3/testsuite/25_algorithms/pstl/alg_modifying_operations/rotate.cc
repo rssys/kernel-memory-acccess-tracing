@@ -1,7 +1,6 @@
 // -*- C++ -*-
-// { dg-options "-ltbb" }
+// { dg-options "-std=gnu++17 -ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-timeout-factor 3 }
 // { dg-require-effective-target tbb-backend }
 
 //===-- rotate.pass.cpp ---------------------------------------------------===//
@@ -83,8 +82,8 @@ struct compare<wrapper<T>>
 struct test_one_policy
 {
 
-#if _PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
-    _PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN // dummy specializations to skip testing in case of broken configuration
+#if __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
+    __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN // dummy specializations to skip testing in case of broken configuration
     template <typename Iterator, typename Size>
     void
     operator()(__pstl::execution::unsequenced_policy, Iterator data_b, Iterator data_e, Iterator actual_b,

@@ -1,5 +1,5 @@
 /* Definitions of floating-point access for GNU compiler.
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -41,18 +41,11 @@ struct GTY(()) real_value {
      sure they're packed together, otherwise REAL_VALUE_TYPE_SIZE will
      be miscomputed.  */
   unsigned int /* ENUM_BITFIELD (real_value_class) */ cl : 2;
-  /* 1 if number is decimal floating point.  */
   unsigned int decimal : 1;
-  /* 1 if number is negative.  */
   unsigned int sign : 1;
-  /* 1 if number is signalling.  */
   unsigned int signalling : 1;
-  /* 1 if number is canonical
-  All are generally used for handling cases in real.c.  */
   unsigned int canonical : 1;
-  /* unbiased exponent of the number.  */
   unsigned int uexp : EXP_BITS;
-  /* significand of the number.  */
   unsigned long sig[SIGSZ];
 };
 
@@ -178,12 +171,13 @@ struct real_format
    decimal float modes indexed by (MODE - first decimal float mode) +
    the number of float modes.  */
 extern const struct real_format *
-  real_format_for_mode[NUM_MODE_FLOAT + NUM_MODE_DECIMAL_FLOAT];
+  real_format_for_mode[MAX_MODE_FLOAT - MIN_MODE_FLOAT + 1
+		       + MAX_MODE_DECIMAL_FLOAT - MIN_MODE_DECIMAL_FLOAT + 1];
 
 #define REAL_MODE_FORMAT(MODE)						\
   (real_format_for_mode[DECIMAL_FLOAT_MODE_P (MODE)			\
 			? (((MODE) - MIN_MODE_DECIMAL_FLOAT)		\
-			   + NUM_MODE_FLOAT)				\
+			   + (MAX_MODE_FLOAT - MIN_MODE_FLOAT + 1))	\
 			: GET_MODE_CLASS (MODE) == MODE_FLOAT		\
 			? ((MODE) - MIN_MODE_FLOAT)			\
 			: (gcc_unreachable (), 0)])
@@ -367,7 +361,6 @@ extern const struct real_format decimal_double_format;
 extern const struct real_format decimal_quad_format;
 extern const struct real_format ieee_half_format;
 extern const struct real_format arm_half_format;
-extern const struct real_format arm_bfloat_half_format;
 
 
 /* ====================================================================== */
@@ -507,8 +500,6 @@ extern void real_ceil (REAL_VALUE_TYPE *, format_helper,
 		       const REAL_VALUE_TYPE *);
 extern void real_round (REAL_VALUE_TYPE *, format_helper,
 			const REAL_VALUE_TYPE *);
-extern void real_roundeven (REAL_VALUE_TYPE *, format_helper,
-			    const REAL_VALUE_TYPE *);
 
 /* Set the sign of R to the sign of X.  */
 extern void real_copysign (REAL_VALUE_TYPE *, const REAL_VALUE_TYPE *);
@@ -524,7 +515,7 @@ extern bool real_nextafter (REAL_VALUE_TYPE *, format_helper,
 /* Write into BUF the maximum representable finite floating-point
    number, (1 - b**-p) * b**emax for a given FP format FMT as a hex
    float string.  BUF must be large enough to contain the result.  */
-extern void get_max_float (const struct real_format *, char *, size_t, bool);
+extern void get_max_float (const struct real_format *, char *, size_t);
 
 #ifndef GENERATOR_FILE
 /* real related routines.  */

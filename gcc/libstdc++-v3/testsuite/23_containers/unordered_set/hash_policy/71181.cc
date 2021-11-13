@@ -1,4 +1,4 @@
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -22,22 +22,22 @@
 #include <testsuite_hooks.h>
 
 template<typename _USet>
-  void
-  test(_USet& us, int threshold)
+  void test(int threshold)
   {
+    _USet us;
     auto nb_reserved = us.bucket_count();
     us.reserve(nb_reserved);
     auto bkts = us.bucket_count();
-    for (int nb_insert = 1; nb_insert <= threshold; ++nb_insert)
+    for (int i = 0; i != threshold; ++i)
       {
-	if (nb_insert > nb_reserved)
+	if (i >= nb_reserved)
 	  {
 	    nb_reserved = bkts;
 	    us.reserve(nb_reserved);
 	    bkts = us.bucket_count();
 	  }
 
-	us.insert(nb_insert);
+	us.insert(i);
 
 	VERIFY( us.bucket_count() == bkts );
       }
@@ -54,22 +54,9 @@ template<typename _Value>
 		  std::__detail::_Power2_rehash_policy,
 		  std::__detail::_Hashtable_traits<false, true, true>>;
 
-template<typename _USet>
-  void
-  test_cont()
-  {
-    _USet us;
-    test(us, 150);
-
-    us.clear();
-    us.rehash(0);
-
-    test(us, 150);
-  }
-
 int main()
 {
-  test_cont<std::unordered_set<int>>();
-  test_cont<unordered_set_power2_rehash<int>>();
+  test<std::unordered_set<int>>(150);
+  test<unordered_set_power2_rehash<int>>(150);
   return 0;
 }

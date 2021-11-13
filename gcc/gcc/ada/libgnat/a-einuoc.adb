@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2000-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2000-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -40,5 +40,9 @@ begin
    --  The null exception is uniquely identified by the fact that the Id value
    --  is null. No other exception occurrence can have a null Id.
 
-   return X.Id = Null_Id;
+   if X.Id = Null_Id then
+      return True;
+   else
+      return False;
+   end if;
 end Ada.Exceptions.Is_Null_Occurrence;

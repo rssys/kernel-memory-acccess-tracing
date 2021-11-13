@@ -310,11 +310,7 @@ func SetsockoptIPv6Mreq(fd, level, opt int, mreq *IPv6Mreq) (err error) {
 }
 
 func SetsockoptString(fd, level, opt int, s string) (err error) {
-	var p unsafe.Pointer
-	if len(s) > 0 {
-		p = unsafe.Pointer(&[]byte(s)[0])
-	}
-	return setsockopt(fd, level, opt, p, Socklen_t(len(s)))
+	return setsockopt(fd, level, opt, unsafe.Pointer(&[]byte(s)[0]), Socklen_t(len(s)))
 }
 
 //sys	recvfrom(fd int, p []byte, flags int, from *RawSockaddrAny, fromlen *Socklen_t) (n int, err error)

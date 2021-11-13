@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,7 +36,6 @@ with Ada.Iterator_Interfaces;
 with Ada.Containers.Helpers;
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type (<>) is private;
@@ -44,9 +43,7 @@ generic
    with function "=" (Left, Right : Element_Type)
       return Boolean is <>;
 
-package Ada.Containers.Indefinite_Doubly_Linked_Lists with
-  SPARK_Mode => Off
-is
+package Ada.Containers.Indefinite_Doubly_Linked_Lists is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -55,9 +52,7 @@ is
       Constant_Indexing => Constant_Reference,
       Variable_Indexing => Reference,
       Default_Iterator  => Iterate,
-      Iterator_Element  => Element_Type,
-      Aggregate         => (Empty       => Empty,
-                            Add_Unnamed => Append);
+      Iterator_Element  => Element_Type;
 
    pragma Preelaborable_Initialization (List);
 
@@ -65,9 +60,6 @@ is
    pragma Preelaborable_Initialization (Cursor);
 
    Empty_List : constant List;
-
-   function Empty return List;
-   pragma Ada_2022 (Empty);
 
    No_Element : constant Cursor;
 
@@ -149,11 +141,7 @@ is
    procedure Append
      (Container : in out List;
       New_Item  : Element_Type;
-      Count     : Count_Type);
-
-   procedure Append
-     (Container : in out List;
-      New_Item  : Element_Type);
+      Count     : Count_Type := 1);
 
    procedure Delete
      (Container : in out List;
@@ -279,10 +267,7 @@ private
         Last   : Node_Access := null;
         Length : Count_Type := 0;
         TC     : aliased Tamper_Counts;
-     end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : List);
+     end record;
 
    overriding procedure Adjust (Container : in out List);
 
@@ -385,7 +370,6 @@ private
    --  Returns a pointer to the element designated by Position.
 
    Empty_List : constant List := List'(Controlled with others => <>);
-   function Empty return List is (Empty_List);
 
    No_Element : constant Cursor := Cursor'(null, null);
 

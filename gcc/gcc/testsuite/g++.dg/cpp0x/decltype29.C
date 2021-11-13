@@ -10,10 +10,10 @@ ft() {}
 
 template<class F, int N>
 decltype (ft<F> (F()))		// { dg-error "depth" }
-ft(F) {}
+ft() {}
 
 int main() {
-    ft<struct a*, 0>(0);		// { dg-message "from here" }
+    ft<struct a*, 0>();		// { dg-message "from here" }
 }
 
 // { dg-prune-output "compilation terminated" }

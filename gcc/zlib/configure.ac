@@ -59,10 +59,6 @@ m4_rename_force([real_PRECIOUS],[_AC_ARG_VAR_PRECIOUS])
 
 AC_SUBST(CFLAGS)
 
-# Add CET specific flags if CET is enabled
-GCC_CET_FLAGS(CET_FLAGS)
-AC_SUBST(CET_FLAGS)
-
 AC_PROG_LIBTOOL
 
 # Find CPP now so that any conditional tests below won't do it and
@@ -85,19 +81,10 @@ fi
 
 AC_CHECK_HEADERS(unistd.h)
 
-GCC_WITH_TOOLEXECLIBDIR
-
 if test -n "$with_cross_host" &&
    test x"$with_cross_host" != x"no"; then
   toolexecdir='$(exec_prefix)/$(target_alias)'
-  case ${with_toolexeclibdir} in
-    no)
-      toolexeclibdir='$(toolexecdir)/lib'
-      ;;
-    *)
-      toolexeclibdir=${with_toolexeclibdir}
-      ;;
-  esac
+  toolexeclibdir='$(toolexecdir)/lib'
 else
   toolexecdir='$(libdir)/gcc-lib/$(target_alias)'
   toolexeclibdir='$(libdir)'

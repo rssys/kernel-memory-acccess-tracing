@@ -1,7 +1,7 @@
 /* Test instance variable visibility.  */
 /* Author: Dimitris Papavasiliou <dpapavas@gmail.com>.  */
 /* { dg-do compile } */
-/* { dg-additional-options "-fivar-visibility=private -Wno-objc-root-class" } */
+/* { dg-additional-options "-fivar-visibility=private" } */
 #include <objc/objc.h>
 
 @interface MySuperClass

@@ -1,5 +1,5 @@
 /* Generate code from machine description to extract operands from insn as rtl.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -68,9 +68,8 @@ static struct code_ptr *peepholes;
    data that will be used to produce an extractions structure.  */
 
 
-class accum_extract
+struct accum_extract
 {
-public:
   accum_extract () : oplocs (10), duplocs (10), dupnums (10), pathstr (20) {}
 
   auto_vec<locstr> oplocs;
@@ -80,7 +79,7 @@ public:
 };
 
 /* Forward declarations.  */
-static void walk_rtx (md_rtx_info *, rtx, class accum_extract *);
+static void walk_rtx (md_rtx_info *, rtx, struct accum_extract *);
 
 #define UPPER_OFFSET ('A' - ('z' - 'a' + 1))
 
@@ -89,7 +88,7 @@ static void walk_rtx (md_rtx_info *, rtx, class accum_extract *);
    in ACC.  */
 static void
 push_pathstr_operand (int operand, bool is_vector,
-		     class accum_extract *acc)
+		     struct accum_extract *acc)
 {
   if (is_vector && 'a' + operand > 'z')
     acc->pathstr.safe_push (operand + UPPER_OFFSET);
@@ -106,7 +105,7 @@ gen_insn (md_rtx_info *info)
   unsigned int op_count, dup_count, j;
   struct extraction *p;
   struct code_ptr *link;
-  class accum_extract acc;
+  struct accum_extract acc;
 
   /* Walk the insn's pattern, remembering at all times the path
      down to the walking point.  */
@@ -214,7 +213,7 @@ VEC_safe_set_locstr (md_rtx_info *info, vec<locstr> *vp,
 /* Another helper subroutine of walk_rtx: given a vec<char>, convert it
    to a NUL-terminated string in malloc memory.  */
 static char *
-VEC_char_to_string (const vec<char> &v)
+VEC_char_to_string (vec<char> v)
 {
   size_t n = v.length ();
   char *s = XNEWVEC (char, n + 1);
@@ -224,7 +223,7 @@ VEC_char_to_string (const vec<char> &v)
 }
 
 static void
-walk_rtx (md_rtx_info *info, rtx x, class accum_extract *acc)
+walk_rtx (md_rtx_info *info, rtx x, struct accum_extract *acc)
 {
   RTX_CODE code;
   int i, len;
@@ -237,6 +236,7 @@ walk_rtx (md_rtx_info *info, rtx x, class accum_extract *acc)
   switch (code)
     {
     case PC:
+    case CC0:
     case CONST_INT:
     case SYMBOL_REF:
       return;

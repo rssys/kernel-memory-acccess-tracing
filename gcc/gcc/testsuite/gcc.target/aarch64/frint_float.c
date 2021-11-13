@@ -12,4 +12,3 @@
 /* { dg-final { scan-assembler-times "frinti\ts\[0-9\]" 2 } } */
 /* { dg-final { scan-assembler-times "frintx\ts\[0-9\]" 2 } } */
 /* { dg-final { scan-assembler-times "frinta\ts\[0-9\]" 2 } } */
-/* { dg-final { scan-assembler-times "frintn\ts\[0-9\]" 2 } } */

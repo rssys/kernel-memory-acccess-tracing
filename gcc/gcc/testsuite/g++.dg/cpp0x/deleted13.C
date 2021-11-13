@@ -8,5 +8,5 @@ struct A
 
 struct B
 {
-  template<typename> friend void A::foo() = delete; // { dg-error "34:cannot define" }
+  template<typename> friend void A::foo() = delete; // { dg-error "" }
 };

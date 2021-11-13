@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,11 +31,8 @@ with Ada.Containers.Generic_Array_Sort;
 with Ada.Unchecked_Deallocation;
 
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Vectors with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Vectors is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -64,8 +61,8 @@ is
    begin
       return Result : Vector do
          Reserve_Capacity (Result, Length (Left) + Length (Right));
-         Append_Vector (Result, Left);
-         Append_Vector (Result, Right);
+         Append (Result, Left);
+         Append (Result, Right);
       end return;
    end "&";
 
@@ -73,7 +70,7 @@ is
    begin
       return Result : Vector do
          Reserve_Capacity (Result, Length (Left) + 1);
-         Append_Vector (Result, Left);
+         Append (Result, Left);
          Append (Result, Right);
       end return;
    end "&";
@@ -83,7 +80,7 @@ is
       return Result : Vector do
          Reserve_Capacity (Result, 1 + Length (Right));
          Append (Result, Left);
-         Append_Vector (Result, Right);
+         Append (Result, Right);
       end return;
    end "&";
 
@@ -167,10 +164,21 @@ is
    -- Append --
    ------------
 
+   procedure Append (Container : in out Vector; New_Item : Vector) is
+   begin
+      if Is_Empty (New_Item) then
+         return;
+      elsif Checks and then Container.Last = Index_Type'Last then
+         raise Constraint_Error with "vector is already at its maximum length";
+      else
+         Insert (Container, Container.Last + 1, New_Item);
+      end if;
+   end Append;
+
    procedure Append
      (Container : in out Vector;
       New_Item  : Element_Type;
-      Count     : Count_Type)
+      Count     : Count_Type := 1)
    is
    begin
       --  In the general case, we pass the buck to Insert, but for efficiency,
@@ -197,32 +205,6 @@ is
       else
          Append_Slow_Path (Container, New_Item, Count);
       end if;
-   end Append;
-
-   -------------------
-   -- Append_Vector --
-   -------------------
-
-   procedure Append_Vector (Container : in out Vector; New_Item : Vector) is
-   begin
-      if Is_Empty (New_Item) then
-         return;
-      elsif Checks and then Container.Last = Index_Type'Last then
-         raise Constraint_Error with "vector is already at its maximum length";
-      else
-         Insert_Vector (Container, Container.Last + 1, New_Item);
-      end if;
-   end Append_Vector;
-
-   ------------
-   -- Append --
-   ------------
-
-   procedure Append (Container : in out Vector;
-                     New_Item  :        Element_Type)
-   is
-   begin
-      Insert (Container, Last_Index (Container) + 1, New_Item, 1);
    end Append;
 
    ----------------------
@@ -254,7 +236,7 @@ is
          return;
       else
          Target.Clear;
-         Target.Append_Vector (Source);
+         Target.Append (Source);
       end if;
    end Assign;
 
@@ -312,7 +294,7 @@ is
            (Element => Container.Elements.EA (Position.Index)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -334,7 +316,7 @@ is
            (Element => Container.Elements.EA (Index)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -395,14 +377,6 @@ is
       J        : Index_Type'Base;  -- first index of items that slide down
 
    begin
-      --  The tampering bits exist to prevent an item from being deleted (or
-      --  otherwise harmfully manipulated) while it is being visited. Query,
-      --  Update, and Iterate increment the busy count on entry, and decrement
-      --  the count on exit. Delete checks the count to determine whether it is
-      --  being called while the associated callback procedure is executing.
-
-      TC_Check (Container.TC);
-
       --  Delete removes items from the vector, the number of which is the
       --  minimum of the specified Count and the items (if any) that exist from
       --  Index to Container.Last. There are no constraints on the specified
@@ -445,6 +419,14 @@ is
       if Count = 0 then
          return;
       end if;
+
+      --  The tampering bits exist to prevent an item from being deleted (or
+      --  otherwise harmfully manipulated) while it is being visited. Query,
+      --  Update, and Iterate increment the busy count on entry, and decrement
+      --  the count on exit. Delete checks the count to determine whether it is
+      --  being called while the associated callback procedure is executing.
+
+      TC_Check (Container.TC);
 
       --  We first calculate what's available for deletion starting at
       --  Index. Here and elsewhere we use the wider of Index_Type'Base and
@@ -618,17 +600,6 @@ is
       return Position.Container.Elements.EA (Position.Index);
    end Element;
 
-   -----------
-   -- Empty --
-   -----------
-
-   function Empty (Capacity : Count_Type := 10) return Vector is
-   begin
-      return Result : Vector do
-         Reserve_Capacity (Result, Capacity);
-      end return;
-   end Empty;
-
    --------------
    -- Finalize --
    --------------
@@ -768,16 +739,6 @@ is
       return Index_Type'First;
    end First_Index;
 
-   -----------------
-   -- New_Vector --
-   -----------------
-
-   function New_Vector (First, Last : Index_Type) return Vector
-   is
-   begin
-      return (To_Vector (Count_Type (Last - First + 1)));
-   end New_Vector;
-
    ---------------------
    -- Generic_Sorting --
    ---------------------
@@ -820,8 +781,6 @@ is
          J : Index_Type'Base;
 
       begin
-         TC_Check (Source.TC);
-
          --  The semantics of Merge changed slightly per AI05-0021. It was
          --  originally the case that if Target and Source denoted the same
          --  container object, then the GNAT implementation of Merge did
@@ -843,6 +802,8 @@ is
             Move (Target => Target, Source => Source);
             return;
          end if;
+
+         TC_Check (Source.TC);
 
          Target.Set_Length (Length (Target) + Length (Source));
 
@@ -900,6 +861,10 @@ is
               "<"          => "<");
 
       begin
+         if Container.Last <= Index_Type'First then
+            return;
+         end if;
+
          --  The exception behavior for the vector container must match that
          --  for the list container, so we check for cursor tampering here
          --  (which will catch more things) instead of for element tampering
@@ -912,10 +877,6 @@ is
          --  requires a check for cursor tampering.
 
          TC_Check (Container.TC);
-
-         if Container.Last <= Index_Type'First then
-            return;
-         end if;
 
          --  Per AI05-0022, the container implementation is required to detect
          --  element tampering by a generic actual subprogram.
@@ -972,14 +933,6 @@ is
       Dst          : Elements_Access;  -- new, expanded internal array
 
    begin
-      --  The tampering bits exist to prevent an item from being harmfully
-      --  manipulated while it is being visited. Query, Update, and Iterate
-      --  increment the busy count on entry, and decrement the count on
-      --  exit. Insert checks the count to determine whether it is being called
-      --  while the associated callback procedure is executing.
-
-      TC_Check (Container.TC);
-
       if Checks then
          --  As a precondition on the generic actual Index_Type, the base type
          --  must include Index_Type'Pred (Index_Type'First); this is the value
@@ -1171,6 +1124,14 @@ is
          return;
       end if;
 
+      --  The tampering bits exist to prevent an item from being harmfully
+      --  manipulated while it is being visited. Query, Update, and Iterate
+      --  increment the busy count on entry, and decrement the count on
+      --  exit. Insert checks the count to determine whether it is being called
+      --  while the associated callback procedure is executing.
+
+      TC_Check (Container.TC);
+
       --  An internal array has already been allocated, so we must determine
       --  whether there is enough unused storage for the new items.
 
@@ -1314,7 +1275,7 @@ is
       end;
    end Insert;
 
-   procedure Insert_Vector
+   procedure Insert
      (Container : in out Vector;
       Before    : Extended_Index;
       New_Item  : Vector)
@@ -1433,9 +1394,9 @@ is
 
          Container.Elements.EA (K .. J) := Src;
       end;
-   end Insert_Vector;
+   end Insert;
 
-   procedure Insert_Vector
+   procedure Insert
      (Container : in out Vector;
       Before    : Cursor;
       New_Item  : Vector)
@@ -1465,10 +1426,10 @@ is
          Index := Before.Index;
       end if;
 
-      Insert_Vector (Container, Index, New_Item);
-   end Insert_Vector;
+      Insert (Container, Index, New_Item);
+   end Insert;
 
-   procedure Insert_Vector
+   procedure Insert
      (Container : in out Vector;
       Before    : Cursor;
       New_Item  : Vector;
@@ -1505,10 +1466,10 @@ is
          Index := Before.Index;
       end if;
 
-      Insert_Vector (Container, Index, New_Item);
+      Insert (Container, Index, New_Item);
 
       Position := (Container'Unrestricted_Access, Index);
-   end Insert_Vector;
+   end Insert;
 
    procedure Insert
      (Container : in out Vector;
@@ -1634,14 +1595,6 @@ is
       Dst          : Elements_Access;  -- new, expanded internal array
 
    begin
-      --  The tampering bits exist to prevent an item from being harmfully
-      --  manipulated while it is being visited. Query, Update, and Iterate
-      --  increment the busy count on entry, and decrement the count on
-      --  exit. Insert checks the count to determine whether it is being called
-      --  while the associated callback procedure is executing.
-
-      TC_Check (Container.TC);
-
       if Checks then
          --  As a precondition on the generic actual Index_Type, the base type
          --  must include Index_Type'Pred (Index_Type'First); this is the value
@@ -1830,6 +1783,14 @@ is
 
          return;
       end if;
+
+      --  The tampering bits exist to prevent an item from being harmfully
+      --  manipulated while it is being visited. Query, Update, and Iterate
+      --  increment the busy count on entry, and decrement the count on
+      --  exit. Insert checks the count to determine whether it is being called
+      --  while the associated callback procedure is executing.
+
+      TC_Check (Container.TC);
 
       --  An internal array has already been allocated, so we must determine
       --  whether there is enough unused storage for the new items.
@@ -2270,6 +2231,11 @@ is
    -- Prepend --
    -------------
 
+   procedure Prepend (Container : in out Vector; New_Item : Vector) is
+   begin
+      Insert (Container, Index_Type'First, New_Item);
+   end Prepend;
+
    procedure Prepend
      (Container : in out Vector;
       New_Item  : Element_Type;
@@ -2278,15 +2244,6 @@ is
    begin
       Insert (Container, Index_Type'First, New_Item, Count);
    end Prepend;
-
-   --------------------
-   -- Prepend_Vector --
-   --------------------
-
-   procedure Prepend_Vector (Container : in out Vector; New_Item : Vector) is
-   begin
-      Insert_Vector (Container, Index_Type'First, New_Item);
-   end Prepend_Vector;
 
    --------------
    -- Previous --
@@ -2336,34 +2293,9 @@ is
       TC : constant Tamper_Counts_Access := Container.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Vector)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-   begin
-      Array_Before (S);
-
-      for X of V loop
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Element_Type'Put_Image (S, X);
-      end loop;
-
-      Array_After (S);
-   end Put_Image;
 
    -------------------
    -- Query_Element --
@@ -2477,7 +2409,7 @@ is
            (Element => Container.Elements.EA (Position.Index)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -2499,7 +2431,7 @@ is
            (Element => Container.Elements.EA (Index)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -2514,12 +2446,11 @@ is
       New_Item  : Element_Type)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks and then Index > Container.Last then
          raise Constraint_Error with "Index is out of range";
       end if;
 
+      TE_Check (Container.TC);
       Container.Elements.EA (Index) := New_Item;
    end Replace_Element;
 
@@ -2529,8 +2460,6 @@ is
       New_Item  : Element_Type)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks then
          if Position.Container = null then
             raise Constraint_Error with "Position cursor has no element";
@@ -2543,6 +2472,7 @@ is
          end if;
       end if;
 
+      TE_Check (Container.TC);
       Container.Elements.EA (Position.Index) := New_Item;
    end Replace_Element;
 
@@ -3010,8 +2940,6 @@ is
 
    procedure Swap (Container : in out Vector; I, J : Index_Type) is
    begin
-      TE_Check (Container.TC);
-
       if Checks then
          if I > Container.Last then
             raise Constraint_Error with "I index is out of range";
@@ -3025,6 +2953,8 @@ is
       if I = J then
          return;
       end if;
+
+      TE_Check (Container.TC);
 
       declare
          EI_Copy : constant Element_Type := Container.Elements.EA (I);

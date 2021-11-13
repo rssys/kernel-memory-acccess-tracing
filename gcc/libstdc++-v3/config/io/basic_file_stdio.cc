@@ -1,6 +1,6 @@
 // Wrapper of C-language FILE struct -*- C++ -*-
 
-// Copyright (C) 2000-2021 Free Software Foundation, Inc.
+// Copyright (C) 2000-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -111,21 +111,13 @@ namespace
 
   // Wrapper handling partial write.
   static std::streamsize
-#ifdef _GLIBCXX_USE_STDIO_PURE
-  xwrite(FILE *__file, const char* __s, std::streamsize __n)
-#else
   xwrite(int __fd, const char* __s, std::streamsize __n)
-#endif
   {
     std::streamsize __nleft = __n;
 
     for (;;)
       {
-#ifdef _GLIBCXX_USE_STDIO_PURE
-	const std::streamsize __ret = fwrite(__file, 1, __nleft, __file);
-#else
 	const std::streamsize __ret = write(__fd, __s, __nleft);
-#endif
 	if (__ret == -1L && errno == EINTR)
 	  continue;
 	if (__ret == -1L)
@@ -141,7 +133,7 @@ namespace
     return __n - __nleft;
   }
 
-#if defined(_GLIBCXX_HAVE_WRITEV) && !defined(_GLIBCXX_USE_STDIO_PURE)
+#ifdef _GLIBCXX_HAVE_WRITEV
   // Wrapper handling partial writev.
   static std::streamsize
   xwritev(int __fd, const char* __s1, std::streamsize __n1,
@@ -294,11 +286,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   __basic_file<char>::is_open() const throw ()
   { return _M_cfile != 0; }
 
-#ifndef _GLIBCCXX_USE_STDIO_PURE
   int
   __basic_file<char>::fd() throw ()
   { return fileno(_M_cfile); }
-#endif
 
   __c_file*
   __basic_file<char>::file() throw ()
@@ -325,46 +315,28 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   {
     streamsize __ret;
     do
-#ifdef _GLIBCXX_USE_STDIO_PURE
-      __ret = fread(__s, 1, __n, this->file());
-#else
       __ret = read(this->fd(), __s, __n);
-#endif
     while (__ret == -1L && errno == EINTR);
     return __ret;
   }
 
   streamsize
   __basic_file<char>::xsputn(const char* __s, streamsize __n)
-  {
-#ifdef _GLIBCXX_USE_STDIO_PURE
-    return xwrite(this->file(), __s, __n);
-#else
-    return xwrite(this->fd(), __s, __n);
-#endif
-  }
+  { return xwrite(this->fd(), __s, __n); }
 
   streamsize
   __basic_file<char>::xsputn_2(const char* __s1, streamsize __n1,
 			       const char* __s2, streamsize __n2)
   {
     streamsize __ret = 0;
-#if defined(_GLIBCXX_HAVE_WRITEV) && !defined(_GLIBCXX_USE_STDIO_PURE)
+#ifdef _GLIBCXX_HAVE_WRITEV
     __ret = xwritev(this->fd(), __s1, __n1, __s2, __n2);
 #else
     if (__n1)
-#ifdef _GLIBCXX_USE_STDIO_PURE
-      __ret = xwrite(this->file(), __s1, __n1);
-#else
       __ret = xwrite(this->fd(), __s1, __n1);
-#endif
 
     if (__ret == __n1)
-#ifdef _GLIBCXX_USE_STDIO_PURE
-      __ret += xwrite(this->file(), __s2, __n2);
-#else
       __ret += xwrite(this->fd(), __s2, __n2);
-#endif
 #endif
     return __ret;
   }
@@ -378,11 +350,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     if (__off > numeric_limits<off_t>::max()
 	|| __off < numeric_limits<off_t>::min())
       return -1L;
-#ifdef _GLIBCXX_USE_STDIO_PURE
-    return fseek(this->file(), __off, __way);
-#else
     return lseek(this->fd(), __off, __way);
-#endif
 #endif
   }
 
@@ -393,7 +361,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   streamsize
   __basic_file<char>::showmanyc()
   {
-#if !defined(_GLIBCXX_NO_IOCTL) && !defined(_GLIBCXX_USE_STDIO_PURE)
+#ifndef _GLIBCXX_NO_IOCTL
 #ifdef FIONREAD
     // Pipes and sockets.
     int __num = 0;
@@ -403,7 +371,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
 #endif
 
-#if defined(_GLIBCXX_HAVE_POLL) && !defined(_GLIBCXX_USE_STDIO_PURE)
+#ifdef _GLIBCXX_HAVE_POLL
     // Cheap test.
     struct pollfd __pfd[1];
     __pfd[0].fd = this->fd();
@@ -427,11 +395,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct stat __buffer;
     const int __err = fstat(this->fd(), &__buffer);
     if (!__err && _GLIBCXX_ISREG(__buffer.st_mode))
-#ifdef _GLIBCXX_USE_STDIO_PURE
-      return __buffer.st_size - fseek(this->file(), 0, ios_base::cur);
-#else
       return __buffer.st_size - lseek(this->fd(), 0, ios_base::cur);
-#endif
 #endif
 #endif
     return 0;

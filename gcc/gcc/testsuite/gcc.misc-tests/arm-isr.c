@@ -1,5 +1,3 @@
-/* { dg-options "-mgeneral-regs-only" } */
-
 extern void abort ();
 extern void exit (int);
 

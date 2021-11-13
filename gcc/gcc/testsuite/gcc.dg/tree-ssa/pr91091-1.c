@@ -1,8 +1,8 @@
 /* { dg-do run } */
 /* { dg-options "-O3 -fno-strict-aliasing" } */
 
-struct s { __INT32_TYPE__ x; } __attribute__((packed));
-struct t { __INT32_TYPE__ x; };
+struct s { int x; } __attribute__((packed));
+struct t { int x; };
 
 void __attribute__((noinline,noipa))
 swap(struct s* p, struct t* q)

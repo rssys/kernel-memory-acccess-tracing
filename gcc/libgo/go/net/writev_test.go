@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js
 // +build !js
 
 package net
@@ -12,6 +11,7 @@ import (
 	"fmt"
 	"internal/poll"
 	"io"
+	"io/ioutil"
 	"reflect"
 	"runtime"
 	"sync"
@@ -28,7 +28,7 @@ func TestBuffers_read(t *testing.T) {
 		[]byte("in "),
 		[]byte("Gopherland ... "),
 	}
-	got, err := io.ReadAll(&buffers)
+	got, err := ioutil.ReadAll(&buffers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func testBuffer_writeTo(t *testing.T, chunks int, useCopy bool) {
 		}
 		return nil
 	}, func(c *TCPConn) error {
-		all, err := io.ReadAll(c)
+		all, err := ioutil.ReadAll(c)
 		if !bytes.Equal(all, want.Bytes()) || err != nil {
 			return fmt.Errorf("client read %q, %v; want %q, nil", all, err, want.Bytes())
 		}
@@ -154,7 +154,7 @@ func testBuffer_writeTo(t *testing.T, chunks int, useCopy bool) {
 
 		var wantSum int
 		switch runtime.GOOS {
-		case "android", "darwin", "ios", "dragonfly", "freebsd", "illumos", "linux", "netbsd", "openbsd":
+		case "android", "darwin", "dragonfly", "freebsd", "linux", "netbsd", "openbsd":
 			var wantMinCalls int
 			wantSum = want.Len()
 			v := chunks

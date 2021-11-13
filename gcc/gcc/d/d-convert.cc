@@ -1,5 +1,5 @@
 /* d-convert.cc -- Data type conversion routines.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -376,7 +376,7 @@ convert_expr (tree exp, Type *etype, Type *totype)
 	}
       else
 	{
-	  error ("cannot convert a delegate expression to %qs",
+	  error ("can't convert a delegate expression to %qs",
 		 totype->toChars ());
 	  return error_mark_node;
 	}
@@ -392,7 +392,7 @@ convert_expr (tree exp, Type *etype, Type *totype)
 	    }
 	  else
 	    {
-	      error ("cannot convert struct %qs to %qs",
+	      error ("can't convert struct %qs to %qs",
 		     etype->toChars (), totype->toChars ());
 	      return error_mark_node;
 	    }
@@ -430,10 +430,10 @@ convert_expr (tree exp, Type *etype, Type *totype)
 	      /* d_convert will make a no-op cast.  */
 	      break;
 	    }
-	  else if (cdfrom->isCPPclass () || cdto->isCPPclass ())
+	  else if (cdfrom->isCPPclass ())
 	    {
 	      /* Downcasting in C++ is a no-op.  */
-	      if (cdfrom->isCPPclass () && cdto->isCPPclass ())
+	      if (cdto->isCPPclass ())
 		break;
 
 	      /* Casting from a C++ interface to a class/non-C++ interface
@@ -467,24 +467,19 @@ convert_expr (tree exp, Type *etype, Type *totype)
 	}
       else if (tbtype->ty == Tarray)
 	{
-	  dinteger_t dim = ebtype->isTypeSArray ()->dim->toInteger ();
+	  dinteger_t dim = ((TypeSArray *) ebtype)->dim->toInteger ();
 	  dinteger_t esize = ebtype->nextOf ()->size ();
 	  dinteger_t tsize = tbtype->nextOf ()->size ();
 
 	  tree ptrtype = build_ctype (tbtype->nextOf ()->pointerTo ());
 
-	  if (esize != tsize)
+	  if ((dim * esize) % tsize != 0)
 	    {
-	      /* Array element sizes do not match, so we must adjust the
-		 dimensions.  */
-	      if (tsize == 0 || (dim * esize) % tsize != 0)
-		{
-		  error ("cannot cast %qs to %qs since sizes do not line up",
-			 etype->toChars (), totype->toChars ());
-		  return error_mark_node;
-		}
-	      dim = (dim * esize) / tsize;
+	      error ("cannot cast %qs to %qs since sizes don't line up",
+		     etype->toChars (), totype->toChars ());
+	      return error_mark_node;
 	    }
+	  dim = (dim * esize) / tsize;
 
 	  /* Assumes casting to dynamic array of same type or void.  */
 	  return d_array_value (build_ctype (totype), size_int (dim),
@@ -564,9 +559,7 @@ convert_expr (tree exp, Type *etype, Type *totype)
       break;
 
     case Tnull:
-    case Tnoreturn:
-      /* Casting from `typeof(null)' for `null' expressions, or `typeof(*null)'
-	 for `noreturn' expressions is represented as all zeros.  */
+      /* Casting from typeof(null) is represented as all zeros.  */
       result = build_typeof_null_value (totype);
 
       /* Make sure the expression is still evaluated if necessary.  */
@@ -595,6 +588,7 @@ convert_expr (tree exp, Type *etype, Type *totype)
 	  return compound_expr (exp, build_zero_cst (build_ctype (tbtype)));
 	}
 
+      exp = fold_convert (build_ctype (etype), exp);
       gcc_assert (TREE_CODE (exp) != STRING_CST);
       break;
     }
@@ -602,40 +596,6 @@ convert_expr (tree exp, Type *etype, Type *totype)
   return result ? result : convert (build_ctype (totype), exp);
 }
 
-/* Return a TREE represenwation of EXPR, whose type has been converted from
- * ETYPE to TOTYPE, and is being used in an rvalue context.  */
-
-tree
-convert_for_rvalue (tree expr, Type *etype, Type *totype)
-{
-  tree result = NULL_TREE;
-
-  Type *ebtype = etype->toBasetype ();
-  Type *tbtype = totype->toBasetype ();
-
-  if (ebtype->ty == Tbool)
-    {
-      /* If casting from bool, the result is either 0 or 1, any other value
-	 violates @safe code, so enforce that it is never invalid.  */
-      if (CONSTANT_CLASS_P (expr))
-	result = d_truthvalue_conversion (expr);
-      else
-	{
-	  /* Reinterpret the boolean as an integer and test the first bit.
-	     The generated code should end up being equivalent to:
-		*cast(ubyte *)&expr & 1;  */
-	  machine_mode bool_mode = TYPE_MODE (TREE_TYPE (expr));
-	  tree mtype = lang_hooks.types.type_for_mode (bool_mode, 1);
-	  result = fold_build2 (BIT_AND_EXPR, mtype,
-				build_vconvert (mtype, expr),
-				build_one_cst (mtype));
-	}
-
-      result = convert (build_ctype (tbtype), result);
-    }
-
-  return result ? result : convert_expr (expr, etype, totype);
-}
 
 /* Apply semantics of assignment to a value of type TOTYPE to EXPR
    (e.g., pointer = array -> pointer = &array[0])
@@ -657,13 +617,13 @@ convert_for_assignment (tree expr, Type *etype, Type *totype)
 
       if (same_type_p (telem, ebtype))
 	{
-	  TypeSArray *sa_type = tbtype->isTypeSArray ();
+	  TypeSArray *sa_type = (TypeSArray *) tbtype;
 	  uinteger_t count = sa_type->dim->toUInteger ();
 
 	  tree ctor = build_constructor (build_ctype (totype), NULL);
 	  if (count)
 	    {
-	      vec <constructor_elt, va_gc> *ce = NULL;
+	      vec<constructor_elt, va_gc> *ce = NULL;
 	      tree index = build2 (RANGE_EXPR, build_ctype (Type::tsize_t),
 				   size_zero_node, size_int (count - 1));
 	      tree value = convert_for_assignment (expr, etype, sa_type->next);
@@ -713,10 +673,10 @@ convert_for_argument (tree expr, Parameter *arg)
       if (!POINTER_TYPE_P (TREE_TYPE (expr)))
 	return build_address (expr);
     }
-  else if (parameter_reference_p (arg))
+  else if (argument_reference_p (arg))
     {
       /* Front-end shouldn't automatically take the address.  */
-      return convert (parameter_type (arg), build_address (expr));
+      return convert (type_passed_as (arg), build_address (expr));
     }
 
   return expr;
@@ -783,16 +743,6 @@ convert_for_condition (tree expr, Type *type)
 	break;
       }
 
-    case Tnoreturn:
-      /* Front-end allows conditionals that never return, represent the
-	 conditional result value as all zeros.  */
-      result = build_zero_cst (d_bool_type);
-
-      /* Make sure the expression is still evaluated if necessary.  */
-      if (TREE_SIDE_EFFECTS (expr))
-	result = compound_expr (expr, result);
-      break;
-
     default:
       result = expr;
       break;
@@ -825,23 +775,21 @@ d_array_convert (Expression *exp)
 
 /* Convert EXP to a dynamic array, where ETYPE is the element type.
    Similar to above, except that EXP is allowed to be an element of an array.
-   Temporary variables are created inline if EXP is not an lvalue.  */
+   Temporary variables that need some kind of BIND_EXPR are pushed to VARS.  */
 
 tree
-d_array_convert (Type *etype, Expression *exp)
+d_array_convert (Type *etype, Expression *exp, vec<tree, va_gc> **vars)
 {
   Type *tb = exp->type->toBasetype ();
 
   if ((tb->ty != Tarray && tb->ty != Tsarray) || same_type_p (tb, etype))
     {
       /* Convert single element to an array.  */
-      tree expr = build_expr (exp);
+      tree var = NULL_TREE;
+      tree expr = maybe_temporary_var (build_expr (exp), &var);
 
-      if (!exp->isLvalue ())
-	{
-	  tree var = build_local_temp (TREE_TYPE (expr));
-	  expr = compound_expr (modify_expr (var, expr), var);
-	}
+      if (var != NULL_TREE)
+	vec_safe_push (*vars, var);
 
       return d_array_value (build_ctype (exp->type->arrayOf ()),
 			    size_int (1), build_address (expr));

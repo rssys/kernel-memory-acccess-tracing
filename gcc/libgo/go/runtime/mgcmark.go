@@ -21,6 +21,10 @@ const (
 	// BSS root.
 	rootBlockBytes = 256 << 10
 
+	// rootBlockSpans is the number of spans to scan per span
+	// root.
+	rootBlockSpans = 8 * 1024 // 64MB worth of spans
+
 	// maxObletBytes is the maximum bytes of an object to scan at
 	// once. Larger objects will be split up into "oblets" of at
 	// most this size. Since we can scan 1–2 MB/ms, 128 KB bounds
@@ -37,24 +41,18 @@ const (
 	// a syscall, so its overhead is nontrivial). Higher values
 	// make the system less responsive to incoming work.
 	drainCheckThreshold = 100000
-
-	// pagesPerSpanRoot indicates how many pages to scan from a span root
-	// at a time. Used by special root marking.
-	//
-	// Higher values improve throughput by increasing locality, but
-	// increase the minimum latency of a marking operation.
-	//
-	// Must be a multiple of the pageInUse bitmap element size and
-	// must also evenly divide pagesPerArena.
-	pagesPerSpanRoot = 512
 )
 
 // gcMarkRootPrepare queues root scanning jobs (stacks, globals, and
 // some miscellany) and initializes scanning-related state.
 //
+// The caller must have call gcCopySpans().
+//
 // The world must be stopped.
+//
+//go:nowritebarrier
 func gcMarkRootPrepare() {
-	assertWorldStopped()
+	work.nFlushCacheRoots = 0
 
 	work.nDataRoots = 0
 
@@ -70,32 +68,24 @@ func gcMarkRootPrepare() {
 	// We depend on addfinalizer to mark objects that get
 	// finalizers after root marking.
 	//
-	// We're going to scan the whole heap (that was available at the time the
-	// mark phase started, i.e. markArenas) for in-use spans which have specials.
-	//
-	// Break up the work into arenas, and further into chunks.
-	//
-	// Snapshot allArenas as markArenas. This snapshot is safe because allArenas
-	// is append-only.
-	mheap_.markArenas = mheap_.allArenas[:len(mheap_.allArenas):len(mheap_.allArenas)]
-	work.nSpanRoots = len(mheap_.markArenas) * (pagesPerArena / pagesPerSpanRoot)
+	// We're only interested in scanning the in-use spans,
+	// which will all be swept at this point. More spans
+	// may be added to this list during concurrent GC, but
+	// we only care about spans that were allocated before
+	// this mark phase.
+	work.nSpanRoots = mheap_.sweepSpans[mheap_.sweepgen/2%2].numBlocks()
 
 	// Scan stacks.
 	//
 	// Gs may be created after this point, but it's okay that we
 	// ignore them because they begin life without any roots, so
 	// there's nothing to scan, and any roots they create during
-	// the concurrent phase will be caught by the write barrier.
+	// the concurrent phase will be scanned during mark
+	// termination.
 	work.nStackRoots = int(atomic.Loaduintptr(&allglen))
 
 	work.markrootNext = 0
-	work.markrootJobs = uint32(fixedRootCount + work.nDataRoots + work.nSpanRoots + work.nStackRoots)
-
-	// Calculate base indexes of each root type
-	work.baseData = uint32(fixedRootCount)
-	work.baseSpans = work.baseData + uint32(work.nDataRoots)
-	work.baseStacks = work.baseSpans + uint32(work.nSpanRoots)
-	work.baseEnd = work.baseStacks + uint32(work.nStackRoots)
+	work.markrootJobs = uint32(fixedRootCount + work.nFlushCacheRoots + work.nDataRoots + work.nSpanRoots + work.nStackRoots)
 }
 
 // gcMarkRootCheck checks that all roots have been scanned. It is
@@ -106,26 +96,25 @@ func gcMarkRootCheck() {
 		throw("left over markroot jobs")
 	}
 
+	lock(&allglock)
 	// Check that stacks have been scanned.
-	//
-	// We only check the first nStackRoots Gs that we should have scanned.
-	// Since we don't care about newer Gs (see comment in
-	// gcMarkRootPrepare), no locking is required.
-	i := 0
-	forEachGRace(func(gp *g) {
-		if i >= work.nStackRoots {
-			return
-		}
-
+	var gp *g
+	for i := 0; i < work.nStackRoots; i++ {
+		gp = allgs[i]
 		if !gp.gcscandone {
-			println("gp", gp, "goid", gp.goid,
-				"status", readgstatus(gp),
-				"gcscandone", gp.gcscandone)
-			throw("scan missed a g")
+			goto fail
 		}
+	}
+	unlock(&allglock)
+	return
 
-		i++
-	})
+fail:
+	println("gp", gp, "goid", gp.goid,
+		"status", readgstatus(gp),
+		"gcscandone", gp.gcscandone,
+		"gcscanvalid", gp.gcscanvalid)
+	unlock(&allglock) // Avoid self-deadlock with traceback.
+	throw("scan missed a g")
 }
 
 // ptrmask for an allocation containing a single pointer.
@@ -139,11 +128,22 @@ var oneptrmask = [...]uint8{1}
 //
 //go:nowritebarrier
 func markroot(gcw *gcWork, i uint32) {
+	// TODO(austin): This is a bit ridiculous. Compute and store
+	// the bases in gcMarkRootPrepare instead of the counts.
+	baseFlushCache := uint32(fixedRootCount)
+	baseData := baseFlushCache + uint32(work.nFlushCacheRoots)
+	baseSpans := baseData + uint32(work.nDataRoots)
+	baseStacks := baseSpans + uint32(work.nSpanRoots)
+	end := baseStacks + uint32(work.nStackRoots)
+
 	// Note: if you add a case here, please also update heapdump.go:dumproots.
 	switch {
-	case work.baseData <= i && i < work.baseSpans:
+	case baseFlushCache <= i && i < baseData:
+		flushmcache(int(i - baseFlushCache))
+
+	case baseData <= i && i < baseSpans:
 		roots := gcRoots
-		c := work.baseData
+		c := baseData
 		for roots != nil {
 			if i == c {
 				markrootBlock(roots, gcw)
@@ -162,18 +162,15 @@ func markroot(gcw *gcWork, i uint32) {
 	case i == fixedRootFreeGStacks:
 		// FIXME: We don't do this for gccgo.
 
-	case work.baseSpans <= i && i < work.baseStacks:
+	case baseSpans <= i && i < baseStacks:
 		// mark mspan.specials
-		markrootSpans(gcw, int(i-work.baseSpans))
+		markrootSpans(gcw, int(i-baseSpans))
 
 	default:
 		// the rest is scanning goroutine stacks
 		var gp *g
-		if work.baseStacks <= i && i < work.baseEnd {
-			// N.B. Atomic read of allglen in gcMarkRootPrepare
-			// acts as a barrier to ensure that allgs must be large
-			// enough to contain all relevant Gs.
-			gp = allgs[i-work.baseStacks]
+		if baseStacks <= i && i < end {
+			gp = allgs[i-baseStacks]
 		} else {
 			throw("markroot: bad index")
 		}
@@ -185,7 +182,7 @@ func markroot(gcw *gcWork, i uint32) {
 			gp.waitsince = work.tstart
 		}
 
-		// scanstack must be done on the system stack in case
+		// scang must be done on the system stack in case
 		// we're trying to scan our own stack.
 		systemstack(func() {
 			// If this is a self-scan, put the user G in
@@ -199,24 +196,14 @@ func markroot(gcw *gcWork, i uint32) {
 				userG.waitreason = waitReasonGarbageCollectionScan
 			}
 
-			// TODO: suspendG blocks (and spins) until gp
-			// stops, which may take a while for
+			// TODO: scang blocks until gp's stack has
+			// been scanned, which may take a while for
 			// running goroutines. Consider doing this in
 			// two phases where the first is non-blocking:
 			// we scan the stacks we can and ask running
 			// goroutines to scan themselves; and the
 			// second blocks.
-			stopped := suspendG(gp)
-			if stopped.dead {
-				gp.gcscandone = true
-				return
-			}
-			if gp.gcscandone {
-				throw("g already scanned")
-			}
-			scanstack(gp, gcw)
-			gp.gcscandone = true
-			resumeG(stopped)
+			scang(gp, gcw)
 
 			if selfScan {
 				casgstatus(userG, _Gwaiting, _Grunning)
@@ -235,7 +222,7 @@ func markrootBlock(roots *gcRootList, gcw *gcWork) {
 	}
 }
 
-// markrootSpans marks roots for one shard of markArenas.
+// markrootSpans marks roots for one shard of work.spans.
 //
 //go:nowritebarrier
 func markrootSpans(gcw *gcWork, shard int) {
@@ -248,70 +235,64 @@ func markrootSpans(gcw *gcWork, shard int) {
 	// 2) Finalizer specials (which are not in the garbage
 	// collected heap) are roots. In practice, this means the fn
 	// field must be scanned.
+	//
+	// TODO(austin): There are several ideas for making this more
+	// efficient in issue #11485.
+
 	sg := mheap_.sweepgen
-
-	// Find the arena and page index into that arena for this shard.
-	ai := mheap_.markArenas[shard/(pagesPerArena/pagesPerSpanRoot)]
-	ha := mheap_.arenas[ai.l1()][ai.l2()]
-	arenaPage := uint(uintptr(shard) * pagesPerSpanRoot % pagesPerArena)
-
-	// Construct slice of bitmap which we'll iterate over.
-	specialsbits := ha.pageSpecials[arenaPage/8:]
-	specialsbits = specialsbits[:pagesPerSpanRoot/8]
-	for i := range specialsbits {
-		// Find set bits, which correspond to spans with specials.
-		specials := atomic.Load8(&specialsbits[i])
-		if specials == 0 {
+	spans := mheap_.sweepSpans[mheap_.sweepgen/2%2].block(shard)
+	// Note that work.spans may not include spans that were
+	// allocated between entering the scan phase and now. This is
+	// okay because any objects with finalizers in those spans
+	// must have been allocated and given finalizers after we
+	// entered the scan phase, so addfinalizer will have ensured
+	// the above invariants for them.
+	for _, s := range spans {
+		if s.state != mSpanInUse {
 			continue
 		}
-		for j := uint(0); j < 8; j++ {
-			if specials&(1<<j) == 0 {
+		// Check that this span was swept (it may be cached or uncached).
+		if !useCheckmark && !(s.sweepgen == sg || s.sweepgen == sg+3) {
+			// sweepgen was updated (+2) during non-checkmark GC pass
+			print("sweep ", s.sweepgen, " ", sg, "\n")
+			throw("gc: unswept span")
+		}
+
+		// Speculatively check if there are any specials
+		// without acquiring the span lock. This may race with
+		// adding the first special to a span, but in that
+		// case addfinalizer will observe that the GC is
+		// active (which is globally synchronized) and ensure
+		// the above invariants. We may also ensure the
+		// invariants, but it's okay to scan an object twice.
+		if s.specials == nil {
+			continue
+		}
+
+		// Lock the specials to prevent a special from being
+		// removed from the list while we're traversing it.
+		lock(&s.speciallock)
+
+		for sp := s.specials; sp != nil; sp = sp.next {
+			if sp.kind != _KindSpecialFinalizer {
 				continue
 			}
-			// Find the span for this bit.
-			//
-			// This value is guaranteed to be non-nil because having
-			// specials implies that the span is in-use, and since we're
-			// currently marking we can be sure that we don't have to worry
-			// about the span being freed and re-used.
-			s := ha.spans[arenaPage+uint(i)*8+j]
+			// don't mark finalized object, but scan it so we
+			// retain everything it points to.
+			spf := (*specialfinalizer)(unsafe.Pointer(sp))
+			// A finalizer can be set for an inner byte of an object, find object beginning.
+			p := s.base() + uintptr(spf.special.offset)/s.elemsize*s.elemsize
 
-			// The state must be mSpanInUse if the specials bit is set, so
-			// sanity check that.
-			if state := s.state.get(); state != mSpanInUse {
-				print("s.state = ", state, "\n")
-				throw("non in-use span found with specials bit set")
-			}
-			// Check that this span was swept (it may be cached or uncached).
-			if !useCheckmark && !(s.sweepgen == sg || s.sweepgen == sg+3) {
-				// sweepgen was updated (+2) during non-checkmark GC pass
-				print("sweep ", s.sweepgen, " ", sg, "\n")
-				throw("gc: unswept span")
-			}
+			// Mark everything that can be reached from
+			// the object (but *not* the object itself or
+			// we'll never collect it).
+			scanobject(p, gcw)
 
-			// Lock the specials to prevent a special from being
-			// removed from the list while we're traversing it.
-			lock(&s.speciallock)
-			for sp := s.specials; sp != nil; sp = sp.next {
-				if sp.kind != _KindSpecialFinalizer {
-					continue
-				}
-				// don't mark finalized object, but scan it so we
-				// retain everything it points to.
-				spf := (*specialfinalizer)(unsafe.Pointer(sp))
-				// A finalizer can be set for an inner byte of an object, find object beginning.
-				p := s.base() + uintptr(spf.special.offset)/s.elemsize*s.elemsize
-
-				// Mark everything that can be reached from
-				// the object (but *not* the object itself or
-				// we'll never collect it).
-				scanobject(p, gcw)
-
-				// The special itself is a root.
-				scanblock(uintptr(unsafe.Pointer(&spf.fn)), sys.PtrSize, &oneptrmask[0], gcw)
-			}
-			unlock(&s.speciallock)
+			// The special itself is a root.
+			scanblock(uintptr(unsafe.Pointer(&spf.fn)), sys.PtrSize, &oneptrmask[0], gcw)
 		}
+
+		unlock(&s.speciallock)
 	}
 }
 
@@ -335,13 +316,11 @@ retry:
 	// balance positive. When the required amount of work is low,
 	// we over-assist to build up credit for future allocations
 	// and amortize the cost of assisting.
-	assistWorkPerByte := float64frombits(atomic.Load64(&gcController.assistWorkPerByte))
-	assistBytesPerWork := float64frombits(atomic.Load64(&gcController.assistBytesPerWork))
 	debtBytes := -gp.gcAssistBytes
-	scanWork := int64(assistWorkPerByte * float64(debtBytes))
+	scanWork := int64(gcController.assistWorkPerByte * float64(debtBytes))
 	if scanWork < gcOverAssistWork {
 		scanWork = gcOverAssistWork
-		debtBytes = int64(assistBytesPerWork * float64(scanWork))
+		debtBytes = int64(gcController.assistBytesPerWork * float64(scanWork))
 	}
 
 	// Steal as much credit as we can from the background GC's
@@ -355,7 +334,7 @@ retry:
 	if bgScanCredit > 0 {
 		if bgScanCredit < scanWork {
 			stolen = bgScanCredit
-			gp.gcAssistBytes += 1 + int64(assistBytesPerWork*float64(stolen))
+			gp.gcAssistBytes += 1 + int64(gcController.assistBytesPerWork*float64(stolen))
 		} else {
 			stolen = scanWork
 			gp.gcAssistBytes += debtBytes
@@ -480,8 +459,7 @@ func gcAssistAlloc1(gp *g, scanWork int64) {
 	// this scan work counts for. The "1+" is a poor man's
 	// round-up, to ensure this adds credit even if
 	// assistBytesPerWork is very low.
-	assistBytesPerWork := float64frombits(atomic.Load64(&gcController.assistBytesPerWork))
-	gp.gcAssistBytes += 1 + int64(assistBytesPerWork*float64(workDone))
+	gp.gcAssistBytes += 1 + int64(gcController.assistBytesPerWork*float64(workDone))
 
 	// If this is the last worker and we ran out of work,
 	// signal a completion point.
@@ -575,8 +553,7 @@ func gcFlushBgCredit(scanWork int64) {
 		return
 	}
 
-	assistBytesPerWork := float64frombits(atomic.Load64(&gcController.assistBytesPerWork))
-	scanBytes := int64(float64(scanWork) * assistBytesPerWork)
+	scanBytes := int64(float64(scanWork) * gcController.assistBytesPerWork)
 
 	lock(&work.assistQueue.lock)
 	for !work.assistQueue.q.empty() && scanBytes > 0 {
@@ -609,8 +586,7 @@ func gcFlushBgCredit(scanWork int64) {
 
 	if scanBytes > 0 {
 		// Convert from scan bytes back to work.
-		assistWorkPerByte := float64frombits(atomic.Load64(&gcController.assistWorkPerByte))
-		scanWork = int64(float64(scanBytes) * assistWorkPerByte)
+		scanWork = int64(float64(scanBytes) * gcController.assistWorkPerByte)
 		atomic.Xaddint64(&gcController.bgScanCredit, scanWork)
 	}
 	unlock(&work.assistQueue.lock)
@@ -624,16 +600,16 @@ func doscanstackswitch(*g, *g)
 
 // scanstack scans gp's stack, greying all pointers found on the stack.
 //
-// scanstack will also shrink the stack if it is safe to do so. If it
-// is not, it schedules a stack shrink for the next synchronous safe
-// point.
-//
 // scanstack is marked go:systemstack because it must not be preempted
 // while using a workbuf.
 //
 //go:nowritebarrier
 //go:systemstack
 func scanstack(gp *g, gcw *gcWork) {
+	if gp.gcscanvalid {
+		return
+	}
+
 	if readgstatus(gp)&_Gscan == 0 {
 		print("runtime:scanstack: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", hex(readgstatus(gp)), "\n")
 		throw("scanstack - bad status")
@@ -646,9 +622,17 @@ func scanstack(gp *g, gcw *gcWork) {
 	case _Gdead:
 		return
 	case _Grunning:
-		print("runtime: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", readgstatus(gp), "\n")
-		throw("scanstack: goroutine not stopped")
-	case _Grunnable, _Gsyscall, _Gwaiting:
+		// ok for gccgo, though not for gc.
+		if usestackmaps {
+			print("runtime: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", readgstatus(gp), "\n")
+			throw("scanstack: goroutine not stopped")
+		}
+	case _Gsyscall:
+		if usestackmaps {
+			print("runtime: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", readgstatus(gp), "\n")
+			throw("scanstack: goroutine in syscall")
+		}
+	case _Grunnable, _Gwaiting:
 		// ok
 	}
 
@@ -660,8 +644,6 @@ func scanstack(gp *g, gcw *gcWork) {
 			doscanstack(gp, gcw)
 		} else if gp.entry != nil {
 			// This is a newly created g that hasn't run. No stack to scan.
-		} else if readgstatus(gp)&^_Gscan == _Gsyscall {
-			scanSyscallStack(gp, gcw)
 		} else {
 			// Scanning another g's stack. We need to switch to that g
 			// to unwind its stack. And switch back after scan.
@@ -675,10 +657,7 @@ func scanstack(gp *g, gcw *gcWork) {
 		scanstackblock(uintptr(unsafe.Pointer(&gp.context)), unsafe.Sizeof(gp.context), gcw)
 	}
 
-	// Note: in the gc runtime scanstack also scans defer records.
-	// This is necessary as it uses stack objects (a.k.a. stack tracing).
-	// We don't (yet) do stack objects, and regular stack/heap scan
-	// will take care of defer records just fine.
+	gp.gcscanvalid = true
 }
 
 // scanstackswitch scans gp's stack by switching (gogo) to gp and
@@ -716,38 +695,6 @@ func scanstackswitch(gp *g, gcw *gcWork) {
 	releasem(mp)
 }
 
-// scanSyscallStack scans the stack of a goroutine blocked in a
-// syscall by waking it up and asking it to scan its own stack.
-func scanSyscallStack(gp *g, gcw *gcWork) {
-	if gp.scanningself {
-		// We've suspended the goroutine by setting the _Gscan bit,
-		// so this shouldn't be possible.
-		throw("scanSyscallStack: scanningself")
-	}
-	if gp.gcscandone {
-		// We've suspended the goroutine by setting the _Gscan bit,
-		// so this shouldn't be possible.
-
-		throw("scanSyscallStack: gcscandone")
-	}
-
-	gp.gcScannedSyscallStack = false
-	for {
-		mp := gp.m
-		noteclear(&mp.scannote)
-		gp.scangcw = uintptr(unsafe.Pointer(gcw))
-		tgkill(getpid(), _pid_t(mp.procid), _SIGURG)
-		// Wait for gp to scan its own stack.
-		notesleep(&mp.scannote)
-		if gp.gcScannedSyscallStack {
-			return
-		}
-
-		// The signal was delivered at a bad time.  Try again.
-		osyield()
-	}
-}
-
 type gcDrainFlags int
 
 const (
@@ -775,8 +722,6 @@ const (
 // If flags&gcDrainFlushBgCredit != 0, gcDrain flushes scan work
 // credit to gcController.bgScanCredit every gcCreditSlack units of
 // scan work.
-//
-// gcDrain will always return if there is a pending STW.
 //
 //go:nowritebarrier
 func gcDrain(gcw *gcWork, flags gcDrainFlags) {
@@ -806,8 +751,7 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 
 	// Drain root marking jobs.
 	if work.markrootNext < work.markrootJobs {
-		// Stop if we're preemptible or if someone wants to STW.
-		for !(gp.preempt && (preemptible || atomic.Load(&sched.gcwaiting) != 0)) {
+		for !(preemptible && gp.preempt) {
 			job := atomic.Xadd(&work.markrootNext, +1) - 1
 			if job >= work.markrootJobs {
 				break
@@ -820,8 +764,7 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	}
 
 	// Drain heap marking jobs.
-	// Stop if we're preemptible or if someone wants to STW.
-	for !(gp.preempt && (preemptible || atomic.Load(&sched.gcwaiting) != 0)) {
+	for !(preemptible && gp.preempt) {
 		// Try to keep work available on the global queue. We used to
 		// check if there were waiting workers, but it's better to
 		// just keep work available than to make workers wait. In the
@@ -1050,10 +993,19 @@ func scanobject(b uintptr, gcw *gcWork) {
 	}
 
 	var i uintptr
-	for i = 0; i < n; i, hbits = i+sys.PtrSize, hbits.next() {
+	for i = 0; i < n; i += sys.PtrSize {
+		// Find bits for this word.
+		if i != 0 {
+			// Avoid needless hbits.next() on last iteration.
+			hbits = hbits.next()
+		}
 		// Load bits once. See CL 22712 and issue 16973 for discussion.
 		bits := hbits.bits()
-		if bits&bitScan == 0 {
+		// During checkmarking, 1-word objects store the checkmark
+		// in the type bit for the one word. The only one-word objects
+		// are pointers, or else they'd be merged with other non-pointer
+		// data into larger allocations.
+		if i != 1*sys.PtrSize && bits&bitScan == 0 {
 			break // no more pointers in this object
 		}
 		if bits&bitPointer == 0 {
@@ -1085,7 +1037,7 @@ func scanobject(b uintptr, gcw *gcWork) {
 	gcw.scanWork += int64(i)
 }
 
-//go:linkname scanstackblock
+//go:linkname scanstackblock runtime.scanstackblock
 
 // scanstackblock is called by the stack scanning code in C to
 // actually find and mark pointers in the stack block. This is like
@@ -1107,7 +1059,7 @@ func scanstackblock(b, n uintptr, gcw *gcWork) {
 
 // scanstackblockwithmap is like scanstackblock, but with an explicit
 // pointer bitmap. This is used only when precise stack scan is enabled.
-//go:linkname scanstackblockwithmap
+//go:linkname scanstackblockwithmap runtime.scanstackblockwithmap
 //go:nowritebarrier
 func scanstackblockwithmap(pc, b0, n0 uintptr, ptrmask *uint8, gcw *gcWork) {
 	// Use local copies of original parameters, so that a stack trace
@@ -1130,10 +1082,10 @@ func scanstackblockwithmap(pc, b0, n0 uintptr, ptrmask *uint8, gcw *gcWork) {
 				if obj != 0 {
 					o, span, objIndex := findObject(obj, b, i, false)
 					if obj < minPhysPageSize ||
-						span != nil && span.state.get() != mSpanManual &&
-							(obj < span.base() || obj >= span.limit || span.state.get() != mSpanInUse) {
+						span != nil && span.state != mSpanManual &&
+							(obj < span.base() || obj >= span.limit || span.state != mSpanInUse) {
 						print("runtime: found in object at *(", hex(b), "+", hex(i), ") = ", hex(obj), ", pc=", hex(pc), "\n")
-						name, file, line, _ := funcfileline(pc, -1, false)
+						name, file, line := funcfileline(pc, -1)
 						print(name, "\n", file, ":", line, "\n")
 						//gcDumpObject("object", b, i)
 						throw("found bad pointer in Go stack (incorrect use of unsafe or cgo?)")
@@ -1175,9 +1127,34 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 	mbits := span.markBitsForIndex(objIndex)
 
 	if useCheckmark {
-		if setCheckmark(obj, base, off, mbits, forStack) {
-			// Already marked.
+		if !mbits.isMarked() {
+			// Stack scanning is conservative, so we can
+			// see a reference to an object not previously
+			// found. Assume the object was correctly not
+			// marked and ignore the pointer.
+			if forStack {
+				return
+			}
+			printlock()
+			print("runtime:greyobject: checkmarks finds unexpected unmarked object obj=", hex(obj), "\n")
+			print("runtime: found obj at *(", hex(base), "+", hex(off), ")\n")
+
+			// Dump the source (base) object
+			gcDumpObject("base", base, off)
+
+			// Dump the object
+			gcDumpObject("obj", obj, ^uintptr(0))
+
+			getg().m.traceback = 2
+			throw("checkmark found unmarked object")
+		}
+		hbits := heapBitsForAddr(obj)
+		if hbits.isCheckmarked(span.elemsize) {
 			return
+		}
+		hbits.setCheckmarked(span.elemsize)
+		if !hbits.isCheckmarked(span.elemsize) {
+			throw("setCheckmarked and isCheckmarked disagree")
 		}
 	} else {
 		// Stack scanning is conservative, so we can see a
@@ -1236,15 +1213,15 @@ func gcDumpObject(label string, obj, off uintptr) {
 		return
 	}
 	print(" s.base()=", hex(s.base()), " s.limit=", hex(s.limit), " s.spanclass=", s.spanclass, " s.elemsize=", s.elemsize, " s.state=")
-	if state := s.state.get(); 0 <= state && int(state) < len(mSpanStateNames) {
-		print(mSpanStateNames[state], "\n")
+	if 0 <= s.state && int(s.state) < len(mSpanStateNames) {
+		print(mSpanStateNames[s.state], "\n")
 	} else {
-		print("unknown(", state, ")\n")
+		print("unknown(", s.state, ")\n")
 	}
 
 	skipped := false
 	size := s.elemsize
-	if s.state.get() == mSpanManual && size == 0 {
+	if s.state == mSpanManual && size == 0 {
 		// We're printing something from a stack frame. We
 		// don't know how big it is, so just show up to an
 		// including off.
@@ -1280,21 +1257,11 @@ func gcDumpObject(label string, obj, off uintptr) {
 //
 //go:nowritebarrier
 //go:nosplit
-func gcmarknewobject(span *mspan, obj, size, scanSize uintptr) {
+func gcmarknewobject(obj, size, scanSize uintptr) {
 	if useCheckmark { // The world should be stopped so this should not happen.
 		throw("gcmarknewobject called while doing checkmark")
 	}
-
-	// Mark object.
-	objIndex := span.objIndex(obj)
-	span.markBitsForIndex(objIndex).setMarked()
-
-	// Mark span.
-	arena, pageIdx, pageMask := pageIndexOf(span.base())
-	if arena.pageMarks[pageIdx]&pageMask == 0 {
-		atomic.Or8(&arena.pageMarks[pageIdx], pageMask)
-	}
-
+	markBitsForAddr(obj).setMarked()
 	gcw := &getg().m.p.ptr().gcw
 	gcw.bytesMarked += uint64(size)
 	gcw.scanWork += int64(scanSize)
@@ -1304,8 +1271,6 @@ func gcmarknewobject(span *mspan, obj, size, scanSize uintptr) {
 //
 // The world must be stopped.
 func gcMarkTinyAllocs() {
-	assertWorldStopped()
-
 	for _, p := range allp {
 		c := p.mcache
 		if c == nil || c.tiny == 0 {
@@ -1314,5 +1279,47 @@ func gcMarkTinyAllocs() {
 		_, span, objIndex := findObject(c.tiny, 0, 0, false)
 		gcw := &p.gcw
 		greyobject(c.tiny, 0, 0, span, gcw, objIndex, false)
+	}
+}
+
+// Checkmarking
+
+// To help debug the concurrent GC we remark with the world
+// stopped ensuring that any object encountered has their normal
+// mark bit set. To do this we use an orthogonal bit
+// pattern to indicate the object is marked. The following pattern
+// uses the upper two bits in the object's boundary nibble.
+// 01: scalar  not marked
+// 10: pointer not marked
+// 11: pointer     marked
+// 00: scalar      marked
+// Xoring with 01 will flip the pattern from marked to unmarked and vica versa.
+// The higher bit is 1 for pointers and 0 for scalars, whether the object
+// is marked or not.
+// The first nibble no longer holds the typeDead pattern indicating that the
+// there are no more pointers in the object. This information is held
+// in the second nibble.
+
+// If useCheckmark is true, marking of an object uses the
+// checkmark bits (encoding above) instead of the standard
+// mark bits.
+var useCheckmark = false
+
+//go:nowritebarrier
+func initCheckmarks() {
+	useCheckmark = true
+	for _, s := range mheap_.allspans {
+		if s.state == mSpanInUse {
+			heapBitsForAddr(s.base()).initCheckmarkSpan(s.layout())
+		}
+	}
+}
+
+func clearCheckmarks() {
+	useCheckmark = false
+	for _, s := range mheap_.allspans {
+		if s.state == mSpanInUse {
+			heapBitsForAddr(s.base()).clearCheckmarkSpan(s.layout())
+		}
 	}
 }

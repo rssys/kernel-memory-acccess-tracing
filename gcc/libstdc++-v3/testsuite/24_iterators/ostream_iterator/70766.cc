@@ -1,4 +1,4 @@
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -33,5 +33,4 @@ test01()
 {
   std::basic_ostream<char, adl::traits> os(nullptr);
   std::ostream_iterator<int, char, adl::traits> oi(os);
-  std::ostream_iterator<int, char, adl::traits> oi2(os, "");
 }

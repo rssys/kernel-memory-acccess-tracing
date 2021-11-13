@@ -1,5 +1,5 @@
 /* Loop manipulation code for GNU compiler.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -32,13 +32,13 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa-loop-manip.h"
 #include "dumpfile.h"
 
-static void copy_loops_to (class loop **, int,
-			   class loop *);
+static void copy_loops_to (struct loop **, int,
+			   struct loop *);
 static void loop_redirect_edge (edge, basic_block);
 static void remove_bbs (basic_block *, int);
 static bool rpe_enum_p (const_basic_block, const void *);
 static int find_path (edge, basic_block **);
-static void fix_loop_placements (class loop *, bool *);
+static void fix_loop_placements (struct loop *, bool *);
 static bool fix_bb_placement (basic_block);
 static void fix_bb_placements (basic_block, bool *, bitmap);
 
@@ -89,7 +89,7 @@ fix_bb_placement (basic_block bb)
 {
   edge e;
   edge_iterator ei;
-  class loop *loop = current_loops->tree_root, *act;
+  struct loop *loop = current_loops->tree_root, *act;
 
   FOR_EACH_EDGE (e, ei, bb->succs)
     {
@@ -122,12 +122,12 @@ fix_bb_placement (basic_block bb)
    invalidate the information about irreducible regions.  */
 
 static bool
-fix_loop_placement (class loop *loop, bool *irred_invalidated)
+fix_loop_placement (struct loop *loop, bool *irred_invalidated)
 {
   unsigned i;
   edge e;
-  auto_vec<edge> exits = get_loop_exit_edges (loop);
-  class loop *father = current_loops->tree_root, *act;
+  vec<edge> exits = get_loop_exit_edges (loop);
+  struct loop *father = current_loops->tree_root, *act;
   bool ret = false;
 
   FOR_EACH_VEC_ELT (exits, i, e)
@@ -157,6 +157,7 @@ fix_loop_placement (class loop *loop, bool *irred_invalidated)
       ret = true;
     }
 
+  exits.release ();
   return ret;
 }
 
@@ -181,7 +182,7 @@ fix_bb_placements (basic_block from,
 		   bitmap loop_closed_ssa_invalidated)
 {
   basic_block *queue, *qtop, *qbeg, *qend;
-  class loop *base_loop, *target_loop;
+  struct loop *base_loop, *target_loop;
   edge e;
 
   /* We pass through blocks back-reachable from FROM, testing whether some
@@ -254,7 +255,7 @@ fix_bb_placements (basic_block from,
       FOR_EACH_EDGE (e, ei, from->preds)
 	{
 	  basic_block pred = e->src;
-	  class loop *nca;
+	  struct loop *nca;
 
 	  if (e->flags & EDGE_IRREDUCIBLE_LOOP)
 	    *irred_invalidated = true;
@@ -306,7 +307,7 @@ remove_path (edge e, bool *irred_invalidated,
   int i, nrem, n_bord_bbs;
   bool local_irred_invalidated = false;
   edge_iterator ei;
-  class loop *l, *f;
+  struct loop *l, *f;
 
   if (! irred_invalidated)
     irred_invalidated = &local_irred_invalidated;
@@ -363,6 +364,7 @@ remove_path (edge e, bool *irred_invalidated,
 
   for (i = 0; i < nrem; i++)
     {
+      bb = rem_bbs[i];
       FOR_EACH_EDGE (ae, ei, rem_bbs[i]->succs)
 	if (ae->dest != EXIT_BLOCK_PTR_FOR_FN (cfun)
 	    && !bitmap_bit_p (seen, ae->dest->index))
@@ -426,7 +428,7 @@ remove_path (edge e, bool *irred_invalidated,
 /* Creates place for a new LOOP in loops structure of FN.  */
 
 void
-place_new_loop (struct function *fn, class loop *loop)
+place_new_loop (struct function *fn, struct loop *loop)
 {
   loop->num = number_of_loops (fn);
   vec_safe_push (loops_for_fn (fn)->larray, loop);
@@ -437,11 +439,11 @@ place_new_loop (struct function *fn, class loop *loop)
    outer.  */
 
 void
-add_loop (class loop *loop, class loop *outer)
+add_loop (struct loop *loop, struct loop *outer)
 {
   basic_block *bbs;
   int i, n;
-  class loop *subloop;
+  struct loop *subloop;
   edge e;
   edge_iterator ei;
 
@@ -489,7 +491,7 @@ add_loop (class loop *loop, class loop *outer)
 /* Scale profile of loop by P.  */
 
 void
-scale_loop_frequencies (class loop *loop, profile_probability p)
+scale_loop_frequencies (struct loop *loop, profile_probability p)
 {
   basic_block *bbs;
 
@@ -507,7 +509,7 @@ scale_loop_frequencies (class loop *loop, profile_probability p)
    they need to be scaled synchronously.  */
 
 void
-scale_loop_profile (class loop *loop, profile_probability p,
+scale_loop_profile (struct loop *loop, profile_probability p,
 		    gcov_type iteration_bound)
 {
   edge e, preheader_e;
@@ -617,7 +619,7 @@ scale_loop_profile (class loop *loop, profile_probability p,
 /* Recompute dominance information for basic blocks outside LOOP.  */
 
 static void
-update_dominators_in_loop (class loop *loop)
+update_dominators_in_loop (struct loop *loop)
 {
   vec<basic_block> dom_bbs = vNULL;
   basic_block *body;
@@ -762,17 +764,17 @@ create_empty_if_region_on_edge (edge entry_edge, tree condition)
    should be used only when the UPPER_BOUND expression is a loop
    invariant.  */
 
-class loop *
+struct loop *
 create_empty_loop_on_edge (edge entry_edge,
 			   tree initial_value,
 			   tree stride, tree upper_bound,
 			   tree iv,
 			   tree *iv_before,
 			   tree *iv_after,
-			   class loop *outer)
+			   struct loop *outer)
 {
   basic_block loop_header, loop_latch, succ_bb, pred_bb;
-  class loop *loop;
+  struct loop *loop;
   gimple_stmt_iterator gsi;
   gimple_seq stmts;
   gcond *cond_expr;
@@ -846,6 +848,71 @@ create_empty_loop_on_edge (edge entry_edge,
   return loop;
 }
 
+/* Make area between HEADER_EDGE and LATCH_EDGE a loop by connecting
+   latch to header and update loop tree and dominators
+   accordingly. Everything between them plus LATCH_EDGE destination must
+   be dominated by HEADER_EDGE destination, and back-reachable from
+   LATCH_EDGE source.  HEADER_EDGE is redirected to basic block SWITCH_BB,
+   FALSE_EDGE of SWITCH_BB to original destination of HEADER_EDGE and
+   TRUE_EDGE of SWITCH_BB to original destination of LATCH_EDGE.
+   Returns the newly created loop.  Frequencies and counts in the new loop
+   are scaled by FALSE_SCALE and in the old one by TRUE_SCALE.  */
+
+struct loop *
+loopify (edge latch_edge, edge header_edge,
+	 basic_block switch_bb, edge true_edge, edge false_edge,
+	 bool redirect_all_edges, profile_probability true_scale,
+	 profile_probability false_scale)
+{
+  basic_block succ_bb = latch_edge->dest;
+  basic_block pred_bb = header_edge->src;
+  struct loop *loop = alloc_loop ();
+  struct loop *outer = loop_outer (succ_bb->loop_father);
+  profile_count cnt;
+
+  loop->header = header_edge->dest;
+  loop->latch = latch_edge->src;
+
+  cnt = header_edge->count ();
+
+  /* Redirect edges.  */
+  loop_redirect_edge (latch_edge, loop->header);
+  loop_redirect_edge (true_edge, succ_bb);
+
+  /* During loop versioning, one of the switch_bb edge is already properly
+     set. Do not redirect it again unless redirect_all_edges is true.  */
+  if (redirect_all_edges)
+    {
+      loop_redirect_edge (header_edge, switch_bb);
+      loop_redirect_edge (false_edge, loop->header);
+
+      /* Update dominators.  */
+      set_immediate_dominator (CDI_DOMINATORS, switch_bb, pred_bb);
+      set_immediate_dominator (CDI_DOMINATORS, loop->header, switch_bb);
+    }
+
+  set_immediate_dominator (CDI_DOMINATORS, succ_bb, switch_bb);
+
+  /* Compute new loop.  */
+  add_loop (loop, outer);
+
+  /* Add switch_bb to appropriate loop.  */
+  if (switch_bb->loop_father)
+    remove_bb_from_loops (switch_bb);
+  add_bb_to_loop (switch_bb, outer);
+
+  /* Fix counts.  */
+  if (redirect_all_edges)
+    {
+      switch_bb->count = cnt;
+    }
+  scale_loop_frequencies (loop, false_scale);
+  scale_loop_frequencies (succ_bb->loop_father, true_scale);
+  update_dominators_in_loop (loop);
+
+  return loop;
+}
+
 /* Remove the latch edge of a LOOP and update loops to indicate that
    the LOOP was removed.  After this function, original loop latch will
    have no successor, which caller is expected to fix somehow.
@@ -857,11 +924,11 @@ create_empty_loop_on_edge (edge entry_edge,
    basic blocks that had non-trivial update on their loop_father.*/
 
 void
-unloop (class loop *loop, bool *irred_invalidated,
+unloop (struct loop *loop, bool *irred_invalidated,
 	bitmap loop_closed_ssa_invalidated)
 {
   basic_block *body;
-  class loop *ploop;
+  struct loop *ploop;
   unsigned i, n;
   basic_block latch = loop->latch;
   bool dummy = false;
@@ -912,9 +979,9 @@ unloop (class loop *loop, bool *irred_invalidated,
    invalidate the information about irreducible regions.  */
 
 static void
-fix_loop_placements (class loop *loop, bool *irred_invalidated)
+fix_loop_placements (struct loop *loop, bool *irred_invalidated)
 {
-  class loop *outer;
+  struct loop *outer;
 
   while (loop_outer (loop))
     {
@@ -937,7 +1004,7 @@ fix_loop_placements (class loop *loop, bool *irred_invalidated)
    the loop into its duplicate.  */
 
 void
-copy_loop_info (class loop *loop, class loop *target)
+copy_loop_info (struct loop *loop, struct loop *target)
 {
   gcc_checking_assert (!target->any_upper_bound && !target->any_estimate);
   target->any_upper_bound = loop->any_upper_bound;
@@ -949,7 +1016,6 @@ copy_loop_info (class loop *loop, class loop *target)
   target->nb_iterations_estimate = loop->nb_iterations_estimate;
   target->estimate_state = loop->estimate_state;
   target->safelen = loop->safelen;
-  target->simdlen = loop->simdlen;
   target->constraints = loop->constraints;
   target->can_be_parallel = loop->can_be_parallel;
   target->warned_aggressive_loop_optimizations
@@ -957,7 +1023,6 @@ copy_loop_info (class loop *loop, class loop *target)
   target->dont_vectorize = loop->dont_vectorize;
   target->force_vectorize = loop->force_vectorize;
   target->in_oacc_kernels_region = loop->in_oacc_kernels_region;
-  target->finite_p = loop->finite_p;
   target->unroll = loop->unroll;
   target->owned_clique = loop->owned_clique;
 }
@@ -966,10 +1031,10 @@ copy_loop_info (class loop *loop, class loop *target)
    created loop into loops structure.  If AFTER is non-null
    the new loop is added at AFTER->next, otherwise in front of TARGETs
    sibling list.  */
-class loop *
-duplicate_loop (class loop *loop, class loop *target, class loop *after)
+struct loop *
+duplicate_loop (struct loop *loop, struct loop *target, struct loop *after)
 {
-  class loop *cloop;
+  struct loop *cloop;
   cloop = alloc_loop ();
   place_new_loop (cfun, cloop);
  
@@ -988,9 +1053,9 @@ duplicate_loop (class loop *loop, class loop *target, class loop *after)
    newly created loops into loop tree at the end of TARGETs sibling
    list in the original order.  */
 void
-duplicate_subloops (class loop *loop, class loop *target)
+duplicate_subloops (struct loop *loop, struct loop *target)
 {
-  class loop *aloop, *cloop, *tail;
+  struct loop *aloop, *cloop, *tail;
 
   for (tail = target->inner; tail && tail->next; tail = tail->next)
     ;
@@ -1007,9 +1072,9 @@ duplicate_subloops (class loop *loop, class loop *target)
    into TARGET loop, placing newly created loops into loop tree adding
    them to TARGETs sibling list at the end in order.  */
 static void
-copy_loops_to (class loop **copied_loops, int n, class loop *target)
+copy_loops_to (struct loop **copied_loops, int n, struct loop *target)
 {
-  class loop *aloop, *tail;
+  struct loop *aloop, *tail;
   int i;
 
   for (tail = target->inner; tail && tail->next; tail = tail->next)
@@ -1035,7 +1100,7 @@ loop_redirect_edge (edge e, basic_block dest)
 
 /* Check whether LOOP's body can be duplicated.  */
 bool
-can_duplicate_loop_p (const class loop *loop)
+can_duplicate_loop_p (const struct loop *loop)
 {
   int ret;
   basic_block *bbs = get_loop_body (loop);
@@ -1059,12 +1124,13 @@ can_duplicate_loop_p (const class loop *loop)
    impossible.  */
 
 bool
-duplicate_loop_body_to_header_edge (class loop *loop, edge e,
-				    unsigned int ndupl, sbitmap wont_exit,
-				    edge orig, vec<edge> *to_remove, int flags)
+duplicate_loop_to_header_edge (struct loop *loop, edge e,
+			       unsigned int ndupl, sbitmap wont_exit,
+			       edge orig, vec<edge> *to_remove,
+			       int flags)
 {
-  class loop *target, *aloop;
-  class loop **orig_loops;
+  struct loop *target, *aloop;
+  struct loop **orig_loops;
   unsigned n_orig_loops;
   basic_block header = loop->header, latch = loop->latch;
   basic_block *new_bbs, *bbs, *first_active;
@@ -1210,7 +1276,7 @@ duplicate_loop_body_to_header_edge (class loop *loop, edge e,
   n_orig_loops = 0;
   for (aloop = loop->inner; aloop; aloop = aloop->next)
     n_orig_loops++;
-  orig_loops = XNEWVEC (class loop *, n_orig_loops);
+  orig_loops = XNEWVEC (struct loop *, n_orig_loops);
   for (aloop = loop->inner, i = 0; aloop; aloop = aloop->next, i++)
     orig_loops[i] = aloop;
 
@@ -1348,12 +1414,13 @@ duplicate_loop_body_to_header_edge (class loop *loop, edge e,
   for (i = 0; i < n; i++)
     {
       basic_block dominated, dom_bb;
+      vec<basic_block> dom_bbs;
       unsigned j;
 
       bb = bbs[i];
       bb->aux = 0;
 
-      auto_vec<basic_block> dom_bbs = get_dominated_by (CDI_DOMINATORS, bb);
+      dom_bbs = get_dominated_by (CDI_DOMINATORS, bb);
       FOR_EACH_VEC_ELT (dom_bbs, j, dominated)
 	{
 	  if (flow_bb_inside_loop_p (loop, dominated))
@@ -1362,6 +1429,7 @@ duplicate_loop_body_to_header_edge (class loop *loop, edge e,
 			CDI_DOMINATORS, first_active[i], first_active_latch);
 	  set_immediate_dominator (CDI_DOMINATORS, dominated, dom_bb);
 	}
+      dom_bbs.release ();
     }
   free (first_active);
 
@@ -1385,7 +1453,7 @@ mfb_keep_just (edge e)
 /* True when a candidate preheader BLOCK has predecessors from LOOP.  */
 
 static bool
-has_preds_from_loop (basic_block block, class loop *loop)
+has_preds_from_loop (basic_block block, struct loop *loop)
 {
   edge e;
   edge_iterator ei;
@@ -1405,7 +1473,7 @@ has_preds_from_loop (basic_block block, class loop *loop)
    The function also updates dominators.  */
 
 basic_block
-create_preheader (class loop *loop, int flags)
+create_preheader (struct loop *loop, int flags)
 {
   edge e;
   basic_block dummy;
@@ -1437,10 +1505,9 @@ create_preheader (class loop *loop, int flags)
       else
         {
           /* If we want simple preheaders, also force the preheader to have
-	     just a single successor and a normal edge.  */
+             just a single successor.  */
           if ((flags & CP_SIMPLE_PREHEADERS)
-	      && ((single_entry->flags & EDGE_COMPLEX)
-		  || !single_succ_p (single_entry->src)))
+              && !single_succ_p (single_entry->src))
             need_forwarder_block = true;
           /* If we want fallthru preheaders, also create forwarder block when
              preheader ends with a jump or has predecessors from loop.  */
@@ -1506,10 +1573,12 @@ create_preheader (class loop *loop, int flags)
 void
 create_preheaders (int flags)
 {
+  struct loop *loop;
+
   if (!current_loops)
     return;
 
-  for (auto loop : loops_list (cfun, 0))
+  FOR_EACH_LOOP (loop, 0)
     create_preheader (loop, flags);
   loops_state_set (LOOPS_HAVE_PREHEADERS);
 }
@@ -1519,9 +1588,10 @@ create_preheaders (int flags)
 void
 force_single_succ_latches (void)
 {
+  struct loop *loop;
   edge e;
 
-  for (auto loop : loops_list (cfun, 0))
+  FOR_EACH_LOOP (loop, 0)
     {
       if (loop->latch != loop->header && single_succ_p (loop->latch))
 	continue;
@@ -1607,17 +1677,17 @@ lv_adjust_loop_entry_edge (basic_block first_head, basic_block second_head,
    If PLACE_AFTER is true, we place the new loop after LOOP in the
    instruction stream, otherwise it is placed before LOOP.  */
 
-class loop *
-loop_version (class loop *loop,
+struct loop *
+loop_version (struct loop *loop,
 	      void *cond_expr, basic_block *condition_bb,
 	      profile_probability then_prob, profile_probability else_prob,
 	      profile_probability then_scale, profile_probability else_scale,
 	      bool place_after)
 {
   basic_block first_head, second_head;
-  edge entry, latch_edge;
+  edge entry, latch_edge, true_edge, false_edge;
   int irred_flag;
-  class loop *nloop;
+  struct loop *nloop;
   basic_block cond_bb;
 
   /* Record entry and latch edges for the loop */
@@ -1628,36 +1698,19 @@ loop_version (class loop *loop,
   /* Note down head of loop as first_head.  */
   first_head = entry->dest;
 
-  /* 1) Duplicate loop on the entry edge.  */
-  if (!cfg_hook_duplicate_loop_body_to_header_edge (loop, entry, 1, NULL, NULL,
-						    NULL, 0))
+  /* Duplicate loop.  */
+  if (!cfg_hook_duplicate_loop_to_header_edge (loop, entry, 1,
+					       NULL, NULL, NULL, 0))
     {
       entry->flags |= irred_flag;
       return NULL;
     }
 
-  /* 2) loopify the duplicated new loop. */
-  latch_edge = single_succ_edge (get_bb_copy (loop->latch));
-  nloop = alloc_loop ();
-  class loop *outer = loop_outer (latch_edge->dest->loop_father);
-  edge new_header_edge = single_pred_edge (get_bb_copy (loop->header));
-  nloop->header = new_header_edge->dest;
-  nloop->latch = latch_edge->src;
-  loop_redirect_edge (latch_edge, nloop->header);
-
-  /* Compute new loop.  */
-  add_loop (nloop, outer);
-  copy_loop_info (loop, nloop);
-  set_loop_copy (loop, nloop);
-
-  /* loopify redirected latch_edge. Update its PENDING_STMTS.  */
-  lv_flush_pending_stmts (latch_edge);
-
   /* After duplication entry edge now points to new loop head block.
      Note down new head as second_head.  */
   second_head = entry->dest;
 
-  /* 3) Split loop entry edge and insert new block with cond expr.  */
+  /* Split loop entry edge and insert new block with cond expr.  */
   cond_bb =  lv_adjust_loop_entry_edge (first_head, second_head,
 					entry, cond_expr, then_prob, else_prob);
   if (condition_bb)
@@ -1669,17 +1722,23 @@ loop_version (class loop *loop,
       return NULL;
     }
 
-  /* Add cond_bb to appropriate loop.  */
-  if (cond_bb->loop_father)
-    remove_bb_from_loops (cond_bb);
-  add_bb_to_loop (cond_bb, outer);
+  latch_edge = single_succ_edge (get_bb_copy (loop->latch));
 
-  /* 4) Scale the original loop and new loop frequency.  */
-  scale_loop_frequencies (loop, then_scale);
-  scale_loop_frequencies (nloop, else_scale);
-  update_dominators_in_loop (loop);
-  update_dominators_in_loop (nloop);
+  extract_cond_bb_edges (cond_bb, &true_edge, &false_edge);
+  nloop = loopify (latch_edge,
+		   single_pred_edge (get_bb_copy (loop->header)),
+		   cond_bb, true_edge, false_edge,
+		   false /* Do not redirect all edges.  */,
+		   then_scale, else_scale);
 
+  copy_loop_info (loop, nloop);
+
+  /* loopify redirected latch_edge. Update its PENDING_STMTS.  */
+  lv_flush_pending_stmts (latch_edge);
+
+  /* loopify redirected condition_bb's succ edge. Update its PENDING_STMTS.  */
+  extract_cond_bb_edges (cond_bb, &true_edge, &false_edge);
+  lv_flush_pending_stmts (false_edge);
   /* Adjust irreducible flag.  */
   if (irred_flag)
     {

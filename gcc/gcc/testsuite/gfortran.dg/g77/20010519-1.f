@@ -1,5 +1,4 @@
 c { dg-do compile }
-c { dg-options "-std=legacy" }
 CHARMM Element source/dimb/nmdimb.src 1.1
 C.##IF DIMB
       SUBROUTINE NMDIMB(X,Y,Z,NAT3,BNBND,BIMAG,LNOMA,AMASS,DDS,DDSCR,
@@ -712,19 +711,19 @@ C Begin
      1     'NFREG IS LARGER THAN PARDIM*3')
 C
 C ALLOCATE-SPACE-FOR-TRANSROT-VECTORS
-      ASSIGN 801 TO I800
+      ASSIGN 801 TO I800 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
       GOTO 800
  801  CONTINUE
 C ALLOCATE-SPACE-FOR-DIAGONALIZATION
-      ASSIGN 721 TO I720
+      ASSIGN 721 TO I720 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
       GOTO 720
  721  CONTINUE
 C ALLOCATE-SPACE-FOR-REDUCED-BASIS
-      ASSIGN 761 TO I760
+      ASSIGN 761 TO I760 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
       GOTO 760
  761  CONTINUE
 C ALLOCATE-SPACE-FOR-OTHER-ARRAYS
-      ASSIGN 921 TO I920
+      ASSIGN 921 TO I920 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
       GOTO 920
  921  CONTINUE
 C
@@ -732,12 +731,12 @@ C Space allocation for working arrays of EISPACK
 C diagonalization subroutines
       IF(LSCI) THEN
 C ALLOCATE-SPACE-FOR-LSCI
-         ASSIGN 841 TO I840
+         ASSIGN 841 TO I840 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
          GOTO 840
  841     CONTINUE
       ELSE
 C ALLOCATE-DUMMY-SPACE-FOR-LSCI
-         ASSIGN 881 TO I880
+         ASSIGN 881 TO I880 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
          GOTO 880
  881     CONTINUE
       ENDIF
@@ -773,7 +772,7 @@ C
       NTR=6
       OLDPRN=PRNLEV
       PRNLEV=1
-      CALL ORTHNM(1,6,NTR,HEAP(TRAROT),NAT3,.FALSE.,TOLER) ! { dg-warning "Type mismatch" }
+      CALL ORTHNM(1,6,NTR,HEAP(TRAROT),NAT3,.FALSE.,TOLER)
       PRNLEV=OLDPRN
       IF(IUNRMD .LT. 0) THEN
 C
@@ -847,7 +846,7 @@ C Orthonormalize the eigenvectors
 C
          OLDPRN=PRNLEV
          PRNLEV=1
-         CALL ORTHNM(1,NFRET,NFRET,DDV,NAT3,LPURG,TOLER) ! { dg-warning "Type mismatch" }
+         CALL ORTHNM(1,NFRET,NFRET,DDV,NAT3,LPURG,TOLER)
          PRNLEV=OLDPRN
 C
 C Do reduced basis diagonalization using the DDV vectors
@@ -879,11 +878,11 @@ C
 C
 C DO-THE-DIAGONALISATIONS-WITH-RESIDUALS
 C
-         ASSIGN 621 TO I620
+         ASSIGN 621 TO I620 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
          GOTO 620
  621     CONTINUE
 C SAVE-MODES
-         ASSIGN 701 TO I700
+         ASSIGN 701 TO I700 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
          GOTO 700
  701     CONTINUE
          IF(ITER.EQ.ITMX) THEN
@@ -1026,17 +1025,17 @@ C
             CALL PARTDS(NAT3,NPARC,ATMPAR,NPARS,ATMPAS,INIDS,NPARMX,
      1                  DDF,NFREG,CUTF1,PARDIM,NFCUT1)
 C DO-THE-DIAGONALISATIONS
-            ASSIGN 641 to I640
+            ASSIGN 641 to I640 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
             GOTO 640
  641        CONTINUE
             QDIAG=.FALSE.
 C DO-THE-DIAGONALISATIONS-WITH-RESIDUALS
-            ASSIGN 622 TO I620
+            ASSIGN 622 TO I620 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
             GOTO 620
  622        CONTINUE
             QDIAG=.TRUE.
 C SAVE-MODES
-            ASSIGN 702 TO I700
+            ASSIGN 702 TO I700 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
             GOTO 700
  702        CONTINUE
 C
@@ -1049,7 +1048,7 @@ C
                   ITER=ITER+1
                   IF(PRNLEV.GE.2) WRITE(OUTU,553) ITER
 C DO-THE-DWIN-DIAGONALISATIONS
-                  ASSIGN 661 TO I660
+                  ASSIGN 661 TO I660 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
                   GOTO 660
  661              CONTINUE
                ENDIF
@@ -1057,13 +1056,13 @@ C DO-THE-DWIN-DIAGONALISATIONS
                   IRESF=0
                   QDIAG=.FALSE.
 C DO-THE-DIAGONALISATIONS-WITH-RESIDUALS
-                  ASSIGN 623 TO I620
+                  ASSIGN 623 TO I620 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
                   GOTO 620
  623              CONTINUE
                   QDIAG=.TRUE.
                   IF((CVGMX.LE.TOLDIM).OR.(ITER.EQ.ITMX)) GOTO 600
 C SAVE-MODES
-                  ASSIGN 703 TO I700
+                  ASSIGN 703 TO I700 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
                   GOTO 700
  703              CONTINUE
                ENDIF
@@ -1073,7 +1072,7 @@ C SAVE-MODES
  600  CONTINUE
 C
 C SAVE-MODES
-      ASSIGN 704 TO I700
+      ASSIGN 704 TO I700 ! { dg-warning "Deleted feature: ASSIGN" "Deleted feature: ASSIGN" }
       GOTO 700
  704  CONTINUE
       CALL CLEANHP(NAT3,NFREG,NPARD,NSUBP,PARDIM,DDV2,DDSS,DDVBAS,
@@ -1151,7 +1150,7 @@ C
      6     HEAP(BDRATQ),HEAP(INRATQ),LSCI,LBIG,IUNMOD)
          CALL SELNMD(DDF,NFRET,CUTF1,NFCUT1)
       ENDIF
-      GOTO I620 
+      GOTO I620 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO DO-THE-DIAGONALISATIONS
@@ -1191,7 +1190,7 @@ C TO DO-THE-DIAGONALISATIONS
          NFCUT1=NFCUT
          NFRET=NFCUT
       ENDDO
-      GOTO I640 
+      GOTO I640 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO DO-THE-DWIN-DIAGONALISATIONS
@@ -1242,7 +1241,7 @@ C
       IF(NFCUT.GT.NFRRES) NFCUT=NFRRES
       NFCUT1=NFCUT
       NFRET=NFCUT
-      GOTO I660 
+      GOTO I660 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO SAVE-MODES
@@ -1259,7 +1258,7 @@ C TO SAVE-MODES
       CALL WRTNMD(LCARD,ISTRT,ISTOP,NAT3,DDV,DDSCR,DDEV,IUNMOD,
      1            AMASS)
       CALL SAVEIT(IUNMOD)
-      GOTO I700 
+      GOTO I700 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-SPACE-FOR-DIAGONALIZATION
@@ -1270,7 +1269,7 @@ C TO ALLOCATE-SPACE-FOR-DIAGONALIZATION
       JSPACE=JSPACE+JSP
       DDSS=ALLHP(JSPACE)
       DD5=DDSS+JSPACE-JSP
-      GOTO I720 
+      GOTO I720 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-SPACE-FOR-REDUCED-BASIS
@@ -1280,13 +1279,13 @@ C TO ALLOCATE-SPACE-FOR-REDUCED-BASIS
       ELSE
          DDVBAS=ALLHP(IREAL8(NFREG*NAT3))
       ENDIF
-      GOTO I760 
+      GOTO I760 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-SPACE-FOR-TRANSROT-VECTORS
  800  CONTINUE
       TRAROT=ALLHP(IREAL8(6*NAT3))
-      GOTO I800 
+      GOTO I800 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-SPACE-FOR-LSCI
@@ -1301,7 +1300,7 @@ C TO ALLOCATE-SPACE-FOR-LSCI
       E2RATQ=ALLHP(IREAL8(PARDIM+3))
       BDRATQ=ALLHP(IREAL8(PARDIM+3))
       INRATQ=ALLHP(INTEG4(PARDIM+3))
-      GOTO I840 
+      GOTO I840 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-DUMMY-SPACE-FOR-LSCI
@@ -1316,13 +1315,13 @@ C TO ALLOCATE-DUMMY-SPACE-FOR-LSCI
       E2RATQ=ALLHP(IREAL8(2))
       BDRATQ=ALLHP(IREAL8(2))
       INRATQ=ALLHP(INTEG4(2))
-      GOTO I880 
+      GOTO I880 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C
 C-----------------------------------------------------------------------
 C TO ALLOCATE-SPACE-FOR-OTHER-ARRAYS
  920  CONTINUE
       IUPD=ALLHP(INTEG4(PARDIM+3))
-      GOTO I920 
+      GOTO I920 ! { dg-warning "Deleted feature: Assigned" "Assigned GO TO" }
 C.##ELSE
 C.##ENDIF
       END

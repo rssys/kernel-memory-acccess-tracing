@@ -42,7 +42,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -63,7 +62,6 @@ type Config struct {
 	ImportPath                string
 	GoFiles                   []string
 	NonGoFiles                []string
-	IgnoredFiles              []string
 	ImportMap                 map[string]string
 	PackageFile               map[string]string
 	Standard                  map[string]bool
@@ -97,7 +95,7 @@ func Main(analyzers ...*analysis.Analyzer) {
 
 Usage of %[1]s:
 	%.16[1]s unit.cfg	# execute analysis specified by config file
-	%.16[1]s help    	# general help, including listing analyzers and flags
+	%.16[1]s help    	# general help
 	%.16[1]s help name	# help on specific analyzer and its flags
 `, progname)
 		os.Exit(1)
@@ -324,28 +322,19 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 				return
 			}
 
-			factFilter := make(map[reflect.Type]bool)
-			for _, f := range a.FactTypes {
-				factFilter[reflect.TypeOf(f)] = true
-			}
-
 			pass := &analysis.Pass{
 				Analyzer:          a,
 				Fset:              fset,
 				Files:             files,
 				OtherFiles:        cfg.NonGoFiles,
-				IgnoredFiles:      cfg.IgnoredFiles,
 				Pkg:               pkg,
 				TypesInfo:         info,
-				TypesSizes:        tc.Sizes,
 				ResultOf:          inputs,
 				Report:            func(d analysis.Diagnostic) { act.diagnostics = append(act.diagnostics, d) },
 				ImportObjectFact:  facts.ImportObjectFact,
 				ExportObjectFact:  facts.ExportObjectFact,
-				AllObjectFacts:    func() []analysis.ObjectFact { return facts.AllObjectFacts(factFilter) },
 				ImportPackageFact: facts.ImportPackageFact,
 				ExportPackageFact: facts.ExportPackageFact,
-				AllPackageFacts:   func() []analysis.PackageFact { return facts.AllPackageFacts(factFilter) },
 			}
 
 			t0 := time.Now()

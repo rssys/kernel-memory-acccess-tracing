@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,7 +30,6 @@ with Osint;    use Osint;
 with Output;   use Output;
 with Switch;   use Switch;
 with Table;
-with Usage;
 
 with Ada.Characters.Handling; use Ada.Characters.Handling;
 with Ada.Command_Line;        use Ada.Command_Line;
@@ -43,9 +42,6 @@ procedure GNATCmd is
    Gprclean : constant String := "gprclean";
    Gprname  : constant String := "gprname";
    Gprls    : constant String := "gprls";
-
-   Ada_Help_Switch : constant String := "--help-ada";
-   --  Flag to display available build switches
 
    Error_Exit : exception;
    --  Raise this exception if error detected
@@ -233,7 +229,7 @@ procedure GNATCmd is
    procedure Output_Version;
    --  Output the version of this program
 
-   procedure GNATCmd_Usage;
+   procedure Usage;
    --  Display usage
 
    --------------------
@@ -248,15 +244,13 @@ procedure GNATCmd is
                 & ", Free Software Foundation, Inc.");
    end Output_Version;
 
-   -------------------
-   -- GNATCmd_Usage --
-   -------------------
+   -----------
+   -- Usage --
+   -----------
 
-   procedure GNATCmd_Usage is
+   procedure Usage is
    begin
       Output_Version;
-      New_Line;
-      Put_Line ("To list Ada build switches use " & Ada_Help_Switch);
       New_Line;
       Put_Line ("List of available commands");
       New_Line;
@@ -282,10 +276,9 @@ procedure GNATCmd is
       end loop;
 
       New_Line;
-   end GNATCmd_Usage;
+   end Usage;
 
-   procedure Check_Version_And_Help
-     is new Check_Version_And_Help_G (GNATCmd_Usage);
+   procedure Check_Version_And_Help is new Check_Version_And_Help_G (Usage);
 
 --  Start of processing for GNATCmd
 
@@ -358,12 +351,6 @@ begin
             Keep_Temporary_Files := True;
             Command_Arg := Command_Arg + 1;
 
-         elsif Command_Arg <= Argument_Count
-           and then Argument (Command_Arg) = Ada_Help_Switch
-         then
-            Usage;
-            Exit_Program (E_Success);
-
          else
             exit;
          end if;
@@ -372,12 +359,7 @@ begin
       --  If there is no command, just output the usage
 
       if Command_Arg > Argument_Count then
-         GNATCmd_Usage;
-
-         --  Add the following so that output is consistent with or without the
-         --  --help flag.
-         Write_Eol;
-         Write_Line ("Report bugs to report@adacore.com");
+         Usage;
          return;
       end if;
 
@@ -397,7 +379,7 @@ begin
 
          exception
             when Constraint_Error =>
-               GNATCmd_Usage;
+               Usage;
                Fail ("unknown command: " & Argument (Command_Arg));
          end;
    end;
@@ -472,15 +454,6 @@ begin
 
          Program := new String'(Command_List (The_Command).Unixcmd.all);
 
-      elsif The_Command in Check | Test then
-         Program := new String'(Command_List (The_Command).Unixcmd.all);
-         Find_Program_Name;
-
-         if Name_Len > 5 then
-            First_Switches.Append
-              (new String'
-                 ("--target=" & Name_Buffer (1 .. Name_Len - 5)));
-         end if;
       else
          Program :=
            Program_Name (Command_List (The_Command).Unixcmd.all, "gnat");
@@ -490,7 +463,13 @@ begin
          --  instead of gnatmake/gnatclean.
          --  Ditto for gnatname -> gprname and gnatls -> gprls.
 
-         if The_Command in Make | Compile | Bind | Link | Clean | Name | List
+         if The_Command = Make
+           or else The_Command = Compile
+           or else The_Command = Bind
+           or else The_Command = Link
+           or else The_Command = Clean
+           or else The_Command = Name
+           or else The_Command = List
          then
             declare
                Switch        : String_Access;
@@ -591,23 +570,23 @@ begin
       end if;
 
       --  For FIND and XREF, look for switch -P. If it is specified, then
-      --  report an error indicating that the command does not support project
-      --  files.
+      --  report an error indicating that the command is no longer supporting
+      --  project files.
 
-      if The_Command in Find | Xref then
+      if The_Command = Find or else The_Command = Xref then
          declare
             Argv : String_Access;
          begin
             for Arg_Num in 1 .. Last_Switches.Last loop
                Argv := Last_Switches.Table (Arg_Num);
 
-               if Argv'Length >= 2
-                 and then Argv (Argv'First .. Argv'First + 1) = "-P"
+               if Argv'Length >= 2 and then
+                  Argv (Argv'First .. Argv'First + 1) = "-P"
                then
                   if The_Command = Find then
-                     Fail ("'gnat find -P' is not supported;");
+                     Fail ("'gnat find -P' is no longer supported;");
                   else
-                     Fail ("'gnat xref -P' is not supported;");
+                     Fail ("'gnat xref -P' is no longer supported;");
                   end if;
                end if;
             end loop;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2009-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2009-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -28,9 +28,6 @@
 --  the ALI file, and by Get_SCO/Put_SCO to read and write the text form that
 --  is used in the ALI file.
 
---  WARNING: There is a C version of this package. Any changes to this
---  source file must be properly reflected in the C header file scos.h
-
 with Namet; use Namet;
 with Table;
 with Types; use Types;
@@ -50,6 +47,9 @@ package SCOs is
 
    --  Put_SCO reads the internal tables and generates text lines in the ALI
    --  format.
+
+   --  WARNING: There are C bindings for this package. Any changes to this
+   --  source file must be properly reflected in the C header file scos.h
 
    --------------------
    -- SCO ALI Format --
@@ -162,8 +162,6 @@ package SCOs is
    --      R        extended RETURN statement
    --      S        SELECT statement
    --      W        WHILE loop statement (from WHILE to end of condition)
-   --      X        body of a degenerate subprogram (null procedure or
-   --               expression function)
 
    --      Note: for I and W, condition above is in the RM syntax sense (this
    --      condition is a decision in SCO terminology).
@@ -257,7 +255,7 @@ package SCOs is
    --      I       decision in IF statement or if expression
    --      P       decision in pragma Assert / Check / Pre/Post_Condition
    --      A[name] decision in aspect Pre/Post (aspect name optional)
-   --      W       decision in WHILE iteration scheme or quantified expression
+   --      W       decision in WHILE iteration scheme
    --      X       decision in some other expression context
 
    --    For E, G, I, P, W, sloc is the source location of the EXIT, ENTRY, IF,

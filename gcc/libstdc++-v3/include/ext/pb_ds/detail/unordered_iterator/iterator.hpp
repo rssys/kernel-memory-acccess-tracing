@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -36,13 +36,9 @@
 /**
  * @file iterator.hpp
  * Contains an iterator_ class used for ranging over the elements of the
- * table.
- *
- * This file is intended to be included inside a class definition, with
- * PB_DS_CLASS_C_DEC defined to the name of the enclosing class.
+ *    table.
  */
 
-#ifdef PB_DS_CLASS_C_DEC
 /// Range-type iterator.
 class iterator_
 : public const_iterator_
@@ -132,4 +128,3 @@ protected:
 
   friend class PB_DS_CLASS_C_DEC;
 };
-#endif

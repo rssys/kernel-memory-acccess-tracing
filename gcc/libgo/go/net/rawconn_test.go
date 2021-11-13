@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js
 // +build !js
 
 package net
@@ -16,7 +15,7 @@ import (
 
 func TestRawConnReadWrite(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -131,7 +130,7 @@ func TestRawConnReadWrite(t *testing.T) {
 		if perr := parseWriteError(err); perr != nil {
 			t.Error(perr)
 		}
-		if !isDeadlineExceeded(err) {
+		if nerr, ok := err.(Error); !ok || !nerr.Timeout() {
 			t.Errorf("got %v; want timeout", err)
 		}
 		if _, err = readRawConn(cc, b[:]); err == nil {
@@ -140,7 +139,7 @@ func TestRawConnReadWrite(t *testing.T) {
 		if perr := parseReadError(err); perr != nil {
 			t.Error(perr)
 		}
-		if !isDeadlineExceeded(err) {
+		if nerr, ok := err.(Error); !ok || !nerr.Timeout() {
 			t.Errorf("got %v; want timeout", err)
 		}
 
@@ -154,7 +153,7 @@ func TestRawConnReadWrite(t *testing.T) {
 		if perr := parseReadError(err); perr != nil {
 			t.Error(perr)
 		}
-		if !isDeadlineExceeded(err) {
+		if nerr, ok := err.(Error); !ok || !nerr.Timeout() {
 			t.Errorf("got %v; want timeout", err)
 		}
 
@@ -168,7 +167,7 @@ func TestRawConnReadWrite(t *testing.T) {
 		if perr := parseWriteError(err); perr != nil {
 			t.Error(perr)
 		}
-		if !isDeadlineExceeded(err) {
+		if nerr, ok := err.(Error); !ok || !nerr.Timeout() {
 			t.Errorf("got %v; want timeout", err)
 		}
 	})
@@ -176,7 +175,7 @@ func TestRawConnReadWrite(t *testing.T) {
 
 func TestRawConnControl(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 

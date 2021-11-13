@@ -30,7 +30,7 @@ version_arg =
 version_dep =
 endif
 
-gfor_c_HEADERS = ISO_Fortran_binding.h
+gfor_c_HEADERS = $(srcdir)/ISO_Fortran_binding.h
 gfor_cdir = $(libdir)/gcc/$(target_alias)/$(gcc_version)/include
 
 LTLDFLAGS = $(shell $(SHELL) $(top_srcdir)/../libtool-ldflags $(LDFLAGS)) \
@@ -42,7 +42,7 @@ libgfortran_la_LINK = $(LINK) $(libgfortran_la_LDFLAGS)
 libgfortran_la_LDFLAGS = -version-info `grep -v '^\#' $(srcdir)/libtool-version` \
 	$(LTLDFLAGS) $(LIBQUADLIB) ../libbacktrace/libbacktrace.la \
 	$(HWCAP_LDFLAGS) \
-	$(LIBM) $(extra_ldflags_libgfortran) \
+	-lm $(extra_ldflags_libgfortran) \
 	$(version_arg) -Wc,-shared-libgcc
 libgfortran_la_DEPENDENCIES = $(version_dep) libgfortran.spec $(LIBQUADLIB_DEP)
 
@@ -141,7 +141,6 @@ intrinsics/reshape_generic.c \
 intrinsics/reshape_packed.c \
 intrinsics/selected_int_kind.f90 \
 intrinsics/selected_real_kind.f90 \
-intrinsics/trigd.c \
 intrinsics/unpack_generic.c \
 runtime/in_pack_generic.c \
 runtime/in_unpack_generic.c
@@ -283,7 +282,6 @@ $(srcdir)/generated/findloc0_r10.c \
 $(srcdir)/generated/findloc0_r16.c \
 $(srcdir)/generated/findloc0_c4.c \
 $(srcdir)/generated/findloc0_c8.c \
-$(srcdir)/generated/findloc0_c10.c \
 $(srcdir)/generated/findloc0_c16.c
 
 i_findloc0s_c= \
@@ -302,7 +300,6 @@ $(srcdir)/generated/findloc1_r10.c \
 $(srcdir)/generated/findloc1_r16.c \
 $(srcdir)/generated/findloc1_c4.c \
 $(srcdir)/generated/findloc1_c8.c \
-$(srcdir)/generated/findloc1_c10.c \
 $(srcdir)/generated/findloc1_c16.c
 
 i_findloc1s_c= \
@@ -817,7 +814,6 @@ gfor_built_src= $(i_all_c) $(i_any_c) $(i_count_c) $(i_maxloc0_c) \
     $(i_pow_c) $(i_pack_c) $(i_unpack_c) $(i_matmulavx128_c) \
     $(i_spread_c) selected_int_kind.inc selected_real_kind.inc kinds.h \
     $(i_cshift0_c) kinds.inc c99_protos.inc fpu-target.h fpu-target.inc \
-    include/ISO_Fortran_binding.h \
     $(i_cshift1a_c) $(i_maxloc0s_c) $(i_minloc0s_c) $(i_maxloc1s_c) \
     $(i_minloc1s_c) $(i_maxloc2s_c) $(i_minloc2s_c) $(i_maxvals_c) \
     $(i_maxval0s_c) $(i_minval0s_c) $(i_maxval1s_c) $(i_minval1s_c) \
@@ -1055,7 +1051,7 @@ I_M4_DEPS8=$(I_M4_DEPS) m4/ifindloc1.m4
 I_M4_DEPS9=$(I_M4_DEPS) m4/ifindloc2.m4
 
 kinds.h: $(srcdir)/mk-kinds-h.sh
-	$(SHELL) $(srcdir)/mk-kinds-h.sh '@LIBGOMP_CHECKED_INT_KINDS@' '@LIBGOMP_CHECKED_REAL_KINDS@' '$(FCCOMPILE)' > $@ || rm $@
+	$(SHELL) $(srcdir)/mk-kinds-h.sh '$(FCCOMPILE)' > $@ || rm $@
 
 kinds.inc: kinds.h
 	grep '^#' < kinds.h > $@
@@ -1064,10 +1060,10 @@ c99_protos.inc: $(srcdir)/c99_protos.h
 	grep '^#' < $(srcdir)/c99_protos.h > $@
 
 selected_int_kind.inc: $(srcdir)/mk-sik-inc.sh
-	$(SHELL) $(srcdir)/mk-sik-inc.sh '@LIBGOMP_CHECKED_INT_KINDS@' '$(FCCOMPILE)' > $@ || rm $@
+	$(SHELL) $(srcdir)/mk-sik-inc.sh '$(FCCOMPILE)' > $@ || rm $@
 
 selected_real_kind.inc: $(srcdir)/mk-srk-inc.sh
-	$(SHELL) $(srcdir)/mk-srk-inc.sh '@LIBGOMP_CHECKED_REAL_KINDS@' '$(FCCOMPILE)' > $@ || rm $@
+	$(SHELL) $(srcdir)/mk-srk-inc.sh '$(FCCOMPILE)' > $@ || rm $@
 
 fpu-target.h: $(srcdir)/$(FPU_HOST_HEADER)
 	cp $(srcdir)/$(FPU_HOST_HEADER) $@
@@ -1075,14 +1071,6 @@ fpu-target.h: $(srcdir)/$(FPU_HOST_HEADER)
 fpu-target.inc: fpu-target.h $(srcdir)/libgfortran.h
 	grep '^#define GFC_FPE_' < $(top_srcdir)/../gcc/fortran/libgfortran.h > $@ || true
 	grep '^#define GFC_FPE_' < $(srcdir)/libgfortran.h >> $@ || true
-
-# Place ISO_Fortran_binding.h under include/ in the build directory such
-# that it can be used for in-built-tree testsuite runs without interference of
-# other files in the build dir - like intrinsic .mod files or other .h files.
-include/ISO_Fortran_binding.h: $(srcdir)/ISO_Fortran_binding.h
-	-rm -f $@
-	$(MKDIR_P) include
-	cp $(srcdir)/ISO_Fortran_binding.h $@
 
 ## A 'normal' build shouldn't need to regenerate these
 ## so we only include them in maintainer mode
@@ -1243,12 +1231,6 @@ $(gfor_misc_specifics): m4/misc_specifics.m4 m4/head.m4
 ## end of maintainer mode only rules
 endif
 
-clean-local:
-	-rm -rf include
-
 EXTRA_DIST = $(m4_files)
-
-# target overrides
--include $(tmake_file)
 
 include $(top_srcdir)/../multilib.am

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---           Copyright (C) 2007-2021, Free Software Foundation, Inc.        --
+--           Copyright (C) 2007-2019, Free Software Foundation, Inc.        --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -79,12 +79,12 @@ package body GNAT.Encode_String is
       Ptr : Natural;
 
    begin
-      Ptr := Result'First;
+      Ptr := S'First;
       for J in S'Range loop
          Encode_Wide_Character (S (J), Result, Ptr);
       end loop;
 
-      Length := Ptr - Result'First;
+      Length := Ptr - S'First;
    end Encode_Wide_String;
 
    -----------------------------
@@ -108,12 +108,12 @@ package body GNAT.Encode_String is
       Ptr : Natural;
 
    begin
-      Ptr := Result'First;
+      Ptr := S'First;
       for J in S'Range loop
          Encode_Wide_Wide_Character (S (J), Result, Ptr);
       end loop;
 
-      Length := Ptr - Result'First;
+      Length := Ptr - S'First;
    end Encode_Wide_Wide_String;
 
    ---------------------------

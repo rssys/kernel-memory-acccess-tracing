@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 // PERMUTE_ARGS:
 
 int magicVariable()
@@ -141,8 +140,7 @@ static assert(bazra(14)==64);
 
 void moreCommaTests()
 {
-   (containsAsm(), containsAsm());
-   auto k = containsAsm();
+   auto k = (containsAsm(), containsAsm());
    for (int i=0; i< k^^2; i+=StructWithCtor(1).n) {}
 }
 

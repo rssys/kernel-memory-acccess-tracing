@@ -1,11 +1,7 @@
 /* { dg-do run { target aarch64_sve_hw } } */
 /* { dg-options "-O2 -ftree-vectorize -ffast-math" } */
 
-#ifndef FILENAME
-#define FILENAME "slp_7.c"
-#endif
-
-#include FILENAME
+#include "slp_7.c"
 
 #define N (54 * 4)
 

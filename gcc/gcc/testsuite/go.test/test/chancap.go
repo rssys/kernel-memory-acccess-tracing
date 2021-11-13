@@ -8,17 +8,8 @@
 
 package main
 
-import (
-	"strings"
-	"unsafe"
-)
-
-type T chan int
-
-const ptrSize = unsafe.Sizeof((*byte)(nil))
-
 func main() {
-	c := make(T, 10)
+	c := make(chan int, 10)
 	if len(c) != 0 || cap(c) != 10 {
 		println("chan len/cap ", len(c), cap(c), " want 0 10")
 		panic("fail")
@@ -32,40 +23,9 @@ func main() {
 		panic("fail")
 	}
 
-	c = make(T)
+	c = make(chan int)
 	if len(c) != 0 || cap(c) != 0 {
 		println("chan len/cap ", len(c), cap(c), " want 0 0")
 		panic("fail")
 	}
-
-	n := -1
-	shouldPanic("makechan: size out of range", func() { _ = make(T, n) })
-	shouldPanic("makechan: size out of range", func() { _ = make(T, int64(n)) })
-	if ptrSize == 8 {
-		// Test mem > maxAlloc
-		var n2 int64 = 1 << 59
-		shouldPanic("makechan: size out of range", func() { _ = make(T, int(n2)) })
-		// Test elem.size*cap overflow
-		n2 = 1<<63 - 1
-		shouldPanic("makechan: size out of range", func() { _ = make(T, int(n2)) })
-	} else {
-		n = 1<<31 - 1
-		shouldPanic("makechan: size out of range", func() { _ = make(T, n) })
-		shouldPanic("makechan: size out of range", func() { _ = make(T, int64(n)) })
-	}
-}
-
-func shouldPanic(str string, f func()) {
-	defer func() {
-		err := recover()
-		if err == nil {
-			panic("did not panic")
-		}
-		s := err.(error).Error()
-		if !strings.Contains(s, str) {
-			panic("got panic " + s + ", want " + str)
-		}
-	}()
-
-	f()
 }

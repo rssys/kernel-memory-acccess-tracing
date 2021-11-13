@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,7 +36,6 @@ with Ada.Iterator_Interfaces;
 private with Ada.Containers.Hash_Tables;
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 --  The language-defined generic package Containers.Hashed_Maps provides
 --  private types Map and Cursor, and a set of operations for each type. A map
@@ -89,9 +88,7 @@ generic
    --  map values returns an unspecified value. The exact arguments and number
    --  of calls of this generic formal function by the function "=" on map
    --  values are unspecified.
-package Ada.Containers.Hashed_Maps with
-  SPARK_Mode => Off
-is
+package Ada.Containers.Hashed_Maps is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -101,22 +98,12 @@ is
       Constant_Indexing => Constant_Reference,
       Variable_Indexing => Reference,
       Default_Iterator  => Iterate,
-      Iterator_Element  => Element_Type,
-      Aggregate         => (Empty     => Empty,
-                            Add_Named => Insert);
+      Iterator_Element  => Element_Type;
 
    pragma Preelaborable_Initialization (Map);
 
    type Cursor is private;
    pragma Preelaborable_Initialization (Cursor);
-
-   function "=" (Left, Right : Cursor) return Boolean;
-   --  The representation of cursors includes a component used to optimize
-   --  iteration over maps. This component may become unreliable after
-   --  multiple map insertions, and must be excluded from cursor equality,
-   --  so we need to provide an explicit definition for it, instead of
-   --  using predefined equality (as implied by a questionable comment
-   --  in the RM).
 
    Empty_Map : constant Map;
    --  Map objects declared without an initialization expression are
@@ -125,8 +112,6 @@ is
    No_Element : constant Cursor;
    --  Cursor objects declared without an initialization expression are
    --  initialized to the value No_Element.
-
-   function Empty (Capacity : Count_Type := 1000) return Map;
 
    function Has_Element (Position : Cursor) return Boolean;
    --  Returns True if Position designates an element, and returns False
@@ -436,10 +421,7 @@ private
 
    type Map is new Ada.Finalization.Controlled with record
       HT : HT_Types.Hash_Table_Type;
-   end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Map);
+   end record;
 
    overriding procedure Adjust (Container : in out Map);
 
@@ -473,15 +455,7 @@ private
 
       Position  : Hash_Type := Hash_Type'Last;
       --  Position of the node in the buckets of the container. If this is
-      --  equal to Hash_Type'Last, then it will not be used. Position is
-      --  not requried by the implementation, but improves the efficiency
-      --  of various operations.
-      --
-      --  However, this value must be maintained so that the predefined
-      --  equality operation acts as required by RM A.18.4-18/2, which
-      --  states: "The predefined "=" operator for type Cursor returns True
-      --  if both cursors are No_Element, or designate the same element
-      --  in the same container."
+      --  equal to Hash_Type'Last, then it will not be used.
    end record;
 
    procedure Read

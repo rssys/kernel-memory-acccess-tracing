@@ -1,8 +1,8 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target arm_fp_dp_ok } */
+/* { dg-require-effective-target arm_fp_ok } */
 /* { dg-skip-if "need fp instructions" { *-*-* } { "-mfloat-abi=soft" } { "" } } */
 /* { dg-options "-O2" } */
-/* { dg-add-options arm_fp_dp } */
+/* { dg-add-options arm_fp } */
 
 extern void bar (double);
 

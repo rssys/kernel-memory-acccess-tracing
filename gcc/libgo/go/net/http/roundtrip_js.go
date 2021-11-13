@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build js && wasm
 // +build js,wasm
 
 package http
@@ -11,11 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 	"strconv"
+	"strings"
 	"syscall/js"
 )
-
-var uint8Array = js.Global().Get("Uint8Array")
 
 // jsFetchMode is a Request.Header map key that, if present,
 // signals that the map entry is actually an option to the Fetch API mode setting.
@@ -33,24 +33,14 @@ const jsFetchMode = "js.fetch:mode"
 // Reference: https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/fetch#Parameters
 const jsFetchCreds = "js.fetch:credentials"
 
-// jsFetchRedirect is a Request.Header map key that, if present,
-// signals that the map entry is actually an option to the Fetch API redirect setting.
-// Valid values are: "follow", "error", "manual"
-// The default is "follow".
-//
-// Reference: https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/fetch#Parameters
-const jsFetchRedirect = "js.fetch:redirect"
-
-var useFakeNetwork = js.Global().Get("fetch").IsUndefined()
-
 // RoundTrip implements the RoundTripper interface using the WHATWG Fetch API.
 func (t *Transport) RoundTrip(req *Request) (*Response, error) {
-	if useFakeNetwork {
+	if useFakeNetwork() {
 		return t.roundTrip(req)
 	}
 
 	ac := js.Global().Get("AbortController")
-	if !ac.IsUndefined() {
+	if ac != js.Undefined() {
 		// Some browsers that support WASM don't necessarily support
 		// the AbortController. See
 		// https://developer.mozilla.org/en-US/docs/Web/API/AbortController#Browser_compatibility.
@@ -70,11 +60,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		opt.Set("mode", h)
 		req.Header.Del(jsFetchMode)
 	}
-	if h := req.Header.Get(jsFetchRedirect); h != "" {
-		opt.Set("redirect", h)
-		req.Header.Del(jsFetchRedirect)
-	}
-	if !ac.IsUndefined() {
+	if ac != js.Undefined() {
 		opt.Set("signal", ac.Get("signal"))
 	}
 	headers := js.Global().Get("Headers").New()
@@ -92,29 +78,22 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		// See https://github.com/web-platform-tests/wpt/issues/7693 for WHATWG tests issue.
 		// See https://developer.mozilla.org/en-US/docs/Web/API/Streams_API for more details on the Streams API
 		// and browser support.
-		body, err := io.ReadAll(req.Body)
+		body, err := ioutil.ReadAll(req.Body)
 		if err != nil {
 			req.Body.Close() // RoundTrip must always close the body, including on errors.
 			return nil, err
 		}
 		req.Body.Close()
-		if len(body) != 0 {
-			buf := uint8Array.New(len(body))
-			js.CopyBytesToJS(buf, body)
-			opt.Set("body", buf)
-		}
+		a := js.TypedArrayOf(body)
+		defer a.Release()
+		opt.Set("body", a)
 	}
-
-	fetchPromise := js.Global().Call("fetch", req.URL.String(), opt)
+	respPromise := js.Global().Call("fetch", req.URL.String(), opt)
 	var (
-		respCh           = make(chan *Response, 1)
-		errCh            = make(chan error, 1)
-		success, failure js.Func
+		respCh = make(chan *Response, 1)
+		errCh  = make(chan error, 1)
 	)
-	success = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		success.Release()
-		failure.Release()
-
+	success := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		result := args[0]
 		header := Header{}
 		// https://developer.mozilla.org/en-US/docs/Web/API/Headers/entries
@@ -139,7 +118,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		var body io.ReadCloser
 		// The body is undefined when the browser does not support streaming response bodies (Firefox),
 		// and null in certain error cases, i.e. when the request is blocked because of CORS settings.
-		if !b.IsUndefined() && !b.IsNull() {
+		if b != js.Undefined() && b != js.Null() {
 			body = &streamReader{stream: b.Call("getReader")}
 		} else {
 			// Fall back to using ArrayBuffer
@@ -147,30 +126,35 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 			body = &arrayReader{arrayPromise: result.Call("arrayBuffer")}
 		}
 
-		code := result.Get("status").Int()
-		respCh <- &Response{
-			Status:        fmt.Sprintf("%d %s", code, StatusText(code)),
-			StatusCode:    code,
+		select {
+		case respCh <- &Response{
+			Status:        result.Get("status").String() + " " + StatusText(result.Get("status").Int()),
+			StatusCode:    result.Get("status").Int(),
 			Header:        header,
 			ContentLength: contentLength,
 			Body:          body,
 			Request:       req,
+		}:
+		case <-req.Context().Done():
 		}
 
 		return nil
 	})
-	failure = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		success.Release()
-		failure.Release()
-		errCh <- fmt.Errorf("net/http: fetch() failed: %s", args[0].Get("message").String())
+	defer success.Release()
+	failure := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		err := fmt.Errorf("net/http: fetch() failed: %s", args[0].String())
+		select {
+		case errCh <- err:
+		case <-req.Context().Done():
+		}
 		return nil
 	})
-
-	fetchPromise.Call("then", success, failure)
+	defer failure.Release()
+	respPromise.Call("then", success, failure)
 	select {
 	case <-req.Context().Done():
-		if !ac.IsUndefined() {
-			// Abort the Fetch request.
+		if ac != js.Undefined() {
+			// Abort the Fetch request
 			ac.Call("abort")
 		}
 		return nil, req.Context().Err()
@@ -182,6 +166,12 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 }
 
 var errClosed = errors.New("net/http: reader is closed")
+
+// useFakeNetwork is used to determine whether the request is made
+// by a test and should be made to use the fake in-memory network.
+func useFakeNetwork() bool {
+	return len(os.Args) > 0 && strings.HasSuffix(os.Args[0], ".test")
+}
 
 // streamReader implements an io.ReadCloser wrapper for ReadableStream.
 // See https://fetch.spec.whatwg.org/#readablestream for more information.
@@ -207,7 +197,9 @@ func (r *streamReader) Read(p []byte) (n int, err error) {
 				return nil
 			}
 			value := make([]byte, result.Get("value").Get("byteLength").Int())
-			js.CopyBytesToGo(value, result.Get("value"))
+			a := js.TypedArrayOf(value)
+			a.Call("set", result.Get("value"))
+			a.Release()
 			bCh <- value
 			return nil
 		})
@@ -268,9 +260,11 @@ func (r *arrayReader) Read(p []byte) (n int, err error) {
 		)
 		success := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			// Wrap the input ArrayBuffer with a Uint8Array
-			uint8arrayWrapper := uint8Array.New(args[0])
+			uint8arrayWrapper := js.Global().Get("Uint8Array").New(args[0])
 			value := make([]byte, uint8arrayWrapper.Get("byteLength").Int())
-			js.CopyBytesToGo(value, uint8arrayWrapper)
+			a := js.TypedArrayOf(value)
+			a.Call("set", uint8arrayWrapper)
+			a.Release()
 			bCh <- value
 			return nil
 		})

@@ -2,7 +2,6 @@
    assignment.  */
 /* { dg-do run } */
 /* { dg-options "-std=c11 -pedantic-errors" } */
-/* { dg-prune-output "warning: using serial compilation" } */
 
 extern void abort (void);
 extern void exit (int);

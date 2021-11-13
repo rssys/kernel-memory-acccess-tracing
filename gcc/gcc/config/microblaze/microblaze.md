@@ -1,5 +1,5 @@
 ;; microblaze.md -- Machine description for Xilinx MicroBlaze processors.
-;; Copyright (C) 2009-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 ;; Contributed by Michael Eager <eager@eagercon.com>.
 
@@ -1144,7 +1144,7 @@
 ;; Argument 2 is the length
 ;; Argument 3 is the alignment
  
-(define_expand "cpymemsi"
+(define_expand "movmemsi"
   [(parallel [(set (match_operand:BLK 0 "general_operand")
 		   (match_operand:BLK 1 "general_operand"))
 	      (use (match_operand:SI 2 ""))
@@ -2107,8 +2107,8 @@
   (use (reg:SI R_GOT))]
   "flag_pic"
   {
-    rtx target2
-      = gen_rtx_REG (Pmode, GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
+    register rtx target2 = gen_rtx_REG (Pmode, 
+			      GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
     gen_rtx_CLOBBER (VOIDmode, target2);
     return "brlid\tr15,%0\;%#";
   }
@@ -2122,9 +2122,9 @@
   (clobber (reg:SI R_SR))]
   ""
   {
-    rtx target = operands[0];
-    rtx target2
-      = gen_rtx_REG (Pmode, GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
+    register rtx target = operands[0];
+    register rtx target2 = gen_rtx_REG (Pmode,
+			      GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
     if (GET_CODE (target) == SYMBOL_REF) {
         if (microblaze_break_function_p (SYMBOL_REF_DECL (target))) {
             gen_rtx_CLOBBER (VOIDmode, target2);
@@ -2216,8 +2216,7 @@
    (use (match_operand:SI 4 "register_operand"))]
   "flag_pic"
   { 
-    rtx target2
-      = gen_rtx_REG (Pmode,GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
+    register rtx target2=gen_rtx_REG (Pmode,GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
 
     gen_rtx_CLOBBER (VOIDmode,target2);
     return "brlid\tr15,%1\;%#";
@@ -2233,9 +2232,8 @@
    (clobber (match_operand:SI 3 "register_operand" "=d"))]
   ""
   { 
-    rtx target = operands[1];
-    rtx target2
-      = gen_rtx_REG (Pmode,GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
+    register rtx target = operands[1];
+    register rtx target2=gen_rtx_REG (Pmode,GP_REG_FIRST + MB_ABI_SUB_RETURN_ADDR_REGNUM);
 
     if (GET_CODE (target) == SYMBOL_REF)
     {
@@ -2305,7 +2303,7 @@
 (define_insn "trap"
   [(trap_if (const_int 1) (const_int 0))]
   ""
-  "bri\t0"
+  "brki\tr0,-1"
  [(set_attr "type" "trap")]
 )
 

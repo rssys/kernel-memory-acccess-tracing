@@ -10,5 +10,5 @@ main ()
   A b;
   int *p = &b;
   *(p - 1) = 123;
-  void *p2 = __builtin_alloca (b);
+  __builtin_alloca (b);
 }

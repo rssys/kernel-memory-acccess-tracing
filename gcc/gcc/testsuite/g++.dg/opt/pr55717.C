@@ -2,8 +2,6 @@
 // { dg-do compile }
 // { dg-options "-O -g" }
 
-typedef unsigned uint32_t __attribute__((mode (__SI__)));
-
 struct DebugOnly {};
 template <class T>
 struct StripConst { typedef T result; };
@@ -92,7 +90,7 @@ bool IsScriptMarked (JSScript **);
 struct AllocationSiteKey
 {
   JSScript *script;
-  uint32_t offset : 24;
+  unsigned offset : 24;
   int kind;
   typedef AllocationSiteKey Lookup;
   static unsigned hash (AllocationSiteKey key) { return (long (key.script->code + key.offset)) ^ key.kind; }

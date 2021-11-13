@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/rpc"
 	"reflect"
@@ -126,8 +127,8 @@ func TestServer(t *testing.T) {
 		if resp.Error != nil {
 			t.Fatalf("resp.Error: %s", resp.Error)
 		}
-		if resp.Id.(string) != string(rune(i)) {
-			t.Fatalf("resp: bad id %q want %q", resp.Id.(string), string(rune(i)))
+		if resp.Id.(string) != string(i) {
+			t.Fatalf("resp: bad id %q want %q", resp.Id.(string), string(i))
 		}
 		if resp.Result.C != 2*i+1 {
 			t.Fatalf("resp: bad result: %d+%d=%d", i, i+1, resp.Result.C)
@@ -248,7 +249,7 @@ func TestMalformedInput(t *testing.T) {
 func TestMalformedOutput(t *testing.T) {
 	cli, srv := net.Pipe()
 	go srv.Write([]byte(`{"id":0,"result":null,"error":null}`))
-	go io.ReadAll(srv)
+	go ioutil.ReadAll(srv)
 
 	client := NewClient(cli)
 	defer client.Close()
@@ -270,7 +271,7 @@ func TestServerErrorHasNullResult(t *testing.T) {
 	}{
 		Reader: strings.NewReader(`{"method": "Arith.Add", "id": "123", "params": []}`),
 		Writer: &out,
-		Closer: io.NopCloser(nil),
+		Closer: ioutil.NopCloser(nil),
 	})
 	r := new(rpc.Request)
 	if err := sc.ReadRequestHeader(r); err != nil {

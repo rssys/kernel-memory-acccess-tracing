@@ -5,10 +5,9 @@ with GNAT;                 use GNAT;
 with GNAT.Dynamic_HTables; use GNAT.Dynamic_HTables;
 
 procedure Dynhash is
-   procedure Destroy (Val : in out Integer) is null;
    function Hash (Key : Integer) return Bucket_Range_Type;
 
-   package DHT is new Dynamic_Hash_Tables
+   package DHT is new Dynamic_HTable
      (Key_Type              => Integer,
       Value_Type            => Integer,
       No_Value              => 0,
@@ -17,21 +16,20 @@ procedure Dynhash is
       Compression_Threshold => 0.3,
       Compression_Factor    => 2,
       "="                   => "=",
-      Destroy_Value         => Destroy,
       Hash                  => Hash);
    use DHT;
 
    function Create_And_Populate
      (Low_Key   : Integer;
       High_Key  : Integer;
-      Init_Size : Positive) return Dynamic_Hash_Table;
+      Init_Size : Positive) return Instance;
    --  Create a hash table with initial size Init_Size and populate it with
    --  key-value pairs where both keys and values are in the range Low_Key
    --  .. High_Key.
 
    procedure Check_Empty
      (Caller    : String;
-      T         : Dynamic_Hash_Table;
+      T         : Instance;
       Low_Key   : Integer;
       High_Key  : Integer);
    --  Ensure that
@@ -47,14 +45,12 @@ procedure Dynhash is
    --  Ensure that iterator Iter visits every key in the range Low_Key ..
    --  High_Key exactly once.
 
-   procedure Check_Locked_Mutations
-     (Caller : String;
-      T      : in out Dynamic_Hash_Table);
+   procedure Check_Locked_Mutations (Caller : String; T : in out Instance);
    --  Ensure that all mutation operations of hash table T are locked
 
    procedure Check_Size
      (Caller    : String;
-      T         : Dynamic_Hash_Table;
+      T         : Instance;
       Exp_Count : Natural);
    --  Ensure that the count of key-value pairs of hash table T matches
    --  expected count Exp_Count. Emit an error if this is not the case.
@@ -138,9 +134,9 @@ procedure Dynhash is
    function Create_And_Populate
      (Low_Key   : Integer;
       High_Key  : Integer;
-      Init_Size : Positive) return Dynamic_Hash_Table
+      Init_Size : Positive) return Instance
    is
-      T : Dynamic_Hash_Table;
+      T : Instance;
 
    begin
       T := Create (Init_Size);
@@ -158,7 +154,7 @@ procedure Dynhash is
 
    procedure Check_Empty
      (Caller    : String;
-      T         : Dynamic_Hash_Table;
+      T         : Instance;
       Low_Key   : Integer;
       High_Key  : Integer)
    is
@@ -231,10 +227,7 @@ procedure Dynhash is
    -- Check_Locked_Mutations --
    ----------------------------
 
-   procedure Check_Locked_Mutations
-     (Caller : String;
-      T      : in out Dynamic_Hash_Table)
-   is
+   procedure Check_Locked_Mutations (Caller : String; T : in out Instance) is
    begin
       begin
          Delete (T, 1);
@@ -283,7 +276,7 @@ procedure Dynhash is
 
    procedure Check_Size 
      (Caller    : String;
-      T         : Dynamic_Hash_Table;
+      T         : Instance;
       Exp_Count : Natural)
    is
       Count : constant Natural := Size (T);
@@ -312,7 +305,7 @@ procedure Dynhash is
    procedure Test_Create (Init_Size : Positive) is
       Count : Natural;
       Iter  : Iterator;
-      T     : Dynamic_Hash_Table;
+      T     : Instance;
       Val   : Integer;
 
    begin
@@ -409,7 +402,7 @@ procedure Dynhash is
       Init_Size : Positive)
    is
       Exp_Val : Integer;
-      T       : Dynamic_Hash_Table;
+      T       : Instance;
       Val     : Integer;
 
    begin
@@ -490,7 +483,7 @@ procedure Dynhash is
    is
       Iter_1 : Iterator;
       Iter_2 : Iterator;
-      T      : Dynamic_Hash_Table;
+      T      : Instance;
 
    begin
       T := Create_And_Populate (Low_Key, High_Key, Init_Size);
@@ -559,7 +552,7 @@ procedure Dynhash is
    procedure Test_Iterate_Empty (Init_Size : Positive) is
       Iter : Iterator;
       Key  : Integer;
-      T    : Dynamic_Hash_Table;
+      T    : Instance;
 
    begin
       T := Create_And_Populate (0, -1, Init_Size);
@@ -606,7 +599,7 @@ procedure Dynhash is
    is
       Iter : Iterator;
       Key  : Integer;
-      T    : Dynamic_Hash_Table;
+      T    : Instance;
 
    begin
       T := Create_And_Populate (Low_Key, High_Key, Init_Size);
@@ -660,7 +653,7 @@ procedure Dynhash is
       Init_Size : Positive)
    is
       Key : constant Integer := 1;
-      T   : Dynamic_Hash_Table;
+      T   : Instance;
       Val : Integer;
 
    begin
@@ -694,7 +687,7 @@ procedure Dynhash is
       High_Key  : Integer;
       Init_Size : Positive)
    is
-      T : Dynamic_Hash_Table;
+      T : Instance;
 
    begin
       T := Create_And_Populate (Low_Key, High_Key, Init_Size);

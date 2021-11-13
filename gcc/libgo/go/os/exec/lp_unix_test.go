@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || linux || netbsd || openbsd || solaris
 // +build aix darwin dragonfly freebsd hurd linux netbsd openbsd solaris
 
 package exec
 
 import (
+	"io/ioutil"
 	"os"
 	"testing"
 )
 
 func TestLookPathUnixEmptyPath(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "TestLookPathUnixEmptyPath")
+	tmp, err := ioutil.TempDir("", "TestLookPathUnixEmptyPath")
 	if err != nil {
 		t.Fatal("TempDir failed: ", err)
 	}
@@ -37,7 +37,13 @@ func TestLookPathUnixEmptyPath(t *testing.T) {
 		t.Fatal("Close failed: ", err)
 	}
 
-	t.Setenv("PATH", "")
+	pathenv := os.Getenv("PATH")
+	defer os.Setenv("PATH", pathenv)
+
+	err = os.Setenv("PATH", "")
+	if err != nil {
+		t.Fatal("Setenv failed: ", err)
+	}
 
 	path, err := LookPath("exec_me")
 	if err == nil {

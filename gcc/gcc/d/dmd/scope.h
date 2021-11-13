@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -61,14 +61,9 @@ enum PINLINE;
 #define SCOPEctfe           0x0080  // inside a ctfe-only expression
 #define SCOPEcompile        0x0100  // inside __traits(compile)
 #define SCOPEignoresymbolvisibility 0x0200  // ignore symbol visibility (Bugzilla 15907)
+#define SCOPEfullinst       0x1000  // fully instantiate templates
 
 #define SCOPEfree           0x8000  // is on free list
-#define SCOPEfullinst       0x10000 // fully instantiate templates
-#define SCOPEalias          0x20000 // inside alias declaration
-
-// The following are mutually exclusive
-#define SCOPEprintf         0x40000 // printf-style function
-#define SCOPEscanf          0x80000 // scanf-style function
 
 struct Scope
 {
@@ -76,12 +71,14 @@ struct Scope
 
     Module *_module;            // Root module
     ScopeDsymbol *scopesym;     // current symbol
+    ScopeDsymbol *sds;          // if in static if, and declaring new symbols,
+                                // sds gets the addMember()
     FuncDeclaration *func;      // function we are in
     Dsymbol *parent;            // parent to use
     LabelStatement *slabel;     // enclosing labelled statement
     SwitchStatement *sw;        // enclosing switch statement
     TryFinallyStatement *tf;    // enclosing try finally statement
-    ScopeGuardStatement *os;       // enclosing scope(xxx) statement
+    OnScopeStatement *os;       // enclosing scope(xxx) statement
     Statement *sbreak;          // enclosing statement that supports "break"
     Statement *scontinue;       // enclosing statement that supports "continue"
     ForeachStatement *fes;      // if nested function for ForeachStatement, this is it
@@ -148,6 +145,7 @@ struct Scope
     Module *instantiatingModule();
 
     Dsymbol *search(Loc loc, Identifier *ident, Dsymbol **pscopesym, int flags = IgnoreNone);
+    static void deprecation10378(Loc loc, Dsymbol *sold, Dsymbol *snew);
     Dsymbol *search_correct(Identifier *ident);
     static const char *search_correct_C(Identifier *ident);
     Dsymbol *insert(Dsymbol *s);

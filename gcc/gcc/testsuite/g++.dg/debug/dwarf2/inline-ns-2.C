@@ -1,5 +1,4 @@
 // { dg-options "-O2 -gdwarf-5 -dA" }
-// { dg-skip-if "AIX DWARF5" { powerpc-ibm-aix* } }
 // { dg-final { scan-assembler-times " DW_AT_export_symbols" 2 } }
 // { dg-final { scan-assembler-not "DIE \\(\[^\n\r\]*\\) DW_TAG_imported_module" } }
 

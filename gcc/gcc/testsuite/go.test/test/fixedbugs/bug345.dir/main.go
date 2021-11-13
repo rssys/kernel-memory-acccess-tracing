@@ -1,4 +1,4 @@
-// Copyright 2011 The Go Authors. All rights reserved.
+// Copyright 2011 The Go Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -6,9 +6,8 @@ package main
 
 import (
 	"bufio"
-	goio "io"
-
 	"./io"
+	goio "io"
 )
 
 func main() {
@@ -23,7 +22,7 @@ func main() {
 	// main.go:27: cannot use &x (type *"io".SectionReader) as type *"/Users/rsc/g/go/test/fixedbugs/bug345.dir/io".SectionReader in function argument
 
 	var w io.Writer
-	bufio.NewWriter(w) // ERROR "[\w.]+[^.]/io|has incompatible type"
+	bufio.NewWriter(w)  // ERROR "test/io|has incompatible type"
 	var x goio.SectionReader
-	io.SR(&x) // ERROR "[\w.]+[^.]/io|has incompatible type"
+	io.SR(&x)  // ERROR "test/io|has incompatible type"
 }

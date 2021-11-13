@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	. "net/http"
@@ -34,7 +35,7 @@ var robotsTxtHandler = HandlerFunc(func(w ResponseWriter, r *Request) {
 	fmt.Fprintf(w, "User-agent: go\nDisallow: /something/")
 })
 
-// pedanticReadAll works like io.ReadAll but additionally
+// pedanticReadAll works like ioutil.ReadAll but additionally
 // verifies that r obeys the documented io.Reader contract.
 func pedanticReadAll(r io.Reader) (b []byte, err error) {
 	var bufa [64]byte
@@ -189,7 +190,7 @@ func TestPostFormRequestFormat(t *testing.T) {
 	if g, e := tr.req.ContentLength, int64(len(expectedBody)); g != e {
 		t.Errorf("got ContentLength %d, want %d", g, e)
 	}
-	bodyb, err := io.ReadAll(tr.req.Body)
+	bodyb, err := ioutil.ReadAll(tr.req.Body)
 	if err != nil {
 		t.Fatalf("ReadAll on req.Body: %v", err)
 	}
@@ -220,27 +221,27 @@ func TestClientRedirects(t *testing.T) {
 
 	c := ts.Client()
 	_, err := c.Get(ts.URL)
-	if e, g := `Get "/?n=10": stopped after 10 redirects`, fmt.Sprintf("%v", err); e != g {
+	if e, g := "Get /?n=10: stopped after 10 redirects", fmt.Sprintf("%v", err); e != g {
 		t.Errorf("with default client Get, expected error %q, got %q", e, g)
 	}
 
 	// HEAD request should also have the ability to follow redirects.
 	_, err = c.Head(ts.URL)
-	if e, g := `Head "/?n=10": stopped after 10 redirects`, fmt.Sprintf("%v", err); e != g {
+	if e, g := "Head /?n=10: stopped after 10 redirects", fmt.Sprintf("%v", err); e != g {
 		t.Errorf("with default client Head, expected error %q, got %q", e, g)
 	}
 
 	// Do should also follow redirects.
 	greq, _ := NewRequest("GET", ts.URL, nil)
 	_, err = c.Do(greq)
-	if e, g := `Get "/?n=10": stopped after 10 redirects`, fmt.Sprintf("%v", err); e != g {
+	if e, g := "Get /?n=10: stopped after 10 redirects", fmt.Sprintf("%v", err); e != g {
 		t.Errorf("with default client Do, expected error %q, got %q", e, g)
 	}
 
 	// Requests with an empty Method should also redirect (Issue 12705)
 	greq.Method = ""
 	_, err = c.Do(greq)
-	if e, g := `Get "/?n=10": stopped after 10 redirects`, fmt.Sprintf("%v", err); e != g {
+	if e, g := "Get /?n=10: stopped after 10 redirects", fmt.Sprintf("%v", err); e != g {
 		t.Errorf("with default client Do and empty Method, expected error %q, got %q", e, g)
 	}
 
@@ -257,12 +258,12 @@ func TestClientRedirects(t *testing.T) {
 		t.Fatalf("Get error: %v", err)
 	}
 	res.Body.Close()
-	finalURL := res.Request.URL.String()
+	finalUrl := res.Request.URL.String()
 	if e, g := "<nil>", fmt.Sprintf("%v", err); e != g {
 		t.Errorf("with custom client, expected error %q, got %q", e, g)
 	}
-	if !strings.HasSuffix(finalURL, "/?n=15") {
-		t.Errorf("expected final url to end in /?n=15; got url %q", finalURL)
+	if !strings.HasSuffix(finalUrl, "/?n=15") {
+		t.Errorf("expected final url to end in /?n=15; got url %q", finalUrl)
 	}
 	if e, g := 15, len(lastVia); e != g {
 		t.Errorf("expected lastVia to have contained %d elements; got %d", e, g)
@@ -316,7 +317,8 @@ func TestClientRedirectContext(t *testing.T) {
 			return errors.New("redirected request's context never expired after root request canceled")
 		}
 	}
-	req, _ := NewRequestWithContext(ctx, "GET", ts.URL, nil)
+	req, _ := NewRequest("GET", ts.URL, nil)
+	req = req.WithContext(ctx)
 	_, err := c.Do(req)
 	ue, ok := err.(*url.Error)
 	if !ok {
@@ -420,7 +422,7 @@ func testRedirectsByMethod(t *testing.T, method string, table []redirectTest, wa
 	var ts *httptest.Server
 	ts = httptest.NewServer(HandlerFunc(func(w ResponseWriter, r *Request) {
 		log.Lock()
-		slurp, _ := io.ReadAll(r.Body)
+		slurp, _ := ioutil.ReadAll(r.Body)
 		fmt.Fprintf(&log.Buffer, "%s %s %q", r.Method, r.RequestURI, slurp)
 		if cl := r.Header.Get("Content-Length"); r.Method == "GET" && len(slurp) == 0 && (r.ContentLength != 0 || cl != "") {
 			fmt.Fprintf(&log.Buffer, " (but with body=%T, content-length = %v, %q)", r.Body, r.ContentLength, cl)
@@ -451,7 +453,7 @@ func testRedirectsByMethod(t *testing.T, method string, table []redirectTest, wa
 	for _, tt := range table {
 		content := tt.redirectBody
 		req, _ := NewRequest(method, ts.URL+tt.suffix, strings.NewReader(content))
-		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(content)), nil }
+		req.GetBody = func() (io.ReadCloser, error) { return ioutil.NopCloser(strings.NewReader(content)), nil }
 		res, err := c.Do(req)
 
 		if err != nil {
@@ -521,7 +523,7 @@ func TestClientRedirectUseResponse(t *testing.T) {
 		t.Errorf("status = %d; want %d", res.StatusCode, StatusFound)
 	}
 	defer res.Body.Close()
-	slurp, err := io.ReadAll(res.Body)
+	slurp, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1041,7 +1043,7 @@ func testClientHeadContentLength(t *testing.T, h2 bool) {
 		if res.ContentLength != tt.want {
 			t.Errorf("Content-Length = %d; want %d", res.ContentLength, tt.want)
 		}
-		bs, err := io.ReadAll(res.Body)
+		bs, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1171,22 +1173,17 @@ func TestStripPasswordFromError(t *testing.T) {
 		{
 			desc: "Strip password from error message",
 			in:   "http://user:password@dummy.faketld/",
-			out:  `Get "http://user:***@dummy.faketld/": dummy impl`,
+			out:  "Get http://user:***@dummy.faketld/: dummy impl",
 		},
 		{
 			desc: "Don't Strip password from domain name",
 			in:   "http://user:password@password.faketld/",
-			out:  `Get "http://user:***@password.faketld/": dummy impl`,
+			out:  "Get http://user:***@password.faketld/: dummy impl",
 		},
 		{
 			desc: "Don't Strip password from path",
 			in:   "http://user:password@dummy.faketld/password",
-			out:  `Get "http://user:***@dummy.faketld/password": dummy impl`,
-		},
-		{
-			desc: "Strip escaped password",
-			in:   "http://user:pa%2Fssword@dummy.faketld/",
-			out:  `Get "http://user:***@dummy.faketld/": dummy impl`,
+			out:  "Get http://user:***@dummy.faketld/password: dummy impl",
 		},
 	}
 	for _, tC := range testCases {
@@ -1256,7 +1253,7 @@ func testClientTimeout(t *testing.T, h2 bool) {
 
 	errc := make(chan error, 1)
 	go func() {
-		_, err := io.ReadAll(res.Body)
+		_, err := ioutil.ReadAll(res.Body)
 		errc <- err
 		res.Body.Close()
 	}()
@@ -1273,7 +1270,7 @@ func testClientTimeout(t *testing.T, h2 bool) {
 		} else if !ne.Timeout() {
 			t.Errorf("net.Error.Timeout = false; want true")
 		}
-		if got := ne.Error(); !strings.Contains(got, "(Client.Timeout") {
+		if got := ne.Error(); !strings.Contains(got, "Client.Timeout exceeded") {
 			t.Errorf("error string = %q; missing timeout substring", got)
 		}
 	case <-time.After(failTime):
@@ -1291,7 +1288,7 @@ func testClientTimeout_Headers(t *testing.T, h2 bool) {
 	donec := make(chan bool, 1)
 	cst := newClientServerTest(t, h2, HandlerFunc(func(w ResponseWriter, r *Request) {
 		<-donec
-	}), optQuietLog)
+	}))
 	defer cst.close()
 	// Note that we use a channel send here and not a close.
 	// The race detector doesn't know that we're waiting for a timeout
@@ -1347,7 +1344,7 @@ func TestClientTimeoutCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	_, err = io.Copy(io.Discard, res.Body)
+	_, err = io.Copy(ioutil.Discard, res.Body)
 	if err != ExportErrRequestCanceled {
 		t.Fatalf("error = %v; want errRequestCanceled", err)
 	}
@@ -1371,7 +1368,7 @@ func testClientRedirectEatsBody(t *testing.T, h2 bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = io.ReadAll(res.Body)
+	_, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -1449,7 +1446,7 @@ func (issue15577Tripper) RoundTrip(*Request) (*Response, error) {
 	resp := &Response{
 		StatusCode: 303,
 		Header:     map[string][]string{"Location": {"http://www.example.com/"}},
-		Body:       io.NopCloser(strings.NewReader("")),
+		Body:       ioutil.NopCloser(strings.NewReader("")),
 	}
 	return resp, nil
 }
@@ -1590,7 +1587,7 @@ func TestClientCopyHostOnRedirect(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status)
 	}
-	if got, err := io.ReadAll(resp.Body); err != nil || string(got) != wantBody {
+	if got, err := ioutil.ReadAll(resp.Body); err != nil || string(got) != wantBody {
 		t.Errorf("body = %q; want %q", got, wantBody)
 	}
 }
@@ -1915,170 +1912,4 @@ func TestClientCloseIdleConnections(t *testing.T) {
 	if !closed {
 		t.Error("not closed")
 	}
-}
-
-func TestClientPropagatesTimeoutToContext(t *testing.T) {
-	errDial := errors.New("not actually dialing")
-	c := &Client{
-		Timeout: 5 * time.Second,
-		Transport: &Transport{
-			DialContext: func(ctx context.Context, netw, addr string) (net.Conn, error) {
-				deadline, ok := ctx.Deadline()
-				if !ok {
-					t.Error("no deadline")
-				} else {
-					t.Logf("deadline in %v", deadline.Sub(time.Now()).Round(time.Second/10))
-				}
-				return nil, errDial
-			},
-		},
-	}
-	c.Get("https://example.tld/")
-}
-
-func TestClientDoCanceledVsTimeout_h1(t *testing.T) {
-	testClientDoCanceledVsTimeout(t, h1Mode)
-}
-
-func TestClientDoCanceledVsTimeout_h2(t *testing.T) {
-	testClientDoCanceledVsTimeout(t, h2Mode)
-}
-
-// Issue 33545: lock-in the behavior promised by Client.Do's
-// docs about request cancellation vs timing out.
-func testClientDoCanceledVsTimeout(t *testing.T, h2 bool) {
-	defer afterTest(t)
-	cst := newClientServerTest(t, h2, HandlerFunc(func(w ResponseWriter, r *Request) {
-		w.Write([]byte("Hello, World!"))
-	}))
-	defer cst.close()
-
-	cases := []string{"timeout", "canceled"}
-
-	for _, name := range cases {
-		t.Run(name, func(t *testing.T) {
-			var ctx context.Context
-			var cancel func()
-			if name == "timeout" {
-				ctx, cancel = context.WithTimeout(context.Background(), -time.Nanosecond)
-			} else {
-				ctx, cancel = context.WithCancel(context.Background())
-				cancel()
-			}
-			defer cancel()
-
-			req, _ := NewRequestWithContext(ctx, "GET", cst.ts.URL, nil)
-			_, err := cst.c.Do(req)
-			if err == nil {
-				t.Fatal("Unexpectedly got a nil error")
-			}
-
-			ue := err.(*url.Error)
-
-			var wantIsTimeout bool
-			var wantErr error = context.Canceled
-			if name == "timeout" {
-				wantErr = context.DeadlineExceeded
-				wantIsTimeout = true
-			}
-			if g, w := ue.Timeout(), wantIsTimeout; g != w {
-				t.Fatalf("url.Timeout() = %t, want %t", g, w)
-			}
-			if g, w := ue.Err, wantErr; g != w {
-				t.Errorf("url.Error.Err = %v; want %v", g, w)
-			}
-		})
-	}
-}
-
-type nilBodyRoundTripper struct{}
-
-func (nilBodyRoundTripper) RoundTrip(req *Request) (*Response, error) {
-	return &Response{
-		StatusCode: StatusOK,
-		Status:     StatusText(StatusOK),
-		Body:       nil,
-		Request:    req,
-	}, nil
-}
-
-func TestClientPopulatesNilResponseBody(t *testing.T) {
-	c := &Client{Transport: nilBodyRoundTripper{}}
-
-	resp, err := c.Get("http://localhost/anything")
-	if err != nil {
-		t.Fatalf("Client.Get rejected Response with nil Body: %v", err)
-	}
-
-	if resp.Body == nil {
-		t.Fatalf("Client failed to provide a non-nil Body as documented")
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			t.Fatalf("error from Close on substitute Response.Body: %v", err)
-		}
-	}()
-
-	if b, err := io.ReadAll(resp.Body); err != nil {
-		t.Errorf("read error from substitute Response.Body: %v", err)
-	} else if len(b) != 0 {
-		t.Errorf("substitute Response.Body was unexpectedly non-empty: %q", b)
-	}
-}
-
-// Issue 40382: Client calls Close multiple times on Request.Body.
-func TestClientCallsCloseOnlyOnce(t *testing.T) {
-	setParallel(t)
-	defer afterTest(t)
-	cst := newClientServerTest(t, h1Mode, HandlerFunc(func(w ResponseWriter, r *Request) {
-		w.WriteHeader(StatusNoContent)
-	}))
-	defer cst.close()
-
-	// Issue occurred non-deterministically: needed to occur after a successful
-	// write (into TCP buffer) but before end of body.
-	for i := 0; i < 50 && !t.Failed(); i++ {
-		body := &issue40382Body{t: t, n: 300000}
-		req, err := NewRequest(MethodPost, cst.ts.URL, body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp, err := cst.tr.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-	}
-}
-
-// issue40382Body is an io.ReadCloser for TestClientCallsCloseOnlyOnce.
-// Its Read reads n bytes before returning io.EOF.
-// Its Close returns nil but fails the test if called more than once.
-type issue40382Body struct {
-	t                *testing.T
-	n                int
-	closeCallsAtomic int32
-}
-
-func (b *issue40382Body) Read(p []byte) (int, error) {
-	switch {
-	case b.n == 0:
-		return 0, io.EOF
-	case b.n < len(p):
-		p = p[:b.n]
-		fallthrough
-	default:
-		for i := range p {
-			p[i] = 'x'
-		}
-		b.n -= len(p)
-		return len(p), nil
-	}
-}
-
-func (b *issue40382Body) Close() error {
-	if atomic.AddInt32(&b.closeCallsAtomic, 1) == 2 {
-		b.t.Error("Body closed more than once")
-	}
-	return nil
 }

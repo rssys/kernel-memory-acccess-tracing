@@ -1,5 +1,5 @@
 /* Target code for NVPTX.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Bernd Schmidt <bernds@codesourcery.com>
 
    This file is part of GCC.
@@ -74,8 +74,6 @@
 #include "cfgloop.h"
 #include "fold-const.h"
 #include "intl.h"
-#include "opts.h"
-#include "tree-pretty-print.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -168,12 +166,6 @@ static unsigned vector_red_align;
 static unsigned vector_red_partition;
 static GTY(()) rtx vector_red_sym;
 
-/* Shared memory block for gang-private variables.  */
-static unsigned gang_private_shared_size;
-static unsigned gang_private_shared_align;
-static GTY(()) rtx gang_private_shared_sym;
-static hash_map<tree_decl_hash, unsigned int> gang_private_shared_hmap;
-
 /* Global lock variable, needed for 128bit worker & gang reductions.  */
 static GTY(()) tree global_lock_var;
 
@@ -215,7 +207,7 @@ nvptx_option_override (void)
   /* Set toplevel_reorder, unless explicitly disabled.  We need
      reordering so that we emit necessary assembler decls of
      undeclared variables. */
-  if (!OPTION_SET_P (flag_toplevel_reorder))
+  if (!global_options_set.x_flag_toplevel_reorder)
     flag_toplevel_reorder = 1;
 
   debug_nonbind_markers_p = 0;
@@ -223,14 +215,11 @@ nvptx_option_override (void)
   /* Set flag_no_common, unless explicitly disabled.  We fake common
      using .weak, and that's not entirely accurate, so avoid it
      unless forced.  */
-  if (!OPTION_SET_P (flag_no_common))
+  if (!global_options_set.x_flag_no_common)
     flag_no_common = 1;
 
   /* The patch area requires nops, which we don't have.  */
-  HOST_WIDE_INT patch_area_size, patch_area_entry;
-  parse_and_check_patch_area (flag_patchable_function_entry, false,
-			      &patch_area_size, &patch_area_entry);
-  if (patch_area_size > 0)
+  if (function_entry_patch_area_size > 0)
     sorry ("not generating patch area, nops not supported");
 
   /* Assumes that it will see only hard registers.  */
@@ -257,10 +246,6 @@ nvptx_option_override (void)
   SET_SYMBOL_DATA_AREA (vector_red_sym, DATA_AREA_SHARED);
   vector_red_align = GET_MODE_ALIGNMENT (SImode) / BITS_PER_UNIT;
   vector_red_partition = 0;
-
-  gang_private_shared_sym = gen_rtx_SYMBOL_REF (Pmode, "__gang_private_shared");
-  SET_SYMBOL_DATA_AREA (gang_private_shared_sym, DATA_AREA_SHARED);
-  gang_private_shared_align = GET_MODE_ALIGNMENT (SImode) / BITS_PER_UNIT;
 
   diagnose_openacc_conflict (TARGET_GOMP, "-mgomp");
   diagnose_openacc_conflict (TARGET_SOFT_STACK, "-msoft-stack");
@@ -381,22 +366,6 @@ nvptx_name_replacement (const char *name)
   if (strcmp (name, "realloc") == 0)
     return "__nvptx_realloc";
   return name;
-}
-
-/* Return NULL if NAME contains no dot.  Otherwise return a copy of NAME
-   with the dots replaced with dollar signs.  */
-
-static char *
-nvptx_replace_dot (const char *name)
-{
-  if (strchr (name, '.') == NULL)
-    return NULL;
-
-  char *p = xstrdup (name);
-  for (size_t i = 0; i < strlen (p); ++i)
-    if (p[i] == '.')
-      p[i] = '$';
-  return p;
 }
 
 /* If MODE should be treated as two registers of an inner mode, return
@@ -551,29 +520,30 @@ promote_return (machine_mode mode)
 /* Implement TARGET_FUNCTION_ARG.  */
 
 static rtx
-nvptx_function_arg (cumulative_args_t, const function_arg_info &arg)
+nvptx_function_arg (cumulative_args_t ARG_UNUSED (cum_v), machine_mode mode,
+		    const_tree, bool named)
 {
-  if (arg.end_marker_p () || !arg.named)
+  if (mode == VOIDmode || !named)
     return NULL_RTX;
 
-  return gen_reg_rtx (arg.mode);
+  return gen_reg_rtx (mode);
 }
 
 /* Implement TARGET_FUNCTION_INCOMING_ARG.  */
 
 static rtx
-nvptx_function_incoming_arg (cumulative_args_t cum_v,
-			     const function_arg_info &arg)
+nvptx_function_incoming_arg (cumulative_args_t cum_v, machine_mode mode,
+			     const_tree, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
-  if (arg.end_marker_p () || !arg.named)
+  if (mode == VOIDmode || !named)
     return NULL_RTX;
 
   /* No need to deal with split modes here, the only case that can
      happen is complex modes and those are dealt with by
      TARGET_SPLIT_COMPLEX_ARG.  */
-  return gen_rtx_UNSPEC (arg.mode,
+  return gen_rtx_UNSPEC (mode,
 			 gen_rtvec (1, GEN_INT (cum->count)),
 			 UNSPEC_ARG_REG);
 }
@@ -581,7 +551,10 @@ nvptx_function_incoming_arg (cumulative_args_t cum_v,
 /* Implement TARGET_FUNCTION_ARG_ADVANCE.  */
 
 static void
-nvptx_function_arg_advance (cumulative_args_t cum_v, const function_arg_info &)
+nvptx_function_arg_advance (cumulative_args_t cum_v,
+			    machine_mode ARG_UNUSED (mode),
+			    const_tree ARG_UNUSED (type),
+			    bool ARG_UNUSED (named))
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
@@ -660,9 +633,11 @@ nvptx_function_value_regno_p (const unsigned int regno)
    reference in memory.  */
 
 static bool
-nvptx_pass_by_reference (cumulative_args_t, const function_arg_info &arg)
+nvptx_pass_by_reference (cumulative_args_t ARG_UNUSED (cum),
+			 machine_mode mode, const_tree type,
+			 bool ARG_UNUSED (named))
 {
-  return pass_in_memory (arg.mode, arg.type, false);
+  return pass_in_memory (mode, type, false);
 }
 
 /* Implement TARGET_RETURN_IN_MEMORY.  */
@@ -858,12 +833,26 @@ write_var_marker (FILE *file, bool is_defn, bool globalize, const char *name)
   fputs ("\n", file);
 }
 
-/* Helper function for write_fn_proto.  */
+/* Write a .func or .kernel declaration or definition along with
+   a helper comment for use by ld.  S is the stream to write to, DECL
+   the decl for the function with name NAME.   For definitions, emit
+   a declaration too.  */
 
-static void
-write_fn_proto_1 (std::stringstream &s, bool is_defn,
-		  const char *name, const_tree decl)
+static const char *
+write_fn_proto (std::stringstream &s, bool is_defn,
+		const char *name, const_tree decl)
 {
+  if (is_defn)
+    /* Emit a declaration. The PTX assembler gets upset without it.   */
+    name = write_fn_proto (s, false, name, decl);
+  else
+    {
+      /* Avoid repeating the name replacement.  */
+      name = nvptx_name_replacement (name);
+      if (name[0] == '*')
+	name++;
+    }
+
   write_fn_marker (s, is_defn, TREE_PUBLIC (decl), name);
 
   /* PTX declaration.  */
@@ -927,7 +916,7 @@ write_fn_proto_1 (std::stringstream &s, bool is_defn,
       if (not_atomic_weak_arg)
 	argno = write_arg_type (s, -1, argno, type, prototyped);
       else
-	gcc_assert (TREE_CODE (type) == BOOLEAN_TYPE);
+	gcc_assert (type == boolean_type_node);
     }
 
   if (stdarg_p (fntype))
@@ -946,38 +935,8 @@ write_fn_proto_1 (std::stringstream &s, bool is_defn,
     s << ")";
 
   s << (is_defn ? "\n" : ";\n");
-}
 
-/* Write a .func or .kernel declaration or definition along with
-   a helper comment for use by ld.  S is the stream to write to, DECL
-   the decl for the function with name NAME.  For definitions, emit
-   a declaration too.  */
-
-static void
-write_fn_proto (std::stringstream &s, bool is_defn,
-		const char *name, const_tree decl)
-{
-  const char *replacement = nvptx_name_replacement (name);
-  char *replaced_dots = NULL;
-  if (replacement != name)
-    name = replacement;
-  else
-    {
-      replaced_dots = nvptx_replace_dot (name);
-      if (replaced_dots)
-	name = replaced_dots;
-    }
-  if (name[0] == '*')
-    name++;
-
-  if (is_defn)
-    /* Emit a declaration.  The PTX assembler gets upset without it.  */
-    write_fn_proto_1 (s, false, name, decl);
-
-  write_fn_proto_1 (s, is_defn, name, decl);
-
-  if (replaced_dots)
-    XDELETE (replaced_dots);
+  return name;
 }
 
 /* Construct a function declaration from a call insn.  This can be
@@ -989,8 +948,6 @@ static void
 write_fn_proto_from_insn (std::stringstream &s, const char *name,
 			  rtx result, rtx pat)
 {
-  char *replaced_dots = NULL;
-
   if (!name)
     {
       s << "\t.callprototype ";
@@ -998,15 +955,7 @@ write_fn_proto_from_insn (std::stringstream &s, const char *name,
     }
   else
     {
-      const char *replacement = nvptx_name_replacement (name);
-      if (replacement != name)
-	name = replacement;
-      else
-	{
-	  replaced_dots = nvptx_replace_dot (name);
-	  if (replaced_dots)
-	    name = replaced_dots;
-	}
+      name = nvptx_name_replacement (name);
       write_fn_marker (s, false, true, name);
       s << "\t.extern .func ";
     }
@@ -1015,8 +964,6 @@ write_fn_proto_from_insn (std::stringstream &s, const char *name,
     write_return_mode (s, true, GET_MODE (result));
 
   s << name;
-  if (replaced_dots)
-    XDELETE (replaced_dots);
 
   int arg_end = XVECLEN (pat, 0);
   for (int i = 1; i < arg_end; i++)
@@ -1034,7 +981,7 @@ write_fn_proto_from_insn (std::stringstream &s, const char *name,
 }
 
 /* DECL is an external FUNCTION_DECL, make sure its in the fndecl hash
-   table and write a ptx prototype.  These are emitted at end of
+   table and and write a ptx prototype.  These are emitted at end of
    compilation.  */
 
 static void
@@ -1855,44 +1802,6 @@ nvptx_gen_shuffle (rtx dst, rtx src, rtx idx, nvptx_shuffle_kind kind)
 	end_sequence ();
       }
       break;
-    case E_V2SImode:
-      {
-	rtx src0 = gen_rtx_SUBREG (SImode, src, 0);
-	rtx src1 = gen_rtx_SUBREG (SImode, src, 4);
-	rtx dst0 = gen_rtx_SUBREG (SImode, dst, 0);
-	rtx dst1 = gen_rtx_SUBREG (SImode, dst, 4);
-	rtx tmp0 = gen_reg_rtx (SImode);
-	rtx tmp1 = gen_reg_rtx (SImode);
-	start_sequence ();
-	emit_insn (gen_movsi (tmp0, src0));
-	emit_insn (gen_movsi (tmp1, src1));
-	emit_insn (nvptx_gen_shuffle (tmp0, tmp0, idx, kind));
-	emit_insn (nvptx_gen_shuffle (tmp1, tmp1, idx, kind));
-	emit_insn (gen_movsi (dst0, tmp0));
-	emit_insn (gen_movsi (dst1, tmp1));
-	res = get_insns ();
-	end_sequence ();
-      }
-      break;
-    case E_V2DImode:
-      {
-	rtx src0 = gen_rtx_SUBREG (DImode, src, 0);
-	rtx src1 = gen_rtx_SUBREG (DImode, src, 8);
-	rtx dst0 = gen_rtx_SUBREG (DImode, dst, 0);
-	rtx dst1 = gen_rtx_SUBREG (DImode, dst, 8);
-	rtx tmp0 = gen_reg_rtx (DImode);
-	rtx tmp1 = gen_reg_rtx (DImode);
-	start_sequence ();
-	emit_insn (gen_movdi (tmp0, src0));
-	emit_insn (gen_movdi (tmp1, src1));
-	emit_insn (nvptx_gen_shuffle (tmp0, tmp0, idx, kind));
-	emit_insn (nvptx_gen_shuffle (tmp1, tmp1, idx, kind));
-	emit_insn (gen_movdi (dst0, tmp0));
-	emit_insn (gen_movdi (dst1, tmp1));
-	res = get_insns ();
-	end_sequence ();
-      }
-      break;
     case E_BImode:
       {
 	rtx tmp = gen_reg_rtx (SImode);
@@ -2109,20 +2018,11 @@ output_init_frag (rtx sym)
 static void
 nvptx_assemble_value (unsigned HOST_WIDE_INT val, unsigned size)
 {
-  bool negative_p
-    = val & (HOST_WIDE_INT_1U << (HOST_BITS_PER_WIDE_INT - 1));
-
-  /* Avoid undefined behaviour.  */
-  if (size * BITS_PER_UNIT < HOST_BITS_PER_WIDE_INT)
-    val &= (HOST_WIDE_INT_1U << (size * BITS_PER_UNIT)) - 1;
+  val &= ((unsigned  HOST_WIDE_INT)2 << (size * BITS_PER_UNIT - 1)) - 1;
 
   for (unsigned part = 0; size; size -= part)
     {
-      if (part * BITS_PER_UNIT == HOST_BITS_PER_WIDE_INT)
-	/* Avoid undefined behaviour.  */
-	val = negative_p ? -1 : 0;
-      else
-	val >>= (part * BITS_PER_UNIT);
+      val >>= part * BITS_PER_UNIT;
       part = init_frag.size - init_frag.offset;
       part = MIN (part, size);
 
@@ -2160,7 +2060,7 @@ nvptx_assemble_integer (rtx x, unsigned int size, int ARG_UNUSED (aligned_p))
       val = INTVAL (XEXP (x, 1));
       x = XEXP (x, 0);
       gcc_assert (GET_CODE (x) == SYMBOL_REF);
-      gcc_fallthrough (); /* FALLTHROUGH */
+      /* FALLTHROUGH */
 
     case SYMBOL_REF:
       gcc_assert (size == init_frag.size);
@@ -2270,7 +2170,7 @@ nvptx_assemble_decl_begin (FILE *file, const char *name, const char *section,
     /* Neither vector nor complex types can contain the other.  */
     type = TREE_TYPE (type);
 
-  unsigned HOST_WIDE_INT elt_size = int_size_in_bytes (type);
+  unsigned elt_size = int_size_in_bytes (type);
 
   /* Largest mode we're prepared to accept.  For BLKmode types we
      don't know if it'll contain pointer constants, so have to choose
@@ -2292,7 +2192,7 @@ nvptx_assemble_decl_begin (FILE *file, const char *name, const char *section,
      elt_size. */
   init_frag.remaining = (size + elt_size - 1) / elt_size;
 
-  fprintf (file, "%s .align %d .u" HOST_WIDE_INT_PRINT_UNSIGNED " ",
+  fprintf (file, "%s .align %d .u%d ",
 	   section, align / BITS_PER_UNIT,
 	   elt_size * BITS_PER_UNIT);
   assemble_name (file, name);
@@ -2300,7 +2200,7 @@ nvptx_assemble_decl_begin (FILE *file, const char *name, const char *section,
   if (size)
     /* We make everything an array, to simplify any initialization
        emission.  */
-    fprintf (file, "[" HOST_WIDE_INT_PRINT_UNSIGNED "]", init_frag.remaining);
+    fprintf (file, "[" HOST_WIDE_INT_PRINT_DEC "]", init_frag.remaining);
   else if (atype)
     fprintf (file, "[]");
 }
@@ -2408,7 +2308,6 @@ const char *
 nvptx_output_mov_insn (rtx dst, rtx src)
 {
   machine_mode dst_mode = GET_MODE (dst);
-  machine_mode src_mode = GET_MODE (src);
   machine_mode dst_inner = (GET_CODE (dst) == SUBREG
 			    ? GET_MODE (XEXP (dst, 0)) : dst_mode);
   machine_mode src_inner = (GET_CODE (src) == SUBREG
@@ -2435,7 +2334,7 @@ nvptx_output_mov_insn (rtx dst, rtx src)
   if (GET_MODE_SIZE (dst_inner) == GET_MODE_SIZE (src_inner))
     {
       if (GET_MODE_BITSIZE (dst_mode) == 128
-	  && GET_MODE_BITSIZE (src_mode) == 128)
+	  && GET_MODE_BITSIZE (GET_MODE (src)) == 128)
 	{
 	  /* mov.b128 is not supported.  */
 	  if (dst_inner == V2DImode && src_inner == TImode)
@@ -2448,58 +2347,7 @@ nvptx_output_mov_insn (rtx dst, rtx src)
       return "%.\tmov.b%T0\t%0, %1;";
     }
 
-  if (GET_MODE_BITSIZE (src_inner) == 128
-      && GET_MODE_BITSIZE (src_mode) == 64)
-    return "%.\tmov.b%T0\t%0, %1;";
-
   return "%.\tcvt%t0%t1\t%0, %1;";
-}
-
-/* Output a pre/post barrier for MEM_OPERAND according to MEMMODEL.  */
-
-static void
-nvptx_output_barrier (rtx *mem_operand, int memmodel, bool pre_p)
-{
-  bool post_p = !pre_p;
-
-  switch (memmodel)
-    {
-    case MEMMODEL_RELAXED:
-      return;
-    case MEMMODEL_CONSUME:
-    case MEMMODEL_ACQUIRE:
-    case MEMMODEL_SYNC_ACQUIRE:
-      if (post_p)
-	break;
-      return;
-    case MEMMODEL_RELEASE:
-    case MEMMODEL_SYNC_RELEASE:
-      if (pre_p)
-	break;
-      return;
-    case MEMMODEL_ACQ_REL:
-    case MEMMODEL_SEQ_CST:
-    case MEMMODEL_SYNC_SEQ_CST:
-      if (pre_p || post_p)
-	break;
-      return;
-    default:
-      gcc_unreachable ();
-    }
-
-  output_asm_insn ("%.\tmembar%B0;", mem_operand);
-}
-
-const char *
-nvptx_output_atomic_insn (const char *asm_template, rtx *operands, int mem_pos,
-			  int memmodel_pos)
-{
-  nvptx_output_barrier (&operands[mem_pos], INTVAL (operands[memmodel_pos]),
-			true);
-  output_asm_insn (asm_template, operands);
-  nvptx_output_barrier (&operands[mem_pos], INTVAL (operands[memmodel_pos]),
-			false);
-  return "";
 }
 
 static void nvptx_print_operand (FILE *, rtx, int);
@@ -2569,20 +2417,9 @@ nvptx_output_call_insn (rtx_insn *insn, rtx result, rtx callee)
   
   if (decl)
     {
-      char *replaced_dots = NULL;
       const char *name = get_fnname_from_decl (decl);
-      const char *replacement = nvptx_name_replacement (name);
-      if (replacement != name)
-	name = replacement;
-      else
-	{
-	  replaced_dots = nvptx_replace_dot (name);
-	  if (replaced_dots)
-	    name = replaced_dots;
-	}
+      name = nvptx_name_replacement (name);
       assemble_name (asm_out_file, name);
-      if (replaced_dots)
-	XDELETE (replaced_dots);
     }
   else
     output_address (VOIDmode, callee);
@@ -2718,39 +2555,9 @@ nvptx_print_operand (FILE *file, rtx x, int code)
 
   switch (code)
     {
-    case 'B':
-      if (SYMBOL_REF_P (XEXP (x, 0)))
-	switch (SYMBOL_DATA_AREA (XEXP (x, 0)))
-	  {
-	  case DATA_AREA_GENERIC:
-	    /* Assume worst-case: global.  */
-	    gcc_fallthrough (); /* FALLTHROUGH.  */
-	  case DATA_AREA_GLOBAL:
-	    break;
-	  case DATA_AREA_SHARED:
-	    fputs (".cta", file);
-	    return;
-	  case DATA_AREA_LOCAL:
-	  case DATA_AREA_CONST:
-	  case DATA_AREA_PARAM:
-	  default:
-	    gcc_unreachable ();
-	  }
-
-      /* There are 2 cases where membar.sys differs from membar.gl:
-	 - host accesses global memory (f.i. systemwide atomics)
-	 - 2 or more devices are setup in peer-to-peer mode, and one
-	   peer can access global memory of other peer.
-	 Neither are currently supported by openMP/OpenACC on nvptx, but
-	 that could change, so we default to membar.sys.  We could support
-	 this more optimally by adding DATA_AREA_SYS and then emitting
-	 .gl for DATA_AREA_GLOBAL and .sys for DATA_AREA_SYS.  */
-      fputs (".sys", file);
-      return;
-
     case 'A':
       x = XEXP (x, 0);
-      gcc_fallthrough (); /* FALLTHROUGH. */
+      /* FALLTHROUGH.  */
 
     case 'D':
       if (GET_CODE (x) == CONST)
@@ -3205,7 +3012,6 @@ nvptx_mach_vector_length ()
 
 /* Loop structure of the function.  The entire function is described as
    a NULL loop.  */
-/* See also 'gcc/omp-oacc-neuter-broadcast.cc:struct parallel_g'.  */
 
 struct parallel
 {
@@ -3283,7 +3089,6 @@ typedef auto_vec<insn_bb_t> insn_bb_vec_t;
    partitioning mode of the function as a whole.  Populate MAP with
    head and tail blocks.  We also clear the BB visited flag, which is
    used when finding partitions.  */
-/* See also 'gcc/omp-oacc-neuter-broadcast.cc:omp_sese_split_blocks'.  */
 
 static void
 nvptx_split_blocks (bb_insn_map_t *map)
@@ -3385,7 +3190,6 @@ nvptx_discover_pre (basic_block block, int expected)
 }
 
 /* Dump this parallel and all its inner parallels.  */
-/* See also 'gcc/omp-oacc-neuter-broadcast.cc:omp_sese_dump_pars'.  */
 
 static void
 nvptx_dump_pars (parallel *par, unsigned depth)
@@ -3411,7 +3215,6 @@ nvptx_dump_pars (parallel *par, unsigned depth)
 /* If BLOCK contains a fork/join marker, process it to create or
    terminate a loop structure.  Add this block to the current loop,
    and then walk successor blocks.   */
-/* See also 'gcc/omp-oacc-neuter-broadcast.cc:omp_sese_find_par'.  */
 
 static parallel *
 nvptx_find_par (bb_insn_map_t *map, parallel *par, basic_block block)
@@ -3455,7 +3258,6 @@ nvptx_find_par (bb_insn_map_t *map, parallel *par, basic_block block)
 	    unsigned mask = UINTVAL (XVECEXP (PATTERN (end), 0, 0));
 
 	    gcc_assert (par->mask == mask);
-	    gcc_assert (par->join_block == NULL);
 	    par->join_block = block;
 	    par->join_insn = end;
 	    if (nvptx_needs_shared_bcast (mask))
@@ -3492,7 +3294,6 @@ nvptx_find_par (bb_insn_map_t *map, parallel *par, basic_block block)
    to head & tail markers, discovered when splitting blocks.  This
    speeds up the discovery.  We rely on the BB visited flag having
    been cleared when splitting blocks.  */
-/* See also 'gcc/omp-oacc-neuter-broadcast.cc:omp_sese_discover_pars'.  */
 
 static parallel *
 nvptx_discover_pars (bb_insn_map_t *map)
@@ -3750,7 +3551,7 @@ nvptx_sese_number (int n, int p, int dir, basic_block b,
       size_t offset = (dir > 0 ? offsetof (edge_def, dest)
 		       : offsetof (edge_def, src));
       edge e;
-      edge_iterator ei;
+      edge_iterator (ei);
 
       FOR_EACH_EDGE (e, ei, edges)
 	{
@@ -3773,11 +3574,11 @@ nvptx_sese_pseudo (basic_block me, bb_sese *sese, int depth, int dir,
 		   vec<edge, va_gc> *edges, size_t offset)
 {
   edge e;
-  edge_iterator ei;
+  edge_iterator (ei);
   int hi_back = depth;
-  pseudo_node_t node_back (nullptr, depth);
+  pseudo_node_t node_back (0, depth);
   int hi_child = depth;
-  pseudo_node_t node_child (nullptr, depth);
+  pseudo_node_t node_child (0, depth);
   basic_block child = NULL;
   unsigned num_children = 0;
   int usd = -dir * sese->dir;
@@ -3844,7 +3645,7 @@ nvptx_sese_pseudo (basic_block me, bb_sese *sese, int depth, int dir,
       else
 	{ /* Fallen off graph, backlink to entry node.  */
 	  hi_back = 0;
-	  node_back = pseudo_node_t (nullptr, 0);
+	  node_back = pseudo_node_t (0, 0);
 	}
     }
 
@@ -3865,7 +3666,7 @@ nvptx_sese_pseudo (basic_block me, bb_sese *sese, int depth, int dir,
       else
 	{
 	  /* back edge to entry node */
-	  sese->push (pseudo_node_t (nullptr, 0));
+	  sese->push (pseudo_node_t (0, 0));
 	}
     }
   
@@ -3874,7 +3675,7 @@ nvptx_sese_pseudo (basic_block me, bb_sese *sese, int depth, int dir,
   if (!sese->brackets.length () || !edges || !edges->length ())
     {
       hi_back = 0;
-      node_back = pseudo_node_t (nullptr, 0);
+      node_back = pseudo_node_t (0, 0);
       sese->push (node_back);
     }
 
@@ -4601,10 +4402,8 @@ nvptx_single (unsigned mask, basic_block from, basic_block to)
       {
 	rtx_code_label *label = gen_label_rtx ();
 	rtx pred = cfun->machine->axis_predicate[mode - GOMP_DIM_WORKER];
-	rtx_insn **mode_jump
-	  = mode == GOMP_DIM_VECTOR ? &vector_jump : &worker_jump;
-	rtx_insn **mode_label
-	  = mode == GOMP_DIM_VECTOR ? &vector_label : &worker_label;
+	rtx_insn **mode_jump = mode == GOMP_DIM_VECTOR ? &vector_jump : &worker_jump;
+	rtx_insn **mode_label = mode == GOMP_DIM_VECTOR ? &vector_label : &worker_label;
 
 	if (!pred)
 	  {
@@ -4638,7 +4437,10 @@ nvptx_single (unsigned mask, basic_block from, basic_block to)
 	      emit_insn_after (gen_exit (), label_insn);
 	  }
 
-	*mode_label = label_insn;
+	if (mode == GOMP_DIM_VECTOR)
+	  vector_label = label_insn;
+	else
+	  worker_label = label_insn;
       }
 
   /* Now deal with propagating the branch condition.  */
@@ -5306,22 +5108,9 @@ static const struct attribute_spec nvptx_attribute_table[] =
 static HOST_WIDE_INT
 nvptx_vector_alignment (const_tree type)
 {
-  unsigned HOST_WIDE_INT align;
-  tree size = TYPE_SIZE (type);
+  HOST_WIDE_INT align = tree_to_shwi (TYPE_SIZE (type));
 
-  /* Ensure align is not bigger than BIGGEST_ALIGNMENT.  */
-  if (tree_fits_uhwi_p (size))
-    {
-      align = tree_to_uhwi (size);
-      align = MIN (align, BIGGEST_ALIGNMENT);
-    }
-  else
-    align = BIGGEST_ALIGNMENT;
-
-  /* Ensure align is not smaller than mode alignment.  */
-  align = MAX (align, GET_MODE_ALIGNMENT (TYPE_MODE (type)));
-
-  return align;
+  return MIN (align, BIGGEST_ALIGNMENT);
 }
 
 /* Indicate that INSN cannot be duplicated.   */
@@ -5402,10 +5191,7 @@ static void
 nvptx_file_start (void)
 {
   fputs ("// BEGIN PREAMBLE\n", asm_out_file);
-  if (TARGET_PTX_6_3)
-    fputs ("\t.version\t6.3\n", asm_out_file);
-  else
-    fputs ("\t.version\t3.1\n", asm_out_file);
+  fputs ("\t.version\t3.1\n", asm_out_file);
   if (TARGET_SM35)
     fputs ("\t.target\tsm_35\n", asm_out_file);
   else
@@ -5450,10 +5236,6 @@ nvptx_file_end (void)
   if (vector_red_size)
     write_shared_buffer (asm_out_file, vector_red_sym,
 			 vector_red_align, vector_red_size);
-
-  if (gang_private_shared_size)
-    write_shared_buffer (asm_out_file, gang_private_shared_sym,
-			 gang_private_shared_align, gang_private_shared_size);
 
   if (need_softstack_decl)
     {
@@ -5670,7 +5452,7 @@ nvptx_expand_builtin (tree exp, rtx target, rtx ARG_UNUSED (subtarget),
 		      machine_mode mode, int ignore)
 {
   tree fndecl = TREE_OPERAND (CALL_EXPR_FN (exp), 0);
-  switch (DECL_MD_FUNCTION_CODE (fndecl))
+  switch (DECL_FUNCTION_CODE (fndecl))
     {
     case NVPTX_BUILTIN_SHUFFLE:
     case NVPTX_BUILTIN_SHUFFLELL:
@@ -5696,32 +5478,6 @@ static int
 nvptx_simt_vf ()
 {
   return PTX_WARP_SIZE;
-}
-
-/* Return 1 if TRAIT NAME is present in the OpenMP context's
-   device trait set, return 0 if not present in any OpenMP context in the
-   whole translation unit, or -1 if not present in the current OpenMP context
-   but might be present in another OpenMP context in the same TU.  */
-
-int
-nvptx_omp_device_kind_arch_isa (enum omp_device_kind_arch_isa trait,
-				const char *name)
-{
-  switch (trait)
-    {
-    case omp_device_kind:
-      return strcmp (name, "gpu") == 0;
-    case omp_device_arch:
-      return strcmp (name, "nvptx") == 0;
-    case omp_device_isa:
-      if (strcmp (name, "sm_30") == 0)
-	return !TARGET_SM35;
-      if (strcmp (name, "sm_35") == 0)
-	return TARGET_SM35;
-      return 0;
-    default:
-      gcc_unreachable ();
-    }
 }
 
 static bool
@@ -6674,116 +6430,6 @@ nvptx_can_change_mode_class (machine_mode, machine_mode, reg_class_t)
   return false;
 }
 
-/* Implement TARGET_TRULY_NOOP_TRUNCATION.  */
-
-static bool
-nvptx_truly_noop_truncation (poly_uint64, poly_uint64)
-{
-  return false;
-}
-
-/* Implement TARGET_GOACC_ADJUST_PRIVATE_DECL.  */
-
-static tree
-nvptx_goacc_adjust_private_decl (location_t loc, tree decl, int level)
-{
-  gcc_checking_assert (!lookup_attribute ("oacc gang-private",
-					  DECL_ATTRIBUTES (decl)));
-
-  /* Set "oacc gang-private" attribute for gang-private variable
-     declarations.  */
-  if (level == GOMP_DIM_GANG)
-    {
-      tree id = get_identifier ("oacc gang-private");
-      /* For later diagnostic purposes, pass LOC as VALUE (wrapped as a
-	 TREE).  */
-      tree loc_tree = build_empty_stmt (loc);
-      DECL_ATTRIBUTES (decl)
-	= tree_cons (id, loc_tree, DECL_ATTRIBUTES (decl));
-    }
-
-  return decl;
-}
-
-/* Implement TARGET_GOACC_EXPAND_VAR_DECL.  */
-
-static rtx
-nvptx_goacc_expand_var_decl (tree var)
-{
-  /* Place "oacc gang-private" variables in shared memory.  */
-  if (tree attr = lookup_attribute ("oacc gang-private",
-				    DECL_ATTRIBUTES (var)))
-    {
-      gcc_checking_assert (VAR_P (var));
-
-      unsigned int offset, *poffset;
-      poffset = gang_private_shared_hmap.get (var);
-      if (poffset)
-	offset = *poffset;
-      else
-	{
-	  unsigned HOST_WIDE_INT align = DECL_ALIGN (var);
-	  gang_private_shared_size
-	    = (gang_private_shared_size + align - 1) & ~(align - 1);
-	  if (gang_private_shared_align < align)
-	    gang_private_shared_align = align;
-
-	  offset = gang_private_shared_size;
-	  bool existed = gang_private_shared_hmap.put (var, offset);
-	  gcc_checking_assert (!existed);
-	  gang_private_shared_size += tree_to_uhwi (DECL_SIZE_UNIT (var));
-
-	  location_t loc = EXPR_LOCATION (TREE_VALUE (attr));
-#if 0 /* For some reason, this doesn't work.  */
-	  if (dump_enabled_p ())
-	    {
-	      dump_flags_t l_dump_flags
-		= get_openacc_privatization_dump_flags ();
-
-	      const dump_user_location_t d_u_loc
-		= dump_user_location_t::from_location_t (loc);
-/* PR100695 "Format decoder, quoting in 'dump_printf' etc." */
-#if __GNUC__ >= 10
-# pragma GCC diagnostic push
-# pragma GCC diagnostic ignored "-Wformat"
-#endif
-	      dump_printf_loc (l_dump_flags, d_u_loc,
-			       "variable %<%T%> adjusted for OpenACC"
-			       " privatization level: %qs\n",
-			       var, "gang");
-#if __GNUC__ >= 10
-# pragma GCC diagnostic pop
-#endif
-	    }
-#else /* ..., thus emulate that, good enough for testsuite usage.  */
-	  if (param_openacc_privatization != OPENACC_PRIVATIZATION_QUIET)
-	    inform (loc,
-		    "variable %qD adjusted for OpenACC privatization level:"
-		    " %qs",
-		    var, "gang");
-	  if (dump_file && (dump_flags & TDF_DETAILS))
-	    {
-	      /* 'dumpfile.c:dump_loc' */
-	      fprintf (dump_file, "%s:%d:%d: ", LOCATION_FILE (loc),
-		       LOCATION_LINE (loc), LOCATION_COLUMN (loc));
-	      fprintf (dump_file, "%s: ", "note");
-
-	      fprintf (dump_file,
-		       "variable '");
-	      print_generic_expr (dump_file, var, TDF_SLIM);
-	      fprintf (dump_file,
-		       "' adjusted for OpenACC privatization level: '%s'\n",
-		       "gang");
-	    }
-#endif
-	}
-      rtx addr = plus_constant (Pmode, gang_private_shared_sym, offset);
-      return gen_rtx_MEM (TYPE_MODE (TREE_TYPE (var)), addr);
-    }
-
-  return NULL_RTX;
-}
-
 static GTY(()) tree nvptx_previous_fndecl;
 
 static void
@@ -6792,27 +6438,9 @@ nvptx_set_current_function (tree fndecl)
   if (!fndecl || fndecl == nvptx_previous_fndecl)
     return;
 
-  gang_private_shared_hmap.empty ();
   nvptx_previous_fndecl = fndecl;
   vector_red_partition = 0;
   oacc_bcast_partition = 0;
-}
-
-/* Implement TARGET_LIBC_HAS_FUNCTION.  */
-
-bool
-nvptx_libc_has_function (enum function_class fn_class, tree type)
-{
-  if (fn_class == function_sincos)
-    {
-      if (type != NULL_TREE)
-	/* Currently, newlib does not support sincosl.  */
-	return type == float_type_node || type == double_type_node;
-      else
-	return true;
-    }
-
-  return default_libc_has_function (fn_class, type);
 }
 
 #undef TARGET_OPTION_OVERRIDE
@@ -6917,9 +6545,6 @@ nvptx_libc_has_function (enum function_class fn_class, tree type)
 #undef TARGET_SIMT_VF
 #define TARGET_SIMT_VF nvptx_simt_vf
 
-#undef TARGET_OMP_DEVICE_KIND_ARCH_ISA
-#define TARGET_OMP_DEVICE_KIND_ARCH_ISA nvptx_omp_device_kind_arch_isa
-
 #undef TARGET_GOACC_VALIDATE_DIMS
 #define TARGET_GOACC_VALIDATE_DIMS nvptx_goacc_validate_dims
 
@@ -6951,23 +6576,11 @@ nvptx_libc_has_function (enum function_class fn_class, tree type)
 #undef TARGET_CAN_CHANGE_MODE_CLASS
 #define TARGET_CAN_CHANGE_MODE_CLASS nvptx_can_change_mode_class
 
-#undef TARGET_TRULY_NOOP_TRUNCATION
-#define TARGET_TRULY_NOOP_TRUNCATION nvptx_truly_noop_truncation
-
 #undef TARGET_HAVE_SPECULATION_SAFE_VALUE
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
 
-#undef TARGET_GOACC_ADJUST_PRIVATE_DECL
-#define TARGET_GOACC_ADJUST_PRIVATE_DECL nvptx_goacc_adjust_private_decl
-
-#undef TARGET_GOACC_EXPAND_VAR_DECL
-#define TARGET_GOACC_EXPAND_VAR_DECL nvptx_goacc_expand_var_decl
-
 #undef TARGET_SET_CURRENT_FUNCTION
 #define TARGET_SET_CURRENT_FUNCTION nvptx_set_current_function
-
-#undef TARGET_LIBC_HAS_FUNCTION
-#define TARGET_LIBC_HAS_FUNCTION nvptx_libc_has_function
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

@@ -7,11 +7,7 @@ unsigned long
 sub (long l)
 {
   union u {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     struct s { int a : 19; unsigned int b : 13; int x; } s;
-#else
-    struct s { int x; unsigned int b : 13; int a : 19; } s;
-#endif
     long l;
   } u;
   u.l = l;

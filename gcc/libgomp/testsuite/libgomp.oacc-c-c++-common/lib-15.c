@@ -1,6 +1,6 @@
 /* Check acc_is_present and acc_copyout.  */
 
-/* { dg-skip-if "" { *-*-* } { "*" } { "-DACC_MEM_SHARED=0" } } */
+/* { dg-do run { target openacc_nvidia_accel_selected } } */
 
 #include <stdlib.h>
 #include <openacc.h>

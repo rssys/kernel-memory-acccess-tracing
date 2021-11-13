@@ -1,6 +1,6 @@
 // PR c++/49395
 
-volatile int foo(); // { dg-warning "deprecated" "" { target c++2a } }
+volatile int foo();
 struct A { volatile int i; };
 typedef volatile int vi;
 

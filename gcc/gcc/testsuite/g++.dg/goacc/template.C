@@ -1,6 +1,4 @@
-/* { dg-additional-options "-fdump-tree-oaccloops" } */
-
-#pragma acc routine nohost
+#pragma acc routine
 template <typename T> T
 accDouble(int val)
 {
@@ -57,7 +55,7 @@ oacc_parallel_copy (T a)
 #pragma acc atomic capture
       c = b++;
 
-#pragma acc atomic update
+#pragma atomic update
       c++;
 
 #pragma acc atomic read
@@ -155,14 +153,3 @@ main ()
 
   return b + c;
 }
-
-/* { dg-final { scan-tree-dump-times {(?n)^OpenACC routine '[^']+' has 'nohost' clause\.$} 4 oaccloops } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'T accDouble\(int\) \[with T = char\]' has 'nohost' clause\.$} 1 oaccloops { target { ! offloading_enabled } } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'accDouble<char>\(int\)char' has 'nohost' clause\.$} 1 oaccloops { target offloading_enabled } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'T accDouble\(int\) \[with T = int\]' has 'nohost' clause\.$} 1 oaccloops { target { ! offloading_enabled } } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'accDouble<int>\(int\)int' has 'nohost' clause\.$} 1 oaccloops { target offloading_enabled } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'T accDouble\(int\) \[with T = float\]' has 'nohost' clause\.$} 1 oaccloops { target { ! offloading_enabled } } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'accDouble<float>\(int\)float' has 'nohost' clause\.$} 1 oaccloops { target offloading_enabled } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'T accDouble\(int\) \[with T = double\]' has 'nohost' clause\.$} 1 oaccloops { target { ! offloading_enabled } } } }
-   { dg-final { scan-tree-dump-times {(?n)^OpenACC routine 'accDouble<double>\(int\)double' has 'nohost' clause\.$} 1 oaccloops { target offloading_enabled } } }
-   TODO See PR101551 for 'offloading_enabled' differences.  */

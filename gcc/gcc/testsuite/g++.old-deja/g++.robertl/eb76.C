@@ -1,6 +1,5 @@
 // { dg-do assemble  }
 // { dg-options "-fno-short-enums" }
-// { dg-skip-if "" int16 }
 // the template operator!= interferes.  It should be in a namespace.
 
 #include <utility>

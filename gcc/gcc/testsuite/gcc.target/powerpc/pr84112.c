@@ -1,5 +1,4 @@
-/* { dg-do compile } */
-/* { dg-require-effective-target fpic } */
+/* { dg-do compile { target powerpc*-*-* } }*/
 /* { dg-options "-mdejagnu-cpu=power8 -O3 -fstack-protector-strong -fpic" } */
 
 char *b;

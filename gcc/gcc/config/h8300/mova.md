@@ -1,6 +1,6 @@
 ;; -*- buffer-read-only: t -*-
 ;; Generated automatically from genmova.sh
-;; Copyright (C) 2004-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2019 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -24,7 +24,8 @@
 		 (match_operand:QI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:QI 0 "register_operand" "=r,r")
@@ -33,7 +34,8 @@
 		 (match_operand:QI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:QI 0 "register_operand" "=r,r")
@@ -42,7 +44,8 @@
 		 (match_operand:QI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:QI 0 "register_operand" "=r,r")
@@ -51,7 +54,8 @@
 		 (match_operand:QI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -59,7 +63,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/b.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -67,7 +72,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -76,7 +82,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -85,7 +92,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -95,7 +103,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -104,7 +113,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -114,7 +124,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -122,7 +133,8 @@
 		  (const_int 1)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -131,7 +143,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -140,7 +153,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -150,7 +164,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -159,7 +174,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -169,7 +185,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -177,7 +194,8 @@
 		  (const_int 4)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -186,7 +204,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -195,7 +214,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -205,7 +225,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -214,7 +235,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -224,7 +246,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -232,7 +255,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -241,7 +265,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -250,7 +275,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -260,7 +286,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -269,7 +296,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r")
@@ -279,7 +307,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -287,7 +316,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/b.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -295,7 +325,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -304,7 +335,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -313,7 +345,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -323,7 +356,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -332,7 +366,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -342,7 +377,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -350,7 +386,8 @@
 		  (const_int 1)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -359,7 +396,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -368,7 +406,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -378,7 +417,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -387,7 +427,8 @@
 		(const_int 510)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -397,7 +438,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -405,7 +447,8 @@
 		  (const_int 4)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -414,7 +457,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -423,7 +467,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -433,7 +478,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -442,7 +488,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -452,7 +499,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -460,7 +508,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -469,7 +518,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -478,7 +528,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -488,7 +539,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -497,7 +549,8 @@
 		(const_int 1020)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%X1.b),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -507,7 +560,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%X1.b),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -516,7 +570,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -525,7 +580,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -534,7 +590,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:HI 0 "register_operand" "=r,r")
@@ -543,7 +600,8 @@
 		 (match_operand:HI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -551,7 +609,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/b.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -559,7 +618,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -568,7 +628,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -577,7 +638,8 @@
 		(const_int 131070)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -587,7 +649,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -596,7 +659,8 @@
 		(const_int 131070)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -606,7 +670,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -614,7 +679,8 @@
 		  (const_int 1)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -623,7 +689,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -632,7 +699,8 @@
 		(const_int 131070)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -642,7 +710,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -651,7 +720,8 @@
 		(const_int 131070)))]
   "TARGET_H8300SX"
   "mova/w.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -661,7 +731,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/w.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -669,7 +740,8 @@
 		  (const_int 4)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -678,7 +750,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -687,7 +760,8 @@
 		(const_int 262140)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -697,7 +771,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -706,7 +781,8 @@
 		(const_int 262140)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -716,7 +792,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -724,7 +801,8 @@
 		  (const_int 2)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
@@ -733,7 +811,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -742,7 +821,8 @@
 		(const_int 262140)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -752,7 +832,8 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -761,7 +842,8 @@
 		(const_int 262140)))]
   "TARGET_H8300SX"
   "mova/l.l @(0,%T1.w),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -771,5 +853,6 @@
 		 (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/l.l @(%o2%C2,%T1.w),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 

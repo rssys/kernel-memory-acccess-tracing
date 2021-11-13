@@ -5,7 +5,7 @@
 package http
 
 import (
-	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,10 +23,12 @@ func checker(t *testing.T) func(string, error) {
 func TestFileTransport(t *testing.T) {
 	check := checker(t)
 
-	dname := t.TempDir()
+	dname, err := ioutil.TempDir("", "")
+	check("TempDir", err)
 	fname := filepath.Join(dname, "foo.txt")
-	err := os.WriteFile(fname, []byte("Bar"), 0644)
+	err = ioutil.WriteFile(fname, []byte("Bar"), 0644)
 	check("WriteFile", err)
+	defer os.Remove(dname)
 	defer os.Remove(fname)
 
 	tr := &Transport{}
@@ -46,7 +48,7 @@ func TestFileTransport(t *testing.T) {
 		if res.Body == nil {
 			t.Fatalf("for %s, nil Body", urlstr)
 		}
-		slurp, err := io.ReadAll(res.Body)
+		slurp, err := ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		check("ReadAll "+urlstr, err)
 		if string(slurp) != "Bar" {

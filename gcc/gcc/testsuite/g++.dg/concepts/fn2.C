@@ -1,4 +1,4 @@
-// { dg-do compile { target c++17_only } }
+// { dg-do compile { target c++17 } }
 // { dg-options "-fconcepts" }
 
 template<typename T>
@@ -11,9 +11,9 @@ template<typename T>
 // Non-dependent args are checked even in dependent scope.
 template<typename T>
   void h(T x) {
-    f(0); // { dg-error "" }
+    f(0); // { dg-error "cannot call" }
   }
 
 int main() {
-  f(0); // { dg-error "" }
+  f(0); // { dg-error "cannot call" }
 }

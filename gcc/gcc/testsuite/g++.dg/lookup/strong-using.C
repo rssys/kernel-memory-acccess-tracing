@@ -8,12 +8,3 @@ namespace A
 
   using namespace B __attribute__ ((strong)); // { dg-warning "no longer supported" "" }
 }
-
-namespace C
-{
-  namespace D // { dg-message "inline namespace" }
-  {
-  }
-
-  [[gnu::strong]] using namespace D; // { dg-warning "no longer supported" "" }
-}

@@ -4,7 +4,6 @@
 
 /* { dg-do compile } */
 /* { dg-require-effective-target arm_thumb1_ok } */
-/* { dg-require-effective-target fpic } */
 /* { dg-options "-mthumb -fPIC" } */
 
 struct A {

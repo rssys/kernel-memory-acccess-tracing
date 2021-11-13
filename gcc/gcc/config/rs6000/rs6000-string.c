@@ -1,6 +1,6 @@
 /* Subroutines used to expand string and block move, clear,
    compare and other operations for PowerPC.
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -679,7 +679,7 @@ expand_cmp_vec_sequence (unsigned HOST_WIDE_INT bytes_to_compare,
 	 bnl 6,.Lmismatch
 
 	 For the P8 LE case, we use lxvd2x and compare full 16 bytes
-	 but then use vgbbd and a shift to get two bytes with the
+	 but then use use vgbbd and a shift to get two bytes with the
 	 information we need in the correct order.
 
 	 VEC/VSX compare sequence if TARGET_P9_VECTOR:
@@ -963,7 +963,6 @@ expand_compare_loop (rtx operands[])
 	  max_bytes = 64;
       break;
     case PROCESSOR_POWER9:
-    case PROCESSOR_POWER10:
       if (bytes_is_const)
 	max_bytes = 191;
       else
@@ -2708,32 +2707,6 @@ gen_lvx_v4si_move (rtx dest, rtx src)
     return gen_altivec_lvx_v4si_internal (dest, src);
 }
 
-static rtx
-gen_lxvl_stxvl_move (rtx dest, rtx src, int length)
-{
-  gcc_assert (MEM_P (dest) ^ MEM_P (src));
-  gcc_assert (GET_MODE (dest) == V16QImode && GET_MODE (src) == V16QImode);
-  gcc_assert (length <= 16);
-
-  bool is_store = MEM_P (dest);
-  rtx addr;
-
-  /* If the address form is not a simple register, make it so.  */
-  if (is_store)
-    addr = XEXP (dest, 0);
-  else
-    addr = XEXP (src, 0);
-
-  if (!REG_P (addr))
-    addr = force_reg (Pmode, addr);
-
-  rtx len = force_reg (DImode, gen_int_mode (length, DImode));
-  if (is_store)
-    return gen_stxvl (src, addr, len);
-  else
-    return gen_lxvl (dest, addr, len);
-}
-
 /* Expand a block move operation, and return 1 if successful.  Return 0
    if we should let the compiler generate normal code.
 
@@ -2745,7 +2718,7 @@ gen_lxvl_stxvl_move (rtx dest, rtx src, int length)
 #define MAX_MOVE_REG 4
 
 int
-expand_block_move (rtx operands[], bool might_overlap)
+expand_block_move (rtx operands[])
 {
   rtx orig_dest = operands[0];
   rtx orig_src	= operands[1];
@@ -2756,7 +2729,6 @@ expand_block_move (rtx operands[], bool might_overlap)
   int bytes;
   int offset;
   int move_bytes;
-  rtx loads[MAX_MOVE_REG];
   rtx stores[MAX_MOVE_REG];
   int num_reg = 0;
 
@@ -2776,56 +2748,18 @@ expand_block_move (rtx operands[], bool might_overlap)
   if (bytes > rs6000_block_move_inline_limit)
     return 0;
 
-  int orig_bytes = bytes;
   for (offset = 0; bytes > 0; offset += move_bytes, bytes -= move_bytes)
     {
       union {
+	rtx (*movmemsi) (rtx, rtx, rtx, rtx);
 	rtx (*mov) (rtx, rtx);
-	rtx (*movlen) (rtx, rtx, int);
       } gen_func;
       machine_mode mode = BLKmode;
       rtx src, dest;
-      bool move_with_length = false;
 
-      /* Use OOmode for paired vsx load/store.  Use V2DI for single
-	 unaligned vsx load/store, for consistency with what other
-	 expansions (compare) already do, and so we can use lxvd2x on
-	 p8.  Order is VSX pair unaligned, VSX unaligned, Altivec, VSX
-	 with length < 16 (if allowed), then gpr load/store.  */
-
-      if (TARGET_MMA && TARGET_BLOCK_OPS_UNALIGNED_VSX
-	  && TARGET_BLOCK_OPS_VECTOR_PAIR
-	  && bytes >= 32
-	  && (align >= 256 || !STRICT_ALIGNMENT))
-	{
-	  move_bytes = 32;
-	  mode = OOmode;
-	  gen_func.mov = gen_movoo;
-	}
-      else if (TARGET_POWERPC64 && TARGET_BLOCK_OPS_UNALIGNED_VSX
-	       && VECTOR_MEM_VSX_P (V2DImode)
-	       && bytes >= 16 && (align >= 128 || !STRICT_ALIGNMENT))
-	{
-	  move_bytes = 16;
-	  mode = V2DImode;
-	  gen_func.mov = gen_vsx_movv2di_64bit;
-	}
-      else if (TARGET_BLOCK_OPS_UNALIGNED_VSX
-	       && TARGET_POWER10 && bytes < 16
-	       && orig_bytes > 16
-	       && !(bytes == 1 || bytes == 2
-		    || bytes == 4 || bytes == 8)
-	       && (align >= 128 || !STRICT_ALIGNMENT))
-	{
-	  /* Only use lxvl/stxvl if it could replace multiple ordinary
-	     loads+stores.  Also don't use it unless we likely already
-	     did one vsx copy so we aren't mixing gpr and vsx.  */
-	  move_bytes = bytes;
-	  mode = V16QImode;
-	  gen_func.movlen = gen_lxvl_stxvl_move;
-	  move_with_length = true;
-	}
-      else if (TARGET_ALTIVEC && bytes >= 16 && align >= 128)
+      /* Altivec first, since it will be faster than a string move
+	 when it applies, and usually not significantly larger.  */
+      if (TARGET_ALTIVEC && bytes >= 16 && align >= 128)
 	{
 	  move_bytes = 16;
 	  mode = V4SImode;
@@ -2882,46 +2816,47 @@ expand_block_move (rtx operands[], bool might_overlap)
 	  gen_func.mov = gen_movqi;
 	}
 
-      /* If we can't succeed in doing the move in one pass, we can't
-	 do it in the might_overlap case.  Bail out and return
-	 failure.  We test num_reg + 1 >= MAX_MOVE_REG here to check
-	 the same condition as the test of num_reg >= MAX_MOVE_REG
-	 that is done below after the increment of num_reg.  */
-      if (might_overlap && num_reg + 1 >= MAX_MOVE_REG
-	  && bytes > move_bytes)
-	return 0;
-
-      /* Mode is always set to something other than BLKmode by one of the
-	 cases of the if statement above.  */
-      gcc_assert (mode != BLKmode);
-
       src = adjust_address (orig_src, mode, offset);
       dest = adjust_address (orig_dest, mode, offset);
 
-      rtx tmp_reg = gen_reg_rtx (mode);
+      if (mode != BLKmode)
+	{
+	  rtx tmp_reg = gen_reg_rtx (mode);
 
-      if (move_with_length)
-	{
-	  loads[num_reg]    = (*gen_func.movlen) (tmp_reg, src, move_bytes);
-	  stores[num_reg++] = (*gen_func.movlen) (dest, tmp_reg, move_bytes);
-	}
-      else
-	{
-	  loads[num_reg]    = (*gen_func.mov) (tmp_reg, src);
+	  emit_insn ((*gen_func.mov) (tmp_reg, src));
 	  stores[num_reg++] = (*gen_func.mov) (dest, tmp_reg);
 	}
 
-      /* Emit loads and stores saved up.  */
-      if (num_reg >= MAX_MOVE_REG || bytes == move_bytes)
+      if (mode == BLKmode || num_reg >= MAX_MOVE_REG || bytes == move_bytes)
 	{
 	  int i;
-	  for (i = 0; i < num_reg; i++)
-	    emit_insn (loads[i]);
 	  for (i = 0; i < num_reg; i++)
 	    emit_insn (stores[i]);
 	  num_reg = 0;
 	}
-	
+
+      if (mode == BLKmode)
+	{
+	  /* Move the address into scratch registers.  The movmemsi
+	     patterns require zero offset.  */
+	  if (!REG_P (XEXP (src, 0)))
+	    {
+	      rtx src_reg = copy_addr_to_reg (XEXP (src, 0));
+	      src = replace_equiv_address (src, src_reg);
+	    }
+	  set_mem_size (src, move_bytes);
+
+	  if (!REG_P (XEXP (dest, 0)))
+	    {
+	      rtx dest_reg = copy_addr_to_reg (XEXP (dest, 0));
+	      dest = replace_equiv_address (dest, dest_reg);
+	    }
+	  set_mem_size (dest, move_bytes);
+
+	  emit_insn ((*gen_func.movmemsi) (dest, src,
+					   GEN_INT (move_bytes & 31),
+					   align_rtx));
+	}
     }
 
   return 1;

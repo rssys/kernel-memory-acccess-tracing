@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2021, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -33,12 +33,18 @@ pragma Style_Checks (All_Checks);
 --  Turn off subprogram alpha ordering check, since we group soft link bodies
 --  and dummy soft link bodies together separately in this unit.
 
+pragma Polling (Off);
+--  Turn polling off for this package. We don't need polling during any of the
+--  routines in this package, and more to the point, if we try to poll it can
+--  cause infinite loops.
+
 with System.Task_Primitives;
 with System.Task_Primitives.Operations;
 with System.Soft_Links;
 with System.Soft_Links.Tasking;
 with System.Tasking.Debug;
 with System.Tasking.Task_Attributes;
+with System.Parameters;
 
 with System.Secondary_Stack;
 pragma Elaborate_All (System.Secondary_Stack);
@@ -126,7 +132,6 @@ package body System.Tasking.Initialization is
       if Self_ID /= null
         and then Self_ID.Deferral_Level = 0
         and then Self_ID.Pending_ATC_Level < Self_ID.ATC_Nesting_Level
-        and then not Self_ID.Aborting
       then
          return 1;
       else
@@ -239,9 +244,17 @@ package body System.Tasking.Initialization is
 
          Self_ID.Deferral_Level := Self_ID.Deferral_Level + 1;
 
+         if Single_Lock then
+            Lock_RTS;
+         end if;
+
          Write_Lock (Self_ID);
          Self_ID.Pending_Action := False;
          Unlock (Self_ID);
+
+         if Single_Lock then
+            Unlock_RTS;
+         end if;
 
          --  Restore the original Deferral value
 
@@ -296,7 +309,7 @@ package body System.Tasking.Initialization is
    procedure Final_Task_Unlock (Self_ID : Task_Id) is
    begin
       pragma Assert (Self_ID.Common.Global_Task_Lock_Nesting = 1);
-      Unlock (Global_Task_Lock'Access);
+      Unlock (Global_Task_Lock'Access, Global_Lock => True);
    end Final_Task_Unlock;
 
    --------------
@@ -421,7 +434,7 @@ package body System.Tasking.Initialization is
             when Terminated
                | Unactivated
             =>
-               pragma Assert (Standard.False);
+               pragma Assert (False);
                null;
 
             when Activating
@@ -536,7 +549,7 @@ package body System.Tasking.Initialization is
          C := C.Common.All_Tasks_Link;
       end loop;
 
-      pragma Assert (Standard.False);
+      pragma Assert (False);
    end Remove_From_All_Tasks_List;
 
    ---------------
@@ -550,7 +563,7 @@ package body System.Tasking.Initialization is
 
       if Self_ID.Common.Global_Task_Lock_Nesting = 1 then
          Defer_Abort_Nestable (Self_ID);
-         Write_Lock (Global_Task_Lock'Access);
+         Write_Lock (Global_Task_Lock'Access, Global_Lock => True);
       end if;
    end Task_Lock;
 
@@ -580,7 +593,7 @@ package body System.Tasking.Initialization is
         Self_ID.Common.Global_Task_Lock_Nesting - 1;
 
       if Self_ID.Common.Global_Task_Lock_Nesting = 0 then
-         Unlock (Global_Task_Lock'Access);
+         Unlock (Global_Task_Lock'Access, Global_Lock => True);
          Undefer_Abort_Nestable (Self_ID);
       end if;
    end Task_Unlock;

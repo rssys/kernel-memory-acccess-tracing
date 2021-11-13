@@ -1,5 +1,5 @@
 /* main.c: defines main() for cc1, cc1plus, etc.
-   Copyright (C) 2007-2021 Free Software Foundation, Inc.
+   Copyright (C) 2007-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -36,10 +36,5 @@ main (int argc, char **argv)
   toplev toplev (NULL, /* external_timer */
 		 true /* init_signals */);
 
-  int r = toplev.main (argc, argv);
-#if CHECKING_P
-  toplev.finalize ();
-#endif
-
-  return r;
+  return toplev.main (argc, argv);
 }

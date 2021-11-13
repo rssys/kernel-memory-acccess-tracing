@@ -6,11 +6,11 @@ package os
 
 import (
 	"errors"
-	"internal/syscall/windows"
 	"runtime"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 func (p *Process) wait() (ps *ProcessState, err error) {
@@ -45,31 +45,35 @@ func (p *Process) wait() (ps *ProcessState, err error) {
 	return &ProcessState{p.Pid, syscall.WaitStatus{ExitCode: ec}, &u}, nil
 }
 
+func terminateProcess(pid, exitcode int) error {
+	h, e := syscall.OpenProcess(syscall.PROCESS_TERMINATE, false, uint32(pid))
+	if e != nil {
+		return NewSyscallError("OpenProcess", e)
+	}
+	defer syscall.CloseHandle(h)
+	e = syscall.TerminateProcess(h, uint32(exitcode))
+	return NewSyscallError("TerminateProcess", e)
+}
+
 func (p *Process) signal(sig Signal) error {
 	handle := atomic.LoadUintptr(&p.handle)
 	if handle == uintptr(syscall.InvalidHandle) {
 		return syscall.EINVAL
 	}
 	if p.done() {
-		return ErrProcessDone
+		return errors.New("os: process already finished")
 	}
 	if sig == Kill {
-		var terminationHandle syscall.Handle
-		e := syscall.DuplicateHandle(^syscall.Handle(0), syscall.Handle(handle), ^syscall.Handle(0), &terminationHandle, syscall.PROCESS_TERMINATE, false, 0)
-		if e != nil {
-			return NewSyscallError("DuplicateHandle", e)
-		}
+		err := terminateProcess(p.Pid, 1)
 		runtime.KeepAlive(p)
-		defer syscall.CloseHandle(terminationHandle)
-		e = syscall.TerminateProcess(syscall.Handle(terminationHandle), 1)
-		return NewSyscallError("TerminateProcess", e)
+		return err
 	}
 	// TODO(rsc): Handle Interrupt too?
 	return syscall.Errno(syscall.EWINDOWS)
 }
 
 func (p *Process) release() error {
-	handle := atomic.SwapUintptr(&p.handle, uintptr(syscall.InvalidHandle))
+	handle := atomic.LoadUintptr(&p.handle)
 	if handle == uintptr(syscall.InvalidHandle) {
 		return syscall.EINVAL
 	}
@@ -77,6 +81,7 @@ func (p *Process) release() error {
 	if e != nil {
 		return NewSyscallError("CloseHandle", e)
 	}
+	atomic.StoreUintptr(&p.handle, uintptr(syscall.InvalidHandle))
 	// no need for a finalizer anymore
 	runtime.SetFinalizer(p, nil)
 	return nil
@@ -93,7 +98,8 @@ func findProcess(pid int) (p *Process, err error) {
 }
 
 func init() {
-	cmd := windows.UTF16PtrToString(syscall.GetCommandLine())
+	p := syscall.GetCommandLine()
+	cmd := syscall.UTF16ToString((*[0xffff]uint16)(unsafe.Pointer(p))[:])
 	if len(cmd) == 0 {
 		arg0, _ := Executable()
 		Args = []string{arg0}

@@ -23,16 +23,6 @@ type Image interface {
 	Set(x, y int, c color.Color)
 }
 
-// RGBA64Image extends both the Image and image.RGBA64Image interfaces with a
-// SetRGBA64 method to change a single pixel. SetRGBA64 is equivalent to
-// calling Set, but it can avoid allocations from converting concrete color
-// types to the color.Color interface type.
-type RGBA64Image interface {
-	image.RGBA64Image
-	Set(x, y int, c color.Color)
-	SetRGBA64(x, y int, c color.RGBA64)
-}
-
 // Quantizer produces a palette for an image.
 type Quantizer interface {
 	// Quantize appends up to cap(p) - len(p) colors to p and returns the
@@ -100,8 +90,8 @@ func clip(dst Image, r *image.Rectangle, src image.Image, sp *image.Point, mask 
 	}
 }
 
-func processBackward(dst image.Image, r image.Rectangle, src image.Image, sp image.Point) bool {
-	return dst == src &&
+func processBackward(dst Image, r image.Rectangle, src image.Image, sp image.Point) bool {
+	return image.Image(dst) == src &&
 		r.Overlaps(r.Add(sp.Sub(r.Min))) &&
 		(sp.Y < r.Min.Y || (sp.Y == r.Min.Y && sp.X < r.Min.X))
 }
@@ -190,25 +180,9 @@ func DrawMask(dst Image, r image.Rectangle, src image.Image, sp image.Point, mas
 		drawRGBA(dst0, r, src, sp, mask, mp, op)
 		return
 	case *image.Paletted:
-		if op == Src && mask == nil {
-			if src0, ok := src.(*image.Uniform); ok {
-				colorIndex := uint8(dst0.Palette.Index(src0.C))
-				i0 := dst0.PixOffset(r.Min.X, r.Min.Y)
-				i1 := i0 + r.Dx()
-				for i := i0; i < i1; i++ {
-					dst0.Pix[i] = colorIndex
-				}
-				firstRow := dst0.Pix[i0:i1]
-				for y := r.Min.Y + 1; y < r.Max.Y; y++ {
-					i0 += dst0.Stride
-					i1 += dst0.Stride
-					copy(dst0.Pix[i0:i1], firstRow)
-				}
-				return
-			} else if !processBackward(dst, r, src, sp) {
-				drawPaletted(dst0, r, src, sp, false)
-				return
-			}
+		if op == Src && mask == nil && !processBackward(dst, r, src, sp) {
+			drawPaletted(dst0, r, src, sp, false)
+			return
 		}
 	}
 

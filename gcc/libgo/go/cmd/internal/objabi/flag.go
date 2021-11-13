@@ -5,10 +5,8 @@
 package objabi
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"internal/buildcfg"
 	"io"
 	"io/ioutil"
 	"log"
@@ -61,9 +59,6 @@ func expandArgs(in []string) (out []string) {
 				log.Fatal(err)
 			}
 			args := strings.Split(strings.TrimSpace(strings.Replace(string(slurp), "\r", "", -1)), "\n")
-			for i, arg := range args {
-				args[i] = DecodeArg(arg)
-			}
 			out = append(out, expandArgs(args)...)
 		} else if out != nil {
 			out = append(out, s)
@@ -91,19 +86,13 @@ func (versionFlag) Set(s string) error {
 	name = name[strings.LastIndex(name, `/`)+1:]
 	name = name[strings.LastIndex(name, `\`)+1:]
 	name = strings.TrimSuffix(name, ".exe")
-
-	p := ""
-
-	if s == "goexperiment" {
-		// test/run.go uses this to discover the full set of
-		// experiment tags. Report everything.
-		p = " X:" + strings.Join(buildcfg.AllExperiments(), ",")
-	} else {
-		// If the enabled experiments differ from the defaults,
-		// include that difference.
-		if goexperiment := buildcfg.GOEXPERIMENT(); goexperiment != "" {
-			p = " X:" + goexperiment
-		}
+	p := Expstring()
+	if p == DefaultExpstring() {
+		p = ""
+	}
+	sep := ""
+	if p != "" {
+		sep = " "
 	}
 
 	// The go command invokes -V=full to get a unique identifier
@@ -112,12 +101,18 @@ func (versionFlag) Set(s string) error {
 	// build ID of the binary, so that if the compiler is changed and
 	// rebuilt, we notice and rebuild all packages.
 	if s == "full" {
-		if strings.HasPrefix(buildcfg.Version, "devel") {
+		// If there's an active experiment, include that,
+		// to distinguish go1.10.2 with an experiment
+		// from go1.10.2 without an experiment.
+		if x := Expstring(); x != "" {
+			p += " " + x
+		}
+		if strings.HasPrefix(Version, "devel") {
 			p += " buildID=" + buildID
 		}
 	}
 
-	fmt.Printf("%s version %s%s\n", name, buildcfg.Version, p)
+	fmt.Printf("%s version %s%s%s\n", name, Version, sep, p)
 	os.Exit(0)
 	return nil
 }
@@ -167,38 +162,3 @@ func (f fn1) Set(s string) error {
 }
 
 func (f fn1) String() string { return "" }
-
-// DecodeArg decodes an argument.
-//
-// This function is public for testing with the parallel encoder.
-func DecodeArg(arg string) string {
-	// If no encoding, fastpath out.
-	if !strings.ContainsAny(arg, "\\\n") {
-		return arg
-	}
-
-	// We can't use strings.Builder as this must work at bootstrap.
-	var b bytes.Buffer
-	var wasBS bool
-	for _, r := range arg {
-		if wasBS {
-			switch r {
-			case '\\':
-				b.WriteByte('\\')
-			case 'n':
-				b.WriteByte('\n')
-			default:
-				// This shouldn't happen. The only backslashes that reach here
-				// should encode '\n' and '\\' exclusively.
-				panic("badly formatted input")
-			}
-		} else if r == '\\' {
-			wasBS = true
-			continue
-		} else {
-			b.WriteRune(r)
-		}
-		wasBS = false
-	}
-	return b.String()
-}

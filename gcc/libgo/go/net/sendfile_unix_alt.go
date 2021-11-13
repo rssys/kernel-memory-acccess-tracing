@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build dragonfly || freebsd || solaris
 // +build dragonfly freebsd solaris
 
 package net
@@ -69,8 +68,8 @@ func sendFile(c *netFD, r io.Reader) (written int64, err error, handled bool) {
 		written, werr = poll.SendFile(&c.pfd, int(fd), pos, remain)
 		return true
 	})
-	if err == nil {
-		err = werr
+	if werr == nil {
+		werr = err
 	}
 
 	if lr != nil {

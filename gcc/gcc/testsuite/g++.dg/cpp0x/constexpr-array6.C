@@ -4,7 +4,7 @@
 struct A
 {
   int i;
-  constexpr A() {}		// { dg-error "A::i" "" { target c++17_down } }
+  constexpr A() {}		// { dg-error "A::i" }
 };
 
 struct B
@@ -12,5 +12,4 @@ struct B
   A a;
 };
 
-constexpr B b[] = { {} };	// { dg-error "A::A" "" { target c++17_down } }
-// { dg-error "is not a constant expression" "" { target c++2a } .-1 }
+constexpr B b[] = { {} };	// { dg-error "A::A" }

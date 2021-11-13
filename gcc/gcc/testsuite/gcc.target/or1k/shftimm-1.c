@@ -1,8 +1,8 @@
 /* { dg-do compile } */
-/* { dg-options "-mshftimm -O2" } */
+/* { dg-options "-mror -mshftimm -O2" } */
 
-unsigned int shift6 (unsigned int a) {
-  return a << 6;
+unsigned int rotate6 (unsigned int a) {
+  return ( a >> 6 ) | ( a << ( 32 - 6 ) );
 }
 
-/* { dg-final { scan-assembler "l.slli" } } */
+/* { dg-final { scan-assembler "l.rori" } } */

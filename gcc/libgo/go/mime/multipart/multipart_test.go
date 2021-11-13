@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/textproto"
 	"os"
 	"reflect"
@@ -306,7 +307,7 @@ Oh no, premature EOF!
 	if err != nil {
 		t.Fatalf("didn't get a part")
 	}
-	_, err = io.Copy(io.Discard, part)
+	_, err = io.Copy(ioutil.Discard, part)
 	if err != io.ErrUnexpectedEOF {
 		t.Fatalf("expected error io.ErrUnexpectedEOF; got %v", err)
 	}
@@ -371,7 +372,7 @@ Body 2
 		if !reflect.DeepEqual(part.Header, hdr) {
 			t.Errorf("Part %d: part.Header = %v, want %v", i, part.Header, hdr)
 		}
-		data, err := io.ReadAll(part)
+		data, err := ioutil.ReadAll(part)
 		expectEq(t, body, string(data), fmt.Sprintf("Part %d body", i))
 		if err != nil {
 			t.Fatalf("Part %d: ReadAll failed: %v", i, err)
@@ -448,66 +449,6 @@ func testQuotedPrintableEncoding(t *testing.T, cte string) {
 	}
 }
 
-func TestRawPart(t *testing.T) {
-	// https://github.com/golang/go/issues/29090
-
-	body := strings.Replace(`--0016e68ee29c5d515f04cedf6733
-Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: quoted-printable
-
-<div dir=3D"ltr">Hello World.</div>
---0016e68ee29c5d515f04cedf6733
-Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: quoted-printable
-
-<div dir=3D"ltr">Hello World.</div>
---0016e68ee29c5d515f04cedf6733--`, "\n", "\r\n", -1)
-
-	r := NewReader(strings.NewReader(body), "0016e68ee29c5d515f04cedf6733")
-
-	// This part is expected to be raw, bypassing the automatic handling
-	// of quoted-printable.
-	part, err := r.NextRawPart()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := part.Header["Content-Transfer-Encoding"]; !ok {
-		t.Errorf("missing Content-Transfer-Encoding")
-	}
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, part)
-	if err != nil {
-		t.Error(err)
-	}
-	got := buf.String()
-	// Data is still quoted-printable.
-	want := `<div dir=3D"ltr">Hello World.</div>`
-	if got != want {
-		t.Errorf("wrong part value:\n got: %q\nwant: %q", got, want)
-	}
-
-	// This part is expected to have automatic decoding of quoted-printable.
-	part, err = r.NextPart()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if te, ok := part.Header["Content-Transfer-Encoding"]; ok {
-		t.Errorf("unexpected Content-Transfer-Encoding of %q", te)
-	}
-
-	buf.Reset()
-	_, err = io.Copy(&buf, part)
-	if err != nil {
-		t.Error(err)
-	}
-	got = buf.String()
-	// QP data has been decoded.
-	want = `<div dir="ltr">Hello World.</div>`
-	if got != want {
-		t.Errorf("wrong part value:\n got: %q\nwant: %q", got, want)
-	}
-}
-
 // Test parsing an image attachment from gmail, which previously failed.
 func TestNested(t *testing.T) {
 	// nested-mime is the body part of a multipart/mixed email
@@ -529,14 +470,14 @@ func TestNested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading text/plain part: %v", err)
 	}
-	if b, err := io.ReadAll(p); string(b) != "*body*\r\n" || err != nil {
+	if b, err := ioutil.ReadAll(p); string(b) != "*body*\r\n" || err != nil {
 		t.Fatalf("reading text/plain part: got %q, %v", b, err)
 	}
 	p, err = mr2.NextPart()
 	if err != nil {
 		t.Fatalf("reading text/html part: %v", err)
 	}
-	if b, err := io.ReadAll(p); string(b) != "<b>body</b>\r\n" || err != nil {
+	if b, err := ioutil.ReadAll(p); string(b) != "<b>body</b>\r\n" || err != nil {
 		t.Fatalf("reading text/html part: got %q, %v", b, err)
 	}
 
@@ -849,7 +790,7 @@ Cases:
 				t.Errorf("in test %q, NextPart: %v", tt.name, err)
 				continue Cases
 			}
-			pbody, err := io.ReadAll(p)
+			pbody, err := ioutil.ReadAll(p)
 			if err != nil {
 				t.Errorf("in test %q, error reading part: %v", tt.name, err)
 				continue Cases
@@ -881,7 +822,7 @@ func partsFromReader(r *Reader) ([]headerBody, error) {
 		if err != nil {
 			return nil, fmt.Errorf("NextPart: %v", err)
 		}
-		pbody, err := io.ReadAll(p)
+		pbody, err := ioutil.ReadAll(p)
 		if err != nil {
 			return nil, fmt.Errorf("error reading part: %v", err)
 		}
@@ -891,10 +832,7 @@ func partsFromReader(r *Reader) ([]headerBody, error) {
 
 func TestParseAllSizes(t *testing.T) {
 	t.Parallel()
-	maxSize := 5 << 10
-	if testing.Short() {
-		maxSize = 512
-	}
+	const maxSize = 5 << 10
 	var buf bytes.Buffer
 	body := strings.Repeat("a", maxSize)
 	bodyb := []byte(body)

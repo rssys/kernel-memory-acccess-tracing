@@ -483,9 +483,17 @@ extern (C) bool runModuleUnitTests()
             fprintf(stderr, "Segmentation fault while running unittests:\n");
             fprintf(stderr, "----------------\n");
 
-            // First frame is LibBacktrace ctor. Second is signal handler,
-            // but include that for now
-            scope bt = new LibBacktrace(1);
+            enum alignment = LibBacktrace.MaxAlignment;
+            enum classSize = __traits(classInstanceSize, LibBacktrace);
+
+            void[classSize + alignment] bt_store = void;
+            void* alignedAddress = cast(byte*)((cast(size_t)(bt_store.ptr + alignment - 1))
+                & ~(alignment - 1));
+
+            (alignedAddress[0 .. classSize]) = typeid(LibBacktrace).initializer[];
+            auto bt = cast(LibBacktrace)(alignedAddress);
+            // First frame is LibBacktrace ctor. Second is signal handler, but include that for now
+            bt.__ctor(1);
 
             foreach (size_t i, const(char[]) msg; bt)
                 fprintf(stderr, "%s\n", msg.ptr ? msg.ptr : "???");

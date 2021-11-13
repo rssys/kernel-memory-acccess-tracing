@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -12,6 +12,8 @@
 #include "expression.h"
 #include "mtype.h"
 #include "scope.h"
+
+Expression *semantic(Expression *e, Scope *sc);
 
 /********************************************
  * Semantically analyze and then evaluate a static condition at compile time.
@@ -26,23 +28,25 @@
 
 bool evalStaticCondition(Scope *sc, Expression *exp, Expression *e, bool &errors)
 {
-    if (e->op == TOKandand || e->op == TOKoror)
+    if (e->op == TOKandand)
     {
-        LogicalExp *aae = (LogicalExp *)e;
+        AndAndExp *aae = (AndAndExp *)e;
         bool result = evalStaticCondition(sc, exp, aae->e1, errors);
+        if (errors || !result)
+            return false;
+        result = evalStaticCondition(sc, exp, aae->e2, errors);
+        return !errors && result;
+    }
+
+    if (e->op == TOKoror)
+    {
+        OrOrExp *ooe = (OrOrExp *)e;
+        bool result = evalStaticCondition(sc, exp, ooe->e1, errors);
         if (errors)
             return false;
-        if (e->op == TOKandand)
-        {
-            if (!result)
-                return false;
-        }
-        else
-        {
-            if (result)
-                return true;
-        }
-        result = evalStaticCondition(sc, exp, aae->e2, errors);
+        if (result)
+            return true;
+        result = evalStaticCondition(sc, exp, ooe->e2, errors);
         return !errors && result;
     }
 
@@ -62,7 +66,7 @@ bool evalStaticCondition(Scope *sc, Expression *exp, Expression *e, bool &errors
     sc = sc->startCTFE();
     sc->flags |= SCOPEcondition;
 
-    e = expressionSemantic(e, sc);
+    e = semantic(e, sc);
     e = resolveProperties(sc, e);
 
     sc = sc->endCTFE();

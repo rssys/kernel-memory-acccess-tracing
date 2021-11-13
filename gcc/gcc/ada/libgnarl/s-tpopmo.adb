@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---         Copyright (C) 1992-2021, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -193,7 +193,9 @@ package body Monotonic is
                Result :=
                  pthread_cond_timedwait
                    (cond    => Self_ID.Common.LL.CV'Access,
-                    mutex   => Self_ID.Common.LL.L'Access,
+                    mutex   => (if Single_Lock
+                                then Single_RTS_Lock'Access
+                                else Self_ID.Common.LL.L'Access),
                     abstime => Request'Access);
 
                case Result is
@@ -208,7 +210,7 @@ package body Monotonic is
                      exit Inner;
 
                   when others =>
-                     pragma Assert (Standard.False);
+                     pragma Assert (False);
 
                end case;
 
@@ -242,6 +244,10 @@ package body Monotonic is
       Exit_Outer : Boolean := False;
 
    begin
+      if Single_Lock then
+         Lock_RTS;
+      end if;
+
       Write_Lock (Self_ID);
 
       Compute_Deadline
@@ -280,7 +286,9 @@ package body Monotonic is
                Result :=
                  pthread_cond_timedwait
                    (cond    => Self_ID.Common.LL.CV'Access,
-                    mutex   => Self_ID.Common.LL.L'Access,
+                    mutex   => (if Single_Lock
+                                then Single_RTS_Lock'Access
+                                else Self_ID.Common.LL.L'Access),
                     abstime => Request'Access);
 
                case Result is
@@ -292,7 +300,7 @@ package body Monotonic is
                   when 0 | EINTR => null;
 
                   when others =>
-                     pragma Assert (Standard.False);
+                     pragma Assert (False);
 
                end case;
 
@@ -306,6 +314,11 @@ package body Monotonic is
       end if;
 
       Unlock (Self_ID);
+
+      if Single_Lock then
+         Unlock_RTS;
+      end if;
+
       pragma Unreferenced (Result);
       Result := sched_yield;
    end Timed_Delay;

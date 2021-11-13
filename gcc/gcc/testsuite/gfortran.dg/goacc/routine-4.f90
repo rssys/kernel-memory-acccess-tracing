@@ -1,8 +1,5 @@
 ! Test invalid calls to routines.
 
-! { dg-additional-options "-Wopenacc-parallelism" } for testing/documenting
-! aspects of that functionality.
-
 module param
   integer, parameter :: N = 32
 end module param
@@ -123,9 +120,6 @@ contains
 
   subroutine gang (a) ! { dg-message "declared here" 3 }
     !$acc routine gang
-    ! { dg-warning "region is gang partitioned but does not contain gang partitioned code" "" { target *-*-* } .-2 }
-    ! { dg-warning "region is worker partitioned but does not contain worker partitioned code" "" { target *-*-* } .-3 }
-    ! { dg-warning "region is vector partitioned but does not contain vector partitioned code" "" { target *-*-* } .-4 }
     integer, intent (inout) :: a(N)
     integer :: i
 
@@ -136,8 +130,6 @@ contains
 
   subroutine worker (a) ! { dg-message "declared here" 2 }
     !$acc routine worker
-    ! { dg-warning "region is worker partitioned but does not contain worker partitioned code" "" { target *-*-* } .-2 }
-    ! { dg-warning "region is vector partitioned but does not contain vector partitioned code" "" { target *-*-* } .-3 }
     integer, intent (inout) :: a(N)
     integer :: i
 
@@ -148,7 +140,6 @@ contains
 
   subroutine vector (a) ! { dg-message "declared here" }
     !$acc routine vector
-    ! { dg-warning "region is vector partitioned but does not contain vector partitioned code" "" { target *-*-* } .-2 }
     integer, intent (inout) :: a(N)
     integer :: i
 

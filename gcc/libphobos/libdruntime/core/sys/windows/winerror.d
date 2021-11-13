@@ -8,13 +8,12 @@
  */
 module core.sys.windows.winerror;
 version (Windows):
-@system:
 
 /* Comments from the Mingw header:
  * WAIT_TIMEOUT is also defined in winbase.h
  */
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 alias int SCODE; // was in core.sys.windows.wtypes.
 

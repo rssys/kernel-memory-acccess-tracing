@@ -11,17 +11,17 @@ import "syscall"
 
 // Declarations for the libc functions on most Unix systems.
 
-//extern-sysinfo getpwnam_r
+//extern getpwnam_r
 func libc_getpwnam_r(name *byte, pwd *syscall.Passwd, buf *byte, buflen syscall.Size_t, result **syscall.Passwd) int
 
-//extern-sysinfo getpwuid_r
+//extern getpwuid_r
 func libc_getpwuid_r(uid syscall.Uid_t, pwd *syscall.Passwd, buf *byte, buflen syscall.Size_t, result **syscall.Passwd) int
 
-//extern-sysinfo getgrnam_r
+//extern getgrnam_r
 func libc_getgrnam_r(name *byte, grp *syscall.Group, buf *byte, buflen syscall.Size_t, result **syscall.Group) int
 
-//extern-sysinfo getgrgid_r
+//extern getgrgid_r
 func libc_getgrgid_r(gid syscall.Gid_t, grp *syscall.Group, buf *byte, buflen syscall.Size_t, result **syscall.Group) int
 
-//extern-sysinfo getgrouplist
+//extern getgrouplist
 func libc_getgrouplist(user *byte, group syscall.Gid_t, groups *syscall.Gid_t, ngroups *int32) int

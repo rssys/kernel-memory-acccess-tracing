@@ -23,5 +23,4 @@ foo(int cond, struct z *s)
 /* { dg-final { scan-tree-dump-times "Deleted dead store" 3 "dse1"} } */
 /* { dg-final { scan-tree-dump-not "Deleted dead store" "dse2"} } */
 /* { dg-final { scan-tree-dump-not "Deleted dead store" "dse3"} } */
-/* { dg-final { scan-tree-dump-not "Deleted dead store" "dse5"} } */
 

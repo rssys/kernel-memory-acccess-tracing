@@ -1,6 +1,6 @@
 /* { dg-do run } */
 /* { dg-skip-if "" { *-*-* } { "*" } { "-O2" } } */
-/* { dg-options "-Wno-stringop-overflow -fsanitize=undefined" } */
+/* { dg-options "-fsanitize=undefined" } */
 
 /* Test PARM_DECLs and RESULT_DECLs.  */
 

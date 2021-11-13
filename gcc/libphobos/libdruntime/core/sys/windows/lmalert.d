@@ -8,10 +8,9 @@
  */
 module core.sys.windows.lmalert;
 version (Windows):
-@system:
 pragma(lib, "netapi32");
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 const TCHAR[]
     ALERTER_MAILSLOT     = `\\.\MAILSLOT\Alerter`,

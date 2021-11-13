@@ -49,6 +49,4 @@ foo (int *p)
   ;
   #pragma omp critical (baz) hint (2, 3)	/* { dg-error "expected" } */
   ;
-  #pragma omp masked filter (3, 4)		/* { dg-error "expected" } */
-  ;
 }

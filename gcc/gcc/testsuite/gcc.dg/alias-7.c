@@ -1,7 +1,6 @@
 /* { dg-do run } */
 /* { dg-require-alias "" } */
 /* { dg-options "-O2" } */
-/* { dg-skip-if "weak alias" { powerpc-ibm-aix* } } */
 
 extern void abort (void);
 

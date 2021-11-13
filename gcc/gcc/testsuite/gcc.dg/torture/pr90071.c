@@ -1,6 +1,4 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target indirect_jumps } */
-/* { dg-require-effective-target label_values } */
 
 int a;
 static int b;
@@ -21,6 +19,6 @@ h: ++e;
 	 goto i;
      }
 f:
-   goto *(void*)(__INTPTR_TYPE__)({ d || e < 0 || e >= 2; });
+   goto *({ d || e < 0 || e >= 2; });
    &e;
 }

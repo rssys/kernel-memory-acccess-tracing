@@ -53,16 +53,12 @@ func Sort(mapValue reflect.Value) *SortedMap {
 	if mapValue.Type().Kind() != reflect.Map {
 		return nil
 	}
-	// Note: this code is arranged to not panic even in the presence
-	// of a concurrent map update. The runtime is responsible for
-	// yelling loudly if that happens. See issue 33275.
-	n := mapValue.Len()
-	key := make([]reflect.Value, 0, n)
-	value := make([]reflect.Value, 0, n)
+	key := make([]reflect.Value, mapValue.Len())
+	value := make([]reflect.Value, len(key))
 	iter := mapValue.MapRange()
-	for iter.Next() {
-		key = append(key, iter.Key())
-		value = append(value, iter.Value())
+	for i := 0; iter.Next(); i++ {
+		key[i] = iter.Key()
+		value[i] = iter.Value()
 	}
 	sorted := &SortedMap{
 		Key:   key,
@@ -130,7 +126,7 @@ func compare(aVal, bVal reflect.Value) int {
 		default:
 			return -1
 		}
-	case reflect.Ptr, reflect.UnsafePointer:
+	case reflect.Ptr:
 		a, b := aVal.Pointer(), bVal.Pointer()
 		switch {
 		case a < b:

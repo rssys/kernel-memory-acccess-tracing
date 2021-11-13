@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 1999-2021, AdaCore                     --
+--                     Copyright (C) 1999-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -226,8 +226,7 @@ package body GNAT.Calendar is
 
    begin
       --  Even though the input time zone is UTC (0), the flag Use_TZ will
-      --  ensure that Split picks up the local time zone. ???But Use_TZ is
-      --  False below, and anyway, Use_TZ has no effect if Time_Zone is 0.
+      --  ensure that Split picks up the local time zone.
 
       Ada_Calendar_Split
         (Date        => Date,
@@ -316,8 +315,7 @@ package body GNAT.Calendar is
 
    begin
       --  Even though the input time zone is UTC (0), the flag Use_TZ will
-      --  ensure that Split picks up the local time zone. ???But there is no
-      --  call to Split here.
+      --  ensure that Split picks up the local time zone.
 
       return
         Ada_Calendar_Time_Of
@@ -354,9 +352,6 @@ package body GNAT.Calendar is
 
    begin
       timeval_to_duration (T, sec'Access, usec'Access);
-      pragma Annotate (CodePeer, Modified, sec);
-      pragma Annotate (CodePeer, Modified, usec);
-
       return Duration (sec) + Duration (usec) / Micro;
    end To_Duration;
 

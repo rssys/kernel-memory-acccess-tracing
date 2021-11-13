@@ -1,6 +1,6 @@
 // -*- C++ -*- header.
 
-// Copyright (C) 2008-2021 Free Software Foundation, Inc.
+// Copyright (C) 2008-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -39,6 +39,7 @@
 #else
 
 #include <bits/atomic_base.h>
+#include <bits/move.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -163,34 +164,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     compare_exchange_strong(bool& __i1, bool __i2,
 		    memory_order __m = memory_order_seq_cst) volatile noexcept
     { return _M_base.compare_exchange_strong(__i1, __i2, __m); }
-
-#if __cpp_lib_atomic_wait
-    void
-    wait(bool __old, memory_order __m = memory_order_seq_cst) const noexcept
-    { _M_base.wait(__old, __m); }
-
-    // TODO add const volatile overload
-
-    void
-    notify_one() const noexcept
-    { _M_base.notify_one(); }
-
-    void
-    notify_all() const noexcept
-    { _M_base.notify_all(); }
-#endif // __cpp_lib_atomic_wait
   };
 
-#if __cplusplus <= 201703L
-# define _GLIBCXX20_INIT(I)
-#else
-# define _GLIBCXX20_INIT(I) = I
-#endif
 
   /**
    *  @brief Generic atomic type, primary class template.
    *
-   *  @tparam _Tp  Type to be made atomic, must be trivially copyable.
+   *  @tparam _Tp  Type to be made atomic, must be trivally copyable.
    */
   template<typename _Tp>
     struct atomic
@@ -206,7 +186,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       static constexpr int _S_alignment
         = _S_min_alignment > alignof(_Tp) ? _S_min_alignment : alignof(_Tp);
 
-      alignas(_S_alignment) _Tp _M_i _GLIBCXX20_INIT(_Tp());
+      alignas(_S_alignment) _Tp _M_i;
 
       static_assert(__is_trivially_copyable(_Tp),
 		    "std::atomic requires a trivially copyable type");
@@ -214,15 +194,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       static_assert(sizeof(_Tp) > 0,
 		    "Incomplete or zero-sized types are not supported");
 
-#if __cplusplus > 201703L
-      static_assert(is_copy_constructible_v<_Tp>);
-      static_assert(is_move_constructible_v<_Tp>);
-      static_assert(is_copy_assignable_v<_Tp>);
-      static_assert(is_move_assignable_v<_Tp>);
-#endif
-
     public:
-      atomic() = default;
+      atomic() noexcept = default;
       ~atomic() noexcept = default;
       atomic(const atomic&) = delete;
       atomic& operator=(const atomic&) = delete;
@@ -267,15 +240,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       void
       store(_Tp __i, memory_order __m = memory_order_seq_cst) noexcept
-      {
-	__atomic_store(std::__addressof(_M_i), std::__addressof(__i), int(__m));
-      }
+      { __atomic_store(std::__addressof(_M_i), std::__addressof(__i), int(__m)); }
 
       void
       store(_Tp __i, memory_order __m = memory_order_seq_cst) volatile noexcept
-      {
-	__atomic_store(std::__addressof(_M_i), std::__addressof(__i), int(__m));
-      }
+      { __atomic_store(std::__addressof(_M_i), std::__addressof(__i), int(__m)); }
 
       _Tp
       load(memory_order __m = memory_order_seq_cst) const noexcept
@@ -320,8 +289,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       compare_exchange_weak(_Tp& __e, _Tp __i, memory_order __s,
 			    memory_order __f) noexcept
       {
-	__glibcxx_assert(__is_valid_cmpexch_failure_order(__f));
-
 	return __atomic_compare_exchange(std::__addressof(_M_i),
 					 std::__addressof(__e),
 					 std::__addressof(__i),
@@ -332,8 +299,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       compare_exchange_weak(_Tp& __e, _Tp __i, memory_order __s,
 			    memory_order __f) volatile noexcept
       {
-	__glibcxx_assert(__is_valid_cmpexch_failure_order(__f));
-
 	return __atomic_compare_exchange(std::__addressof(_M_i),
 					 std::__addressof(__e),
 					 std::__addressof(__i),
@@ -356,8 +321,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       compare_exchange_strong(_Tp& __e, _Tp __i, memory_order __s,
 			      memory_order __f) noexcept
       {
-	__glibcxx_assert(__is_valid_cmpexch_failure_order(__f));
-
 	return __atomic_compare_exchange(std::__addressof(_M_i),
 					 std::__addressof(__e),
 					 std::__addressof(__i),
@@ -368,8 +331,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       compare_exchange_strong(_Tp& __e, _Tp __i, memory_order __s,
 			      memory_order __f) volatile noexcept
       {
-	__glibcxx_assert(__is_valid_cmpexch_failure_order(__f));
-
 	return __atomic_compare_exchange(std::__addressof(_M_i),
 					 std::__addressof(__e),
 					 std::__addressof(__i),
@@ -387,28 +348,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		     memory_order __m = memory_order_seq_cst) volatile noexcept
       { return compare_exchange_strong(__e, __i, __m,
                                        __cmpexch_failure_order(__m)); }
-
-#if __cpp_lib_atomic_wait 
-    void
-    wait(_Tp __old, memory_order __m = memory_order_seq_cst) const noexcept
-    {
-      std::__atomic_wait_address_v(&_M_i, __old,
-			 [__m, this] { return this->load(__m); });
-    }
-
-    // TODO add const volatile overload
-
-    void
-    notify_one() const noexcept
-    { std::__atomic_notify_address(&_M_i, false); }
-
-    void
-    notify_all() const noexcept
-    { std::__atomic_notify_address(&_M_i, true); }
-#endif // __cpp_lib_atomic_wait 
-
     };
-#undef _GLIBCXX20_INIT
+
 
   /// Partial specialization for pointer types.
   template<typename _Tp>
@@ -560,8 +501,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return _M_b.is_lock_free(); }
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free
-	= ATOMIC_POINTER_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_POINTER_LOCK_FREE == 2;
 #endif
 
       void
@@ -595,13 +535,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       bool
       compare_exchange_weak(__pointer_type& __p1, __pointer_type __p2,
 			    memory_order __m1, memory_order __m2) noexcept
-      { return _M_b.compare_exchange_weak(__p1, __p2, __m1, __m2); }
+      { return _M_b.compare_exchange_strong(__p1, __p2, __m1, __m2); }
 
       bool
       compare_exchange_weak(__pointer_type& __p1, __pointer_type __p2,
 			    memory_order __m1,
 			    memory_order __m2) volatile noexcept
-      { return _M_b.compare_exchange_weak(__p1, __p2, __m1, __m2); }
+      { return _M_b.compare_exchange_strong(__p1, __p2, __m1, __m2); }
 
       bool
       compare_exchange_weak(__pointer_type& __p1, __pointer_type __p2,
@@ -645,22 +585,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	return _M_b.compare_exchange_strong(__p1, __p2, __m,
 					    __cmpexch_failure_order(__m));
       }
-
-#if __cpp_lib_atomic_wait 
-    void
-    wait(__pointer_type __old, memory_order __m = memory_order_seq_cst) noexcept
-    { _M_b.wait(__old, __m); }
-
-    // TODO add const volatile overload
-
-    void
-    notify_one() const noexcept
-    { _M_b.notify_one(); }
-
-    void
-    notify_all() const noexcept
-    { _M_b.notify_all(); }
-#endif // __cpp_lib_atomic_wait
 
       __pointer_type
       fetch_add(ptrdiff_t __d,
@@ -723,7 +647,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
 #endif
     };
 
@@ -746,7 +670,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
 #endif
     };
 
@@ -769,7 +693,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR_LOCK_FREE == 2;
 #endif
     };
 
@@ -792,7 +716,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_SHORT_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_SHORT_LOCK_FREE == 2;
 #endif
     };
 
@@ -815,7 +739,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_SHORT_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_SHORT_LOCK_FREE == 2;
 #endif
     };
 
@@ -838,7 +762,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_INT_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_INT_LOCK_FREE == 2;
 #endif
     };
 
@@ -861,7 +785,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_INT_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_INT_LOCK_FREE == 2;
 #endif
     };
 
@@ -884,7 +808,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_LONG_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_LONG_LOCK_FREE == 2;
 #endif
     };
 
@@ -907,7 +831,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_LONG_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_LONG_LOCK_FREE == 2;
 #endif
     };
 
@@ -930,7 +854,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_LLONG_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_LLONG_LOCK_FREE == 2;
 #endif
     };
 
@@ -953,7 +877,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_LLONG_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_LLONG_LOCK_FREE == 2;
 #endif
     };
 
@@ -976,7 +900,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free = ATOMIC_WCHAR_T_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_WCHAR_T_LOCK_FREE == 2;
 #endif
     };
 
@@ -1000,8 +924,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus > 201402L
-      static constexpr bool is_always_lock_free
-	= ATOMIC_CHAR8_T_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR8_T_LOCK_FREE == 2;
 #endif
     };
 #endif
@@ -1025,8 +948,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free
-	= ATOMIC_CHAR16_T_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR16_T_LOCK_FREE == 2;
 #endif
     };
 
@@ -1049,8 +971,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::operator=;
 
 #if __cplusplus >= 201703L
-      static constexpr bool is_always_lock_free
-	= ATOMIC_CHAR32_T_LOCK_FREE == 2;
+    static constexpr bool is_always_lock_free = ATOMIC_CHAR32_T_LOCK_FREE == 2;
 #endif
     };
 
@@ -1417,32 +1338,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 						     memory_order_seq_cst);
     }
 
-
-#if __cpp_lib_atomic_wait
-  template<typename _Tp>
-    inline void
-    atomic_wait(const atomic<_Tp>* __a,
-	        typename std::atomic<_Tp>::value_type __old) noexcept
-    { __a->wait(__old); }
-
-  template<typename _Tp>
-    inline void
-    atomic_wait_explicit(const atomic<_Tp>* __a,
-			 typename std::atomic<_Tp>::value_type __old,
-			 std::memory_order __m) noexcept
-    { __a->wait(__old, __m); }
-
-  template<typename _Tp>
-    inline void
-    atomic_notify_one(atomic<_Tp>* __a) noexcept
-    { __a->notify_one(); }
-
-  template<typename _Tp>
-    inline void
-    atomic_notify_all(atomic<_Tp>* __a) noexcept
-    { __a->notify_all(); }
-#endif // __cpp_lib_atomic_wait
-
   // Function templates for atomic_integral and atomic_pointer operations only.
   // Some operations (and, or, xor) are only available for atomic integrals,
   // which is implemented by taking a parameter of type __atomic_base<_ITp>*.
@@ -1577,73 +1472,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		     __atomic_val_t<_ITp> __i) noexcept
     { return atomic_fetch_xor_explicit(__a, __i, memory_order_seq_cst); }
 
-#if __cplusplus > 201703L
-#define __cpp_lib_atomic_float 201711L
-  template<>
-    struct atomic<float> : __atomic_float<float>
-    {
-      atomic() noexcept = default;
-
-      constexpr
-      atomic(float __fp) noexcept : __atomic_float<float>(__fp)
-      { }
-
-      atomic& operator=(const atomic&) volatile = delete;
-      atomic& operator=(const atomic&) = delete;
-
-      using __atomic_float<float>::operator=;
-    };
-
-  template<>
-    struct atomic<double> : __atomic_float<double>
-    {
-      atomic() noexcept = default;
-
-      constexpr
-      atomic(double __fp) noexcept : __atomic_float<double>(__fp)
-      { }
-
-      atomic& operator=(const atomic&) volatile = delete;
-      atomic& operator=(const atomic&) = delete;
-
-      using __atomic_float<double>::operator=;
-    };
-
-  template<>
-    struct atomic<long double> : __atomic_float<long double>
-    {
-      atomic() noexcept = default;
-
-      constexpr
-      atomic(long double __fp) noexcept : __atomic_float<long double>(__fp)
-      { }
-
-      atomic& operator=(const atomic&) volatile = delete;
-      atomic& operator=(const atomic&) = delete;
-
-      using __atomic_float<long double>::operator=;
-    };
-
-#define __cpp_lib_atomic_ref 201806L
-
-  /// Class template to provide atomic operations on a non-atomic variable.
-  template<typename _Tp>
-    struct atomic_ref : __atomic_ref<_Tp>
-    {
-      explicit
-      atomic_ref(_Tp& __t) noexcept : __atomic_ref<_Tp>(__t)
-      { }
-
-      atomic_ref& operator=(const atomic_ref&) = delete;
-
-      atomic_ref(const atomic_ref&) = default;
-
-      using __atomic_ref<_Tp>::operator=;
-    };
-
-#endif // C++2a
-
-  /// @} group atomics
+  // @} group atomics
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace

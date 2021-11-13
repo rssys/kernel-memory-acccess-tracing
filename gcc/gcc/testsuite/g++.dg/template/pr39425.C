@@ -5,16 +5,14 @@ class a {
 
   template<unsigned int s>
     struct _rec {
-    static const char size = _rec< (s >> 1) >::size; // { dg-error "depth" }
+      static const char size = _rec< (s >> 1) >::size;
     };
 
   template<>	// { dg-error "explicit" }
-  struct _rec <0> { // { dg-error "too few" }
+  struct _rec <0> {
     static const char size = 0;
   };
 
   static const unsigned int value = _rec < 1 >::size;
 
-};
-
-// { dg-prune-output "compilation terminated" }
+} // { dg-error "after class definition" }

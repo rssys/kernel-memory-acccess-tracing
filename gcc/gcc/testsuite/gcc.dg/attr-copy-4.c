@@ -21,8 +21,7 @@ Assert (__alignof (struct PackedA) == __alignof (struct PackedB));
 struct PackedMember
 {
   char c;
-  ATTR ((copy ((struct PackedB*)0))) double packed_mem; 
-  /* { dg-warning "attribute ignored" "" { target default_packed } .-1 } */
+  ATTR ((copy ((struct PackedB*)0))) double packed_mem;
 };
 
 Assert (__alignof (struct PackedMember) == 1);
@@ -32,7 +31,6 @@ extern const struct PackedA packed;
 
 struct Unpacked { int i; char c; };
 Assert (__alignof (struct Unpacked) > 1);
-/* { dg-error "size of array .* is negative" "" { target default_packed } .-1 } */
 
 /* Verify that copying the packed attribute to the declaration
    of an object is ignored with a warning.  (There should be

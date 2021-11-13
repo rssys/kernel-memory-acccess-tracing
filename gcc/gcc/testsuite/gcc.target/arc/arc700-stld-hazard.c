@@ -1,6 +1,5 @@
 /* { dg-do compile } */
-/* { dg-skip-if "" { ! { clmcpu } } } */
-/* { dg-options "-mcpu=arc700 -mno-sdata -O2" } */
+/* { dg-options "-mcpu=arc700 -mno-sdata" } */
 
 volatile int a;
 volatile int b;
@@ -12,4 +11,4 @@ foo ()
   b = a;
 }
 
-/* { dg-final { scan-assembler "st\\s+r\[0-9\]+,\\\[@a\\\]\\.*\[^\n\]*\n\[ \t\]+nop_s\[^\n\]*\n\[ \t\]+nop_s\[^\n\]*\n\[ \t\]+ld\\s+r\[0-9\]+,\\\[@a\\\]" } } */
+/* { dg-final { scan-assembler "st r\[0-9\]+,\\\[@a\\\]\[^\n\]*\n\[ \t\]+nop_s\[^\n\]*\n\[ \t\]+nop_s\[^\n\]*\n\[ \t\]+ld r\[0-9\]+,\\\[@a\\\]" } } */

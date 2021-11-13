@@ -1,5 +1,5 @@
 /* Optimize and expand sanitizer functions.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Marek Polacek <polacek@redhat.com>
 
 This file is part of GCC.
@@ -34,6 +34,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "attribs.h"
 #include "asan.h"
 #include "ubsan.h"
+#include "params.h"
 #include "tree-hash-traits.h"
 #include "gimple-ssa.h"
 #include "tree-phinodes.h"
@@ -129,8 +130,6 @@ struct sanopt_tree_triplet_hash : typed_noop_remove <sanopt_tree_triplet>
     ref.t1 = reinterpret_cast<tree> (1);
   }
 
-  static const bool empty_zero_p = true;
-
   static void
   mark_empty (sanopt_tree_triplet &ref)
   {
@@ -186,8 +185,6 @@ struct sanopt_tree_couple_hash : typed_noop_remove <sanopt_tree_couple>
     ref.ptr = reinterpret_cast<tree> (1);
   }
 
-  static const bool empty_zero_p = true;
-
   static void
   mark_empty (sanopt_tree_couple &ref)
   {
@@ -210,9 +207,8 @@ struct sanopt_tree_couple_hash : typed_noop_remove <sanopt_tree_couple>
 /* This is used to carry various hash maps and variables used
    in sanopt_optimize_walker.  */
 
-class sanopt_ctx
+struct sanopt_ctx
 {
-public:
   /* This map maps a pointer (the first argument of UBSAN_NULL) to
      a vector of UBSAN_NULL call statements that check this pointer.  */
   hash_map<tree, auto_vec<gimple *> > null_check_map;
@@ -357,7 +353,7 @@ maybe_get_dominating_check (auto_vec<gimple *> &v)
 /* Optimize away redundant UBSAN_NULL calls.  */
 
 static bool
-maybe_optimize_ubsan_null_ifn (class sanopt_ctx *ctx, gimple *stmt)
+maybe_optimize_ubsan_null_ifn (struct sanopt_ctx *ctx, gimple *stmt)
 {
   gcc_assert (gimple_call_num_args (stmt) == 3);
   tree ptr = gimple_call_arg (stmt, 0);
@@ -492,10 +488,7 @@ maybe_optimize_ubsan_ptr_ifn (sanopt_ctx *ctx, gimple *stmt)
 				  &unsignedp, &reversep, &volatilep);
       if ((offset == NULL_TREE || TREE_CODE (offset) == INTEGER_CST)
 	  && DECL_P (base)
-	  && ((!VAR_P (base)
-	       && TREE_CODE (base) != PARM_DECL
-	       && TREE_CODE (base) != RESULT_DECL)
-	      || !DECL_REGISTER (base))
+	  && !DECL_REGISTER (base)
 	  && pbitpos.is_constant (&bitpos))
 	{
 	  offset_int expr_offset;
@@ -597,7 +590,7 @@ maybe_optimize_ubsan_ptr_ifn (sanopt_ctx *ctx, gimple *stmt)
    when we can actually optimize.  */
 
 static bool
-maybe_optimize_ubsan_vptr_ifn (class sanopt_ctx *ctx, gimple *stmt)
+maybe_optimize_ubsan_vptr_ifn (struct sanopt_ctx *ctx, gimple *stmt)
 {
   gcc_assert (gimple_call_num_args (stmt) == 5);
   sanopt_tree_triplet triplet;
@@ -701,7 +694,7 @@ can_remove_asan_check (auto_vec<gimple *> &v, tree len, basic_block bb)
 /* Optimize away redundant ASAN_CHECK calls.  */
 
 static bool
-maybe_optimize_asan_check_ifn (class sanopt_ctx *ctx, gimple *stmt)
+maybe_optimize_asan_check_ifn (struct sanopt_ctx *ctx, gimple *stmt)
 {
   gcc_assert (gimple_call_num_args (stmt) == 4);
   tree ptr = gimple_call_arg (stmt, 1);
@@ -774,13 +767,12 @@ maybe_optimize_asan_check_ifn (class sanopt_ctx *ctx, gimple *stmt)
    anything anymore.  CTX is a sanopt context.  */
 
 static void
-sanopt_optimize_walker (basic_block bb, class sanopt_ctx *ctx)
+sanopt_optimize_walker (basic_block bb, struct sanopt_ctx *ctx)
 {
   basic_block son;
   gimple_stmt_iterator gsi;
   sanopt_info *info = (sanopt_info *) bb->aux;
-  bool asan_check_optimize
-    = ((flag_sanitize & (SANITIZE_ADDRESS | SANITIZE_HWADDRESS)) != 0);
+  bool asan_check_optimize = (flag_sanitize & SANITIZE_ADDRESS) != 0;
 
   for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi);)
     {
@@ -810,7 +802,6 @@ sanopt_optimize_walker (basic_block bb, class sanopt_ctx *ctx)
       if (asan_check_optimize
 	  && gimple_call_builtin_p (stmt, BUILT_IN_ASAN_BEFORE_DYNAMIC_INIT))
 	{
-	  gcc_assert (!hwasan_sanitize_p ());
 	  use_operand_p use;
 	  gimple *use_stmt;
 	  if (single_imm_use (gimple_vdef (stmt), &use, &use_stmt))
@@ -839,7 +830,6 @@ sanopt_optimize_walker (basic_block bb, class sanopt_ctx *ctx)
 	  case IFN_UBSAN_PTR:
 	    remove = maybe_optimize_ubsan_ptr_ifn (ctx, stmt);
 	    break;
-	  case IFN_HWASAN_CHECK:
 	  case IFN_ASAN_CHECK:
 	    if (asan_check_optimize)
 	      remove = maybe_optimize_asan_check_ifn (ctx, stmt);
@@ -896,7 +886,7 @@ sanopt_optimize_walker (basic_block bb, class sanopt_ctx *ctx)
 static int
 sanopt_optimize (function *fun, bool *contains_asan_mark)
 {
-  class sanopt_ctx ctx;
+  struct sanopt_ctx ctx;
   ctx.asan_num_accesses = 0;
   ctx.contains_asan_mark = false;
 
@@ -1164,7 +1154,6 @@ sanitize_rewrite_addressable_params (function *fun)
 	  && TREE_CODE (TYPE_SIZE (type)) == INTEGER_CST)
 	{
 	  TREE_ADDRESSABLE (arg) = 0;
-	  DECL_NOT_GIMPLE_REG_P (arg) = 0;
 	  /* The parameter is no longer addressable.  */
 	  has_any_addressable_param = true;
 
@@ -1196,6 +1185,7 @@ sanitize_rewrite_addressable_params (function *fun)
 	    {
 	      /* We need to create a SSA name that will be used for the
 		 assignment.  */
+	      DECL_GIMPLE_REG_P (arg) = 1;
 	      tree tmp = get_or_create_ssa_default_def (cfun, arg);
 	      g = gimple_build_assign (var, tmp);
 	      gimple_set_location (g, DECL_SOURCE_LOCATION (arg));
@@ -1249,7 +1239,9 @@ sanitize_rewrite_addressable_params (function *fun)
 
   /* Unset value expr for parameters for which we created debug bind
      expressions.  */
-  for (tree arg : clear_value_expr_list)
+  unsigned i;
+  tree arg;
+  FOR_EACH_VEC_ELT (clear_value_expr_list, i, arg)
     {
       DECL_HAS_VALUE_EXPR_P (arg) = 0;
       SET_DECL_VALUE_EXPR (arg, NULL_TREE);
@@ -1266,10 +1258,6 @@ sanitize_rewrite_addressable_params (function *fun)
 unsigned int
 pass_sanopt::execute (function *fun)
 {
-  /* n.b. ASAN_MARK is used for both HWASAN and ASAN.
-     asan_num_accesses is hence used to count either HWASAN_CHECK or ASAN_CHECK
-     stuff.  This is fine because you can only have one of these active at a
-     time.  */
   basic_block bb;
   int asan_num_accesses = 0;
   bool contains_asan_mark = false;
@@ -1277,10 +1265,10 @@ pass_sanopt::execute (function *fun)
   /* Try to remove redundant checks.  */
   if (optimize
       && (flag_sanitize
-	  & (SANITIZE_NULL | SANITIZE_ALIGNMENT | SANITIZE_HWADDRESS
+	  & (SANITIZE_NULL | SANITIZE_ALIGNMENT
 	     | SANITIZE_ADDRESS | SANITIZE_VPTR | SANITIZE_POINTER_OVERFLOW)))
     asan_num_accesses = sanopt_optimize (fun, &contains_asan_mark);
-  else if (flag_sanitize & (SANITIZE_ADDRESS | SANITIZE_HWADDRESS))
+  else if (flag_sanitize & SANITIZE_ADDRESS)
     {
       gimple_stmt_iterator gsi;
       FOR_EACH_BB_FN (bb, fun)
@@ -1300,11 +1288,11 @@ pass_sanopt::execute (function *fun)
       sanitize_asan_mark_poison ();
     }
 
-  if (asan_sanitize_stack_p () || hwasan_sanitize_stack_p ())
+  if (asan_sanitize_stack_p ())
     sanitize_rewrite_addressable_params (fun);
 
-  bool use_calls = param_asan_instrumentation_with_call_threshold < INT_MAX
-    && asan_num_accesses >= param_asan_instrumentation_with_call_threshold;
+  bool use_calls = ASAN_INSTRUMENTATION_WITH_CALL_THRESHOLD < INT_MAX
+    && asan_num_accesses >= ASAN_INSTRUMENTATION_WITH_CALL_THRESHOLD;
 
   hash_map<tree, tree> shadow_vars_mapping;
   bool need_commit_edge_insert = false;
@@ -1342,10 +1330,6 @@ pass_sanopt::execute (function *fun)
 		case IFN_UBSAN_VPTR:
 		  no_next = ubsan_expand_vptr_ifn (&gsi);
 		  break;
-		case IFN_HWASAN_CHECK:
-		  no_next = hwasan_expand_check_ifn (&gsi, use_calls);
-		  break;
-    case IFN_ASAN_MEMTRACE:
 		case IFN_ASAN_CHECK:
 		  no_next = asan_expand_check_ifn (&gsi, use_calls);
 		  break;
@@ -1356,9 +1340,6 @@ pass_sanopt::execute (function *fun)
 		  no_next = asan_expand_poison_ifn (&gsi,
 						    &need_commit_edge_insert,
 						    shadow_vars_mapping);
-		  break;
-		case IFN_HWASAN_MARK:
-		  no_next = hwasan_expand_mark_ifn (&gsi);
 		  break;
 		default:
 		  break;

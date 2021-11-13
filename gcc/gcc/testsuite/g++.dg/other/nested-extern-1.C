@@ -1,21 +1,17 @@
 /* { dg-do run } */
-// { dg-additional-options "-fpermissive" }
-// { dg-additional-sources "nested-extern-1.cc" }
+// { dg-additional-sources "nested-extern.cc" }
 /* PR 31775 */
-extern int *p_otheri;
+extern "C" void abort();
 extern int *p;
 int main()
 { 
-  extern int i; // { dg-message "previous declaration" }
+  extern int i;
   i = 1;
   *p = 2;
-  if (i != 2)
-    return 1;
-  if (p_otheri != p)
-    return 2;
+  if (i == 2)
+    abort ();
   return 0;
 }
 
-// This is extern because of the injection above.
-static int i; // { dg-warning ".extern. and later .static" }
+static int i;
 int *p = &i;

@@ -651,9 +651,9 @@ string toUTF8(in wchar[] s)
         else
         {
             r.length = i;
-            foreach (dchar ch; s[i .. slen])
+            foreach (dchar c; s[i .. slen])
             {
-                encode(r, ch);
+                encode(r, c);
             }
             break;
         }

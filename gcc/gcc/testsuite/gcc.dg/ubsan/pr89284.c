@@ -8,7 +8,7 @@ int
 foo (void)
 {
   struct A a;
-  if (a.i)	/* { dg-warning "'a.i' is used uninitialized" } */
+  if (a.i)	/* { dg-warning "'a.i' is used uninitialized in this function" } */
     return 1;
   return 0;
 }
@@ -17,7 +17,7 @@ int
 bar (void)
 {
   struct A a;
-  if (a.a)	/* { dg-warning "'a.a' is used uninitialized" } */
+  if (a.a)	/* { dg-warning "'a.a' is used uninitialized in this function" } */
     return 1;
   return 0;
 }

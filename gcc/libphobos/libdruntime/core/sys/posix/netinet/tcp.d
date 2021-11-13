@@ -14,7 +14,7 @@
  */
 module core.sys.posix.netinet.tcp;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 
 version (OSX)
     version = Darwin;
@@ -48,10 +48,6 @@ else version (FreeBSD)
     enum TCP_NODELAY = 1;
 }
 else version (NetBSD)
-{
-    enum TCP_NODELAY = 1;
-}
-else version (OpenBSD)
 {
     enum TCP_NODELAY = 1;
 }

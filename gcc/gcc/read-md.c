@@ -1,5 +1,5 @@
 /* MD reader for GCC.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -42,6 +42,14 @@ int have_error = 0;
 
 #endif /* #ifndef GENERATOR_FILE */
 
+
+/* Associates PTR (which can be a string, etc.) with the file location
+   specified by FILENAME and LINENO.  */
+struct ptr_loc {
+  const void *ptr;
+  const char *filename;
+  int lineno;
+};
 
 /* This callback will be invoked whenever an md include directive is
    processed.  To be used for creation of the dependency file.  */
@@ -86,24 +94,25 @@ leading_ptr_eq_p (const void *def1, const void *def2)
   return *(const void *const *) def1 == *(const void *const *) def2;
 }
 
-/* Associate PTR with the file position given by FILE_LOC.  */
+/* Associate PTR with the file position given by FILENAME and LINENO.  */
 
 void
-md_reader::set_md_ptr_loc (const void *ptr, file_location file_loc)
+md_reader::set_md_ptr_loc (const void *ptr, const char *filename, int lineno)
 {
   struct ptr_loc *loc;
 
   loc = (struct ptr_loc *) obstack_alloc (&m_ptr_loc_obstack,
 					  sizeof (struct ptr_loc));
   loc->ptr = ptr;
-  loc->loc = file_loc;
+  loc->filename = filename;
+  loc->lineno = lineno;
   *htab_find_slot (m_ptr_locs, loc, INSERT) = loc;
 }
 
 /* Return the position associated with pointer PTR.  Return null if no
    position was set.  */
 
-const md_reader::ptr_loc *
+const struct ptr_loc *
 md_reader::get_md_ptr_loc (const void *ptr)
 {
   return (const struct ptr_loc *) htab_find (m_ptr_locs, &ptr);
@@ -116,7 +125,7 @@ md_reader::copy_md_ptr_loc (const void *new_ptr, const void *old_ptr)
 {
   const struct ptr_loc *loc = get_md_ptr_loc (old_ptr);
   if (loc != 0)
-    set_md_ptr_loc (new_ptr, loc->loc);
+    set_md_ptr_loc (new_ptr, loc->filename, loc->lineno);
 }
 
 /* If PTR is associated with a known file position, print a #line
@@ -127,7 +136,7 @@ md_reader::fprint_md_ptr_loc (FILE *outf, const void *ptr)
 {
   const struct ptr_loc *loc = get_md_ptr_loc (ptr);
   if (loc != 0)
-    fprintf (outf, "#line %d \"%s\"\n", loc->loc.lineno, loc->loc.filename);
+    fprintf (outf, "#line %d \"%s\"\n", loc->lineno, loc->filename);
 }
 
 /* Special fprint_md_ptr_loc for writing to STDOUT.  */
@@ -663,7 +672,7 @@ md_reader::read_string (int star_if_braced)
 {
   char *stringbuf;
   int saw_paren = 0;
-  int c;
+  int c, old_lineno;
 
   c = read_skip_spaces ();
   if (c == '(')
@@ -672,7 +681,7 @@ md_reader::read_string (int star_if_braced)
       c = read_skip_spaces ();
     }
 
-  file_location loc = get_current_location ();
+  old_lineno = get_lineno ();
   if (c == '"')
     stringbuf = read_quoted_string ();
   else if (c == '{')
@@ -695,7 +704,7 @@ md_reader::read_string (int star_if_braced)
   if (saw_paren)
     require_char_ws (')');
 
-  set_md_ptr_loc (stringbuf, loc);
+  set_md_ptr_loc (stringbuf, get_filename (), old_lineno);
   return stringbuf;
 }
 
@@ -902,8 +911,7 @@ void
 md_reader::handle_enum (file_location loc, bool md_p)
 {
   char *enum_name, *value_name;
-  unsigned int cur_value;
-  struct md_name name, value;
+  struct md_name name;
   struct enum_type *def;
   struct enum_value *ev;
   void **slot;
@@ -929,7 +937,6 @@ md_reader::handle_enum (file_location loc, bool md_p)
       *slot = def;
     }
 
-  cur_value = def->num_values;
   require_char_ws ('[');
 
   while ((c = read_skip_spaces ()) != ']')
@@ -939,18 +946,8 @@ md_reader::handle_enum (file_location loc, bool md_p)
 	  error_at (loc, "unterminated construct");
 	  exit (1);
 	}
-      if (c == '(')
-	{
-	  read_name (&name);
-	  read_name (&value);
-	  require_char_ws (')');
-	  cur_value = atoi (value.string);
-	}
-      else
-	{
-	  unread_char (c);
-	  read_name (&name);
-	}
+      unread_char (c);
+      read_name (&name);
 
       ev = XNEW (struct enum_value);
       ev->next = 0;
@@ -966,12 +963,11 @@ md_reader::handle_enum (file_location loc, bool md_p)
 	  ev->name = value_name;
 	}
       ev->def = add_constant (get_md_constants (), value_name,
-			      md_decimal_string (cur_value), def);
+			      md_decimal_string (def->num_values), def);
 
       *def->tail_ptr = ev;
       def->tail_ptr = &ev->next;
       def->num_values++;
-      cur_value++;
     }
 }
 

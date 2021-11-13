@@ -6,18 +6,15 @@
 
 #include <limits.h>
 
-typedef signed int int32_t __attribute__((mode (__SI__)));
-typedef unsigned uint32_t __attribute__((mode (__SI__)));
-
 void fsc (signed char sc);
 void fuc (unsigned char uc);
-unsigned fui (uint32_t  ui);
-void fsi (int32_t ui);
+unsigned fui (unsigned int  ui);
+void fsi (signed int ui);
 
-void h (int32_t x)
+void h (int x)
 {
-  uint32_t ui = 3;
-  int32_t   si = 3;
+  unsigned int ui = 3;
+  int   si = 3;
   unsigned char uc = 3;
   signed char   sc = 3;
 

@@ -1,6 +1,6 @@
 // The template and inlines for the -*- C++ -*- complex number classes.
 
-// Copyright (C) 1997-2021 Free Software Foundation, Inc.
+// Copyright (C) 1997-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -46,10 +46,6 @@
 
 // Get rid of a macro possibly defined in <complex.h>
 #undef complex
-
-#if __cplusplus > 201703L
-# define __cpp_lib_constexpr_complex 201711L
-#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -124,9 +120,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  @param  Tp  Type of real and imaginary values.
   */
   template<typename _Tp>
-    class complex
+    struct complex
     {
-    public:
       /// Value typedef.
       typedef _Tp value_type;
 
@@ -325,7 +320,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     }
 
   // Operators:
-  ///@{
+  //@{
   ///  Return new complex value @a x plus @a y.
   template<typename _Tp>
     inline _GLIBCXX20_CONSTEXPR complex<_Tp>
@@ -353,9 +348,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __r += __x;
       return __r;
     }
-  ///@}
+  //@}
 
-  ///@{
+  //@{
   ///  Return new complex value @a x minus @a y.
   template<typename _Tp>
     inline _GLIBCXX20_CONSTEXPR complex<_Tp>
@@ -383,9 +378,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __r += __x;
       return __r;
     }
-  ///@}
+  //@}
 
-  ///@{
+  //@{
   ///  Return new complex value @a x times @a y.
   template<typename _Tp>
     inline _GLIBCXX20_CONSTEXPR complex<_Tp>
@@ -413,9 +408,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __r *= __x;
       return __r;
     }
-  ///@}
+  //@}
 
-  ///@{
+  //@{
   ///  Return new complex value @a x divided by @a y.
   template<typename _Tp>
     inline _GLIBCXX20_CONSTEXPR complex<_Tp>
@@ -443,7 +438,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __r /= __y;
       return __r;
     }
-  ///@}
+  //@}
 
   ///  Return @a x.
   template<typename _Tp>
@@ -457,7 +452,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     operator-(const complex<_Tp>& __x)
     { return complex<_Tp>(-__x.real(), -__x.imag()); }
 
-  ///@{
+  //@{
   ///  Return true if @a x is equal to @a y.
   template<typename _Tp>
     inline _GLIBCXX_CONSTEXPR bool
@@ -469,14 +464,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     operator==(const complex<_Tp>& __x, const _Tp& __y)
     { return __x.real() == __y && __x.imag() == _Tp(); }
 
-#if !(__cpp_impl_three_way_comparison >= 201907L)
   template<typename _Tp>
     inline _GLIBCXX_CONSTEXPR bool
     operator==(const _Tp& __x, const complex<_Tp>& __y)
     { return __x == __y.real() && _Tp() == __y.imag(); }
-  ///@}
+  //@}
 
-  ///@{
+  //@{
   ///  Return false if @a x is equal to @a y.
   template<typename _Tp>
     inline _GLIBCXX_CONSTEXPR bool
@@ -492,8 +486,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     inline _GLIBCXX_CONSTEXPR bool
     operator!=(const _Tp& __x, const complex<_Tp>& __y)
     { return __x != __y.real() || _Tp() != __y.imag(); }
-#endif
-  ///@}
+  //@}
 
   ///  Extraction operator for complex values.
   template<typename _Tp, typename _CharT, class _Traits>
@@ -1080,9 +1073,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// 26.2.3  complex specializations
   /// complex<float> specialization
   template<>
-    class complex<float>
+    struct complex<float>
     {
-    public:
       typedef float value_type;
       typedef __complex__ float _ComplexT;
 
@@ -1226,9 +1218,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// 26.2.3  complex specializations
   /// complex<double> specialization
   template<>
-    class complex<double>
+    struct complex<double>
     {
-    public:
       typedef double value_type;
       typedef __complex__ double _ComplexT;
 
@@ -1372,9 +1363,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// 26.2.3  complex specializations
   /// complex<long double> specialization
   template<>
-    class complex<long double>
+    struct complex<long double>
     {
-    public:
       typedef long double value_type;
       typedef __complex__ long double _ComplexT;
 
@@ -1552,7 +1542,36 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
 #endif
 
-  /// @} group complex_numbers
+  // @} group complex_numbers
+
+_GLIBCXX_END_NAMESPACE_VERSION
+} // namespace
+
+namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
+{
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
+
+  // See ext/type_traits.h for the primary template.
+  template<typename _Tp, typename _Up>
+    struct __promote_2<std::complex<_Tp>, _Up>
+    {
+    public:
+      typedef std::complex<typename __promote_2<_Tp, _Up>::__type> __type;
+    };
+
+  template<typename _Tp, typename _Up>
+    struct __promote_2<_Tp, std::complex<_Up> >
+    {
+    public:
+      typedef std::complex<typename __promote_2<_Tp, _Up>::__type> __type;
+    };
+
+  template<typename _Tp, typename _Up>
+    struct __promote_2<std::complex<_Tp>, std::complex<_Up> >
+    {
+    public:
+      typedef std::complex<typename __promote_2<_Tp, _Up>::__type> __type;
+    };
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace

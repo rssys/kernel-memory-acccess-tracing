@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -25,10 +25,11 @@
 
 with Atree;    use Atree;
 with Csets;    use Csets;
-with Errout;   use Errout;
 with Hostparm; use Hostparm;
 with Namet;    use Namet;
 with Opt;      use Opt;
+with Restrict; use Restrict;
+with Rident;   use Rident;
 with Scans;    use Scans;
 with Sinput;   use Sinput;
 with Snames;   use Snames;
@@ -68,6 +69,19 @@ package body Scng is
    --  Called after each numeric literal and identifier/keyword. For keywords,
    --  the token used is Tok_Identifier. This allows detection of additional
    --  spaces added in sources when using the builder switch -m.
+
+   procedure Accumulate_Token_Checksum_GNAT_6_3;
+   --  Used in place of Accumulate_Token_Checksum for GNAT versions 5.04 to
+   --  6.3, when Tok_Some was not included in Token_Type and the actual
+   --  Token_Type was used for keywords. This procedure is never used in the
+   --  compiler or gnatmake, only in gprbuild.
+
+   procedure Accumulate_Token_Checksum_GNAT_5_03;
+   --  Used in place of Accumulate_Token_Checksum for GNAT version 5.03, when
+   --  Tok_Interface, Tok_Some, Tok_Synchronized and Tok_Overriding were not
+   --  included in Token_Type and the actual Token_Type was used for keywords.
+   --  This procedure is never used in the compiler or gnatmake, only in
+   --  gprbuild.
 
    procedure Accumulate_Checksum (C : Character);
    pragma Inline (Accumulate_Checksum);
@@ -123,6 +137,303 @@ package body Scng is
         (System.CRC32.CRC32 (Checksum),
          Character'Val (Token_Type'Pos (Token)));
    end Accumulate_Token_Checksum;
+
+   ----------------------------------------
+   -- Accumulate_Token_Checksum_GNAT_6_3 --
+   ----------------------------------------
+
+   procedure Accumulate_Token_Checksum_GNAT_6_3 is
+   begin
+      --  Individual values of Token_Type are used, instead of subranges, so
+      --  that additions or suppressions of enumerated values in type
+      --  Token_Type are detected by the compiler.
+
+      case Token is
+         when Tok_Abs
+            | Tok_Abstract
+            | Tok_Access
+            | Tok_Aliased
+            | Tok_All
+            | Tok_Ampersand
+            | Tok_And
+            | Tok_Apostrophe
+            | Tok_Array
+            | Tok_Asterisk
+            | Tok_At
+            | Tok_At_Sign
+            | Tok_Body
+            | Tok_Box
+            | Tok_Char_Literal
+            | Tok_Colon
+            | Tok_Colon_Equal
+            | Tok_Comma
+            | Tok_Constant
+            | Tok_Delta
+            | Tok_Digits
+            | Tok_Do
+            | Tok_Dot
+            | Tok_Double_Asterisk
+            | Tok_Equal
+            | Tok_Greater
+            | Tok_Greater_Equal
+            | Tok_Greater_Greater
+            | Tok_Identifier
+            | Tok_In
+            | Tok_Integer_Literal
+            | Tok_Interface
+            | Tok_Is
+            | Tok_Left_Paren
+            | Tok_Less
+            | Tok_Less_Equal
+            | Tok_Limited
+            | Tok_Minus
+            | Tok_Mod
+            | Tok_New
+            | Tok_Not
+            | Tok_Not_Equal
+            | Tok_Null
+            | Tok_Of
+            | Tok_Operator_Symbol
+            | Tok_Or
+            | Tok_Others
+            | Tok_Out
+            | Tok_Plus
+            | Tok_Range
+            | Tok_Real_Literal
+            | Tok_Record
+            | Tok_Rem
+            | Tok_Renames
+            | Tok_Reverse
+            | Tok_Right_Paren
+            | Tok_Slash
+            | Tok_String_Literal
+            | Tok_Xor
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token)));
+
+         when Tok_Some =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Tok_Identifier)));
+
+         when No_Token
+            | Tok_Abort
+            | Tok_Accept
+            | Tok_Arrow
+            | Tok_Begin
+            | Tok_Case
+            | Tok_Comment
+            | Tok_Declare
+            | Tok_Delay
+            | Tok_Dot_Dot
+            | Tok_Else
+            | Tok_Elsif
+            | Tok_End
+            | Tok_End_Of_Line
+            | Tok_Entry
+            | Tok_EOF
+            | Tok_Exception
+            | Tok_Exit
+            | Tok_Extends
+            | Tok_External
+            | Tok_External_As_List
+            | Tok_For
+            | Tok_Function
+            | Tok_Generic
+            | Tok_Goto
+            | Tok_If
+            | Tok_Less_Less
+            | Tok_Loop
+            | Tok_Overriding
+            | Tok_Package
+            | Tok_Pragma
+            | Tok_Private
+            | Tok_Procedure
+            | Tok_Project
+            | Tok_Protected
+            | Tok_Raise
+            | Tok_Requeue
+            | Tok_Return
+            | Tok_Select
+            | Tok_Semicolon
+            | Tok_Separate
+            | Tok_SPARK_Hide
+            | Tok_Special
+            | Tok_Subtype
+            | Tok_Synchronized
+            | Tok_Tagged
+            | Tok_Task
+            | Tok_Terminate
+            | Tok_Then
+            | Tok_Type
+            | Tok_Until
+            | Tok_Use
+            | Tok_Vertical_Bar
+            | Tok_When
+            | Tok_While
+            | Tok_With
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token_Type'Pred (Token))));
+      end case;
+   end Accumulate_Token_Checksum_GNAT_6_3;
+
+   -----------------------------------------
+   -- Accumulate_Token_Checksum_GNAT_5_03 --
+   -----------------------------------------
+
+   procedure Accumulate_Token_Checksum_GNAT_5_03 is
+   begin
+      --  Individual values of Token_Type are used, instead of subranges, so
+      --  that additions or suppressions of enumerated values in type
+      --  Token_Type are detected by the compiler.
+
+      case Token is
+         when Tok_Abs
+            | Tok_Abstract
+            | Tok_Access
+            | Tok_Aliased
+            | Tok_All
+            | Tok_Ampersand
+            | Tok_And
+            | Tok_Apostrophe
+            | Tok_Array
+            | Tok_Asterisk
+            | Tok_At
+            | Tok_At_Sign
+            | Tok_Body
+            | Tok_Box
+            | Tok_Char_Literal
+            | Tok_Colon
+            | Tok_Colon_Equal
+            | Tok_Comma
+            | Tok_Constant
+            | Tok_Delta
+            | Tok_Digits
+            | Tok_Do
+            | Tok_Dot
+            | Tok_Double_Asterisk
+            | Tok_Equal
+            | Tok_Greater
+            | Tok_Greater_Equal
+            | Tok_Greater_Greater
+            | Tok_Identifier
+            | Tok_In
+            | Tok_Integer_Literal
+            | Tok_Is
+            | Tok_Left_Paren
+            | Tok_Less
+            | Tok_Less_Equal
+            | Tok_Minus
+            | Tok_Mod
+            | Tok_New
+            | Tok_Not
+            | Tok_Not_Equal
+            | Tok_Null
+            | Tok_Operator_Symbol
+            | Tok_Or
+            | Tok_Others
+            | Tok_Plus
+            | Tok_Range
+            | Tok_Real_Literal
+            | Tok_Rem
+            | Tok_Right_Paren
+            | Tok_Slash
+            | Tok_String_Literal
+            | Tok_Xor
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token)));
+
+         when Tok_Interface
+            | Tok_Overriding
+            | Tok_Some
+            | Tok_Synchronized
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Tok_Identifier)));
+
+         when Tok_Limited
+            | Tok_Of
+            | Tok_Out
+            | Tok_Record
+            | Tok_Renames
+            | Tok_Reverse
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token) - 1));
+
+         when Tok_Abort
+            | Tok_Accept
+            | Tok_Begin
+            | Tok_Case
+            | Tok_Declare
+            | Tok_Delay
+            | Tok_Else
+            | Tok_Elsif
+            | Tok_End
+            | Tok_Entry
+            | Tok_Exception
+            | Tok_Exit
+            | Tok_For
+            | Tok_Goto
+            | Tok_If
+            | Tok_Less_Less
+            | Tok_Loop
+            | Tok_Pragma
+            | Tok_Protected
+            | Tok_Raise
+            | Tok_Requeue
+            | Tok_Return
+            | Tok_Select
+            | Tok_Subtype
+            | Tok_Tagged
+            | Tok_Task
+            | Tok_Terminate
+            | Tok_Then
+            | Tok_Type
+            | Tok_Until
+            | Tok_When
+            | Tok_While
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token) - 2));
+
+         when No_Token
+            | Tok_Arrow
+            | Tok_Comment
+            | Tok_Dot_Dot
+            | Tok_End_Of_Line
+            | Tok_EOF
+            | Tok_Extends
+            | Tok_External
+            | Tok_External_As_List
+            | Tok_Function
+            | Tok_Generic
+            | Tok_Package
+            | Tok_Private
+            | Tok_Procedure
+            | Tok_Project
+            | Tok_Semicolon
+            | Tok_Separate
+            | Tok_SPARK_Hide
+            | Tok_Special
+            | Tok_Use
+            | Tok_Vertical_Bar
+            | Tok_With
+         =>
+            System.CRC32.Update
+              (System.CRC32.CRC32 (Checksum),
+               Character'Val (Token_Type'Pos (Token) - 4));
+      end case;
+   end Accumulate_Token_Checksum_GNAT_5_03;
 
    -----------------------
    -- Check_End_Of_Line --
@@ -230,16 +541,16 @@ package body Scng is
 
       --  Initialize scan control variables
 
-      Current_Source_File      := Index;
-      Source                   := Source_Text (Current_Source_File);
-      Scan_Ptr                 := Source_First (Current_Source_File);
-      Token                    := No_Token;
-      Token_Ptr                := Scan_Ptr;
-      Current_Line_Start       := Scan_Ptr;
-      Token_Node               := Empty;
-      Token_Name               := No_Name;
-      Start_Column             := Set_Start_Column;
-      First_Non_Blank_Location := Scan_Ptr;
+      Current_Source_File       := Index;
+      Source                    := Source_Text (Current_Source_File);
+      Scan_Ptr                  := Source_First (Current_Source_File);
+      Token                     := No_Token;
+      Token_Ptr                 := Scan_Ptr;
+      Current_Line_Start        := Scan_Ptr;
+      Token_Node                := Empty;
+      Token_Name                := No_Name;
+      Start_Column              := Set_Start_Column;
+      First_Non_Blank_Location  := Scan_Ptr;
 
       Initialize_Checksum;
       Wide_Char_Byte_Count := 0;
@@ -321,49 +632,6 @@ package body Scng is
       function Start_Of_Wide_Character return Boolean;
       --  Returns True if the scan pointer is pointing to the start of a wide
       --  character sequence, does not modify the scan pointer in any case.
-
-      procedure Check_Bidi (Code : Char_Code);
-      --  Give a warning if Code is a bidirectional character, which can cause
-      --  security vulnerabilities. See the following article:
-      --
-      --  @article{boucher_trojansource_2021,
-      --      title = {Trojan {Source}: {Invisible} {Vulnerabilities}},
-      --      author = {Nicholas Boucher and Ross Anderson},
-      --      year = {2021},
-      --      journal = {Preprint},
-      --      eprint = {2111.00169},
-      --      archivePrefix = {arXiv},
-      --      primaryClass = {cs.CR},
-      --      url = {https://arxiv.org/abs/2111.00169}
-      --  }
-
-      ----------------
-      -- Check_Bidi --
-      ----------------
-
-      type Bidi_Characters is
-        (LRE, RLE, LRO, RLO, LRI, RLI, FSI, PDF, PDI);
-      Bidi_Character_Codes : constant array (Bidi_Characters) of Char_Code :=
-        (LRE => 16#202A#,
-         RLE => 16#202B#,
-         LRO => 16#202D#,
-         RLO => 16#202E#,
-         LRI => 16#2066#,
-         RLI => 16#2067#,
-         FSI => 16#2068#,
-         PDF => 16#202C#,
-         PDI => 16#2069#);
-      --  Above are the bidirectional characters, along with their Unicode code
-      --  points.
-
-      procedure Check_Bidi (Code : Char_Code) is
-      begin
-         for Bidi_Code of Bidi_Character_Codes loop
-            if Code = Bidi_Code then
-               Error_Msg ("??bidirectional wide character", Wptr);
-            end if;
-         end loop;
-      end Check_Bidi;
 
       -----------------------
       -- Double_Char_Token --
@@ -786,7 +1054,11 @@ package body Scng is
             end if;
          end if;
 
-         Accumulate_Token_Checksum;
+         if Checksum_Accumulate_Token_Checksum then
+            Accumulate_Token_Checksum;
+         end if;
+
+         return;
       end Nlit;
 
       ----------
@@ -1113,8 +1385,6 @@ package body Scng is
                   if Err then
                      Error_Illegal_Wide_Character;
                      Code := Get_Char_Code (' ');
-                  else
-                     Check_Bidi (Code);
                   end if;
 
                   Accumulate_Checksum (Code);
@@ -1226,8 +1496,6 @@ package body Scng is
          end if;
       end Start_Of_Wide_Character;
 
-      Token_Contains_Uppercase : Boolean;
-
    --  Start of processing for Scan
 
    begin
@@ -1289,8 +1557,6 @@ package body Scng is
 
          Token_Ptr := Scan_Ptr;
 
-         Token_Contains_Uppercase := False;
-
          --  Here begins the main case statement which transfers control on the
          --  basis of the non-blank character we have encountered.
 
@@ -1345,15 +1611,19 @@ package body Scng is
                return;
             end if;
 
-         --  AI12-0125-03 : @ is target_name
-
          when '@' =>
-            Error_Msg_Ada_2022_Feature ("target name", Token_Ptr);
+            if Ada_Version < Ada_2020 then
+               Error_Msg ("target_name is an Ada 2020 feature", Scan_Ptr);
+               Scan_Ptr := Scan_Ptr + 1;
 
-            Accumulate_Checksum ('@');
-            Scan_Ptr := Scan_Ptr + 1;
-            Token := Tok_At_Sign;
-            return;
+            else
+               --  AI12-0125-03 : @ is target_name
+
+               Accumulate_Checksum ('@');
+               Scan_Ptr := Scan_Ptr + 1;
+               Token := Tok_At_Sign;
+               return;
+            end if;
 
          --  Asterisk (can be multiplication operator or double asterisk which
          --  is the exponentiation compound delimiter).
@@ -1424,17 +1694,7 @@ package body Scng is
          --  Left bracket
 
          when '[' =>
-
-            --  [] under -gnatX is an aggregate notation and the special
-            --  wide character notation becomes unsupported since the two
-            --  are ambiguous.
-
-            if Extensions_Allowed then
-               Scan_Ptr := Scan_Ptr + 1;
-               Token := Tok_Left_Bracket;
-               return;
-
-            elsif Source (Scan_Ptr + 1) = '"' then
+            if Source (Scan_Ptr + 1) = '"' then
                goto Scan_Wide_Character;
 
             else
@@ -1656,11 +1916,11 @@ package body Scng is
 
                   elsif Start_Of_Wide_Character then
                      declare
+                        Wptr : constant Source_Ptr := Scan_Ptr;
                         Code : Char_Code;
                         Err  : Boolean;
 
                      begin
-                        Wptr := Scan_Ptr;
                         Scan_Wide (Source, Scan_Ptr, Code, Err);
 
                         --  If not well formed wide character, then just skip
@@ -1674,8 +1934,6 @@ package body Scng is
                         elsif Is_UTF_32_Line_Terminator (UTF_32 (Code)) then
                            Scan_Ptr := Wptr;
                            exit;
-                        else
-                           Check_Bidi (Code);
                         end if;
                      end;
 
@@ -1712,6 +1970,47 @@ package body Scng is
                   Comment_Id := Name_Find;
                   Token := Tok_Comment;
                   return;
+               end if;
+
+               --  If the SPARK restriction is set for this unit, then generate
+               --  a token Tok_SPARK_Hide for a SPARK HIDE directive.
+
+               if Restriction_Check_Required (SPARK_05)
+                 and then Source (Start_Of_Comment) = '#'
+               then
+                  declare
+                     Scan_SPARK_Ptr : Source_Ptr;
+
+                  begin
+                     Scan_SPARK_Ptr := Start_Of_Comment + 1;
+
+                     --  Scan out blanks
+
+                     while Source (Scan_SPARK_Ptr) = ' '
+                       or else Source (Scan_SPARK_Ptr) = HT
+                     loop
+                        Scan_SPARK_Ptr := Scan_SPARK_Ptr + 1;
+                     end loop;
+
+                     --  Recognize HIDE directive. SPARK input cannot be
+                     --  encoded as wide characters, so only deal with
+                     --  lower/upper case.
+
+                     if (Source (Scan_SPARK_Ptr) = 'h'
+                          or else Source (Scan_SPARK_Ptr) = 'H')
+                       and then (Source (Scan_SPARK_Ptr + 1) = 'i'
+                                  or else Source (Scan_SPARK_Ptr + 1) = 'I')
+                       and then (Source (Scan_SPARK_Ptr + 2) = 'd'
+                                  or else Source (Scan_SPARK_Ptr + 2) = 'D')
+                       and then (Source (Scan_SPARK_Ptr + 3) = 'e'
+                                  or else Source (Scan_SPARK_Ptr + 3) = 'E')
+                       and then (Source (Scan_SPARK_Ptr + 4) = ' '
+                                  or else Source (Scan_SPARK_Ptr + 4) = HT)
+                     then
+                        Token := Tok_SPARK_Hide;
+                        return;
+                     end if;
+                  end;
                end if;
             end if;
          end Minus_Case;
@@ -1754,7 +2053,7 @@ package body Scng is
             --  "abs"'Address. Other literals are included to give better error
             --  behavior for illegal cases like 123'Img.
             --
-            --  In Ada 2022, a target name (i.e. @) is a valid prefix of an
+            --  In Ada 2020, a target name (i.e. @) is a valid prefix of an
             --  attribute, and functions like a name.
 
             if Prev_Token = Tok_All
@@ -1764,7 +2063,6 @@ package body Scng is
               or else Prev_Token = Tok_Identifier
               or else Prev_Token = Tok_Project
               or else Prev_Token = Tok_Right_Paren
-              or else Prev_Token = Tok_Right_Bracket
               or else Prev_Token in Token_Class_Literal
             then
                Token := Tok_Apostrophe;
@@ -1783,26 +2081,23 @@ package body Scng is
                if Start_Of_Wide_Character then
                   Wptr := Scan_Ptr;
                   Scan_Wide (Source, Scan_Ptr, Code, Err);
+                  Accumulate_Checksum (Code);
 
                   if Err then
                      Error_Illegal_Wide_Character;
                      Code := Character'Pos (' ');
 
                   --  In Ada 95 mode we allow any wide character in a character
-                  --  literal, but in later versions, the set of characters
-                  --  allowed is restricted to graphic characters.
+                  --  literal, but in Ada 2005, the set of characters allowed
+                  --  is restricted to graphic characters.
 
                   elsif Ada_Version >= Ada_2005
                     and then Is_UTF_32_Non_Graphic (UTF_32 (Code))
                   then
-                     Error_Msg -- CODEFIX
+                     Error_Msg -- CODEFIX????
                        ("(Ada 2005) non-graphic character not permitted " &
                         "in character literal", Wptr);
-                  else
-                     Check_Bidi (Code);
                   end if;
-
-                  Accumulate_Checksum (Code);
 
                   if Source (Scan_Ptr) /= ''' then
                         Error_Msg_S ("missing apostrophe");
@@ -1876,19 +2171,12 @@ package body Scng is
 
             return;
 
-         --  Right bracket or right brace, treated as right paren but proper
-         --  aggregate delimiter in Ada 2022.
+         --  Right bracket or right brace, treated as right paren
 
          when ']' | '}' =>
-            if Ada_Version >= Ada_2022 then
-               Token := Tok_Right_Bracket;
-
-            else
-               Error_Msg_S ("illegal character, replaced by "")""");
-               Token := Tok_Right_Paren;
-            end if;
-
+            Error_Msg_S ("illegal character, replaced by "")""");
             Scan_Ptr := Scan_Ptr + 1;
+            Token := Tok_Right_Paren;
             return;
 
          --  Slash (can be division operator or first character of not equal)
@@ -2050,7 +2338,6 @@ package body Scng is
          --  Upper case letters
 
          when 'A' .. 'Z' =>
-            Token_Contains_Uppercase := True;
             Name_Len := 1;
             Underline_Found := False;
             Name_Buffer (1) :=
@@ -2399,8 +2686,6 @@ package body Scng is
                Accumulate_Checksum (Source (Scan_Ptr));
 
             elsif Source (Scan_Ptr) in 'A' .. 'Z' then
-               Token_Contains_Uppercase := True;
-
                Name_Buffer (Name_Len + 1) :=
                  Character'Val (Character'Pos (Source (Scan_Ptr)) + 32);
                Accumulate_Checksum (Name_Buffer (Name_Len + 1));
@@ -2544,17 +2829,10 @@ package body Scng is
                           ("wide character not allowed in identifier", Wptr);
                      end if;
 
-                     --  AI12-0004: An identifier shall only contain characters
-                     --  that may be present in Normalization Form KC.
-
-                     if not Is_UTF_32_NFKC (UTF_32 (Code)) then
-                        Error_Msg
-                          ("invalid wide character in identifier", Wptr);
-
                      --  If OK letter, store it folding to upper case. Note
                      --  that we include the folded letter in the checksum.
 
-                     elsif Is_UTF_32_Letter (Cat) then
+                     if Is_UTF_32_Letter (Cat) then
                         Code :=
                           Char_Code (UTF_32_To_Upper_Case (UTF_32 (Code)));
                         Accumulate_Checksum (Code);
@@ -2628,16 +2906,23 @@ package body Scng is
 
          Token := Tok_Identifier;
 
-         --  Check if it is a keyword
+         --  Here is where we check if it was a keyword
 
          if Is_Keyword_Name (Token_Name) then
-            Accumulate_Token_Checksum;
-            Token := Token_Type'Val (Get_Name_Table_Byte (Token_Name));
+            if Opt.Checksum_GNAT_6_3 then
+               Token := Token_Type'Val (Get_Name_Table_Byte (Token_Name));
 
-            --  See Exp_Put_Image for documentation of Tagged_Seen
+               if Checksum_Accumulate_Token_Checksum then
+                  if Checksum_GNAT_5_03 then
+                     Accumulate_Token_Checksum_GNAT_5_03;
+                  else
+                     Accumulate_Token_Checksum_GNAT_6_3;
+                  end if;
+               end if;
 
-            if Token = Tok_Tagged then
-               Tagged_Seen := True;
+            else
+               Accumulate_Token_Checksum;
+               Token := Token_Type'Val (Get_Name_Table_Byte (Token_Name));
             end if;
 
             --  Keyword style checks
@@ -2655,7 +2940,7 @@ package body Scng is
                --  Ada 2005 (AI-340): Do not apply the style check in case of
                --  MOD attribute.
 
-               if Token_Contains_Uppercase
+               if Source (Token_Ptr) <= 'Z'
                  and then (Prev_Token /= Tok_Apostrophe
                            or else
                              (Token /= Tok_Access and then
@@ -2695,8 +2980,12 @@ package body Scng is
          --  It is an identifier after all
 
          else
-            Accumulate_Token_Checksum;
+            if Checksum_Accumulate_Token_Checksum then
+               Accumulate_Token_Checksum;
+            end if;
+
             Post_Scan;
+            return;
          end if;
    end Scan;
 
@@ -2751,13 +3040,52 @@ package body Scng is
 
       Tabs_Loop : loop
 
-         --  Inner loop scans past blanks, bumping Scan_Ptr past the blanks and
-         --  adjusting Start_Column to account for them.
+         --  Inner loop scans past blanks as fast as possible, bumping Scan_Ptr
+         --  past the blanks and adjusting Start_Column to account for them.
 
-         Blanks_Loop :
-         while Source (Scan_Ptr) = ' ' loop
-            Scan_Ptr := Scan_Ptr + 1;
-            Start_Column := Start_Column + 1;
+         Blanks_Loop : loop
+            if Source (Scan_Ptr) = ' ' then
+               if Source (Scan_Ptr + 1) = ' ' then
+                  if Source (Scan_Ptr + 2) = ' ' then
+                     if Source (Scan_Ptr + 3) = ' ' then
+                        if Source (Scan_Ptr + 4) = ' ' then
+                           if Source (Scan_Ptr + 5) = ' ' then
+                              if Source (Scan_Ptr + 6) = ' ' then
+                                 Scan_Ptr := Scan_Ptr + 7;
+                                 Start_Column := Start_Column + 7;
+                              else
+                                 Scan_Ptr := Scan_Ptr + 6;
+                                 Start_Column := Start_Column + 6;
+                                 exit Blanks_Loop;
+                              end if;
+                           else
+                              Scan_Ptr := Scan_Ptr + 5;
+                              Start_Column := Start_Column + 5;
+                              exit Blanks_Loop;
+                           end if;
+                        else
+                           Scan_Ptr := Scan_Ptr + 4;
+                           Start_Column := Start_Column + 4;
+                           exit Blanks_Loop;
+                        end if;
+                     else
+                        Scan_Ptr := Scan_Ptr + 3;
+                        Start_Column := Start_Column + 3;
+                        exit Blanks_Loop;
+                     end if;
+                  else
+                     Scan_Ptr := Scan_Ptr + 2;
+                     Start_Column := Start_Column + 2;
+                     exit Blanks_Loop;
+                  end if;
+               else
+                  Scan_Ptr := Scan_Ptr + 1;
+                  Start_Column := Start_Column + 1;
+                  exit Blanks_Loop;
+               end if;
+            else
+               exit Blanks_Loop;
+            end if;
          end loop Blanks_Loop;
 
          --  Outer loop keeps going only if a horizontal tab follows
@@ -2782,7 +3110,7 @@ package body Scng is
 
    exception
       when Constraint_Error =>
-         return Column_Number'Last;
+         return Start_Column;
    end Set_Start_Column;
 
 end Scng;

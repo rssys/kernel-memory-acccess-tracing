@@ -300,10 +300,10 @@ f2 (struct C *x)
 	  else
 	    {
 	      o = f2 (x);
-#if __SIZEOF_POINTER__ == __SIZEOF_LONG__ && !__MSP430X_LARGE__
+#if __SIZEOF_POINTER__ == __SIZEOF_LONG__
 	      if (((unsigned long) o > (unsigned long) -4000L))
-#else
-	  if (((__UINTPTR_TYPE__) o > (__UINTPTR_TYPE__) -4000UL))
+#elif __SIZEOF_POINTER__ == __SIZEOF_INT__
+	  if (((__UINTPTR_TYPE__) o > (__UINTPTR_TYPE__) -4000U))
 #endif
 		{
 		  e = 5;
@@ -388,10 +388,10 @@ f2 (struct C *x)
 	  break;
 	case 19:
 	  o = f2 (x);
-#if __SIZEOF_POINTER__ == __SIZEOF_LONG__ && !__MSP430X_LARGE__
+#if __SIZEOF_POINTER__ == __SIZEOF_LONG__
 	  if (((unsigned long) o > (unsigned long) -4000L))
-#else
-	  if (((__UINTPTR_TYPE__) o > (__UINTPTR_TYPE__) -4000UL))
+#elif __SIZEOF_POINTER__ == __SIZEOF_INT__
+	  if (((__UINTPTR_TYPE__) o > (__UINTPTR_TYPE__) -4000U))
 #endif
 	    {
 	      e = 6;

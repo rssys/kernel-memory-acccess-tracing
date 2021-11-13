@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -ftree-vectorize -ffast-math -fno-vect-cost-model" } */
+/* { dg-options "-O2 -ftree-vectorize -ffast-math" } */
 
 #include <stdint.h>
 

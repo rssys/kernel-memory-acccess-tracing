@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,32 +30,10 @@
 ------------------------------------------------------------------------------
 
 with Ada.Text_IO.Integer_Aux;
-with System.Img_BIU; use System.Img_BIU;
-with System.Img_Int; use System.Img_Int;
-with System.Img_LLB; use System.Img_LLB;
-with System.Img_LLI; use System.Img_LLI;
-with System.Img_LLW; use System.Img_LLW;
-with System.Img_WIU; use System.Img_WIU;
-with System.Val_Int; use System.Val_Int;
-with System.Val_LLI; use System.Val_LLI;
 
 package body Ada.Text_IO.Integer_IO is
 
-   package Aux_Int is new
-     Ada.Text_IO.Integer_Aux
-       (Integer,
-        Scan_Integer,
-        Set_Image_Integer,
-        Set_Image_Width_Integer,
-        Set_Image_Based_Integer);
-
-   package Aux_LLI is new
-     Ada.Text_IO.Integer_Aux
-       (Long_Long_Integer,
-        Scan_Long_Long_Integer,
-        Set_Image_Long_Long_Integer,
-        Set_Image_Width_Long_Long_Integer,
-        Set_Image_Based_Long_Long_Integer);
+   package Aux renames Ada.Text_IO.Integer_Aux;
 
    Need_LLI : constant Boolean := Num'Base'Size > Integer'Size;
    --  Throughout this generic body, we distinguish between the case where type
@@ -79,9 +57,9 @@ package body Ada.Text_IO.Integer_IO is
 
    begin
       if Need_LLI then
-         Aux_LLI.Get (File, Long_Long_Integer (Item), Width);
+         Aux.Get_LLI (File, Long_Long_Integer (Item), Width);
       else
-         Aux_Int.Get (File, Integer (Item), Width);
+         Aux.Get_Int (File, Integer (Item), Width);
       end if;
 
    exception
@@ -92,8 +70,20 @@ package body Ada.Text_IO.Integer_IO is
      (Item  : out Num;
       Width : Field := 0)
    is
+      --  We depend on a range check to get Data_Error
+
+      pragma Unsuppress (Range_Check);
+      pragma Unsuppress (Overflow_Check);
+
    begin
-      Get (Current_In, Item, Width);
+      if Need_LLI then
+         Aux.Get_LLI (Current_In, Long_Long_Integer (Item), Width);
+      else
+         Aux.Get_Int (Current_In, Integer (Item), Width);
+      end if;
+
+   exception
+      when Constraint_Error => raise Data_Error;
    end Get;
 
    procedure Get
@@ -108,9 +98,9 @@ package body Ada.Text_IO.Integer_IO is
 
    begin
       if Need_LLI then
-         Aux_LLI.Gets (From, Long_Long_Integer (Item), Last);
+         Aux.Gets_LLI (From, Long_Long_Integer (Item), Last);
       else
-         Aux_Int.Gets (From, Integer (Item), Last);
+         Aux.Gets_Int (From, Integer (Item), Last);
       end if;
 
    exception
@@ -129,9 +119,9 @@ package body Ada.Text_IO.Integer_IO is
    is
    begin
       if Need_LLI then
-         Aux_LLI.Put (File, Long_Long_Integer (Item), Width, Base);
+         Aux.Put_LLI (File, Long_Long_Integer (Item), Width, Base);
       else
-         Aux_Int.Put (File, Integer (Item), Width, Base);
+         Aux.Put_Int (File, Integer (Item), Width, Base);
       end if;
    end Put;
 
@@ -141,7 +131,11 @@ package body Ada.Text_IO.Integer_IO is
       Base  : Number_Base := Default_Base)
    is
    begin
-      Put (Current_Out, Item, Width, Base);
+      if Need_LLI then
+         Aux.Put_LLI (Current_Out, Long_Long_Integer (Item), Width, Base);
+      else
+         Aux.Put_Int (Current_Out, Integer (Item), Width, Base);
+      end if;
    end Put;
 
    procedure Put
@@ -151,9 +145,9 @@ package body Ada.Text_IO.Integer_IO is
    is
    begin
       if Need_LLI then
-         Aux_LLI.Puts (To, Long_Long_Integer (Item), Base);
+         Aux.Puts_LLI (To, Long_Long_Integer (Item), Base);
       else
-         Aux_Int.Puts (To, Integer (Item), Base);
+         Aux.Puts_Int (To, Integer (Item), Base);
       end if;
    end Put;
 

@@ -1,4 +1,5 @@
 ! PR middle-end/66199
+! { dg-do run }
 ! { dg-options "-O2" }
 
   integer :: u(1024), v(1024), w(1024), a, b, c, d, e, a1, b1, a2, b2, d1, d2

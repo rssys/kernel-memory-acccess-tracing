@@ -1,5 +1,5 @@
 /* RTL reader for GCC.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -36,6 +36,12 @@ along with GCC; see the file COPYING3.  If not see
 #include "read-md.h"
 #include "gensupport.h"
 
+#ifndef GENERATOR_FILE
+#include "function.h"
+#include "memmodel.h"
+#include "emit-rtl.h"
+#endif
+
 /* One element in a singly-linked list of (integer, string) pairs.  */
 struct map_value {
   struct map_value *next;
@@ -71,12 +77,12 @@ struct iterator_group {
 
   /* Treat the given string as the name of a standard mode, etc., and
      return its integer value.  */
-  HOST_WIDE_INT (*find_builtin) (const char *);
+  int (*find_builtin) (const char *);
 
   /* Make the given rtx use the iterator value given by the third argument.
      If the iterator applies to operands, the second argument gives the
      operand index, otherwise it is ignored.  */
-  void (*apply_iterator) (rtx, unsigned int, HOST_WIDE_INT);
+  void (*apply_iterator) (rtx, unsigned int, int);
 
   /* Return the C token for the given standard mode, code, etc.  */
   const char *(*get_c_token) (int);
@@ -99,9 +105,6 @@ struct iterator_use {
 struct attribute_use {
   /* The group that describes the use site.  */
   struct iterator_group *group;
-
-  /* The location at which the use occurs.  */
-  file_location loc;
 
   /* The name of the attribute, possibly with an "iterator:" prefix.  */
   const char *value;
@@ -133,7 +136,7 @@ static void one_time_initialization (void);
 
 /* Global singleton.  */
 rtx_reader *rtx_reader_ptr = NULL;
-
+
 /* The mode and code iterator structures.  */
 static struct iterator_group modes, codes, ints, substs;
 
@@ -146,49 +149,9 @@ static vec<iterator_use> iterator_uses;
 /* The list of all attribute uses in the current rtx.  */
 static vec<attribute_use> attribute_uses;
 
-/* Provide a version of a function to read a long long if the system does
-   not provide one.  */
-#if (HOST_BITS_PER_WIDE_INT > HOST_BITS_PER_LONG			\
-     && !HAVE_DECL_ATOLL						\
-     && !defined (HAVE_ATOQ))
-HOST_WIDE_INT atoll (const char *);
-
-HOST_WIDE_INT
-atoll (const char *p)
-{
-  int neg = 0;
-  HOST_WIDE_INT tmp_wide;
-
-  while (ISSPACE (*p))
-    p++;
-  if (*p == '-')
-    neg = 1, p++;
-  else if (*p == '+')
-    p++;
-
-  tmp_wide = 0;
-  while (ISDIGIT (*p))
-    {
-      HOST_WIDE_INT new_wide = tmp_wide*10 + (*p - '0');
-      if (new_wide < tmp_wide)
-	{
-	  /* Return INT_MAX equiv on overflow.  */
-	  tmp_wide = HOST_WIDE_INT_M1U >> 1;
-	  break;
-	}
-      tmp_wide = new_wide;
-      p++;
-    }
-
-  if (neg)
-    tmp_wide = -tmp_wide;
-  return tmp_wide;
-}
-#endif
-
 /* Implementations of the iterator_group callbacks for modes.  */
 
-static HOST_WIDE_INT
+static int
 find_mode (const char *name)
 {
   int i;
@@ -201,7 +164,7 @@ find_mode (const char *name)
 }
 
 static void
-apply_mode_iterator (rtx x, unsigned int, HOST_WIDE_INT mode)
+apply_mode_iterator (rtx x, unsigned int, int mode)
 {
   PUT_MODE (x, (machine_mode) mode);
 }
@@ -231,35 +194,26 @@ static const compact_insn_name compact_insn_names[] = {
   { NOTE, "cnote" }
 };
 
-/* Return the rtx code for NAME, or UNKNOWN if NAME isn't a valid rtx code.  */
+/* Implementations of the iterator_group callbacks for codes.  */
 
-static rtx_code
-maybe_find_code (const char *name)
+static int
+find_code (const char *name)
 {
-  for (int i = 0; i < NUM_RTX_CODE; i++)
-    if (strcmp (GET_RTX_NAME (i), name) == 0)
-      return (rtx_code) i;
+  int i;
 
-  for (int i = 0; i < (signed)ARRAY_SIZE (compact_insn_names); i++)
+  for (i = 0; i < NUM_RTX_CODE; i++)
+    if (strcmp (GET_RTX_NAME (i), name) == 0)
+      return i;
+
+  for (i = 0; i < (signed)ARRAY_SIZE (compact_insn_names); i++)
     if (strcmp (compact_insn_names[i].name, name) == 0)
       return compact_insn_names[i].code;
 
-  return UNKNOWN;
-}
-
-/* Implementations of the iterator_group callbacks for codes.  */
-
-static HOST_WIDE_INT
-find_code (const char *name)
-{
-  rtx_code code = maybe_find_code (name);
-  if (code == UNKNOWN)
-    fatal_with_file_and_line ("unknown rtx code `%s'", name);
-  return code;
+  fatal_with_file_and_line ("unknown rtx code `%s'", name);
 }
 
 static void
-apply_code_iterator (rtx x, unsigned int, HOST_WIDE_INT code)
+apply_code_iterator (rtx x, unsigned int, int code)
 {
   PUT_CODE (x, (enum rtx_code) code);
 }
@@ -279,52 +233,20 @@ get_code_token (int code)
    we have to accept any int as valid.  No cross-checking can
    be done.  */
 
-static HOST_WIDE_INT
+static int
 find_int (const char *name)
 {
-  HOST_WIDE_INT tmp;
-
   validate_const_int (name);
-#if HOST_BITS_PER_WIDE_INT == HOST_BITS_PER_INT
-  tmp = atoi (name);
-#else
-#if HOST_BITS_PER_WIDE_INT == HOST_BITS_PER_LONG
-  tmp = atol (name);
-#else
-  /* Prefer atoll over atoq, since the former is in the ISO C99 standard.
-     But prefer not to use our hand-rolled function above either.  */
-#if HAVE_DECL_ATOLL || !defined(HAVE_ATOQ)
-  tmp = atoll (name);
-#else
-  tmp = atoq (name);
-#endif
-#endif
-#endif
-  return tmp;
+  return atoi (name);
 }
 
 static void
-apply_int_iterator (rtx x, unsigned int index, HOST_WIDE_INT value)
+apply_int_iterator (rtx x, unsigned int index, int value)
 {
-  RTX_CODE code = GET_CODE (x);
-  const char *format_ptr = GET_RTX_FORMAT (code);
-
-  switch (format_ptr[index])
-    {
-    case 'i':
-    case 'n':
-      XINT (x, index) = value;
-      break;
-    case 'w':
-      XWINT (x, index) = value;
-      break;
-    case 'p':
-      gcc_assert (code == SUBREG);
-      SUBREG_BYTE (x) = value;
-      break;
-    default:
-      gcc_unreachable ();
-    }
+  if (GET_CODE (x) == SUBREG)
+    SUBREG_BYTE (x) = value;
+  else
+    XINT (x, index) = value;
 }
 
 static const char *
@@ -345,7 +267,7 @@ get_int_token (int value)
    applied.  If such attribute has already been added, then no the
    routine has no effect.  */
 static void
-apply_subst_iterator (rtx rt, unsigned int, HOST_WIDE_INT value)
+apply_subst_iterator (rtx rt, unsigned int, int value)
 {
   rtx new_attr;
   rtvec attrs_vec, new_attrs_vec;
@@ -355,11 +277,9 @@ apply_subst_iterator (rtx rt, unsigned int, HOST_WIDE_INT value)
     return;
   gcc_assert (GET_CODE (rt) == DEFINE_INSN
 	      || GET_CODE (rt) == DEFINE_INSN_AND_SPLIT
-	      || GET_CODE (rt) == DEFINE_INSN_AND_REWRITE
 	      || GET_CODE (rt) == DEFINE_EXPAND);
 
-  int attrs = (GET_CODE (rt) == DEFINE_INSN_AND_SPLIT ? 7
-	       : GET_CODE (rt) == DEFINE_INSN_AND_REWRITE ? 6 : 4);
+  int attrs = GET_CODE (rt) == DEFINE_INSN_AND_SPLIT ? 7 : 4;
   attrs_vec = XVEC (rt, attrs);
 
   /* If we've already added attribute 'current_iterator_name', then we
@@ -430,10 +350,10 @@ find_subst_iter_by_attr (const char *attr)
 
 /* Map attribute string P to its current value.  Return null if the attribute
    isn't known.  If ITERATOR_OUT is nonnull, store the associated iterator
-   there.  Report any errors against location LOC.  */
+   there.  */
 
 static struct map_value *
-map_attr_string (file_location loc, const char *p, mapping **iterator_out = 0)
+map_attr_string (const char *p, mapping **iterator_out = 0)
 {
   const char *attr;
   struct mapping *iterator;
@@ -441,8 +361,6 @@ map_attr_string (file_location loc, const char *p, mapping **iterator_out = 0)
   struct mapping *m;
   struct map_value *v;
   int iterator_name_len;
-  struct map_value *res = NULL;
-  struct mapping *prev = NULL;
 
   /* Peel off any "iterator:" prefix.  Set ATTR to the start of the
      attribute name.  */
@@ -485,22 +403,13 @@ map_attr_string (file_location loc, const char *p, mapping **iterator_out = 0)
 	  for (v = m->values; v; v = v->next)
 	    if (v->number == iterator->current_value->number)
 	      {
-		if (res && strcmp (v->string, res->string) != 0)
-		  {
-		    error_at (loc, "ambiguous attribute '%s'; could be"
-			      " '%s' (via '%s:%s') or '%s' (via '%s:%s')",
-			      attr, res->string, prev->name, attr,
-			      v->string, iterator->name, attr);
-		    return v;
-		  }
 		if (iterator_out)
 		  *iterator_out = iterator;
-		prev = iterator;
-		res = v;
+		return v;
 	      }
 	}
     }
-  return res;
+  return NULL;
 }
 
 /* Apply the current iterator values to STRING.  Return the new string
@@ -512,17 +421,16 @@ md_reader::apply_iterator_to_string (const char *string)
   char *base, *copy, *p, *start, *end;
   struct map_value *v;
 
-  if (string == 0 || string[0] == 0)
+  if (string == 0)
     return string;
 
-  file_location loc = get_md_ptr_loc (string)->loc;
   base = p = copy = ASTRDUP (string);
   while ((start = strchr (p, '<')) && (end = strchr (start, '>')))
     {
       p = start + 1;
 
       *end = 0;
-      v = map_attr_string (loc, p);
+      v = map_attr_string (p);
       *end = '>';
       if (v == 0)
 	continue;
@@ -632,7 +540,6 @@ add_condition_to_rtx (rtx x, const char *extra)
       break;
 
     case DEFINE_INSN_AND_SPLIT:
-    case DEFINE_INSN_AND_REWRITE:
       XSTR (x, 2) = add_condition_to_string (XSTR (x, 2), extra);
       XSTR (x, 4) = add_condition_to_string (XSTR (x, 4), extra);
       break;
@@ -653,7 +560,7 @@ apply_attribute_uses (void)
 
   FOR_EACH_VEC_ELT (attribute_uses, i, ause)
     {
-      v = map_attr_string (ause->loc, ause->value);
+      v = map_attr_string (ause->value);
       if (!v)
 	fatal_with_file_and_line ("unknown iterator value `%s'", ause->value);
       ause->group->apply_iterator (ause->x, ause->index,
@@ -716,7 +623,6 @@ named_rtx_p (rtx x)
     case DEFINE_EXPAND:
     case DEFINE_INSN:
     case DEFINE_INSN_AND_SPLIT:
-    case DEFINE_INSN_AND_REWRITE:
       return true;
 
     default:
@@ -737,7 +643,6 @@ md_reader::handle_overloaded_name (rtx original, vec<mapping *> *iterators)
 
   /* Remove the '@', so that no other code needs to worry about it.  */
   const char *name = XSTR (original, 0);
-  file_location loc = get_md_ptr_loc (name)->loc;
   copy_md_ptr_loc (name + 1, name);
   name += 1;
   XSTR (original, 0) = name;
@@ -754,7 +659,7 @@ md_reader::handle_overloaded_name (rtx original, vec<mapping *> *iterators)
     {
       *end = 0;
       mapping *iterator;
-      if (!map_attr_string (loc, start + 1, &iterator))
+      if (!map_attr_string (start + 1, &iterator))
 	fatal_with_file_and_line ("unknown iterator `%s'", start + 1);
       *end = '>';
 
@@ -829,7 +734,7 @@ md_reader::handle_overloaded_name (rtx original, vec<mapping *> *iterators)
    gives the iterator associated with argument I of ONAME.  */
 
 static void
-add_overload_instance (overloaded_name *oname, const vec<mapping *> &iterators, rtx x)
+add_overload_instance (overloaded_name *oname, vec<mapping *> iterators, rtx x)
 {
   /* Create the instance.  */
   overloaded_instance *instance = new overloaded_instance;
@@ -1069,6 +974,44 @@ initialize_iterators (void)
     }
 }
 
+/* Provide a version of a function to read a long long if the system does
+   not provide one.  */
+#if HOST_BITS_PER_WIDE_INT > HOST_BITS_PER_LONG && !HAVE_DECL_ATOLL && !defined(HAVE_ATOQ)
+HOST_WIDE_INT atoll (const char *);
+
+HOST_WIDE_INT
+atoll (const char *p)
+{
+  int neg = 0;
+  HOST_WIDE_INT tmp_wide;
+
+  while (ISSPACE (*p))
+    p++;
+  if (*p == '-')
+    neg = 1, p++;
+  else if (*p == '+')
+    p++;
+
+  tmp_wide = 0;
+  while (ISDIGIT (*p))
+    {
+      HOST_WIDE_INT new_wide = tmp_wide*10 + (*p - '0');
+      if (new_wide < tmp_wide)
+	{
+	  /* Return INT_MAX equiv on overflow.  */
+	  tmp_wide = HOST_WIDE_INT_M1U >> 1;
+	  break;
+	}
+      tmp_wide = new_wide;
+      p++;
+    }
+
+  if (neg)
+    tmp_wide = -tmp_wide;
+  return tmp_wide;
+}
+#endif
+
 
 #ifdef GENERATOR_FILE
 /* Process a define_conditions directive, starting with the optional
@@ -1170,25 +1113,24 @@ record_iterator_use (struct mapping *iterator, rtx x, unsigned int index)
   iterator_uses.safe_push (iuse);
 }
 
-/* Record that X uses attribute VALUE at location LOC, where VALUE must
-   match a built-in value from group GROUP.  If the use is in an operand
-   of X, INDEX is the index of that operand, otherwise it is ignored.  */
+/* Record that X uses attribute VALUE, which must match a built-in
+   value from group GROUP.  If the use is in an operand of X, INDEX
+   is the index of that operand, otherwise it is ignored.  */
 
 static void
-record_attribute_use (struct iterator_group *group, file_location loc, rtx x,
+record_attribute_use (struct iterator_group *group, rtx x,
 		      unsigned int index, const char *value)
 {
-  struct attribute_use ause = {group, loc, value, x, index};
+  struct attribute_use ause = {group, value, x, index};
   attribute_uses.safe_push (ause);
 }
 
 /* Interpret NAME as either a built-in value, iterator or attribute
    for group GROUP.  X and INDEX are the values to pass to GROUP's
-   apply_iterator callback.  LOC is the location of the use.  */
+   apply_iterator callback.  */
 
 void
 md_reader::record_potential_iterator_use (struct iterator_group *group,
-					  file_location loc,
 					  rtx x, unsigned int index,
 					  const char *name)
 {
@@ -1201,7 +1143,7 @@ md_reader::record_potential_iterator_use (struct iterator_group *group,
       /* Copy the attribute string into permanent storage, without the
 	 angle brackets around it.  */
       obstack_grow0 (&m_string_obstack, name + 1, len - 2);
-      record_attribute_use (group, loc, x, index,
+      record_attribute_use (group, x, index,
 			    XOBFINISH (&m_string_obstack, char *));
     }
   else
@@ -1340,7 +1282,7 @@ read_subst_mapping (htab_t subst_iters_table, htab_t subst_attrs_table,
       m = add_mapping (&substs, subst_iters_table, attr_operands[1]);
       end_ptr = &m->values;
       end_ptr = add_map_value (end_ptr, 1, "");
-      add_map_value (end_ptr, 2, "");
+      end_ptr = add_map_value (end_ptr, 2, "");
 
       add_define_attr_for_define_subst (attr_operands[1], queue);
     }
@@ -1348,7 +1290,7 @@ read_subst_mapping (htab_t subst_iters_table, htab_t subst_attrs_table,
   m = add_mapping (&substs, subst_attrs_table, attr_operands[0]);
   end_ptr = &m->values;
   end_ptr = add_map_value (end_ptr, 1, attr_operands[2]);
-  add_map_value (end_ptr, 2, attr_operands[3]);
+  end_ptr = add_map_value (end_ptr, 2, attr_operands[3]);
 }
 
 /* Check newly-created code iterator ITERATOR to see whether every code has the
@@ -1364,37 +1306,7 @@ check_code_iterator (struct mapping *iterator)
   for (v = iterator->values->next; v != 0; v = v->next)
     if (strcmp (GET_RTX_FORMAT (bellwether), GET_RTX_FORMAT (v->number)) != 0)
       fatal_with_file_and_line ("code iterator `%s' combines "
-				"`%s' and `%s', which have different "
-				"rtx formats", iterator->name,
-				GET_RTX_NAME (bellwether),
-				GET_RTX_NAME (v->number));
-}
-
-/* Check that all values of attribute ATTR are rtx codes that have a
-   consistent format.  Return a representative code.  */
-
-static rtx_code
-check_code_attribute (mapping *attr)
-{
-  rtx_code bellwether = UNKNOWN;
-  for (map_value *v = attr->values; v != 0; v = v->next)
-    {
-      rtx_code code = maybe_find_code (v->string);
-      if (code == UNKNOWN)
-	fatal_with_file_and_line ("code attribute `%s' contains "
-				  "unrecognized rtx code `%s'",
-				  attr->name, v->string);
-      if (bellwether == UNKNOWN)
-	bellwether = code;
-      else if (strcmp (GET_RTX_FORMAT (bellwether),
-		       GET_RTX_FORMAT (code)) != 0)
-	fatal_with_file_and_line ("code attribute `%s' combines "
-				  "`%s' and `%s', which have different "
-				  "rtx formats", attr->name,
-				  GET_RTX_NAME (bellwether),
-				  GET_RTX_NAME (code));
-    }
-  return bellwether;
+				"different rtx formats", iterator->name);
 }
 
 /* Read an rtx-related declaration from the MD file, given that it
@@ -1555,55 +1467,6 @@ parse_reg_note_name (const char *string)
   fatal_with_file_and_line ("unrecognized REG_NOTE name: `%s'", string);
 }
 
-/* Allocate an rtx for code NAME.  If NAME is a code iterator or code
-   attribute, record its use for later and use one of its possible
-   values as an interim rtx code.  */
-
-rtx
-rtx_reader::rtx_alloc_for_name (const char *name)
-{
-#ifdef GENERATOR_FILE
-  size_t len = strlen (name);
-  if (name[0] == '<' && name[len - 1] == '>')
-    {
-      /* Copy the attribute string into permanent storage, without the
-	 angle brackets around it.  */
-      obstack *strings = get_string_obstack ();
-      obstack_grow0 (strings, name + 1, len - 2);
-      char *deferred_name = XOBFINISH (strings, char *);
-
-      /* Find the name of the attribute.  */
-      const char *attr = strchr (deferred_name, ':');
-      if (!attr)
-	attr = deferred_name;
-
-      /* Find the attribute itself.  */
-      mapping *m = (mapping *) htab_find (codes.attrs, &attr);
-      if (!m)
-	fatal_with_file_and_line ("unknown code attribute `%s'", attr);
-
-      /* Pick the first possible code for now, and record the attribute
-	 use for later.  */
-      rtx x = rtx_alloc (check_code_attribute (m));
-      record_attribute_use (&codes, get_current_location (),
-			    x, 0, deferred_name);
-      return x;
-    }
-
-  mapping *iterator = (mapping *) htab_find (codes.iterators, &name);
-  if (iterator != 0)
-    {
-      /* Pick the first possible code for now, and record the iterator
-	 use for later.  */
-      rtx x = rtx_alloc (rtx_code (iterator->values->number));
-      record_iterator_use (iterator, x, 0);
-      return x;
-    }
-#endif
-
-  return rtx_alloc (rtx_code (codes.find_builtin (name)));
-}
-
 /* Subroutine of read_rtx and read_nested_rtx.  CODE_NAME is the name of
    either an rtx code or a code iterator.  Parse the rest of the rtx and
    return it.  */
@@ -1612,6 +1475,7 @@ rtx
 rtx_reader::read_rtx_code (const char *code_name)
 {
   RTX_CODE code;
+  struct mapping *iterator = NULL;
   const char *format_ptr;
   struct md_name name;
   rtx return_rtx;
@@ -1645,28 +1509,20 @@ rtx_reader::read_rtx_code (const char *code_name)
       return return_rtx;
     }
 
-  /* Handle "const_double_zero".  */
-  if (strcmp (code_name, "const_double_zero") == 0)
-    {
-      code = CONST_DOUBLE;
-      return_rtx = rtx_alloc (code);
-      memset (return_rtx, 0, RTX_CODE_SIZE (code));
-      PUT_CODE (return_rtx, code);
-      c = read_skip_spaces ();
-      if (c == ':')
-	{
-	  file_location loc = read_name (&name);
-	  record_potential_iterator_use (&modes, loc, return_rtx, 0,
-					 name.string);
-	}
-      else
-	unread_char (c);
-      return return_rtx;
-    }
+  /* If this code is an iterator, build the rtx using the iterator's
+     first value.  */
+#ifdef GENERATOR_FILE
+  iterator = (struct mapping *) htab_find (codes.iterators, &code_name);
+  if (iterator != 0)
+    code = (enum rtx_code) iterator->values->number;
+  else
+    code = (enum rtx_code) codes.find_builtin (code_name);
+#else
+    code = (enum rtx_code) codes.find_builtin (code_name);
+#endif
 
   /* If we end up with an insn expression then we free this space below.  */
-  return_rtx = rtx_alloc_for_name (code_name);
-  code = GET_CODE (return_rtx);
+  return_rtx = rtx_alloc (code);
   format_ptr = GET_RTX_FORMAT (code);
   memset (return_rtx, 0, RTX_CODE_SIZE (code));
   PUT_CODE (return_rtx, code);
@@ -1674,9 +1530,12 @@ rtx_reader::read_rtx_code (const char *code_name)
   if (reuse_id != -1)
     {
       /* Store away for later reuse.  */
-      m_reuse_rtx_by_id.safe_grow_cleared (reuse_id + 1, true);
+      m_reuse_rtx_by_id.safe_grow_cleared (reuse_id + 1);
       m_reuse_rtx_by_id[reuse_id] = return_rtx;
     }
+
+  if (iterator)
+    record_iterator_use (iterator, return_rtx, 0);
 
   /* Check for flags. */
   read_flags (return_rtx);
@@ -1704,8 +1563,8 @@ rtx_reader::read_rtx_code (const char *code_name)
   c = read_skip_spaces ();
   if (c == ':')
     {
-      file_location loc = read_name (&name);
-      record_potential_iterator_use (&modes, loc, return_rtx, 0, name.string);
+      read_name (&name);
+      record_potential_iterator_use (&modes, return_rtx, 0, name.string);
     }
   else
     unread_char (c);
@@ -1906,8 +1765,8 @@ rtx_reader::read_rtx_operand (rtx return_rtx, int idx)
 	    break;
 	  }
 
-	/* The output template slot of a DEFINE_INSN, DEFINE_INSN_AND_SPLIT,
-	   DEFINE_INSN_AND_REWRITE or DEFINE_PEEPHOLE automatically
+	/* The output template slot of a DEFINE_INSN,
+	   DEFINE_INSN_AND_SPLIT, or DEFINE_PEEPHOLE automatically
 	   gets a star inserted as its first character, if it is
 	   written with a brace block instead of a string constant.  */
 	star_if_braced = (format_ptr[idx] == 'T');
@@ -1924,10 +1783,8 @@ rtx_reader::read_rtx_operand (rtx return_rtx, int idx)
 	if (*stringbuf == '\0'
 	    && idx == 0
 	    && (GET_CODE (return_rtx) == DEFINE_INSN
-		|| GET_CODE (return_rtx) == DEFINE_INSN_AND_SPLIT
-		|| GET_CODE (return_rtx) == DEFINE_INSN_AND_REWRITE))
+		|| GET_CODE (return_rtx) == DEFINE_INSN_AND_SPLIT))
 	  {
-	    const char *old_stringbuf = stringbuf;
 	    struct obstack *string_obstack = get_string_obstack ();
 	    char line_name[20];
 	    const char *read_md_filename = get_filename ();
@@ -1941,7 +1798,6 @@ rtx_reader::read_rtx_operand (rtx return_rtx, int idx)
 	    sprintf (line_name, ":%d", get_lineno ());
 	    obstack_grow (string_obstack, line_name, strlen (line_name)+1);
 	    stringbuf = XOBFINISH (string_obstack, char *);
-	    copy_md_ptr_loc (stringbuf, old_stringbuf);
 	  }
 
 	/* Find attr-names in the string.  */
@@ -1986,17 +1842,37 @@ rtx_reader::read_rtx_operand (rtx return_rtx, int idx)
       }
       break;
 
+    case 'w':
+      {
+	HOST_WIDE_INT tmp_wide;
+	read_name (&name);
+	validate_const_int (name.string);
+#if HOST_BITS_PER_WIDE_INT == HOST_BITS_PER_INT
+	tmp_wide = atoi (name.string);
+#else
+#if HOST_BITS_PER_WIDE_INT == HOST_BITS_PER_LONG
+	tmp_wide = atol (name.string);
+#else
+	/* Prefer atoll over atoq, since the former is in the ISO C99 standard.
+	   But prefer not to use our hand-rolled function above either.  */
+#if HAVE_DECL_ATOLL || !defined(HAVE_ATOQ)
+	tmp_wide = atoll (name.string);
+#else
+	tmp_wide = atoq (name.string);
+#endif
+#endif
+#endif
+	XWINT (return_rtx, idx) = tmp_wide;
+      }
+      break;
+
     case 'i':
     case 'n':
-    case 'w':
     case 'p':
-      {
-	/* Can be an iterator or an integer constant.  */
-	file_location loc = read_name (&name);
-	record_potential_iterator_use (&ints, loc, return_rtx, idx,
-				       name.string);
-	break;
-      }
+      /* Can be an iterator or an integer constant.  */
+      read_name (&name);
+      record_potential_iterator_use (&ints, return_rtx, idx, name.string);
+      break;
 
     case 'r':
       read_name (&name);

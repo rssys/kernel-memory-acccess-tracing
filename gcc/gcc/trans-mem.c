@@ -1,5 +1,5 @@
 /* Passes for transactional memory support.
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2019 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>
    and Aldy Hernandez <aldyh@redhat.com>.
 
@@ -46,14 +46,12 @@
 #include "demangle.h"
 #include "output.h"
 #include "trans-mem.h"
+#include "params.h"
 #include "langhooks.h"
 #include "cfgloop.h"
 #include "tree-ssa-address.h"
 #include "stringpool.h"
 #include "attribs.h"
-#include "alloc-pool.h"
-#include "symbol-summary.h"
-#include "symtab-thunks.h"
 
 #define A_RUNINSTRUMENTEDCODE	0x0001
 #define A_RUNUNINSTRUMENTEDCODE	0x0002
@@ -756,10 +754,10 @@ diagnose_tm_1 (gimple_stmt_iterator *gsi, bool *handled_ops_p,
 	 Either that or get the language spec to resurrect __tm_waiver.  */
       if (d->block_flags & DIAG_TM_SAFE)
 	error_at (gimple_location (stmt),
-		  "%<asm%> not allowed in atomic transaction");
+		  "asm not allowed in atomic transaction");
       else if (d->func_flags & DIAG_TM_SAFE)
 	error_at (gimple_location (stmt),
-		  "%<asm%> not allowed in %<transaction_safe%> function");
+		  "asm not allowed in %<transaction_safe%> function");
       break;
 
     case GIMPLE_TRANSACTION:
@@ -1110,7 +1108,7 @@ tm_log_add (basic_block entry_block, tree addr, gimple *stmt)
 	  && TYPE_SIZE_UNIT (type) != NULL
 	  && tree_fits_uhwi_p (TYPE_SIZE_UNIT (type))
 	  && ((HOST_WIDE_INT) tree_to_uhwi (TYPE_SIZE_UNIT (type))
-	      < param_tm_max_aggregate_size)
+	      < PARAM_VALUE (PARAM_TM_MAX_AGGREGATE_SIZE))
 	  /* We must be able to copy this type normally.  I.e., no
 	     special constructors and the like.  */
 	  && !TREE_ADDRESSABLE (type))
@@ -2033,7 +2031,7 @@ tm_region_init (struct tm_region *region)
   /* We could store this information in bb->aux, but we may get called
      through get_all_tm_blocks() from another pass that may be already
      using bb->aux.  */
-  bb_regions.safe_grow_cleared (last_basic_block_for_fn (cfun), true);
+  bb_regions.safe_grow_cleared (last_basic_block_for_fn (cfun));
 
   all_tm_regions = region;
   bb = single_succ (ENTRY_BLOCK_PTR_FOR_FN (cfun));
@@ -2427,7 +2425,6 @@ expand_assign_tm (struct tm_region *region, gimple_stmt_iterator *gsi)
       if (is_gimple_reg (rhs))
 	{
 	  tree rtmp = create_tmp_var (TREE_TYPE (rhs));
-	  TREE_ADDRESSABLE (rtmp) = 1;
 	  rhs_addr = build_fold_addr_expr (rtmp);
 	  gcall = gimple_build_assign (rtmp, rhs);
 	  gsi_insert_before (gsi, gcall, GSI_SAME_STMT);
@@ -2544,12 +2541,12 @@ expand_call_tm (struct tm_region *region,
 	  gimple_call_set_fndecl (stmt, repl);
 	  update_stmt (stmt);
 	  node = cgraph_node::create (repl);
-	  node->tm_may_enter_irr = false;
+	  node->local.tm_may_enter_irr = false;
 	  return expand_call_tm (region, gsi);
 	}
       gcc_unreachable ();
     }
-  if (node->tm_may_enter_irr)
+  if (node->local.tm_may_enter_irr)
     transaction_subcode_ior (region, GTMA_MAY_ENTER_IRREVOCABLE);
 
   if (is_tm_abort (fn_decl))
@@ -2777,7 +2774,7 @@ get_bb_regions_instrumented (bool traverse_clones,
   vec<tm_region *> ret;
 
   ret.create (n);
-  ret.safe_grow_cleared (n, true);
+  ret.safe_grow_cleared (n);
   stuff.bb2reg = &ret;
   stuff.include_uninstrumented_p = include_uninstrumented_p;
   expand_regions (all_tm_regions, collect_bb2reg, &stuff, traverse_clones);
@@ -3240,7 +3237,8 @@ expand_block_edges (struct tm_region *const region, basic_block bb)
 	  || (gimple_call_flags (call_stmt) & ECF_TM_BUILTIN) == 0)
 	continue;
 
-      if (gimple_call_builtin_p (call_stmt, BUILT_IN_TM_ABORT))
+      if (DECL_FUNCTION_CODE (gimple_call_fndecl (call_stmt))
+	  == BUILT_IN_TM_ABORT)
 	{
 	  // If we have a ``_transaction_cancel [[outer]]'', there is only
 	  // one abnormal edge: to the transaction marked OUTER.
@@ -3710,9 +3708,9 @@ tm_memopt_compute_available (struct tm_region *region,
   /* Allocate a worklist array/queue.  Entries are only added to the
      list if they were not already on the list.  So the size is
      bounded by the number of basic blocks in the region.  */
-  gcc_assert (!blocks.is_empty ());
   qlen = blocks.length () - 1;
-  qin = qout = worklist = XNEWVEC (basic_block, qlen);
+  qin = qout = worklist =
+    XNEWVEC (basic_block, qlen);
 
   /* Put every block in the region on the worklist.  */
   for (i = 0; blocks.iterate (i, &bb); ++i)
@@ -4413,8 +4411,11 @@ ipa_tm_scan_irr_block (basic_block bb)
 	     is to wrap it in a __tm_waiver block.  This is not
 	     yet implemented, so we can't check for it.  */
 	  if (is_tm_safe (current_function_decl))
-	    error_at (gimple_location (stmt),
-		      "%<asm%> not allowed in %<transaction_safe%> function");
+	    {
+	      tree t = build1 (NOP_EXPR, void_type_node, size_zero_node);
+	      SET_EXPR_LOCATION (t, gimple_location (stmt));
+	      error ("%Kasm not allowed in %<transaction_safe%> function", t);
+	    }
 	  return true;
 
 	default:
@@ -4721,15 +4722,14 @@ ipa_tm_mayenterirr_function (struct cgraph_node *node)
 
   /* We may have previously marked this function as tm_may_enter_irr;
      see pass_diagnose_tm_blocks.  */
-  if (node->tm_may_enter_irr)
+  if (node->local.tm_may_enter_irr)
     return true;
 
   /* Recurse on the main body for aliases.  In general, this will
      result in one of the bits above being set so that we will not
      have to recurse next time.  */
   if (node->alias)
-    return ipa_tm_mayenterirr_function
-		 (cgraph_node::get (thunk_info::get (node)->alias));
+    return ipa_tm_mayenterirr_function (cgraph_node::get (node->thunk.alias));
 
   /* What remains is unmarked local functions without items that force
      the function to go irrevocable.  */
@@ -4746,7 +4746,7 @@ ipa_tm_diagnose_tm_safe (struct cgraph_node *node)
 
   for (e = node->callees; e ; e = e->next_callee)
     if (!is_tm_callable (e->callee->decl)
-	&& e->callee->tm_may_enter_irr)
+	&& e->callee->local.tm_may_enter_irr)
       error_at (gimple_location (e->call_stmt),
 		"unsafe function call %qD within "
 		"%<transaction_safe%> function", e->callee->decl);
@@ -4788,7 +4788,7 @@ ipa_tm_diagnose_transaction (struct cgraph_node *node,
 	      if (gimple_code (stmt) == GIMPLE_ASM)
 		{
 		  error_at (gimple_location (stmt),
-			    "%<asm%> not allowed in atomic transaction");
+			    "asm not allowed in atomic transaction");
 		  continue;
 		}
 
@@ -4814,7 +4814,7 @@ ipa_tm_diagnose_transaction (struct cgraph_node *node,
 	      if (is_tm_callable (fndecl))
 		continue;
 
-	      if (cgraph_node::local_info_node (fndecl)->tm_may_enter_irr)
+	      if (cgraph_node::local_info (fndecl)->tm_may_enter_irr)
 		error_at (gimple_location (stmt),
 			  "unsafe function call %qD within "
 			  "atomic transaction", fndecl);
@@ -4989,12 +4989,12 @@ ipa_tm_create_version (struct cgraph_node *old_node)
 
   gcc_assert (!old_node->ipa_transforms_to_apply.exists ());
   new_node = old_node->create_version_clone (new_decl, vNULL, NULL);
-  new_node->local = false;
+  new_node->local.local = false;
   new_node->externally_visible = old_node->externally_visible;
   new_node->lowered = true;
   new_node->tm_clone = 1;
   if (!old_node->implicit_section)
-    new_node->set_section (*old_node);
+    new_node->set_section (old_node->get_section ());
   get_cg_data (&old_node, true)->clone = new_node;
 
   if (old_node->get_availability () >= AVAIL_INTERPOSABLE)
@@ -5009,7 +5009,8 @@ ipa_tm_create_version (struct cgraph_node *old_node)
 	}
 
       tree_function_versioning (old_decl, new_decl,
-				NULL,  NULL, false, NULL, NULL);
+				NULL, false, NULL,
+				false, NULL, NULL);
     }
 
   record_tm_clone_pair (old_decl, new_decl);
@@ -5209,7 +5210,7 @@ ipa_tm_transform_calls_redirect (struct cgraph_node *node,
 	 CALLER.  Also note that find_tm_replacement_function also
 	 contains mappings into the TM runtime, e.g. memcpy.  These
 	 we know won't go irrevocable.  */
-      new_node->tm_may_enter_irr = 1;
+      new_node->local.tm_may_enter_irr = 1;
     }
   else
     {
@@ -5417,7 +5418,7 @@ ipa_tm_execute (void)
 	   No need to do this if the function's address can't be taken.  */
 	if (is_tm_pure (node->decl))
 	  {
-	    if (!node->local)
+	    if (!node->local.local)
 	      record_tm_clone_pair (node->decl, node->decl);
 	    continue;
 	  }
@@ -5475,7 +5476,7 @@ ipa_tm_execute (void)
 		 we need not scan the callees now, as the base will do.  */
 	      if (node->alias)
 		{
-		  node = cgraph_node::get (thunk_info::get (node)->alias);
+		  node = cgraph_node::get (node->thunk.alias);
 		  d = get_cg_data (&node, true);
 		  maybe_push_queue (node, &tm_callees, &d->in_callee_queue);
 		  continue;
@@ -5544,14 +5545,14 @@ ipa_tm_execute (void)
       node = irr_worklist[i];
       d = get_cg_data (&node, true);
       d->in_worklist = false;
-      node->tm_may_enter_irr = true;
+      node->local.tm_may_enter_irr = true;
 
       /* Propagate back to normal callers.  */
       for (e = node->callers; e ; e = e->next_caller)
 	{
 	  caller = e->caller;
 	  if (!is_tm_safe_or_pure (caller->decl)
-	      && !caller->tm_may_enter_irr)
+	      && !caller->local.tm_may_enter_irr)
 	    {
 	      d = get_cg_data (&caller, true);
 	      maybe_push_queue (caller, &irr_worklist, &d->in_worklist);
@@ -5562,7 +5563,7 @@ ipa_tm_execute (void)
       FOR_EACH_ALIAS (node, ref)
 	{
 	  caller = dyn_cast<cgraph_node *> (ref->referring);
-	  if (!caller->tm_may_enter_irr)
+	  if (!caller->local.tm_may_enter_irr)
 	    {
 	      /* ?? Do not traverse aliases here.  */
 	      d = get_cg_data (&caller, false);

@@ -3,8 +3,9 @@
 
 namespace A __attribute ((visibility ("default"))) {}
 
-namespace B [[deprecated]] {}
+namespace B [[deprecated]] {} // { dg-warning "ignored" }
 
 namespace __attribute ((visibility ("default"))) C {}
 
-namespace [[deprecated]] D {}
+namespace [[deprecated]] D {} // { dg-warning "ignored" }
+

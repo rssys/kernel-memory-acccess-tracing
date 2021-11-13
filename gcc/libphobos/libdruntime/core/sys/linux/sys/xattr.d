@@ -13,7 +13,6 @@ version (linux):
 extern (C):
 @system:
 nothrow:
-@nogc:
 
 enum {
     XATTR_CREATE = 1, /* set value, fail if attr already exists.  */
@@ -53,17 +52,17 @@ enum XATTR_CAPS_SUFFIX = "capability";
 enum XATTR_NAME_CAPS = XATTR_SECURITY_PREFIX ~ XATTR_CAPS_SUFFIX;
 
 
-int setxattr(const scope char* path, const scope char* name, const scope void* value, size_t size, int flags);
+int setxattr(in char* path, in char* name, in void* value, size_t size, int flags);
 
-int lsetxattr(const scope char* path, const scope char* name, const scope void* value, size_t size, int flags);
-int fsetxattr(int fd, const scope char* name, const scope void* value, size_t size, int flags);
-ssize_t getxattr(const scope char* path, const scope char* name, void* value, size_t size);
-ssize_t lgetxattr(const scope char* path, const scope char* name, void* value, size_t size);
-ssize_t fgetxattr(int fd, const scope char* name, void* value, size_t size);
-ssize_t listxattr(const scope char* path, char* list, size_t size);
-ssize_t llistxattr(const scope char* path, char* list, size_t size);
+int lsetxattr(in char* path, in char* name, in void* value, size_t size, int flags);
+int fsetxattr(int fd, in char* name, in void* value, size_t size, int flags);
+ssize_t getxattr(in char* path, in char* name, void* value, size_t size);
+ssize_t lgetxattr(in char* path, in char* name, void* value, size_t size);
+ssize_t fgetxattr(int fd, in char* name, void* value, size_t size);
+ssize_t listxattr(in char* path, char* list, size_t size);
+ssize_t llistxattr(in char* path, char* list, size_t size);
 ssize_t flistxattr (int __fd, char *list, size_t size);
-int removexattr (const scope char *path, const scope char *name);
-int lremovexattr (const scope char *path, const scope char *name);
-int fremovexattr (int fd, const scope char *name);
+int removexattr (in char *path, in char *name);
+int lremovexattr (in char *path, in char *name);
+int fremovexattr (int fd, in char *name);
 

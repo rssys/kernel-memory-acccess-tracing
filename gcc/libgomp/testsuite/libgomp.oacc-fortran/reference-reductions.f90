@@ -34,5 +34,5 @@ program test
   r=10.0
   call param_reduction (r)
 
-  if (r .ne. 1010) stop 1
+  if (r .ne. 1010) call abort ()
 end program test

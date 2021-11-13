@@ -1,6 +1,6 @@
 // <forward_list.tcc> -*- C++ -*-
 
-// Copyright (C) 2008-2021 Free Software Foundation, Inc.
+// Copyright (C) 2008-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -290,19 +290,30 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
     remove(const _Tp& __val) -> __remove_return_type
     {
       size_type __removed __attribute__((__unused__)) = 0;
-      forward_list __to_destroy(get_allocator());
+      _Node_base* __curr = &this->_M_impl._M_head;
+      _Node_base* __extra = nullptr;
 
-      auto __prev_it = cbefore_begin();
-      while (_Node* __tmp = static_cast<_Node*>(__prev_it._M_node->_M_next))
-	if (*__tmp->_M_valptr() == __val)
-	  {
-	    __to_destroy.splice_after(__to_destroy.cbefore_begin(),
-				      *this, __prev_it);
-	    _GLIBCXX20_ONLY( __removed++ );
-	  }
-	else
-	  ++__prev_it;
+      while (_Node* __tmp = static_cast<_Node*>(__curr->_M_next))
+	{
+	  if (*__tmp->_M_valptr() == __val)
+	    {
+	      if (__tmp->_M_valptr() != std::__addressof(__val))
+		{
+		  this->_M_erase_after(__curr);
+		  _GLIBCXX20_ONLY( __removed++ );
+		  continue;
+		}
+	      else
+		__extra = __curr;
+	    }
+	  __curr = __curr->_M_next;
+	}
 
+      if (__extra)
+	{
+	  this->_M_erase_after(__extra);
+	  _GLIBCXX20_ONLY( __removed++ );
+	}
       return _GLIBCXX20_ONLY( __removed );
     }
 
@@ -313,19 +324,17 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       remove_if(_Pred __pred) -> __remove_return_type
       {
 	size_type __removed __attribute__((__unused__)) = 0;
-	forward_list __to_destroy(get_allocator());
-
-	auto __prev_it = cbefore_begin();
-	while (_Node* __tmp = static_cast<_Node*>(__prev_it._M_node->_M_next))
-	  if (__pred(*__tmp->_M_valptr()))
-	    {
-	      __to_destroy.splice_after(__to_destroy.cbefore_begin(),
-					*this, __prev_it);
-	      _GLIBCXX20_ONLY( __removed++ );
-	    }
-	  else
-	    ++__prev_it;
-
+	_Node_base* __curr = &this->_M_impl._M_head;
+	while (_Node* __tmp = static_cast<_Node*>(__curr->_M_next))
+	  {
+	    if (__pred(*__tmp->_M_valptr()))
+	      {
+		this->_M_erase_after(__curr);
+		_GLIBCXX20_ONLY( __removed++ );
+	      }
+	    else
+	      __curr = __curr->_M_next;
+	  }
 	return _GLIBCXX20_ONLY( __removed );
       }
 
@@ -339,24 +348,20 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	iterator __last = end();
 	if (__first == __last)
 	  return _GLIBCXX20_ONLY(0);
-
-	forward_list __to_destroy(get_allocator());
 	size_type __removed __attribute__((__unused__)) = 0;
 	iterator __next = __first;
 	while (++__next != __last)
 	{
 	  if (__binary_pred(*__first, *__next))
 	    {
-	      __to_destroy.splice_after(__to_destroy.cbefore_begin(),
-					*this, __first);
+	      erase_after(__first);
 	      _GLIBCXX20_ONLY( __removed++ );
 	    }
 	  else
 	    __first = __next;
 	  __next = __first;
 	}
-
-	return _GLIBCXX20_ONLY( __removed );
+        return _GLIBCXX20_ONLY( __removed );
       }
 
 #undef _GLIBCXX20_ONLY

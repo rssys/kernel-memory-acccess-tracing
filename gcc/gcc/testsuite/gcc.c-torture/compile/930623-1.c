@@ -1,5 +1,4 @@
 /* { dg-require-effective-target untyped_assembly } */
-/* { dg-skip-if "no __builtin_apply in eBPF" { bpf-*-* } } */
 
 g (a, b) {}
 

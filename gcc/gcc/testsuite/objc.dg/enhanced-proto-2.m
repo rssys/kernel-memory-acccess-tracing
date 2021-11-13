@@ -1,6 +1,5 @@
 /* Test use of @optional/@required keywords in @protocol class. */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 @protocol MyProto1 
 @optional

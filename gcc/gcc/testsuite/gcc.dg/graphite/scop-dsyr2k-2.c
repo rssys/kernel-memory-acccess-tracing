@@ -1,5 +1,4 @@
 /* { dg-require-effective-target size32plus } */
-/* { dg-additional-options "-fno-thread-jumps" } */
 #define NMAX 3000
 
 static double a[NMAX][NMAX], b[NMAX][NMAX], c[NMAX][NMAX];

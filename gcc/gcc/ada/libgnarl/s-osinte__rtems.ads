@@ -6,7 +6,7 @@
 --                                                                          --
 --                                   S p e c                                --
 --                                                                          --
---          Copyright (C) 1997-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1997-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -52,7 +52,6 @@
 
 with Interfaces.C;
 with System.OS_Constants;
-with System.Parameters;
 
 package System.OS_Interface is
    pragma Preelaborate;
@@ -85,20 +84,18 @@ package System.OS_Interface is
    ENOMEM    : constant := System.OS_Constants.ENOMEM;
    ETIMEDOUT : constant := System.OS_Constants.ETIMEDOUT;
 
-   ----------------------------
-   -- Signals and Interrupts --
-   ----------------------------
+   -------------
+   -- Signals --
+   -------------
 
-   NSIG : constant := 64;
-   --  Number of signals on the target OS
-   type Signal is new int range 0 .. Interfaces.C."-" (NSIG, 1);
+   Num_HW_Interrupts : constant := 256;
 
-   Max_HW_Interrupt : constant := 255;
+   Max_HW_Interrupt : constant := Num_HW_Interrupts - 1;
    type HW_Interrupt is new int range 0 .. Max_HW_Interrupt;
 
    Max_Interrupt : constant := Max_HW_Interrupt;
-   subtype Interrupt_Range is Natural range 0 .. Max_HW_Interrupt;
-   --  For s-interr
+
+   type Signal is new int range 0 .. Max_Interrupt;
 
    SIGXCPU     : constant := 0; --  XCPU
    SIGHUP      : constant := 1; --  hangup
@@ -548,19 +545,34 @@ package System.OS_Interface is
    type Binary_Semaphore_Id is new rtems_id;
 
    function Binary_Semaphore_Create return Binary_Semaphore_Id;
-   pragma Inline (Binary_Semaphore_Create);
+   pragma Import (
+      C,
+      Binary_Semaphore_Create,
+      "__gnat_binary_semaphore_create");
 
    function Binary_Semaphore_Delete (ID : Binary_Semaphore_Id) return int;
-   pragma Inline (Binary_Semaphore_Delete);
+   pragma Import (
+      C,
+      Binary_Semaphore_Delete,
+      "__gnat_binary_semaphore_delete");
 
    function Binary_Semaphore_Obtain (ID : Binary_Semaphore_Id) return int;
-   pragma Inline (Binary_Semaphore_Obtain);
+   pragma Import (
+      C,
+      Binary_Semaphore_Obtain,
+      "__gnat_binary_semaphore_obtain");
 
    function Binary_Semaphore_Release (ID : Binary_Semaphore_Id) return int;
-   pragma Inline (Binary_Semaphore_Release);
+   pragma Import (
+      C,
+      Binary_Semaphore_Release,
+      "__gnat_binary_semaphore_release");
 
    function Binary_Semaphore_Flush (ID : Binary_Semaphore_Id) return int;
-   pragma Inline (Binary_Semaphore_Flush);
+   pragma Import (
+      C,
+      Binary_Semaphore_Flush,
+      "__gnat_binary_semaphore_flush");
 
    ------------------------------------------------------------
    -- Hardware Interrupt Wrappers to Support Interrupt Tasks --
@@ -568,29 +580,44 @@ package System.OS_Interface is
 
    type Interrupt_Handler is access procedure (parameter : System.Address);
    pragma Convention (C, Interrupt_Handler);
-
    type Interrupt_Vector is new System.Address;
 
    function Interrupt_Connect
-     (Vector    : Interrupt_Vector;
-      Handler   : Interrupt_Handler;
-      Parameter : System.Address := System.Null_Address) return int;
+     (vector    : Interrupt_Vector;
+      handler   : Interrupt_Handler;
+      parameter : System.Address := System.Null_Address) return int;
+   pragma Import (C, Interrupt_Connect, "__gnat_interrupt_connect");
    --  Use this to set up an user handler. The routine installs a
    --  a user handler which is invoked after RTEMS has saved enough
    --  context for a high-level language routine to be safely invoked.
 
+   function Interrupt_Vector_Get
+     (Vector : Interrupt_Vector) return Interrupt_Handler;
+   pragma Import (C, Interrupt_Vector_Get, "__gnat_interrupt_get");
+   --  Use this to get the existing handler for later restoral.
+
+   procedure Interrupt_Vector_Set
+     (Vector  : Interrupt_Vector;
+      Handler : Interrupt_Handler);
+   pragma Import (C, Interrupt_Vector_Set, "__gnat_interrupt_set");
+   --  Use this to restore a handler obtained using Interrupt_Vector_Get.
+
    function Interrupt_Number_To_Vector (intNum : int) return Interrupt_Vector;
    --  Convert a logical interrupt number to the hardware interrupt vector
    --  number used to connect the interrupt.
+   pragma Import (
+      C,
+      Interrupt_Number_To_Vector,
+      "__gnat_interrupt_number_to_vector"
+   );
 
 private
 
-   type sigset_t is new unsigned_long;
+   type sigset_t is new int;
 
    type pid_t is new int;
 
-   type time_t is range -2 ** (System.Parameters.time_t_bits - 1)
-     .. 2 ** (System.Parameters.time_t_bits - 1) - 1;
+   type time_t is new Long_Long_Integer;
 
    type timespec is record
       tv_sec  : time_t;

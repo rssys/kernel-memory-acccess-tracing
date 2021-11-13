@@ -19,12 +19,9 @@ main()
 {
   /* Make sure we perform indirect inlining of one and two and optimize
      the result to a constant.  */
-  for (int i = 0; i < 100; i++)
-    {
-      if (print(one) != 3)
-	link_error ();
-      if (print(two) != 5)
-	link_error ();
-    }
+  if (print(one) != 3)
+    link_error ();
+  if (print(two) != 5)
+    link_error ();
   return 0;
 }

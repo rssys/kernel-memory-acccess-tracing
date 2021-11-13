@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -38,11 +38,8 @@ pragma Elaborate_All (Ada.Containers.Hash_Tables.Generic_Keys);
 with Ada.Containers.Helpers; use Ada.Containers.Helpers;
 
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Hashed_Maps with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Hashed_Maps is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -115,13 +112,6 @@ is
    ---------
    -- "=" --
    ---------
-
-   function "=" (Left, Right : Cursor) return Boolean is
-   begin
-      return
-       Left.Container = Right.Container
-         and then Left.Node = Right.Node;
-   end "=";
 
    function "=" (Left, Right : Map) return Boolean is
    begin
@@ -223,7 +213,7 @@ is
            (Element => Position.Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -248,7 +238,7 @@ is
            (Element => Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -324,8 +314,6 @@ is
 
    procedure Delete (Container : in out Map; Position : in out Cursor) is
    begin
-      TC_Check (Container.HT.TC);
-
       if Checks and then Position.Node = null then
          raise Constraint_Error with
            "Position cursor of Delete equals No_Element";
@@ -337,14 +325,14 @@ is
            "Position cursor of Delete designates wrong map";
       end if;
 
+      TC_Check (Container.HT.TC);
+
       pragma Assert (Vet (Position), "bad cursor in Delete");
 
       HT_Ops.Delete_Node_Sans_Free (Container.HT, Position.Node);
 
       Free (Position.Node);
       Position.Container := null;
-      Position.Position := No_Element.Position;
-      pragma Assert (Position = No_Element);
    end Delete;
 
    -------------
@@ -375,17 +363,6 @@ is
 
       return Position.Node.Element;
    end Element;
-
-   -----------
-   -- Empty --
-   -----------
-
-   function Empty (Capacity : Count_Type := 1000) return Map is
-   begin
-      return Result : Map do
-         Reserve_Capacity (Result, Capacity);
-      end return;
-   end Empty;
 
    -------------------------
    -- Equivalent_Key_Node --
@@ -485,8 +462,7 @@ is
          return No_Element;
       end if;
 
-      return Cursor'
-        (Container'Unrestricted_Access, Node, HT_Ops.Index (HT, Node));
+      return Cursor'(Container'Unrestricted_Access, Node, Hash_Type'Last);
    end Find;
 
    --------------------
@@ -643,11 +619,6 @@ is
       end if;
 
       Position.Container := Container'Unrestricted_Access;
-
-      --  Note that we do not set the Position component of the cursor,
-      --  because it may become incorrect on subsequent insertions/deletions
-      --  from the container. This will lose some optimizations but prevents
-      --  anomalies when the underlying hash-table is expanded or shrunk.
    end Insert;
 
    procedure Insert
@@ -865,7 +836,7 @@ is
         Container.HT.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -896,36 +867,6 @@ is
          Process (K, E);
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Map)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-
-      procedure Put_Key_Value (Position : Cursor);
-      procedure Put_Key_Value (Position : Cursor) is
-      begin
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Key_Type'Put_Image (S, Key (Position));
-         Put_Arrow (S);
-         Element_Type'Put_Image (S, Element (Position));
-      end Put_Key_Value;
-
-   begin
-      Array_Before (S);
-      Iterate (V, Put_Key_Value'Access);
-      Array_After (S);
-   end Put_Image;
 
    ----------
    -- Read --
@@ -996,7 +937,7 @@ is
            (Element => Position.Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -1021,7 +962,7 @@ is
            (Element => Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -1058,12 +999,12 @@ is
       Node : constant Node_Access := Key_Ops.Find (Container.HT, Key);
 
    begin
-      TE_Check (Container.HT.TC);
-
       if Checks and then Node = null then
          raise Constraint_Error with
            "attempt to replace key not in map";
       end if;
+
+      TE_Check (Container.HT.TC);
 
       Node.Key := Key;
       Node.Element := New_Item;
@@ -1079,8 +1020,6 @@ is
       New_Item  : Element_Type)
    is
    begin
-      TE_Check (Position.Container.HT.TC);
-
       if Checks and then Position.Node = null then
          raise Constraint_Error with
            "Position cursor of Replace_Element equals No_Element";
@@ -1091,6 +1030,8 @@ is
          raise Program_Error with
            "Position cursor of Replace_Element designates wrong map";
       end if;
+
+      TE_Check (Position.Container.HT.TC);
 
       pragma Assert (Vet (Position), "bad cursor in Replace_Element");
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -41,11 +41,8 @@ pragma Elaborate_All
   (Ada.Containers.Red_Black_Trees.Generic_Bounded_Set_Operations);
 
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Bounded_Ordered_Sets with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Bounded_Ordered_Sets is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -377,9 +374,7 @@ is
 
    procedure Clear (Container : in out Set) is
    begin
-      while not Container.Is_Empty loop
-         Container.Delete_Last;
-      end loop;
+      Tree_Operations.Clear_Tree (Container);
    end Clear;
 
    -----------
@@ -420,10 +415,10 @@ is
            Container.TC'Unrestricted_Access;
       begin
          return R : constant Constant_Reference_Type :=
-           (Element => N.Element'Unchecked_Access,
+           (Element => N.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -445,12 +440,15 @@ is
    ----------
 
    function Copy (Source : Set; Capacity : Count_Type := 0) return Set is
-      C : constant Count_Type :=
-        (if Capacity = 0 then Source.Length
-         else Capacity);
+      C : Count_Type;
+
    begin
-      if Checks and then C < Source.Length then
-         raise Capacity_Error with "Capacity too small";
+      if Capacity = 0 then
+         C := Source.Length;
+      elsif Capacity >= Source.Length then
+         C := Capacity;
+      elsif Checks then
+         raise Capacity_Error with "Capacity value too small";
       end if;
 
       return Target : Set (Capacity => C) do
@@ -464,8 +462,6 @@ is
 
    procedure Delete (Container : in out Set; Position : in out Cursor) is
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Position.Node = 0 then
          raise Constraint_Error with "Position cursor equals No_Element";
       end if;
@@ -474,6 +470,8 @@ is
       then
          raise Program_Error with "Position cursor designates wrong set";
       end if;
+
+      TC_Check (Container.TC);
 
       pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Delete");
@@ -548,17 +546,6 @@ is
 
       return Position.Container.Nodes (Position.Node).Element;
    end Element;
-
-   -----------
-   -- Empty --
-   -----------
-
-   function Empty (Capacity : Count_Type := 10) return Set is
-   begin
-      return Result : Set (Capacity) do
-         null;
-      end return;
-   end Empty;
 
    -------------------------
    -- Equivalent_Elements --
@@ -752,10 +739,10 @@ is
               Container.TC'Unrestricted_Access;
          begin
             return R : constant Constant_Reference_Type :=
-              (Element => N.Element'Unchecked_Access,
+              (Element => N.Element'Access,
                Control => (Controlled with TC))
             do
-               Busy (TC.all);
+               Lock (TC.all);
             end return;
          end;
       end Constant_Reference;
@@ -908,7 +895,7 @@ is
       -- Read --
       ----------
 
-      procedure Read
+      procedure  Read
         (Stream : not null access Root_Stream_Type'Class;
          Item   : out Reference_Type)
       is
@@ -943,15 +930,15 @@ is
             N : Node_Type renames Container.Nodes (Position.Node);
          begin
             return R : constant Reference_Type :=
-                         (Element => N.Element'Unchecked_Access,
+                         (Element => N.Element'Access,
                           Control =>
                             (Controlled with
                               Container.TC'Unrestricted_Access,
-                              Container => Container'Unchecked_Access,
+                              Container => Container'Access,
                               Pos       => Position,
                               Old_Key   => new Key_Type'(Key (Position))))
             do
-               Busy (Container.TC);
+               Lock (Container.TC);
             end return;
          end;
       end Reference_Preserving_Key;
@@ -971,15 +958,15 @@ is
             N : Node_Type renames Container.Nodes (Node);
          begin
             return R : constant Reference_Type :=
-                         (Element => N.Element'Unchecked_Access,
+                         (Element => N.Element'Access,
                           Control =>
                             (Controlled with
                               Container.TC'Unrestricted_Access,
-                              Container => Container'Unchecked_Access,
+                              Container => Container'Access,
                                Pos      => Find (Container, Key),
                                Old_Key  => new Key_Type'(Key)))
             do
-               Busy (Container.TC);
+               Lock (Container.TC);
             end return;
          end;
       end Reference_Preserving_Key;
@@ -1612,7 +1599,7 @@ is
         Container.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -1639,31 +1626,6 @@ is
          Process (S.Nodes (Position.Node).Element);
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Set)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-   begin
-      Array_Before (S);
-
-      for X of V loop
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Element_Type'Put_Image (S, X);
-      end loop;
-
-      Array_After (S);
-   end Put_Image;
 
    ----------
    -- Read --
@@ -1721,12 +1683,12 @@ is
       Node : constant Count_Type := Element_Keys.Find (Container, New_Item);
 
    begin
-      TE_Check (Container.TC);
-
       if Checks and then Node = 0 then
          raise Constraint_Error with
            "attempt to replace element not in set";
       end if;
+
+      TE_Check (Container.TC);
 
       Container.Nodes (Node).Element := New_Item;
    end Replace;

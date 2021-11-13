@@ -1,5 +1,6 @@
 /* { dg-do compile { target c99_runtime } } */
-/* { dg-options "-O2 -fdump-ipa-icf-optimized"  } */
+/* { dg-options "-O2 -fdump-ipa-icf"  } */
+/* { dg-add-options c99_runtime } */
 
 #include <complex.h>
 
@@ -50,5 +51,5 @@ int main()
   return 1;
 }
 
-/* { dg-final { scan-ipa-dump "Semantic equality hit:f1/\[0-9+\]+->f2/\[0-9+\]+" "icf"  } } */
+/* { dg-final { scan-ipa-dump "Semantic equality hit:f1->f2" "icf"  } } */
 /* { dg-final { scan-ipa-dump "Equal symbols: 1" "icf"  } } */

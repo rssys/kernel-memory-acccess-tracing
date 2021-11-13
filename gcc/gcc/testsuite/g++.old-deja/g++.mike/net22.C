@@ -5,11 +5,10 @@ public:
   Parent( char *s ) {}
 };
 
-class Child : public Parent {		// { dg-message "note" "" { target c++17_down } } called
+class Child : public Parent {		// { dg-message "note" } called
 };
 
 int main() {
-  Child c( "String initializer" );	// { dg-error "match" "" { target c++17_down } } bad
-// { dg-error "forbids converting a string constant" "" { target c++2a } .-1 }
+  Child c( "String initializer" );	// { dg-error "match" } bad
   return 0;
 }

@@ -8,7 +8,7 @@ int *bar(void);
 void f1(void)
 {
   #pragma omp atomic
-    a[3] += 1;
+    a[4] += 1;
   #pragma omp atomic
     *p += 1;
   #pragma omp atomic

@@ -1,6 +1,6 @@
-/* Exercise an invalid acc_present_or_create.  */
+/* Exercise an invalid acc_present_or_create on nvidia targets.  */
 
-/* { dg-skip-if "" { *-*-* } { "*" } { "-DACC_MEM_SHARED=0" } } */
+/* { dg-do run { target openacc_nvidia_accel_selected } } */
 
 #include <stdio.h>
 #include <stdlib.h>

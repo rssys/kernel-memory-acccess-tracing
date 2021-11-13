@@ -1,5 +1,4 @@
 /* { dg-add-options stack_size } */
-/* { dg-require-stack-size "[dg-effective-target-value stack_size]*2" } */
 
 void
 bcopy1 (s, d, c)

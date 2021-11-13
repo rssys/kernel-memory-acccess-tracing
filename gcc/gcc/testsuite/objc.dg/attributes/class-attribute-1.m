@@ -1,5 +1,4 @@
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 /* Test deprecate attribute with an @interface declaration.  */
 

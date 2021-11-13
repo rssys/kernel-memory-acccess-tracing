@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2021, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2018, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -126,7 +126,7 @@ extern tree make_aligning_type (tree type, unsigned int align, tree size,
    MAX_ALIGN alignment if the value is non-zero.  If so, return the new
    type; if not, return the original type.  */
 extern tree make_packable_type (tree type, bool in_record,
-				unsigned int max_align);
+				unsigned int max_align = 0);
 
 /* Given a type TYPE, return a new type whose size is appropriate for SIZE.
    If TYPE is the best type, return it.  Otherwise, make a new type.  We
@@ -138,12 +138,14 @@ extern tree make_type_from_size (tree type, tree size_tree, bool for_biased);
    if needed.  We have already verified that SIZE and ALIGN are large enough.
    GNAT_ENTITY is used to name the resulting record and to issue a warning.
    IS_COMPONENT_TYPE is true if this is being done for the component type of
-   an array.  DEFINITION is true if this type is being defined.  SET_RM_SIZE
-   is true if the RM size of the resulting type is to be set to SIZE too; in
-   this case, the padded type is canonicalized before being returned.  */
+   an array.  IS_USER_TYPE is true if the original type needs to be completed.
+   DEFINITION is true if this type is being defined.  SET_RM_SIZE is true if
+   the RM size of the resulting type is to be set to SIZE too; in this case,
+   the padded type is canonicalized before being returned.  */
 extern tree maybe_pad_type (tree type, tree size, unsigned int align,
 			    Entity_Id gnat_entity, bool is_component_type,
-			    bool definition, bool set_rm_size);
+			    bool is_user_type, bool definition,
+			    bool set_rm_size);
 
 /* Return true if padded TYPE was built with an RM size.  */
 extern bool pad_type_has_rm_size (tree type);
@@ -233,24 +235,24 @@ extern "C" {
    structures and then generates code.  */
 extern void gigi (Node_Id gnat_root,
 	          int max_gnat_node,
-		  int number_name,
-		  Node_Header *node_offsets_ptr,
-		  any_slot *slots_ptr,
+                  int number_name,
+		  struct Node *nodes_ptr,
+		  struct Flags *Flags_Ptr,
 		  Node_Id *next_node_ptr,
 		  Node_Id *prev_node_ptr,
 		  struct Elist_Header *elists_ptr,
-		  struct Elmt_Item *elmts_ptr,
-		  struct String_Entry *strings_ptr,
-		  Char_Code *strings_chars_ptr,
-		  struct List_Header *list_headers_ptr,
-		  Nat number_file,
-		  struct File_Info_Type *file_info_ptr,
-		  Entity_Id standard_boolean,
-		  Entity_Id standard_integer,
-		  Entity_Id standard_character,
-		  Entity_Id standard_long_long_float,
-		  Entity_Id standard_exception_type,
-		  Int gigi_operating_mode);
+                  struct Elmt_Item *elmts_ptr,
+                  struct String_Entry *strings_ptr,
+                  Char_Code *strings_chars_ptr,
+                  struct List_Header *list_headers_ptr,
+                  Nat number_file,
+                  struct File_Info_Type *file_info_ptr,
+                  Entity_Id standard_boolean,
+                  Entity_Id standard_integer,
+                  Entity_Id standard_character,
+                  Entity_Id standard_long_long_float,
+                  Entity_Id standard_exception_type,
+                  Int gigi_operating_mode);
 
 #ifdef __cplusplus
 }
@@ -325,7 +327,7 @@ extern int double_scalar_alignment;
 
 /* True if floating-point arithmetics may use wider intermediate results.  */
 extern bool fp_arith_may_widen;
-
+
 /* Data structures used to represent attributes.  */
 
 enum attrib_type
@@ -390,14 +392,11 @@ enum standard_datatypes
   /* Function decl node for 64-bit multiplication with overflow checking.  */
   ADT_mulv64_decl,
 
-  /* Function decl node for 128-bit multiplication with overflow checking.  */
-  ADT_mulv128_decl,
-
   /* Identifier for the name of the _Parent field in tagged record types.  */
   ADT_parent_name_id,
 
-  /* Identifier for the name of the Not_Handled_By_Others field.  */
-  ADT_not_handled_by_others_name_id,
+  /* Identifier for the name of the Exception_Data type.  */
+  ADT_exception_data_name_id,
 
   /* Types and decls used by the SJLJ exception mechanism.  */
   ADT_jmpbuf_type,
@@ -465,10 +464,8 @@ extern GTY(()) tree gnat_raise_decls_ext[(int) LAST_REASON_CODE + 1];
 #define free_decl gnat_std_decls[(int) ADT_free_decl]
 #define realloc_decl gnat_std_decls[(int) ADT_realloc_decl]
 #define mulv64_decl gnat_std_decls[(int) ADT_mulv64_decl]
-#define mulv128_decl gnat_std_decls[(int) ADT_mulv128_decl]
 #define parent_name_id gnat_std_decls[(int) ADT_parent_name_id]
-#define not_handled_by_others_name_id \
-	  gnat_std_decls[(int) ADT_not_handled_by_others_name_id]
+#define exception_data_name_id gnat_std_decls[(int) ADT_exception_data_name_id]
 #define jmpbuf_type gnat_std_decls[(int) ADT_jmpbuf_type]
 #define jmpbuf_ptr_type gnat_std_decls[(int) ADT_jmpbuf_ptr_type]
 #define get_jmpbuf_decl gnat_std_decls[(int) ADT_get_jmpbuf_decl]
@@ -838,14 +835,9 @@ extern tree get_base_type (tree type);
    in bits.  If we don't know anything about the alignment, return 0.  */
 extern unsigned int known_alignment (tree exp);
 
-/* Return true if TYPE, an aggregate type, contains (or is) an array.
-   If SELF_REFERENTIAL is true, then an additional requirement on the
-   array is that it be self-referential.  */
-extern bool aggregate_type_contains_array_p (tree type, bool self_referential);
-
 /* Return true if VALUE is a multiple of FACTOR. FACTOR must be a power
    of 2.  */
-extern bool value_factor_p (tree value, unsigned HOST_WIDE_INT factor);
+extern bool value_factor_p (tree value, HOST_WIDE_INT factor);
 
 /* Build an atomic load for the underlying atomic object in SRC.  SYNC is
    true if the load requires synchronization.  */
@@ -1026,9 +1018,6 @@ extern Entity_Id get_debug_scope (Node_Id gnat_node, bool *is_subprogram);
    should be synchronized with Exp_Dbug.Debug_Renaming_Declaration.  */
 extern bool can_materialize_object_renaming_p (Node_Id expr);
 
-/* Return the size of TYPE, which must be a positive power of 2.  */
-extern unsigned int resolve_atomic_size (tree type);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1043,7 +1032,6 @@ extern Pos get_target_short_size (void);
 extern Pos get_target_int_size (void);
 extern Pos get_target_long_size (void);
 extern Pos get_target_long_long_size (void);
-extern Pos get_target_long_long_long_size (void);
 extern Pos get_target_pointer_size (void);
 extern Pos get_target_maximum_default_alignment (void);
 extern Pos get_target_system_allocator_alignment (void);
@@ -1066,11 +1054,19 @@ extern void enumerate_modes (void (*f) (const char *, int, int, int, int, int,
 }
 #endif
 
-/* Use gigi_checking_assert to test invariants in code generation mode.
-   It's effective only if the compiler is configured with more checking
-   than the release mode and can be disabled by means of -fchecking.  */
-#define gigi_checking_assert(EXPR) \
-  gcc_checking_assert ((EXPR) || type_annotate_only)
+/* If EXP's type is a VECTOR_TYPE, return EXP converted to the associated
+   TYPE_REPRESENTATIVE_ARRAY.  */
+
+static inline tree
+maybe_vector_array (tree exp)
+{
+  tree etype = TREE_TYPE (exp);
+
+  if (VECTOR_TYPE_P (etype))
+    exp = convert (TYPE_REPRESENTATIVE_ARRAY (etype), exp);
+
+  return exp;
+}
 
 /* Return the smallest power of 2 larger than X.  */
 
@@ -1137,41 +1133,12 @@ gnat_signed_type_for (tree type_node)
   return gnat_signed_or_unsigned_type_for (0, type_node);
 }
 
-/* Like build_qualified_type, but TYPE_QUALS is added to the existing
-   qualifiers on TYPE.  */
-
-static inline tree
-change_qualified_type (tree type, int type_quals)
-{
-  /* Qualifiers must be put on the associated array type.  */
-  if (TREE_CODE (type) == UNCONSTRAINED_ARRAY_TYPE)
-    return type;
-
-  return build_qualified_type (type, TYPE_QUALS (type) | type_quals);
-}
-
-/* If EXPR's type is a VECTOR_TYPE, return EXPR converted to the associated
-   TYPE_REPRESENTATIVE_ARRAY.  */
-
-static inline tree
-maybe_vector_array (tree expr)
-{
-  tree type = TREE_TYPE (expr);
-
-  if (VECTOR_TYPE_P (type))
-    expr = convert (TYPE_REPRESENTATIVE_ARRAY (type), expr);
-
-  return expr;
-}
-
 /* Adjust the character type TYPE if need be.  */
 
 static inline tree
 maybe_character_type (tree type)
 {
-  if (TREE_CODE (type) == INTEGER_TYPE
-      && TYPE_STRING_FLAG (type)
-      && !TYPE_UNSIGNED (type))
+  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
     type = gnat_unsigned_type_for (type);
 
   return type;
@@ -1184,9 +1151,7 @@ maybe_character_value (tree expr)
 {
   tree type = TREE_TYPE (expr);
 
-  if (TREE_CODE (type) == INTEGER_TYPE
-      && TYPE_STRING_FLAG (type)
-      && !TYPE_UNSIGNED (type))
+  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
     {
       type = gnat_unsigned_type_for (type);
       expr = convert (type, expr);
@@ -1206,31 +1171,15 @@ maybe_debug_type (tree type)
   return type;
 }
 
-/* Remove the padding around EXPR if need be.  */
+/* Like build_qualified_type, but TYPE_QUALS is added to the existing
+   qualifiers on TYPE.  */
 
 static inline tree
-maybe_padded_object (tree expr)
+change_qualified_type (tree type, int type_quals)
 {
-  tree type = TREE_TYPE (expr);
+  /* Qualifiers must be put on the associated array type.  */
+  if (TREE_CODE (type) == UNCONSTRAINED_ARRAY_TYPE)
+    return type;
 
-  if (TYPE_IS_PADDING_P (type))
-    expr = convert (TREE_TYPE (TYPE_FIELDS (type)), expr);
-
-  return expr;
-}
-
-/* Return the type of operand #0 of EXPR.  */
-
-static inline tree
-operand_type (tree expr)
-{
-  return TREE_TYPE (TREE_OPERAND (expr, 0));
-}
-
-/* Return the third value of a list.  */
-
-static inline tree
-list_third (tree list)
-{
-  return TREE_VALUE (TREE_CHAIN (TREE_CHAIN (list)));
+  return build_qualified_type (type, TYPE_QUALS (type) | type_quals);
 }

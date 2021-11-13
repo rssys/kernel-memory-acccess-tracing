@@ -1,9 +1,9 @@
 // { dg-do run }
-// { dg-additional-options "-pthread" { target pthread } }
+// { dg-options "-pthread"  }
 // { dg-require-effective-target c++11 }
-// { dg-require-gthreads "" }
+// { dg-require-effective-target pthread }
 
-// Copyright (C) 2013-2021 Free Software Foundation, Inc.
+// Copyright (C) 2013-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -49,26 +49,18 @@ struct clock
 std::timed_mutex mx;
 bool locked = false;
 
-template <typename ClockType>
 void f()
 {
-  locked = mx.try_lock_until(ClockType::now() + C::milliseconds(1));
-}
-
-template <typename ClockType>
-void test()
-{
-  std::lock_guard<std::timed_mutex> l(mx);
-  auto start = ClockType::now();
-  std::thread t(f<ClockType>);
-  t.join();
-  auto stop = ClockType::now();
-  VERIFY( (stop - start) < C::seconds(9) );
-  VERIFY( !locked );
+  locked = mx.try_lock_until(clock::now() + C::milliseconds(1));
 }
 
 int main()
 {
-  test<C::system_clock>();
-  test<C::steady_clock>();
+  std::lock_guard<std::timed_mutex> l(mx);
+  auto start = C::system_clock::now();
+  std::thread t(f);
+  t.join();
+  auto stop = C::system_clock::now();
+  VERIFY( (stop - start) < C::seconds(9) );
+  VERIFY( !locked );
 }

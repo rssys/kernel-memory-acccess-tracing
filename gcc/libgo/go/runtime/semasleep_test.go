@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !plan9 && !windows && !js
-// +build !plan9,!windows,!js
+//+build !nacl,!plan9,!windows,!js
 
 package runtime_test
 
 import (
+	"internal/testenv"
+	"io/ioutil"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -18,17 +21,39 @@ import (
 // shouldn't cause semasleep to retry with the same timeout which would
 // cause indefinite spinning.
 func TestSpuriousWakeupsNeverHangSemasleep(t *testing.T) {
-	if *flagQuick {
-		t.Skip("-quick")
-	}
-
-	exe, err := buildTestProg(t, "testprog")
+	testenv.MustHaveGoBuild(t)
+	tempDir, err := ioutil.TempDir("", "issue-27250")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to create the temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repro := `
+    package main
+
+    import "time"
+
+    func main() {
+        <-time.After(1 * time.Second)
+    }
+    `
+	mainPath := filepath.Join(tempDir, "main.go")
+	if err := ioutil.WriteFile(mainPath, []byte(repro), 0644); err != nil {
+		t.Fatalf("Failed to create temp file for repro.go: %v", err)
+	}
+	binaryPath := filepath.Join(tempDir, "binary")
+
+	// Build the binary so that we can send the signal to its PID.
+	out, err := exec.Command(testenv.GoToolPath(t), "build", "-o", binaryPath, mainPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to compile the binary: err: %v\nOutput: %s\n", err, out)
+	}
+	if err := os.Chmod(binaryPath, 0755); err != nil {
+		t.Fatalf("Failed to chmod binary: %v", err)
 	}
 
-	start := time.Now()
-	cmd := exec.Command(exe, "After1")
+	// Now run the binary.
+	cmd := exec.Command(binaryPath)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Failed to start command: %v", err)
 	}
@@ -56,9 +81,6 @@ func TestSpuriousWakeupsNeverHangSemasleep(t *testing.T) {
 		case err := <-doneCh:
 			if err != nil {
 				t.Fatalf("The program returned but unfortunately with an error: %v", err)
-			}
-			if time.Since(start) < 100*time.Millisecond {
-				t.Fatalf("The program stopped too quickly.")
 			}
 			return
 		}

@@ -11,7 +11,7 @@ template <class T> void f(A<T> *ap) {
 } 
 
 template <class T> void g(A<T> *ap) {
-  ap->~B(); 			// { dg-error "" }
+  ap->~B(); 			// { dg-error "destructor name" }
 } 
 
 int main()

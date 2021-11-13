@@ -1,5 +1,5 @@
 /* Output routines for CR16 processor.
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Contributed by KPIT Cummins Infosystems Limited.
   
    This file is part of GCC.
@@ -158,8 +158,6 @@ static void cr16_print_operand_address (FILE *, machine_mode, rtx);
 #define TARGET_CLASS_LIKELY_SPILLED_P	cr16_class_likely_spilled_p
 
 /* Passing function arguments.  */
-#undef TARGET_PUSH_ARGUMENT
-#define TARGET_PUSH_ARGUMENT		hook_bool_uint_true
 #undef TARGET_FUNCTION_ARG
 #define TARGET_FUNCTION_ARG 		cr16_function_arg
 #undef TARGET_FUNCTION_ARG_ADVANCE
@@ -369,7 +367,7 @@ cr16_compute_save_regs (void)
       /* If this reg is used and not call-used (except RA), save it.  */
       if (cr16_interrupt_function_p ())
 	{
-	  if (!crtl->is_leaf && call_used_or_fixed_reg_p (regno))
+	  if (!crtl->is_leaf && call_used_regs[regno])
 	    /* This is a volatile reg in a non-leaf interrupt routine - save 
 	       it for the sake of its sons.  */
 	    current_frame_info.save_regs[regno] = 1;
@@ -384,8 +382,7 @@ cr16_compute_save_regs (void)
 	{
 	  /* If this reg is used and not call-used (except RA), save it.  */
 	  if (df_regs_ever_live_p (regno)
-	      && (!call_used_or_fixed_reg_p (regno)
-		  || regno == RETURN_ADDRESS_REGNUM))
+	      && (!call_used_regs[regno] || regno == RETURN_ADDRESS_REGNUM))
 	    current_frame_info.save_regs[regno] = 1;
 	  else
 	    current_frame_info.save_regs[regno] = 0;
@@ -595,9 +592,10 @@ enough_regs_for_param (CUMULATIVE_ARGS * cum, const_tree type,
   return 0;
 }
 
-/* Implement TARGET_FUNCTION_ARG.  */
+/* Implements the macro FUNCTION_ARG defined in cr16.h.  */
 static rtx
-cr16_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
+cr16_function_arg (cumulative_args_t cum_v, machine_mode mode,
+		   const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   cum->last_parm_in_reg = 0;
@@ -606,20 +604,20 @@ cr16_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
      had their registers assigned. The rtx that function_arg returns from 
      this type is supposed to pass to 'gen_call' but currently it is not 
      implemented.  */
-  if (arg.end_marker_p ())
+  if (type == void_type_node)
     return NULL_RTX;
 
-  if (targetm.calls.must_pass_in_stack (arg) || (cum->ints < 0))
+  if (targetm.calls.must_pass_in_stack (mode, type) || (cum->ints < 0))
     return NULL_RTX;
 
-  if (arg.mode == BLKmode)
+  if (mode == BLKmode)
     {
       /* Enable structures that need padding bytes at the end to pass to a
          function in registers.  */
-      if (enough_regs_for_param (cum, arg.type, arg.mode) != 0)
+      if (enough_regs_for_param (cum, type, mode) != 0)
 	{
 	  cum->last_parm_in_reg = 1;
-	  return gen_rtx_REG (arg.mode, MIN_REG_FOR_PASSING_ARGS + cum->ints);
+	  return gen_rtx_REG (mode, MIN_REG_FOR_PASSING_ARGS + cum->ints);
 	}
     }
 
@@ -627,10 +625,10 @@ cr16_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
     return NULL_RTX;
   else
     {
-      if (enough_regs_for_param (cum, arg.type, arg.mode) != 0)
+      if (enough_regs_for_param (cum, type, mode) != 0)
 	{
 	  cum->last_parm_in_reg = 1;
-	  return gen_rtx_REG (arg.mode, MIN_REG_FOR_PASSING_ARGS + cum->ints);
+	  return gen_rtx_REG (mode, MIN_REG_FOR_PASSING_ARGS + cum->ints);
 	}
     }
 
@@ -663,34 +661,34 @@ cr16_init_cumulative_args (CUMULATIVE_ARGS * cum, tree fntype,
 
 /* Implements the macro FUNCTION_ARG_ADVANCE defined in cr16.h.  */
 static void
-cr16_function_arg_advance (cumulative_args_t cum_v,
-			   const function_arg_info &arg)
+cr16_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
+			   const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS * cum = get_cumulative_args (cum_v);
 
   /* l holds the number of registers required.  */
-  int l = GET_MODE_BITSIZE (arg.mode) / BITS_PER_WORD;
+  int l = GET_MODE_BITSIZE (mode) / BITS_PER_WORD;
 
   /* If the parameter isn't passed on a register don't advance cum.  */
   if (!cum->last_parm_in_reg)
     return;
 
-  if (targetm.calls.must_pass_in_stack (arg) || (cum->ints < 0))
+  if (targetm.calls.must_pass_in_stack (mode, type) || (cum->ints < 0))
     return;
 
-  if ((arg.mode == SImode) || (arg.mode == HImode)
-      || (arg.mode == QImode) || (arg.mode == DImode))
+  if ((mode == SImode) || (mode == HImode)
+      || (mode == QImode) || (mode == DImode))
     {
       if (l <= 1)
 	cum->ints += 1;
       else
 	cum->ints += l;
     }
-  else if ((arg.mode == SFmode) || (arg.mode == DFmode))
+  else if ((mode == SFmode) || (mode == DFmode))
     cum->ints += l;
-  else if (arg.mode == BLKmode)
+  else if ((mode) == BLKmode)
     {
-      if ((l = enough_regs_for_param (cum, arg.type, arg.mode)) != 0)
+      if ((l = enough_regs_for_param (cum, type, mode)) != 0)
 	cum->ints += l;
     }
   return;
@@ -2095,6 +2093,37 @@ cr16_legitimate_constant_p (machine_mode mode ATTRIBUTE_UNUSED,
 			    rtx x ATTRIBUTE_UNUSED)
 {
   return 1;
+}
+
+void
+notice_update_cc (rtx exp)
+{
+  if (GET_CODE (exp) == SET)
+    {
+      /* Jumps do not alter the cc's.  */
+      if (SET_DEST (exp) == pc_rtx)
+	return;
+
+      /* Moving register or memory into a register:
+         it doesn't alter the cc's, but it might invalidate
+         the RTX's which we remember the cc's came from.
+         (Note that moving a constant 0 or 1 MAY set the cc's).  */
+      if (REG_P (SET_DEST (exp))
+	  && (REG_P (SET_SRC (exp)) || GET_CODE (SET_SRC (exp)) == MEM))
+	{
+	  return;
+	}
+
+      /* Moving register into memory doesn't alter the cc's.
+         It may invalidate the RTX's which we remember the cc's came from.  */
+      if (GET_CODE (SET_DEST (exp)) == MEM && REG_P (SET_SRC (exp)))
+	{
+	  return;
+	}
+    }
+
+  CC_STATUS_INIT;
+  return;
 }
 
 static scalar_int_mode

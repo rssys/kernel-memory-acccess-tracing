@@ -1,5 +1,5 @@
 ;; Machine description of the Synopsys DesignWare ARC cpu for GNU C compiler
-;; Copyright (C) 2007-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
 
 ;; This file is part of GCC.
 
@@ -174,7 +174,7 @@
 							  (parallel [(match_operand:SI 2 "immediate_operand" "L")])))
 			   (match_operand:SI 3 "immediate_operand" "P"))))]
  "TARGET_SIMD_SET"
- "vld128\\t%0,[i%2,%3]"
+ "vld128 %0, [i%2, %3]"
  [(set_attr "type" "simd_vload128")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")]
@@ -186,7 +186,7 @@
 			   (match_operand:SI 2 "immediate_operand" "P")))
 	(match_operand:V8HI 3 "vector_register_operand" "=v"))]
  "TARGET_SIMD_SET"
- "vst128\\t%3,[i%1,%2]"
+ "vst128 %3, [i%1, %2]"
  [(set_attr "type" "simd_vstore")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")]
@@ -204,7 +204,7 @@
 	 (match_operand:V8HI 3 "vector_register_operand" "=v")
 	 (parallel [(const_int 0) (const_int 1) (const_int 2) (const_int 3)])))]
  "TARGET_SIMD_SET"
- "vst64\\t%3,[i%1,%2]"
+ "vst64 %3, [i%1, %2]"
  [(set_attr "type" "simd_vstore")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")]
@@ -215,9 +215,9 @@
 	(match_operand:V8HI 1 "vector_register_or_memory_operand" "m,v,v"))]
   "TARGET_SIMD_SET && !(GET_CODE (operands[0]) == MEM && GET_CODE(operands[1]) == MEM)"
   "@
-    vld128r\\t%0,%1
-    vst128r\\t%1,%0
-    vmvzw\\t%0,%1,0xffff"
+    vld128r %0, %1
+    vst128r %1, %0
+    vmvzw %0,%1,0xffff"
   [(set_attr "type" "simd_vload128,simd_vstore,simd_vmove_else_zero")
    (set_attr "length" "8,8,4")
    (set_attr "cond" "nocond, nocond, nocond")])
@@ -227,21 +227,55 @@
 	(match_operand:TI 1 "vector_register_or_memory_operand" "m,v,v"))]
   ""
   "@
-    vld128r\\t%0,%1
-    vst128r\\t%1,%0
-    vmvzw\\t%0,%1,0xffff"
+    vld128r %0, %1
+    vst128r %1, %0
+    vmvzw %0,%1,0xffff"
   [(set_attr "type" "simd_vload128,simd_vstore,simd_vmove_else_zero")
    (set_attr "length" "8,8,4")
    (set_attr "cond" "nocond, nocond, nocond")])
+
+;; (define_insn "*movv8hi_insn_rr"
+;;   [(set (match_operand:V8HI 0 "vector_register_operand" "=v")
+;; 	(match_operand:V8HI 1 "vector_register_operand" "v"))]
+;;   ""
+;;   "mov reg,reg"
+;;   [(set_attr "length" "8")
+;;   (set_attr "type" "move")])
+
+;; (define_insn "*movv8_out"
+;;   [(set (match_operand:V8HI 0 "memory_operand" "=m")
+;; 	(match_operand:V8HI 1 "vector_register_operand" "v"))]
+;;   ""
+;;   "mov out"
+;;   [(set_attr "length" "8")
+;;   (set_attr "type" "move")])
+
+
+;; (define_insn "addv8hi3"
+;;   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
+;; 	(plus:V8HI (match_operand:V8HI 1 "vector_register_operand"  "v")
+;; 		   (match_operand:V8HI 2 "vector_register_operand" "v")))]
+;;   "TARGET_SIMD_SET"
+;;   "vaddw %0, %1, %2"
+;;   [(set_attr "length" "8")
+;;    (set_attr "cond" "nocond")])
+
+;; (define_insn "vaddw_insn"
+;;   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
+;; 	(unspec [(match_operand:V8HI 1 "vector_register_operand"  "v")
+;; 			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VADDW))]
+;;   "TARGET_SIMD_SET"
+;;   "vaddw %0, %1, %2"
+;;   [(set_attr "length" "8")
+;;    (set_attr "cond" "nocond")])
 
 ;; V V V Insns
 (define_insn "vaddaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VADDAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VADDAW))]
   "TARGET_SIMD_SET"
-  "vaddaw\\t%0,%1,%2"
+  "vaddaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -249,10 +283,9 @@
 (define_insn "vaddw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VADDW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VADDW))]
   "TARGET_SIMD_SET"
-  "vaddw\\t%0,%1,2"
+  "vaddw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -260,10 +293,9 @@
 (define_insn "vavb_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VAVB))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VAVB))]
   "TARGET_SIMD_SET"
-  "vavb\\t%0,%1,%2"
+  "vavb %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -271,10 +303,9 @@
 (define_insn "vavrb_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VAVRB))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VAVRB))]
   "TARGET_SIMD_SET"
-  "vavrb\\t%0,%1,%2"
+  "vavrb %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -282,10 +313,9 @@
 (define_insn "vdifaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VDIFAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VDIFAW))]
   "TARGET_SIMD_SET"
-  "vdifaw\\t%0,%1,%2"
+  "vdifaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -293,10 +323,9 @@
 (define_insn "vdifw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VDIFW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VDIFW))]
   "TARGET_SIMD_SET"
-  "vdifw\\t%0,%1,%2"
+  "vdifw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -304,10 +333,9 @@
 (define_insn "vmaxaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMAXAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMAXAW))]
   "TARGET_SIMD_SET"
-  "vmaxaw\\t%0,%1,2"
+  "vmaxaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -315,10 +343,9 @@
 (define_insn "vmaxw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMAXW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMAXW))]
   "TARGET_SIMD_SET"
-  "vmaxw\\t%0,%1,%2"
+  "vmaxw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -326,10 +353,9 @@
 (define_insn "vminaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMINAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMINAW))]
   "TARGET_SIMD_SET"
-  "vminaw\\t%0,%1,%2"
+  "vminaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -337,10 +363,9 @@
 (define_insn "vminw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMINW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMINW))]
   "TARGET_SIMD_SET"
-  "vminw\\t%0,%1,%2"
+  "vminw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -348,10 +373,9 @@
 (define_insn "vmulaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMULAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMULAW))]
   "TARGET_SIMD_SET"
-  "vmulaw\\t%0,%1,%2"
+  "vmulaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -359,10 +383,9 @@
 (define_insn "vmulfaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMULFAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMULFAW))]
   "TARGET_SIMD_SET"
-  "vmulfaw\\t%0,%1,%2"
+  "vmulfaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -370,10 +393,9 @@
 (define_insn "vmulfw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMULFW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMULFW))]
   "TARGET_SIMD_SET"
-  "vmulfw\\t%0,%1,%2"
+  "vmulfw %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -381,10 +403,9 @@
 (define_insn "vmulw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMULW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMULW))]
   "TARGET_SIMD_SET"
-  "vmulw\\t%0,%1,%2"
+  "vmulw %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -392,10 +413,9 @@
 (define_insn "vsubaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VSUBAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VSUBAW))]
   "TARGET_SIMD_SET"
-  "vsubaw\\t%0,%1,%2"
+  "vsubaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -403,10 +423,9 @@
 (define_insn "vsubw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VSUBW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VSUBW))]
   "TARGET_SIMD_SET"
-  "vsubw\\t%0,%1,%2"
+  "vsubw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -414,10 +433,9 @@
 (define_insn "vsummw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VSUMMW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VSUMMW))]
   "TARGET_SIMD_SET"
-  "vsummw\\t%0,%1,%2"
+  "vsummw %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -425,10 +443,9 @@
 (define_insn "vand_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VAND))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VAND))]
   "TARGET_SIMD_SET"
-  "vand\\t%0,%1,%2"
+  "vand %0, %1, %2"
   [(set_attr "type" "simd_vlogic")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -436,10 +453,9 @@
 (define_insn "vandaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VANDAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VANDAW))]
   "TARGET_SIMD_SET"
-  "vandaw\\t%0,%1,%2"
+  "vandaw %0, %1, %2"
   [(set_attr "type" "simd_vlogic_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -447,10 +463,9 @@
 (define_insn "vbic_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VBIC))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VBIC))]
   "TARGET_SIMD_SET"
-  "vbic\\t%0,%1,%2"
+  "vbic %0, %1, %2"
   [(set_attr "type" "simd_vlogic")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -458,10 +473,9 @@
 (define_insn "vbicaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VBICAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VBICAW))]
   "TARGET_SIMD_SET"
-  "vbicaw\\t%0,%1,%2"
+  "vbicaw %0, %1, %2"
   [(set_attr "type" "simd_vlogic_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -469,10 +483,9 @@
 (define_insn "vor_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VOR))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VOR))]
   "TARGET_SIMD_SET"
-  "vor\\t%0,%1,%2"
+  "vor %0, %1, %2"
   [(set_attr "type" "simd_vlogic")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -480,10 +493,9 @@
 (define_insn "vxor_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VXOR))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VXOR))]
   "TARGET_SIMD_SET"
-  "vxor\\t%0,%1,%2"
+  "vxor %0, %1, %2"
   [(set_attr "type" "simd_vlogic")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -491,10 +503,9 @@
 (define_insn "vxoraw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VXORAW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VXORAW))]
   "TARGET_SIMD_SET"
-  "vxoraw\\t%0,%1,%2"
+  "vxoraw %0, %1, %2"
   [(set_attr "type" "simd_vlogic_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -502,10 +513,9 @@
 (define_insn "veqw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VEQW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VEQW))]
   "TARGET_SIMD_SET"
-  "veqw\\t%0,%1,%2"
+  "veqw %0, %1, %2"
   [(set_attr "type" "simd_vcompare")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -513,10 +523,9 @@
 (define_insn "vlew_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VLEW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VLEW))]
   "TARGET_SIMD_SET"
-  "vlew\\t%0,%1,%2"
+  "vlew %0, %1, %2"
   [(set_attr "type" "simd_vcompare")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -524,10 +533,9 @@
 (define_insn "vltw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VLTW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VLTW))]
   "TARGET_SIMD_SET"
-  "vltw\\t%0,%1,%2"
+  "vltw %0, %1, %2"
   [(set_attr "type" "simd_vcompare")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -535,10 +543,9 @@
 (define_insn "vnew_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VNEW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VNEW))]
   "TARGET_SIMD_SET"
-  "vnew\\t%0,%1,%2"
+  "vnew %0, %1, %2"
   [(set_attr "type" "simd_vcompare")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -546,10 +553,9 @@
 (define_insn "vmr1aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR1AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR1AW))]
   "TARGET_SIMD_SET"
-  "vmr1aw\\t%0,%1,%2"
+  "vmr1aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -557,10 +563,9 @@
 (define_insn "vmr1w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR1W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR1W))]
   "TARGET_SIMD_SET"
-  "vmr1w\\t%0,%1,%2"
+  "vmr1w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -568,10 +573,9 @@
 (define_insn "vmr2aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR2AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR2AW))]
   "TARGET_SIMD_SET"
-  "vmr2aw\\t%0,%1,%2"
+  "vmr2aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -579,10 +583,9 @@
 (define_insn "vmr2w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR2W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR2W))]
   "TARGET_SIMD_SET"
-  "vmr2w\\t%0,%1,%2"
+  "vmr2w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -590,10 +593,9 @@
 (define_insn "vmr3aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR3AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR3AW))]
   "TARGET_SIMD_SET"
-  "vmr3aw\\t%0,%1,%2"
+  "vmr3aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -601,10 +603,9 @@
 (define_insn "vmr3w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR3W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR3W))]
   "TARGET_SIMD_SET"
-  "vmr3w\\t%0,%1,%2"
+  "vmr3w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -612,10 +613,9 @@
 (define_insn "vmr4aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR4AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR4AW))]
   "TARGET_SIMD_SET"
-  "vmr4aw\\t%0,%1,%2"
+  "vmr4aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -623,10 +623,9 @@
 (define_insn "vmr4w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR4W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR4W))]
   "TARGET_SIMD_SET"
-  "vmr4w\\t%0,%1,%2"
+  "vmr4w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -634,10 +633,9 @@
 (define_insn "vmr5aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR5AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR5AW))]
   "TARGET_SIMD_SET"
-  "vmr5aw\\t%0,%1,%2"
+  "vmr5aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -645,10 +643,9 @@
 (define_insn "vmr5w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR5W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR5W))]
   "TARGET_SIMD_SET"
-  "vmr5w\\t%0,%1,%2"
+  "vmr5w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -656,10 +653,9 @@
 (define_insn "vmr6aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR6AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR6AW))]
   "TARGET_SIMD_SET"
-  "vmr6aw\\t%0,%1,%2"
+  "vmr6aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -667,10 +663,9 @@
 (define_insn "vmr6w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR6W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR6W))]
   "TARGET_SIMD_SET"
-  "vmr6w\\t%0,%1,%2"
+  "vmr6w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -678,10 +673,9 @@
 (define_insn "vmr7aw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR7AW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR7AW))]
   "TARGET_SIMD_SET"
-  "vmr7aw\\t%0,%1,%2"
+  "vmr7aw %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -689,10 +683,9 @@
 (define_insn "vmr7w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMR7W))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMR7W))]
   "TARGET_SIMD_SET"
-  "vmr7w\\t%0,%1,%2"
+  "vmr7w %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -700,10 +693,9 @@
 (define_insn "vmrb_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VMRB))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VMRB))]
   "TARGET_SIMD_SET"
-  "vmrb\\t%0,%1,%2"
+  "vmrb %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -711,10 +703,9 @@
 (define_insn "vh264f_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VH264F))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VH264F))]
   "TARGET_SIMD_SET"
-  "vh264f\\t%0,%1,%2"
+  "vh264f %0, %1, %2"
   [(set_attr "type" "simd_vspecial_3cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -722,10 +713,9 @@
 (define_insn "vh264ft_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VH264FT))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VH264FT))]
   "TARGET_SIMD_SET"
-  "vh264ft\\t%0,%1,%2"
+  "vh264ft %0, %1, %2"
   [(set_attr "type" "simd_vspecial_3cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -733,10 +723,9 @@
 (define_insn "vh264fw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VH264FW))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VH264FW))]
   "TARGET_SIMD_SET"
-  "vh264fw\\t%0,%1,%2"
+  "vh264fw %0, %1, %2"
   [(set_attr "type" "simd_vspecial_3cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -744,10 +733,9 @@
 (define_insn "vvc1f_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VVC1F))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VVC1F))]
   "TARGET_SIMD_SET"
-  "vvc1f\\t%0,%1,%2"
+  "vvc1f %0, %1, %2"
   [(set_attr "type" "simd_vspecial_3cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -755,10 +743,9 @@
 (define_insn "vvc1ft_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:V8HI 2 "vector_register_operand" "v")]
-		     UNSPEC_ARC_SIMD_VVC1FT))]
+			 (match_operand:V8HI 2 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VVC1FT))]
   "TARGET_SIMD_SET"
-  "vvc1ft\\t%0,%1,%2"
+  "vvc1ft %0, %1, %2"
   [(set_attr "type" "simd_vspecial_3cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -767,13 +754,22 @@
 
 ;;---
 ;; V V r/limm Insns
+
+;; (define_insn "vbaddw_insn"
+;;   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
+;; 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
+;; 			      (match_operand:SI 2 "nonmemory_operand" "rCal")] UNSPEC_ARC_SIMD_VBADDW))]
+;;   "TARGET_SIMD_SET"
+;;   "vbaddw %0, %1, %2"
+;;   [(set_attr "length" "4")
+;;    (set_attr "cond" "nocond")])
+
 (define_insn "vbaddw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBADDW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBADDW))]
   "TARGET_SIMD_SET"
-  "vbaddw\\t%0,%1,%2"
+  "vbaddw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -781,10 +777,9 @@
 (define_insn "vbmaxw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBMAXW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBMAXW))]
   "TARGET_SIMD_SET"
-  "vbmaxw\\t%0,%1,%2"
+  "vbmaxw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -792,10 +787,9 @@
 (define_insn "vbminw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBMINW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBMINW))]
   "TARGET_SIMD_SET"
-  "vbminw\\t%0,%1,%2"
+  "vbminw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -803,10 +797,9 @@
 (define_insn "vbmulaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBMULAW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBMULAW))]
   "TARGET_SIMD_SET"
-  "vbmulaw\\t%0,%1,%2"
+  "vbmulaw %0, %1, %2"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -814,10 +807,9 @@
 (define_insn "vbmulfw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBMULFW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBMULFW))]
   "TARGET_SIMD_SET"
-  "vbmulfw\\t%0,%1,%2"
+  "vbmulfw %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -825,10 +817,9 @@
 (define_insn "vbmulw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBMULW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBMULW))]
   "TARGET_SIMD_SET"
-  "vbmulw\\t%0,%1,%2"
+  "vbmulw %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -836,10 +827,9 @@
 (define_insn "vbrsubw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBRSUBW))]
+		     (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBRSUBW))]
   "TARGET_SIMD_SET"
-  "vbrsubw\\t%0,%1,%2"
+  "vbrsubw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -847,10 +837,9 @@
 (define_insn "vbsubw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "nonmemory_operand" "r")]
-		     UNSPEC_ARC_SIMD_VBSUBW))]
+		      (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VBSUBW))]
   "TARGET_SIMD_SET"
-  "vbsubw\\t%0,%1,%2"
+  "vbsubw %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -860,10 +849,9 @@
 (define_insn "vasrrwi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VASRRWi))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VASRRWi))]
   "TARGET_SIMD_SET"
-  "vasrrwi\\t%0,%1,%2"
+  "vasrrwi %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -871,10 +859,9 @@
 (define_insn "vasrsrwi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VASRSRWi))]
+		     (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VASRSRWi))]
   "TARGET_SIMD_SET"
-  "vasrsrwi\\t%0,%1,%2"
+  "vasrsrwi %0, %1, %2"
   [(set_attr "type" "simd_varith_2cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -882,10 +869,9 @@
 (define_insn "vasrwi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VASRWi))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VASRWi))]
   "TARGET_SIMD_SET"
-  "vasrwi\\t%0,%1,%2"
+  "vasrwi %0, %1, %2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -893,10 +879,9 @@
 (define_insn "vasrpwbi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VASRPWBi))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VASRPWBi))]
   "TARGET_SIMD_SET"
-  "vasrpwbi\\t%0,%1,%2"
+  "vasrpwbi %0, %1, %2"
   [(set_attr "type" "simd_vpack")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -904,10 +889,9 @@
 (define_insn "vasrrpwbi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VASRRPWBi))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VASRRPWBi))]
   "TARGET_SIMD_SET"
-  "vasrrpwbi\\t%0,%1,%2"
+  "vasrrpwbi %0, %1, %2"
   [(set_attr "type" "simd_vpack")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -915,10 +899,9 @@
 (define_insn "vsr8awi_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VSR8AWi))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VSR8AWi))]
   "TARGET_SIMD_SET"
-  "vsr8awi\\t%0,%1,%2"
+  "vsr8awi %0, %1, %2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -926,10 +909,9 @@
 (define_insn "vsr8i_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "L")]
-		     UNSPEC_ARC_SIMD_VSR8i))]
+		      (match_operand:SI 2 "immediate_operand" "L")] UNSPEC_ARC_SIMD_VSR8i))]
   "TARGET_SIMD_SET"
-  "vsr8i\\t%0,%1,%2"
+  "vsr8i %0, %1, %2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -939,10 +921,9 @@
 (define_insn "vmvaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMVAW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMVAW))]
   "TARGET_SIMD_SET"
-  "vmvaw\\t%0,%1,%2"
+  "vmvaw %0, %1, %2"
   [(set_attr "type" "simd_vmove_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -950,10 +931,9 @@
 (define_insn "vmvw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMVW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMVW))]
   "TARGET_SIMD_SET"
-  "vmvw\\t%0,%1,%2"
+  "vmvw %0, %1, %2"
   [(set_attr "type" "simd_vmove")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -961,10 +941,9 @@
 (define_insn "vmvzw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMVZW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMVZW))]
   "TARGET_SIMD_SET"
-  "vmvzw\\t%0,%1,%2"
+  "vmvzw %0, %1, %2"
   [(set_attr "type" "simd_vmove_else_zero")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -972,10 +951,9 @@
 (define_insn "vd6tapf_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VD6TAPF))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VD6TAPF))]
   "TARGET_SIMD_SET"
-  "vd6tapf\\t%0,%1,%2"
+  "vd6tapf %0, %1, %2"
   [(set_attr "type" "simd_vspecial_4cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -984,10 +962,9 @@
 (define_insn "vmovaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:SI 1 "nonmemory_operand"  "r")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMOVAW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMOVAW))]
   "TARGET_SIMD_SET"
-  "vmovaw\\t%0,%1,%2"
+  "vmovaw %0, %1, %2"
   [(set_attr "type" "simd_vmove_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -995,10 +972,9 @@
 (define_insn "vmovw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:SI 1 "nonmemory_operand"  "r")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMOVW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMOVW))]
   "TARGET_SIMD_SET"
-  "vmovw\\t%0,%1,%2"
+  "vmovw %0, %1, %2"
   [(set_attr "type" "simd_vmove")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1006,10 +982,9 @@
 (define_insn "vmovzw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:SI 1 "nonmemory_operand"  "r")
-		      (match_operand:SI 2 "immediate_operand" "P")]
-		     UNSPEC_ARC_SIMD_VMOVZW))]
+		      (match_operand:SI 2 "immediate_operand" "P")] UNSPEC_ARC_SIMD_VMOVZW))]
   "TARGET_SIMD_SET"
-  "vmovzw\\t%0,%1,%2"
+  "vmovzw %0, %1, %2"
   [(set_attr "type" "simd_vmove_else_zero")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1019,10 +994,9 @@
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
 		      (match_operand:SI 2 "immediate_operand" "K")
-		      (match_operand:V8HI 3 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VSR8))]
+		      (match_operand:V8HI 3 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VSR8))]
   "TARGET_SIMD_SET"
-  "vsr8\\t%0,%1,i%2"
+  "vsr8 %0, %1, i%2"
   [(set_attr "type" "simd_valign")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1031,10 +1005,9 @@
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
 		      (match_operand:SI 2 "immediate_operand" "K")
-		      (match_operand:V8HI 3 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VASRW))]
+		      (match_operand:V8HI 3 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VASRW))]
   "TARGET_SIMD_SET"
-  "vasrw\\t%0,%1,i%2"
+  "vasrw %0, %1, i%2"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1043,10 +1016,9 @@
   [(set (match_operand:V8HI 0 "vector_register_operand"           "=v")
 	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")
 		      (match_operand:SI 2 "immediate_operand" "K")
-		      (match_operand:V8HI 3 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VSR8AW))]
+		      (match_operand:V8HI 3 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VSR8AW))]
   "TARGET_SIMD_SET"
-  "vsr8aw\\t%0,%1,i%2"
+  "vsr8aw %0, %1, i%2"
   [(set_attr "type" "simd_valign_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1054,110 +1026,99 @@
 ;; Va, Vb insns
 (define_insn "vabsaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VABSAW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VABSAW))]
   "TARGET_SIMD_SET"
-  "vabsaw\\t%0,%1"
+  "vabsaw %0, %1"
   [(set_attr "type" "simd_varith_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vabsw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VABSW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VABSW))]
   "TARGET_SIMD_SET"
-  "vabsw\\t%0,%1"
+  "vabsw %0, %1"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vaddsuw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VADDSUW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VADDSUW))]
   "TARGET_SIMD_SET"
-  "vaddsuw\\t%0,%1"
+  "vaddsuw %0, %1"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vsignw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VSIGNW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VSIGNW))]
   "TARGET_SIMD_SET"
-  "vsignw\\t%0,%1"
+  "vsignw %0, %1"
   [(set_attr "type" "simd_varith_1cycle")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vexch1_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VEXCH1))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VEXCH1))]
   "TARGET_SIMD_SET"
-  "vexch1\\t%0,%1"
+  "vexch1 %0, %1"
   [(set_attr "type" "simd_vpermute")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vexch2_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VEXCH2))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VEXCH2))]
   "TARGET_SIMD_SET"
-  "vexch2\\t%0,%1"
+  "vexch2 %0, %1"
   [(set_attr "type" "simd_vpermute")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vexch4_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VEXCH4))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VEXCH4))]
   "TARGET_SIMD_SET"
-  "vexch4\\t%0,%1"
+  "vexch4 %0, %1"
   [(set_attr "type" "simd_vpermute")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vupbaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VUPBAW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VUPBAW))]
   "TARGET_SIMD_SET"
-  "vupbaw\\t%0,%1"
+  "vupbaw %0, %1"
   [(set_attr "type" "simd_vpack_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vupbw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VUPBW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VUPBW))]
   "TARGET_SIMD_SET"
-  "vupbw\\t%0,%1"
+  "vupbw %0, %1"
   [(set_attr "type" "simd_vpack")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vupsbaw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VUPSBAW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VUPSBAW))]
   "TARGET_SIMD_SET"
-  "vupsbaw\\t%0,%1"
+  "vupsbaw %0, %1"
   [(set_attr "type" "simd_vpack_with_acc")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vupsbw_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand"  "=v")
-	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")]
-		     UNSPEC_ARC_SIMD_VUPSBW))]
+	(unspec:V8HI [(match_operand:V8HI 1 "vector_register_operand"  "v")] UNSPEC_ARC_SIMD_VUPSBW))]
   "TARGET_SIMD_SET"
-  "vupsbw\\t%0,%1"
+  "vupsbw %0, %1"
   [(set_attr "type" "simd_vpack")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1166,10 +1127,9 @@
 (define_insn "vdirun_insn"
   [(set (match_operand:SI 0 "arc_simd_dma_register_operand"           "=d")
 	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"  "r")
-			     (match_operand:SI 2 "nonmemory_operand" "r")]
-			    UNSPEC_ARC_SIMD_VDIRUN))]
+			     (match_operand:SI 2 "nonmemory_operand" "r")] UNSPEC_ARC_SIMD_VDIRUN))]
   "TARGET_SIMD_SET"
-  "vdirun\\t%1,%2"
+  "vdirun %1, %2"
   [(set_attr "type" "simd_dma")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1177,67 +1137,60 @@
 (define_insn "vdorun_insn"
   [(set (match_operand:SI 0 "arc_simd_dma_register_operand"              "=d")
 	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"     "r")
-			     (match_operand:SI 2 "nonmemory_operand"     "r")]
-			    UNSPEC_ARC_SIMD_VDORUN))]
+			     (match_operand:SI 2 "nonmemory_operand"     "r")] UNSPEC_ARC_SIMD_VDORUN))]
   "TARGET_SIMD_SET"
-  "vdorun\\t%1,%2"
+  "vdorun %1, %2"
   [(set_attr "type" "simd_dma")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vdiwr_insn"
   [(set (match_operand:SI 0 "arc_simd_dma_register_operand"           "=d,d")
-	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"  "r,Cal")]
-			    UNSPEC_ARC_SIMD_VDIWR))]
+	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"  "r,Cal")] UNSPEC_ARC_SIMD_VDIWR))]
   "TARGET_SIMD_SET"
-  "vdiwr\\t%0,%1"
+  "vdiwr %0, %1"
   [(set_attr "type" "simd_dma")
    (set_attr "length" "4,8")
    (set_attr "cond" "nocond,nocond")])
 
 (define_insn "vdowr_insn"
   [(set (match_operand:SI 0 "arc_simd_dma_register_operand"           "=d,d")
-	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"  "r,Cal")]
-			    UNSPEC_ARC_SIMD_VDOWR))]
+	(unspec_volatile:SI [(match_operand:SI 1 "nonmemory_operand"  "r,Cal")] UNSPEC_ARC_SIMD_VDOWR))]
   "TARGET_SIMD_SET"
-  "vdowr\\t%0,%1"
+  "vdowr %0, %1"
   [(set_attr "type" "simd_dma")
    (set_attr "length" "4,8")
    (set_attr "cond" "nocond,nocond")])
 
 ;; vector record and run instructions
 (define_insn "vrec_insn"
-  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")]
-		    UNSPEC_ARC_SIMD_VREC)]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")] UNSPEC_ARC_SIMD_VREC)]
   "TARGET_SIMD_SET"
-  "vrec\\t%0"
+  "vrec %0"
   [(set_attr "type" "simd_vcontrol")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vrun_insn"
-  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")]
-		    UNSPEC_ARC_SIMD_VRUN)]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")] UNSPEC_ARC_SIMD_VRUN)]
   "TARGET_SIMD_SET"
-  "vrun\\t%0"
+  "vrun %0"
   [(set_attr "type" "simd_vcontrol")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vrecrun_insn"
-  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")]
-		    UNSPEC_ARC_SIMD_VRECRUN)]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")] UNSPEC_ARC_SIMD_VRECRUN)]
   "TARGET_SIMD_SET"
-  "vrecrun\\t%0"
+  "vrecrun %0"
   [(set_attr "type" "simd_vcontrol")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vendrec_insn"
-  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")]
-		    UNSPEC_ARC_SIMD_VENDREC)]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "r")] UNSPEC_ARC_SIMD_VENDREC)]
   "TARGET_SIMD_SET"
-  "vendrec\\t%0"
+  "vendrec %0"
   [(set_attr "type" "simd_vcontrol")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1258,7 +1211,7 @@
 	  (parallel [(const_int 0) (const_int 1) (const_int 2) (const_int 3)])
 	  )))]
   "TARGET_SIMD_SET"
-  "vld32wh\\t%0,[i%3,%1]"
+  "vld32wh %0, [i%3,%1]"
   [(set_attr "type" "simd_vload")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1279,22 +1232,18 @@
 			     [(match_operand:SI 3 "immediate_operand" "L")]))
 	     ))))))]
   "TARGET_SIMD_SET"
-  "vld32wl\\t%0,[i%3,%1]"
+  "vld32wl %0, [i%3,%1]"
   [(set_attr "type" "simd_vload")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vld64w_insn"
   [(set (match_operand:V8HI 0 "vector_register_operand" "=v")
-	(zero_extend:V8HI
-	 (mem:V4HI
-	  (plus:SI
-	   (zero_extend:SI
-	    (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
-			   (parallel [(match_operand:SI 2 "immediate_operand" "L")])))
-	   (match_operand:SI 3 "immediate_operand" "P")))))]
+	(zero_extend:V8HI (mem:V4HI (plus:SI (zero_extend:SI (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
+									    (parallel [(match_operand:SI 2 "immediate_operand" "L")])))
+					     (match_operand:SI 3 "immediate_operand" "P")))))]
  "TARGET_SIMD_SET"
- "vld64w\\t%0,[i%2,%3]"
+ "vld64w %0, [i%2, %3]"
  [(set_attr "type" "simd_vload")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")]
@@ -1315,7 +1264,7 @@
 	     (parallel [(match_operand:SI 3 "immediate_operand" "L")]))
 	    )))))]
   "TARGET_SIMD_SET"
-  "vld64\\t%0,[i%3,%1]"
+  "vld64 %0, [i%3,%1]"
   [(set_attr "type" "simd_vload")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1338,48 +1287,40 @@
 	      (match_operand:V8HI 2 "vector_register_operand"  "v")
 	      (parallel [(match_operand:SI 3 "immediate_operand" "L")]))))))))]
   "TARGET_SIMD_SET"
-  "vld32\\t%0,[i%3,%1]"
+  "vld32 %0, [i%3,%1]"
   [(set_attr "type" "simd_vload")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
 
 (define_insn "vst16_n_insn"
-  [(set (mem:HI
-	 (plus:SI
-	  (match_operand:SI 0 "immediate_operand" "P")
-	  (zero_extend:SI
-	   (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
-			  (parallel [(match_operand:SI 2 "immediate_operand" "L")])))))
+  [(set  (mem:HI (plus:SI (match_operand:SI 0 "immediate_operand" "P")
+			  (zero_extend: SI (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
+							  (parallel [(match_operand:SI 2 "immediate_operand" "L")])))))
 	 (vec_select:HI (match_operand:V8HI 3 "vector_register_operand" "v")
 			(parallel [(match_operand:SI 4 "immediate_operand" "L")])))]
  "TARGET_SIMD_SET"
- "vst16_%4\\t%3,[i%2,%0]"
+ "vst16_%4 %3,[i%2, %0]"
  [(set_attr "type" "simd_vstore")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")])
 
 (define_insn "vst32_n_insn"
-  [(set (mem:SI
-	 (plus:SI
-	  (match_operand:SI 0 "immediate_operand" "P")
-	  (zero_extend:SI
-	   (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
-			  (parallel [(match_operand:SI 2 "immediate_operand" "L")])))))
-	(vec_select:SI (unspec:V4SI [(match_operand:V8HI 3 "vector_register_operand" "v")]
-				    UNSPEC_ARC_SIMD_VCAST)
-		       (parallel [(match_operand:SI 4 "immediate_operand" "L")])))]
+  [(set  (mem:SI (plus:SI (match_operand:SI 0 "immediate_operand" "P")
+			  (zero_extend: SI (vec_select:HI (match_operand:V8HI 1 "vector_register_operand"  "v")
+							  (parallel [(match_operand:SI 2 "immediate_operand" "L")])))))
+	 (vec_select:SI (unspec:V4SI [(match_operand:V8HI 3 "vector_register_operand" "v")] UNSPEC_ARC_SIMD_VCAST)
+			(parallel [(match_operand:SI 4 "immediate_operand" "L")])))]
  "TARGET_SIMD_SET"
- "vst32_%4\\t%3,[i%2,%0]"
+ "vst32_%4 %3,[i%2, %0]"
  [(set_attr "type" "simd_vstore")
   (set_attr "length" "4")
   (set_attr "cond" "nocond")])
 
 ;; SIMD unit interrupt
 (define_insn "vinti_insn"
-  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "L")]
-		    UNSPEC_ARC_SIMD_VINTI)]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand"  "L")] UNSPEC_ARC_SIMD_VINTI)]
   "TARGET_SIMD_SET"
-  "vinti\\t%0"
+  "vinti %0"
   [(set_attr "type" "simd_vcontrol")
    (set_attr "length" "4")
    (set_attr "cond" "nocond")])
@@ -1395,19 +1336,8 @@
 (define_mode_attr V_addsub_suffix [(V2HI "2h") (V2SI "")])
 
 ;;all vectors
-(define_mode_iterator VCT [(V2HI "TARGET_PLUS_DMPY")
-			   (V4HI "TARGET_PLUS_QMACW")
-			   (V2SI "TARGET_PLUS_QMACW")])
+(define_mode_iterator VCT [V2HI V4HI V2SI])
 (define_mode_attr V_suffix [(V2HI "2h") (V4HI "4h") (V2SI "2")])
-
-(define_code_iterator EMUVEC [(mult "TARGET_MPYW")
-			      (div "TARGET_DIVREM")
-			      smax smin])
-
-(define_code_attr voptab [(mult "mul")
-			  (div "div")
-			  (smin "smin")
-			  (smax "smax")])
 
 ;; Widening operations.
 (define_code_iterator SE [sign_extend zero_extend])
@@ -1427,14 +1357,14 @@
 
 (define_insn_and_split "*movv2hi_insn"
   [(set (match_operand:V2HI 0 "move_dest_operand" "=r,r,r,m")
-	(match_operand:V2HI 1 "general_operand"    "i,r,m,r"))]
+	(match_operand:V2HI 1 "general_operand"       "i,r,m,r"))]
   "(register_operand (operands[0], V2HImode)
     || register_operand (operands[1], V2HImode))"
   "@
    #
-   mov%?\\t%0,%1
-   ld%U1%V1\\t%0,%1
-   st%U0%V0\\t%1,%0"
+   mov%? %0, %1
+   ld%U1%V1 %0,%1
+   st%U0%V0 %1,%0"
   "reload_completed && GET_CODE (operands[1]) == CONST_VECTOR"
   [(set (match_dup 0) (match_dup 2))]
   {
@@ -1450,9 +1380,9 @@
    ])
 
 (define_expand "movmisalignv2hi"
-  [(set (match_operand:V2HI 0 "general_operand" "")
-	(match_operand:V2HI 1 "general_operand" ""))]
- "unaligned_access"
+ [(set (match_operand:V2HI 0 "general_operand" "")
+       (match_operand:V2HI 1 "general_operand" ""))]
+ ""
  "{
    if (prepare_move_operands (operands, V2HImode))
      DONE;
@@ -1470,26 +1400,45 @@
 (define_insn_and_split "*mov<mode>_insn"
   [(set (match_operand:VWH 0 "move_dest_operand" "=r,r,r,m")
 	(match_operand:VWH 1 "general_operand"    "i,r,m,r"))]
-  "(register_operand (operands[0], <MODE>mode)
+  "TARGET_PLUS_QMACW
+   && (register_operand (operands[0], <MODE>mode)
        || register_operand (operands[1], <MODE>mode))"
-  "@
-   #
-   vadd2\\t%0,%1,0
-   ldd%U1%V1\\t%0,%1
-   std%U0%V0\\t%1,%0"
-  "&& reload_completed && arc_split_move_p (operands)"
+  "*
+{
+  switch (which_alternative)
+    {
+     default:
+       return \"#\";
+
+     case 1:
+       return \"vadd2 %0, %1, 0\";
+
+     case 2:
+       if (TARGET_LL64)
+         return \"ldd%U1%V1 %0,%1\";
+       return \"#\";
+
+     case 3:
+       if (TARGET_LL64)
+	   return \"std%U0%V0 %1,%0\";
+	 return \"#\";
+    }
+}"
+  "reload_completed"
   [(const_int 0)]
   {
    arc_split_move (operands);
    DONE;
   }
   [(set_attr "type" "move,move,load,store")
-   (set_attr "length" "16,8,16,16")])
+   (set_attr "predicable" "yes,no,no,no")
+   (set_attr "iscompact"  "false,false,false,false")
+   ])
 
 (define_expand "movmisalign<mode>"
-  [(set (match_operand:VWH 0 "general_operand" "")
-	(match_operand:VWH 1 "general_operand" ""))]
- "unaligned_access"
+ [(set (match_operand:VWH 0 "general_operand" "")
+       (match_operand:VWH 1 "general_operand" ""))]
+ ""
  "{
    if (prepare_move_operands (operands, <MODE>mode))
      DONE;
@@ -1497,9 +1446,9 @@
 
 (define_insn "bswapv2hi2"
   [(set (match_operand:V2HI 0 "register_operand" "=r,r")
-	(bswap:V2HI (match_operand:V2HI 1 "nonmemory_operand" "r,i")))]
+        (bswap:V2HI (match_operand:V2HI 1 "nonmemory_operand" "r,i")))]
   "TARGET_V2 && TARGET_SWAP"
-  "swape\\t%0,%1"
+  "swape %0, %1"
   [(set_attr "length" "4,8")
    (set_attr "type" "two_cycle_core")])
 
@@ -1509,7 +1458,7 @@
 	(plus:VCT (match_operand:VCT 1 "register_operand" "0,r")
 		  (match_operand:VCT 2 "register_operand" "r,r")))]
   "TARGET_PLUS_DMPY"
-  "vadd<V_suffix>%?\\t%0,%1,%2"
+  "vadd<V_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1520,7 +1469,7 @@
 	(minus:VCT (match_operand:VCT 1 "register_operand" "0,r")
 		   (match_operand:VCT 2 "register_operand" "r,r")))]
   "TARGET_PLUS_DMPY"
-  "vsub<V_suffix>%?\\t%0,%1,%2"
+  "vsub<V_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1530,16 +1479,14 @@
 (define_insn "addsub<mode>3"
   [(set (match_operand:VDV 0 "register_operand" "=r,r")
 	(vec_concat:VDV
-	 (plus:<V_addsub>
-	  (vec_select:<V_addsub> (match_operand:VDV 1 "register_operand" "0,r")
-				 (parallel [(const_int 0)]))
-	  (vec_select:<V_addsub> (match_operand:VDV 2 "register_operand" "r,r")
-				 (parallel [(const_int 0)])))
-	 (minus:<V_addsub>
-	  (vec_select:<V_addsub> (match_dup 1) (parallel [(const_int 1)]))
-	  (vec_select:<V_addsub> (match_dup 2) (parallel [(const_int 1)])))))]
+	 (plus:<V_addsub> (vec_select:<V_addsub> (match_operand:VDV 1 "register_operand" "0,r")
+						 (parallel [(const_int 0)]))
+			  (vec_select:<V_addsub> (match_operand:VDV 2 "register_operand" "r,r")
+						 (parallel [(const_int 0)])))
+	 (minus:<V_addsub> (vec_select:<V_addsub> (match_dup 1) (parallel [(const_int 1)]))
+			   (vec_select:<V_addsub> (match_dup 2) (parallel [(const_int 1)])))))]
   "TARGET_PLUS_DMPY"
-  "vaddsub<V_addsub_suffix>%?\\t%0,%1,%2"
+  "vaddsub<V_addsub_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1548,16 +1495,14 @@
 (define_insn "subadd<mode>3"
   [(set (match_operand:VDV 0 "register_operand" "=r,r")
 	(vec_concat:VDV
-	 (minus:<V_addsub>
-	  (vec_select:<V_addsub> (match_operand:VDV 1 "register_operand" "0,r")
-				 (parallel [(const_int 0)]))
-	  (vec_select:<V_addsub> (match_operand:VDV 2 "register_operand" "r,r")
-				 (parallel [(const_int 0)])))
-	 (plus:<V_addsub>
-	  (vec_select:<V_addsub> (match_dup 1) (parallel [(const_int 1)]))
-	  (vec_select:<V_addsub> (match_dup 2) (parallel [(const_int 1)])))))]
+	 (minus:<V_addsub> (vec_select:<V_addsub> (match_operand:VDV 1 "register_operand" "0,r")
+						  (parallel [(const_int 0)]))
+			   (vec_select:<V_addsub> (match_operand:VDV 2 "register_operand" "r,r")
+						  (parallel [(const_int 0)])))
+	 (plus:<V_addsub> (vec_select:<V_addsub> (match_dup 1) (parallel [(const_int 1)]))
+			  (vec_select:<V_addsub> (match_dup 2) (parallel [(const_int 1)])))))]
   "TARGET_PLUS_DMPY"
-  "vsubadd<V_addsub_suffix>%?\\t%0,%1,%2"
+  "vsubadd<V_addsub_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1567,11 +1512,10 @@
   [(set (match_operand:V4HI 0 "even_register_operand" "=r,r")
 	(vec_concat:V4HI
 	 (vec_concat:V2HI
-	  (plus:HI
-	   (vec_select:HI (match_operand:V4HI 1 "even_register_operand" "0,r")
-			  (parallel [(const_int 0)]))
-	   (vec_select:HI (match_operand:V4HI 2 "even_register_operand" "r,r")
-			  (parallel [(const_int 0)])))
+	  (plus:HI (vec_select:HI (match_operand:V4HI 1 "even_register_operand" "0,r")
+				  (parallel [(const_int 0)]))
+		   (vec_select:HI (match_operand:V4HI 2 "even_register_operand" "r,r")
+				  (parallel [(const_int 0)])))
 	  (minus:HI (vec_select:HI (match_dup 1) (parallel [(const_int 1)]))
 		    (vec_select:HI (match_dup 2) (parallel [(const_int 1)]))))
 	 (vec_concat:V2HI
@@ -1581,7 +1525,7 @@
 		    (vec_select:HI (match_dup 2) (parallel [(const_int 3)]))))
 	 ))]
   "TARGET_PLUS_QMACW"
-  "vaddsub4h%?\\t%0,%1,%2"
+  "vaddsub4h%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1591,11 +1535,10 @@
   [(set (match_operand:V4HI 0 "even_register_operand" "=r,r")
 	(vec_concat:V4HI
 	 (vec_concat:V2HI
-	  (minus:HI
-	   (vec_select:HI (match_operand:V4HI 1 "even_register_operand" "0,r")
-			  (parallel [(const_int 0)]))
-	   (vec_select:HI (match_operand:V4HI 2 "even_register_operand" "r,r")
-			  (parallel [(const_int 0)])))
+	  (minus:HI (vec_select:HI (match_operand:V4HI 1 "even_register_operand" "0,r")
+				   (parallel [(const_int 0)]))
+		    (vec_select:HI (match_operand:V4HI 2 "even_register_operand" "r,r")
+				  (parallel [(const_int 0)])))
 	  (plus:HI (vec_select:HI (match_dup 1) (parallel [(const_int 1)]))
 		   (vec_select:HI (match_dup 2) (parallel [(const_int 1)]))))
 	 (vec_concat:V2HI
@@ -1605,7 +1548,7 @@
 		   (vec_select:HI (match_dup 2) (parallel [(const_int 3)]))))
 	 ))]
   "TARGET_PLUS_QMACW"
-  "vsubadd4h%?\\t%0,%1,%2"
+  "vsubadd4h%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1635,7 +1578,7 @@
 	   (SE:SI (vec_select:HI (match_dup 1) (parallel [(const_int 1)])))
 	   (SE:SI (vec_select:HI (match_dup 2) (parallel [(const_int 1)])))))))]
   "TARGET_PLUS_DMPY"
-  "dmpyh<V_US_suffix>%?\\t%0,%1,%2"
+  "dmpyh<V_US_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1669,44 +1612,6 @@
  DONE;
 })
 
-(define_expand "sdot_prodv4hi"
-  [(match_operand:V2SI 0 "register_operand" "")
-   (match_operand:V4HI 1 "register_operand" "")
-   (match_operand:V4HI 2 "register_operand" "")
-   (match_operand:V2SI 3 "register_operand" "")]
-  "TARGET_PLUS_MACD"
-{
- rtx acc_reg  = gen_rtx_REG  (V2SImode, ACC_REG_FIRST);
- rtx op1_low  = gen_lowpart  (V2HImode, operands[1]);
- rtx op1_high = gen_highpart (V2HImode, operands[1]);
- rtx op2_low  = gen_lowpart  (V2HImode, operands[2]);
- rtx op2_high = gen_highpart (V2HImode, operands[2]);
-
- emit_move_insn (acc_reg, operands[3]);
- emit_insn (gen_arc_vec_smac_v2hiv2si_zero (op1_low, op2_low));
- emit_insn (gen_arc_vec_smac_v2hiv2si (operands[0], op1_high, op2_high));
- DONE;
-})
-
-(define_expand "udot_prodv4hi"
-  [(match_operand:V2SI 0 "register_operand" "")
-   (match_operand:V4HI 1 "register_operand" "")
-   (match_operand:V4HI 2 "register_operand" "")
-   (match_operand:V2SI 3 "register_operand" "")]
-  "TARGET_PLUS_MACD"
-{
- rtx acc_reg  = gen_rtx_REG  (V2SImode, ACC_REG_FIRST);
- rtx op1_low  = gen_lowpart  (V2HImode, operands[1]);
- rtx op1_high = gen_highpart (V2HImode, operands[1]);
- rtx op2_low  = gen_lowpart  (V2HImode, operands[2]);
- rtx op2_high = gen_highpart (V2HImode, operands[2]);
-
- emit_move_insn (acc_reg, operands[3]);
- emit_insn (gen_arc_vec_umac_v2hiv2si_zero (op1_low, op2_low));
- emit_insn (gen_arc_vec_umac_v2hiv2si (operands[0], op1_high, op2_high));
- DONE;
-})
-
 (define_insn "arc_vec_<V_US>mult_lo_v4hi"
  [(set (match_operand:V2SI 0 "even_register_operand"                     "=r,r")
        (mult:V2SI (SE:V2SI (vec_select:V2HI
@@ -1716,15 +1621,13 @@
 			    (match_operand:V4HI 2 "even_register_operand" "r,r")
 			    (parallel [(const_int 0) (const_int 1)])))))
   (set (reg:V2SI ARCV2_ACC)
-       (mult:V2SI (SE:V2SI
-		   (vec_select:V2HI (match_dup 1)
-				    (parallel [(const_int 0) (const_int 1)])))
-		  (SE:V2SI
-		   (vec_select:V2HI (match_dup 2)
-				    (parallel [(const_int 0) (const_int 1)])))))
+       (mult:V2SI (SE:V2SI (vec_select:V2HI (match_dup 1)
+					    (parallel [(const_int 0) (const_int 1)])))
+		  (SE:V2SI (vec_select:V2HI (match_dup 2)
+					    (parallel [(const_int 0) (const_int 1)])))))
   ]
   "TARGET_PLUS_MACD"
-  "vmpy2h<V_US_suffix>%?\\t%0,%1,%2"
+  "vmpy2h<V_US_suffix>%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1740,7 +1643,7 @@
 			     (parallel [(const_int 0) (const_int 1)])))))
   ]
   "TARGET_PLUS_MACD"
-  "vmpy2h<V_US_suffix>%?\\t0,%0,%1"
+  "vmpy2h<V_US_suffix>%? 0, %0, %1"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "no")
@@ -1772,29 +1675,27 @@
 			    (match_operand:V4HI 2 "even_register_operand" "r,r")
 			    (parallel [(const_int 2) (const_int 3)])))))
   (set (reg:V2SI ARCV2_ACC)
-       (mult:V2SI (SE:V2SI
-		   (vec_select:V2HI (match_dup 1)
-				    (parallel [(const_int 2) (const_int 3)])))
-		  (SE:V2SI
-		   (vec_select:V2HI (match_dup 2)
-				    (parallel [(const_int 2) (const_int 3)])))))
+       (mult:V2SI (SE:V2SI (vec_select:V2HI (match_dup 1)
+					    (parallel [(const_int 2) (const_int 3)])))
+		  (SE:V2SI (vec_select:V2HI (match_dup 2)
+					    (parallel [(const_int 2) (const_int 3)])))))
   ]
   "TARGET_PLUS_QMACW"
-  "vmpy2h<V_US_suffix>%?\\t%0,%R1,%R2"
+  "vmpy2h<V_US_suffix>%? %0, %R1, %R2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
    (set_attr "cond" "canuse,nocond")])
 
 (define_expand "vec_widen_<V_US>mult_hi_v4hi"
- [(set (match_operand:V2SI 0 "even_register_operand")
+ [(set (match_operand:V2SI 0 "even_register_operand"                               "")
        (mult:V2SI (SE:V2SI (vec_select:V2HI
-			    (match_operand:V4HI 1 "even_register_operand")
-			    (parallel [(const_int 2) (const_int 3)])))
+				     (match_operand:V4HI 1 "even_register_operand" "")
+				     (parallel [(const_int 2) (const_int 3)])))
 		  (SE:V2SI (vec_select:V2HI
-			    (match_operand:V4HI 2 "even_register_operand")
-			    (parallel [(const_int 2) (const_int 3)])))))]
-  "TARGET_PLUS_QMACW"
+				     (match_operand:V4HI 2 "even_register_operand" "")
+				     (parallel [(const_int 2) (const_int 3)])))))]
+  "TARGET_PLUS_MACD"
   {
      emit_insn (gen_arc_vec_<V_US>mult_hi_v4hi (operands[0],
 						operands[1],
@@ -1803,38 +1704,30 @@
   }
 )
 
-(define_insn "arc_vec_<V_US>mac_v2hiv2si"
- [(set (match_operand:V2SI 0 "even_register_operand"     "=r,Ral,r")
+(define_insn "arc_vec_<V_US>mac_hi_v4hi"
+ [(set (match_operand:V2SI 0 "even_register_operand"                     "=r,r")
        (plus:V2SI
-	(mult:V2SI
-	 (SE:V2SI (match_operand:V2HI 1 "register_operand" "0,  r,r"))
-	 (SE:V2SI (match_operand:V2HI 2 "register_operand" "r,  r,r")))
-	(reg:V2SI ARCV2_ACC)))
+	(reg:V2SI ARCV2_ACC)
+	(mult:V2SI (SE:V2SI (vec_select:V2HI
+			     (match_operand:V4HI 1 "even_register_operand" "0,r")
+			     (parallel [(const_int 2) (const_int 3)])))
+		   (SE:V2SI (vec_select:V2HI
+			     (match_operand:V4HI 2 "even_register_operand" "r,r")
+			     (parallel [(const_int 2) (const_int 3)]))))))
   (set (reg:V2SI ARCV2_ACC)
        (plus:V2SI
-	(mult:V2SI (SE:V2SI (match_dup 1))
-		   (SE:V2SI (match_dup 2)))
-	(reg:V2SI ARCV2_ACC)))
+	(reg:V2SI ARCV2_ACC)
+	(mult:V2SI (SE:V2SI (vec_select:V2HI (match_dup 1)
+					     (parallel [(const_int 2) (const_int 3)])))
+		   (SE:V2SI (vec_select:V2HI (match_dup 2)
+					     (parallel [(const_int 2) (const_int 3)]))))))
   ]
   "TARGET_PLUS_MACD"
-  "@
-   vmac2h<V_US_suffix>%?\\t%0,%1,%2
-   vmac2h<V_US_suffix>%?\\t0,%1,%2
-   vmac2h<V_US_suffix>%?\\t%0,%1,%2"
+  "vmac2h<V_US_suffix>%? %0, %R1, %R2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
-   (set_attr "predicable" "yes,no,no")])
-
-(define_insn "arc_vec_<V_US>mac_v2hiv2si_zero"
- [(set (reg:V2SI ARCV2_ACC)
-       (plus:V2SI
-	(mult:V2SI (SE:V2SI (match_operand:V2HI 0 "register_operand" "r"))
-		   (SE:V2SI (match_operand:V2HI 1 "register_operand" "r")))
-	(reg:V2SI ARCV2_ACC)))]
-  "TARGET_PLUS_MACD"
-  "vmac2h<V_US_suffix>%?\\t0,%0,%1"
-  [(set_attr "length" "4")
-   (set_attr "type" "multi")])
+   (set_attr "predicable" "yes,no")
+   (set_attr "cond" "canuse,nocond")])
 
 ;; Builtins
 (define_insn "dmach"
@@ -1845,7 +1738,7 @@
 		   UNSPEC_ARC_DMACH))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_DMPY"
-  "dmach%?\\t%0,%1,%2"
+  "dmach%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1859,7 +1752,7 @@
 		   UNSPEC_ARC_DMACHU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_DMPY"
-  "dmachu%?\\t%0,%1,%2"
+  "dmachu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1873,7 +1766,7 @@
 		   UNSPEC_ARC_DMACWH))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "dmacwh%?\\t%0,%1,%2"
+  "dmacwh%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1887,7 +1780,7 @@
 		   UNSPEC_ARC_DMACWHU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "dmacwhu%?\\t%0,%1,%2"
+  "dmacwhu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1901,7 +1794,7 @@
 		     UNSPEC_ARC_VMAC2H))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_MACD"
-  "vmac2h%?\\t%0,%1,%2"
+  "vmac2h%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1915,7 +1808,7 @@
 		   UNSPEC_ARC_VMAC2HU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_MACD"
-  "vmac2hu%?\\t%0,%1,%2"
+  "vmac2hu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1928,7 +1821,7 @@
 		     UNSPEC_ARC_VMPY2H))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_MACD"
-  "vmpy2h%?\\t%0,%1,%2"
+  "vmpy2h%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1941,7 +1834,7 @@
 		     UNSPEC_ARC_VMPY2HU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_MACD"
-  "vmpy2hu%?\\t%0,%1,%2"
+  "vmpy2hu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1955,7 +1848,7 @@
 		     UNSPEC_ARC_QMACH))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "qmach%?\\t%0,%1,%2"
+  "qmach%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1969,7 +1862,7 @@
 		   UNSPEC_ARC_QMACHU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "qmachu%?\\t%0,%1,%2"
+  "qmachu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1982,7 +1875,7 @@
 		     UNSPEC_ARC_QMPYH))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "qmpyh%?\\t%0,%1,%2"
+  "qmpyh%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
@@ -1995,105 +1888,8 @@
 		   UNSPEC_ARC_QMPYHU))
    (clobber (reg:DI ARCV2_ACC))]
   "TARGET_PLUS_QMACW"
-  "qmpyhu%?\\t%0,%1,%2"
+  "qmpyhu%? %0, %1, %2"
   [(set_attr "length" "4")
    (set_attr "type" "multi")
    (set_attr "predicable" "yes,no")
    (set_attr "cond" "canuse,nocond")])
-
-;; Emulated vector instructions.
-(define_insn_and_split "<voptab>v2si3"
-  [(set (match_operand:V2SI 0 "register_operand" "=r")
-	(EMUVEC:V2SI (match_operand:V2SI 1 "register_operand" "r")
-		     (match_operand:V2SI 2 "nonmemory_operand" "ri")))]
-  ""
-  "#"
-  "reload_completed"
-  [(const_int 0)]
-  {
-   rtx high_dest = gen_highpart (SImode, operands[0]);
-   rtx low_dest = gen_lowpart (SImode, operands[0]);
-   rtx high_op1 = gen_highpart (SImode, operands[1]);
-   rtx low_op1 = gen_lowpart (SImode, operands[1]);
-   rtx high_op2 = gen_highpart (SImode, operands[2]);
-   rtx low_op2 = gen_lowpart (SImode, operands[2]);
-   emit_insn (gen_<voptab>si3 (low_dest, low_op1, low_op2));
-   emit_insn (gen_<voptab>si3 (high_dest, high_op1, high_op2));
-   DONE;
-  }
-  [(set_attr "length" "12")
-   (set_attr "type" "multi")])
-
-(define_expand "neg<mode>2"
-  [(set (match_operand:VCT 0 "register_operand")
-	(neg:VCT (match_operand:VCT 1 "register_operand")))]
-  "TARGET_PLUS_DMPY"
-  "")
-
-(define_insn "*neg<mode>2"
-  [(set (match_operand:VCT 0 "register_operand" "=r")
-	(neg:VCT (match_operand:VCT 1 "register_operand" "r")))]
-  "TARGET_PLUS_DMPY"
-  "vsub<V_suffix>\\t%0,0,%1"
-  [(set_attr "length" "8")
-   (set_attr "type" "multi")])
-
-(define_insn "reduc_plus_scal_v4hi"
-  [(set (match_operand:HI 0 "even_register_operand" "=r")
-	(unspec:HI [(match_operand:V4HI 1 "even_register_operand" "r")]
-		   UNSPEC_ARC_QMPYH))
-   (clobber (reg:DI ARCV2_ACC))]
-  "TARGET_PLUS_QMACW"
-  "qmpyh\\t%0,%1,1"
-  [(set_attr "length" "4")
-   (set_attr "type" "multi")])
-
-(define_insn "reduc_plus_scal_v2si"
-  [(set (match_operand:SI 0 "even_register_operand" "=r")
-	(unspec:SI [(match_operand:V2SI 1 "even_register_operand" "r")]
-		   UNSPEC_ARC_DMPYWH))
-   (clobber (reg:DI ARCV2_ACC))]
-  "TARGET_PLUS_DMPY"
-  "dmpywh\\t%0,%1,1"
-  [(set_attr "length" "4")
-   (set_attr "type" "multi")])
-
-(define_insn_and_split "vec_duplicatev2si"
-  [(set (match_operand:V2SI 0 "register_operand" "=r")
-	(vec_duplicate:V2SI
-	 (match_operand:SI 1 "nonmemory_operand" "ri")))]
-  ""
-  "#"
-  "reload_completed"
-  [(const_int 0)]
-  {
-   rtx high_dest = gen_highpart (SImode, operands[0]);
-   rtx low_dest = gen_lowpart (SImode, operands[0]);
-   emit_move_insn (high_dest, operands[1]);
-   emit_move_insn (low_dest, operands[1]);
-   DONE;
-  }
-  [(set_attr "length" "8")
-   (set_attr "type" "multi")])
-
-(define_insn_and_split "vec_duplicatev4hi"
-  [(set (match_operand:V4HI 0 "register_operand" "=r")
-	(vec_duplicate:V4HI
-	 (match_operand:HI 1 "nonmemory_operand" "ri")))]
-  "TARGET_BARREL_SHIFTER"
-  "#"
-  "reload_completed"
-  [(const_int 0)]
-  {
-   rtx high_dest = gen_highpart (SImode, operands[0]);
-   rtx low_dest = gen_lowpart (SImode, operands[0]);
-   rtx tmp = gen_lowpart (SImode, operands[1]);
-   emit_insn (gen_rtx_SET (high_dest,
-			   gen_rtx_ASHIFT (SImode, tmp, GEN_INT (16))));
-   emit_insn (gen_rtx_SET (low_dest,
-			   gen_rtx_IOR (SImode, high_dest, tmp)));
-   emit_move_insn (high_dest, low_dest);
-   DONE;
-  }
-  [(set_attr "length" "12")
-   (set_attr "type" "multi")])

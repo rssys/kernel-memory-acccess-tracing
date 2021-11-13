@@ -263,8 +263,8 @@ final class ArchiveMember
     {
     void print()
     {
-        printf("name = '%.*s'\n", cast(int) name.length, name.ptr);
-        printf("\tcomment = '%.*s'\n", cast(int) comment.length, comment.ptr);
+        printf("name = '%.*s'\n", name.length, name.ptr);
+        printf("\tcomment = '%.*s'\n", comment.length, comment.ptr);
         printf("\tmadeVersion = x%04x\n", _madeVersion);
         printf("\textractVersion = x%04x\n", extractVersion);
         printf("\tflags = x%04x\n", flags);
@@ -348,7 +348,7 @@ final class ZipArchive
         printf("\tdiskStartDir = %u\n", diskStartDir);
         printf("\tnumEntries = %u\n", numEntries);
         printf("\ttotalEntries = %u\n", totalEntries);
-        printf("\tcomment = '%.*s'\n", cast(int) comment.length, comment.ptr);
+        printf("\tcomment = '%.*s'\n", comment.length, comment.ptr);
     }
     }
 
@@ -969,12 +969,6 @@ version (Android) {} else
 version (Posix) @system unittest
 {
     import std.datetime, std.file, std.format, std.path, std.process, std.stdio;
-
-    if (executeShell("unzip").status != 0)
-    {
-        writeln("Can't run unzip, skipping unzip test");
-        return;
-    }
 
     auto zr = new ZipArchive();
     auto am = new ArchiveMember();

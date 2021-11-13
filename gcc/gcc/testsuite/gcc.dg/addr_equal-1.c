@@ -1,4 +1,5 @@
-/* { dg-do run { target { nonpic || pie_enabled } } } */
+/* { dg-do run } */
+/* { dg-require-effective-target nonpic } */
 /* { dg-require-weak "" } */
 /* { dg-require-alias "" } */
 /* { dg-options "-O2 -fdelete-null-pointer-checks" } */

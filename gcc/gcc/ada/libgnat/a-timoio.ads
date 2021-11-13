@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1993-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1993-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -51,55 +51,32 @@ package Ada.Text_IO.Modular_IO is
    procedure Get
      (File  : File_Type;
       Item  : out Num;
-      Width : Field := 0)
-   with
-     Pre    => Is_Open (File) and then Mode (File) = In_File,
-     Global => (In_Out => File_System);
+      Width : Field := 0);
 
    procedure Get
      (Item  : out Num;
-      Width : Field := 0)
-   with
-     Post   =>
-       Line_Length'Old = Line_Length
-       and Page_Length'Old = Page_Length,
-     Global => (In_Out => File_System);
+      Width : Field := 0);
 
    procedure Put
      (File  : File_Type;
       Item  : Num;
       Width : Field := Default_Width;
-      Base  : Number_Base := Default_Base)
-   with
-     Pre    => Is_Open (File) and then Mode (File) /= In_File,
-     Post   =>
-       Line_Length (File)'Old = Line_Length (File)
-       and Page_Length (File)'Old = Page_Length (File),
-     Global => (In_Out => File_System);
+      Base  : Number_Base := Default_Base);
 
    procedure Put
      (Item  : Num;
       Width : Field := Default_Width;
-      Base  : Number_Base := Default_Base)
-   with
-     Post   =>
-       Line_Length'Old = Line_Length
-       and Page_Length'Old = Page_Length,
-     Global => (In_Out => File_System);
+      Base  : Number_Base := Default_Base);
 
    procedure Get
      (From : String;
       Item : out Num;
-      Last : out Positive)
-   with
-     Global => null;
+      Last : out Positive);
 
    procedure Put
      (To   : out String;
       Item : Num;
-      Base : Number_Base := Default_Base)
-   with
-     Global => null;
+      Base : Number_Base := Default_Base);
 
 private
    pragma Inline (Get);

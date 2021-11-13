@@ -1,5 +1,5 @@
 /* Definition of RISC-V target for GNU compiler.
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2019 Free Software Foundation, Inc.
    Contributed by Andrew Waterman (andrew@sifive.com).
 
 This file is part of GCC.
@@ -39,48 +39,11 @@ enum riscv_code_model {
 };
 extern enum riscv_code_model riscv_cmodel;
 
-enum riscv_isa_spec_class {
-  ISA_SPEC_CLASS_NONE,
-
-  ISA_SPEC_CLASS_2P2,
-  ISA_SPEC_CLASS_20190608,
-  ISA_SPEC_CLASS_20191213
-};
-
-extern enum riscv_isa_spec_class riscv_isa_spec;
-
 /* Keep this list in sync with define_attr "tune" in riscv.md.  */
 enum riscv_microarchitecture_type {
   generic,
   sifive_7
 };
 extern enum riscv_microarchitecture_type riscv_microarchitecture;
-
-enum riscv_align_data {
-  riscv_align_data_type_xlen,
-  riscv_align_data_type_natural
-};
-
-/* Where to get the canary for the stack protector.  */
-enum stack_protector_guard {
-  SSP_TLS,			/* per-thread canary in TLS block */
-  SSP_GLOBAL			/* global canary */
-};
-
-#define MASK_ZICSR    (1 << 0)
-#define MASK_ZIFENCEI (1 << 1)
-
-#define TARGET_ZICSR    ((riscv_zi_subext & MASK_ZICSR) != 0)
-#define TARGET_ZIFENCEI ((riscv_zi_subext & MASK_ZIFENCEI) != 0)
-
-#define MASK_ZBA      (1 << 0)
-#define MASK_ZBB      (1 << 1)
-#define MASK_ZBC      (1 << 2)
-#define MASK_ZBS      (1 << 3)
-
-#define TARGET_ZBA    ((riscv_zb_subext & MASK_ZBA) != 0)
-#define TARGET_ZBB    ((riscv_zb_subext & MASK_ZBB) != 0)
-#define TARGET_ZBC    ((riscv_zb_subext & MASK_ZBC) != 0)
-#define TARGET_ZBS    ((riscv_zb_subext & MASK_ZBS) != 0)
 
 #endif /* ! GCC_RISCV_OPTS_H */

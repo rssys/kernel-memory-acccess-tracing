@@ -1,13 +1,13 @@
 #include "pr66655.h"
 
-extern int32_t g (void);
+extern int g (void);
 
-int32_t S::i;
+int S::i;
 
-int32_t
+int
 f (void)
 {
-  int32_t ret = g ();
+  int ret = g ();
 
   S::set (ret);
   return ret;

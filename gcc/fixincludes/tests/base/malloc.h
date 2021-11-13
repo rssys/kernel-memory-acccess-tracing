@@ -11,8 +11,6 @@
 
 #if defined( AIX_MALLOC_CHECK )
 #if (defined(__cplusplus) && defined(__IBMCPP__))
-extern "C" {
-	extern "builtin" char *__alloca (size_t);
 #endif  /* AIX_MALLOC_CHECK */
 
 

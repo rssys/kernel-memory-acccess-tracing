@@ -1,5 +1,5 @@
 /* Localize comdats.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -18,7 +18,7 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 /* This is very simple pass that looks for static symbols that are used
-   exclusively by symbol within one comdat group.  In this case it makes
+   exlusively by symbol within one comdat group.  In this case it makes
    sense to bring the symbol itself into the group to avoid dead code
    that would arrise when the comdat group from current unit is replaced
    by a different copy.  Consider for example:
@@ -98,8 +98,8 @@ propagate_comdat_group (struct symtab_node *symbol,
 
       if (cgraph_node * cn = dyn_cast <cgraph_node *> (symbol2))
 	{
-	  if (cn->inlined_to)
-	    symbol2 = cn->inlined_to;
+	  if (cn->global.inlined_to)
+	    symbol2 = cn->global.inlined_to;
 	}
 
       /* The actual merge operation.  */
@@ -128,13 +128,13 @@ propagate_comdat_group (struct symtab_node *symbol,
 	if (cgraph_node * cn = dyn_cast <cgraph_node *> (symbol2))
 	  {
 	    /* Thunks cannot call across section boundary.  */
-	    if (cn->thunk)
+	    if (cn->thunk.thunk_p)
 	      newgroup = propagate_comdat_group (symbol2, newgroup, map);
 	    /* If we see inline clone, its comdat group actually
 	       corresponds to the comdat group of the function it
 	       is inlined to.  */
-	    if (cn->inlined_to)
-	      symbol2 = cn->inlined_to;
+	    if (cn->global.inlined_to)
+	      symbol2 = cn->global.inlined_to;
 	  }
 
         /* The actual merge operation.  */
@@ -344,7 +344,7 @@ ipa_comdats (void)
       if (!symbol->get_comdat_group ()
 	  && !symbol->alias
 	  && (!(fun = dyn_cast <cgraph_node *> (symbol))
-	      || !fun->thunk)
+	      || !fun->thunk.thunk_p)
 	  && symbol->real_symbol_p ())
 	{
 	  tree *val = map.get (symbol);
@@ -376,15 +376,6 @@ ipa_comdats (void)
 		   true);
 	}
     }
-
-#if 0
-  /* Recompute calls comdat local flag.  This need to be done after all changes
-     are made.  */
-  cgraph_node *function;
-  FOR_EACH_DEFINED_FUNCTION (function)
-    if (function->get_comdat_group ())
-      function->calls_comdat_local = function->check_calls_comdat_local_p ();
-#endif
   return 0;
 }
 

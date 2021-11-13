@@ -1,5 +1,3 @@
-/* { dg-require-effective-target indirect_calls } */
-
 static __inline__ int
 one_utf8_to_utf16 () { }
 

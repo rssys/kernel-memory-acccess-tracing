@@ -8,12 +8,11 @@
  */
 module core.sys.windows.lmerrlog;
 version (Windows):
-@system:
 
 // COMMENT: This appears to be only for Win16. All functions are deprecated.
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
-import core.sys.windows.lmaudit; // for LPHLOG
+private import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmaudit; // for LPHLOG
 
 enum ERRLOG_BASE=3100;
 enum ERRLOG2_BASE=5700;

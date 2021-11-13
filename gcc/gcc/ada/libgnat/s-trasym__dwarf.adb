@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 1999-2021, AdaCore                     --
+--                     Copyright (C) 1999-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,6 +30,10 @@
 ------------------------------------------------------------------------------
 
 --  Run-time symbolic traceback support for targets using DWARF debug data
+
+pragma Polling (Off);
+--  We must turn polling off for this unit, because otherwise we can get
+--  elaboration circularities when polling is turned on.
 
 with Ada.Unchecked_Deallocation;
 
@@ -434,7 +438,7 @@ package body System.Traceback.Symbolic is
       Suppress_Hex :        Boolean;
       Res          : in out Bounded_String)
    is
-      Success : Boolean;
+      Success : Boolean := False;
    begin
       if Symbolic.Module_Name.Is_Supported then
          Append (Res, '[');
@@ -691,7 +695,7 @@ package body System.Traceback.Symbolic is
       return Symbolic_Traceback (E, Suppress_Hex => True);
    end Symbolic_Traceback_No_Hex;
 
-   Exception_Tracebacks_Symbolic : constant Integer;
+   Exception_Tracebacks_Symbolic : Integer;
    pragma Import
      (C,
       Exception_Tracebacks_Symbolic,

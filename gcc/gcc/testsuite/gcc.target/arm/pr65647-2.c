@@ -1,5 +1,4 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target arm_arch_v6_arm_ok } */
 /* { dg-options "-O3 -marm -march=armv6 -std=c99" } */
 
 typedef struct {

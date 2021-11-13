@@ -103,10 +103,7 @@ main (int argc, char **argv)
     if (acc_is_present (&b[0], (N * sizeof (float))))
       abort ();
 
-    acc_delete (&a[0], N * sizeof (float));
-
-    if (acc_is_present (&a[0], N * sizeof (float)))
-      abort ();
+    acc_free (d);
 
     for (i = 0; i < N; i++)
     {
@@ -165,7 +162,7 @@ main (int argc, char **argv)
     if (!acc_is_present (&b[0], (N * sizeof (float))))
       abort ();
 
-    acc_delete (&b[0], N * sizeof (float));
+    acc_free (d);
 
     if (acc_is_present (&b[0], (N * sizeof (float))))
       abort ();
@@ -269,15 +266,13 @@ main (int argc, char **argv)
     if (!acc_is_present (&b[0], (N * sizeof (float))))
       abort ();
 
-    acc_delete (&a[0], N * sizeof (float));
+    d = (float *) acc_deviceptr (&a[0]);
+    acc_unmap_data (&a[0]);
+    acc_free (d);
 
-    if (acc_is_present (&a[0], N * sizeof (float)))
-      abort ();
-
-    acc_delete (&b[0], N * sizeof (float));
-
-    if (acc_is_present (&b[0], N * sizeof (float)))
-      abort ();
+    d = (float *) acc_deviceptr (&b[0]);
+    acc_unmap_data (&b[0]);
+    acc_free (d);
 
     for (i = 0; i < N; i++)
     {
@@ -469,9 +464,7 @@ main (int argc, char **argv)
     if (!acc_is_present (c, (N * sizeof (float))))
       abort ();
 
-    d = (float *) acc_deviceptr (b);
-
-    acc_memcpy_from_device (b, d, N * sizeof (float));
+    acc_copyout (b, N * sizeof (float));
 
     for (i = 0; i < N; i++)
     {
@@ -482,26 +475,15 @@ main (int argc, char **argv)
             abort ();
     }
 
-    acc_delete (a, N * sizeof (float));
+    d = (float *) acc_deviceptr (a);
 
-    if (acc_is_present (a, N * sizeof (float)))
-      abort ();
-
-    d = (float *) acc_deviceptr (b);
-
-    acc_unmap_data (b);
-
-    if (acc_is_present (b, N * sizeof (float)))
-      abort ();
+    acc_unmap_data (a);
 
     acc_free (d);
 
     d = (float *) acc_deviceptr (c);
 
     acc_unmap_data (c);
-
-    if (acc_is_present (c, N * sizeof (float)))
-      abort ();
 
     acc_free (d);
 
@@ -574,10 +556,7 @@ main (int argc, char **argv)
     if (acc_is_present (&b[0], (N * sizeof (float))))
       abort ();
 
-    acc_delete (&a[0], N * sizeof (float));
-
-    if (acc_is_present (&a[0], N * sizeof (float)))
-      abort ();
+    acc_free (d);
 
     for (i = 0; i < N; i++)
     {

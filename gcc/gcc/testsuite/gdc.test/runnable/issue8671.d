@@ -1,4 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
 import std.random;
 void main()
 {

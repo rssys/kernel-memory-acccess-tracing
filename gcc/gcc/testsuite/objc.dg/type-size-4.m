@@ -2,7 +2,6 @@
 /* Contributed by Nicola Pero  <nicola.pero@meta-innovation.com> */
 /* PR objc/47832 */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 typedef struct
 {

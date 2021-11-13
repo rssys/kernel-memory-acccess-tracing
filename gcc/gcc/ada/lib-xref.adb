@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,30 +23,26 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;          use Atree;
-with Csets;          use Csets;
-with Einfo;          use Einfo;
-with Einfo.Utils;    use Einfo.Utils;
-with Elists;         use Elists;
-with Errout;         use Errout;
-with Lib.Util;       use Lib.Util;
-with Nlists;         use Nlists;
-with Opt;            use Opt;
-with Restrict;       use Restrict;
-with Rident;         use Rident;
-with Sem;            use Sem;
-with Sem_Aux;        use Sem_Aux;
-with Sem_Prag;       use Sem_Prag;
-with Sem_Util;       use Sem_Util;
-with Sem_Warn;       use Sem_Warn;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Sinfo.Utils;    use Sinfo.Utils;
-with Sinput;         use Sinput;
-with Snames;         use Snames;
-with Stringt;        use Stringt;
-with Stand;          use Stand;
-with Table;          use Table;
+with Atree;    use Atree;
+with Csets;    use Csets;
+with Elists;   use Elists;
+with Errout;   use Errout;
+with Lib.Util; use Lib.Util;
+with Nlists;   use Nlists;
+with Opt;      use Opt;
+with Restrict; use Restrict;
+with Rident;   use Rident;
+with Sem;      use Sem;
+with Sem_Aux;  use Sem_Aux;
+with Sem_Prag; use Sem_Prag;
+with Sem_Util; use Sem_Util;
+with Sem_Warn; use Sem_Warn;
+with Sinfo;    use Sinfo;
+with Sinput;   use Sinput;
+with Snames;   use Snames;
+with Stringt;  use Stringt;
+with Stand;    use Stand;
+with Table;    use Table;
 
 with GNAT.Heap_Sort_G;
 with GNAT.HTable;
@@ -56,14 +52,6 @@ package body Lib.Xref is
    ------------------
    -- Declarations --
    ------------------
-
-   package Deferred_References is new Table.Table (
-     Table_Component_Type => Deferred_Reference_Entry,
-     Table_Index_Type     => Int,
-     Table_Low_Bound      => 0,
-     Table_Initial        => 512,
-     Table_Increment      => 200,
-     Table_Name           => "Name_Deferred_References");
 
    --  The Xref table is used to record references. The Loc field is set
    --  to No_Location for a definition entry.
@@ -210,21 +198,6 @@ package body Lib.Xref is
          Xrefs.Decrement_Last;
       end if;
    end Add_Entry;
-
-   ---------------------
-   -- Defer_Reference --
-   ---------------------
-
-   procedure Defer_Reference (Deferred_Reference : Deferred_Reference_Entry) is
-   begin
-      --  If Get_Ignore_Errors, then we are in Preanalyze_Without_Errors, and
-      --  we should not record cross references, because that will cause
-      --  duplicates when we call Analyze.
-
-      if not Get_Ignore_Errors then
-         Deferred_References.Append (Deferred_Reference);
-      end if;
-   end Defer_Reference;
 
    -----------
    -- Equal --
@@ -481,9 +454,7 @@ package body Lib.Xref is
                            --  e.g. function call, slicing of a function call,
                            --  pointer dereference, etc.
 
-                           if No (Obj)
-                             or else Ekind (Obj) = E_Enumeration_Literal
-                           then
+                           if No (Obj) then
                               return Empty;
                            end if;
                         else
@@ -598,9 +569,10 @@ package body Lib.Xref is
                P := Parent (P);
 
                if Nkind (P) = N_Pragma then
-                  if Pragma_Name_Unmapped (P) in Name_Warnings
-                                               | Name_Unmodified
-                                               | Name_Unreferenced
+                  if Nam_In (Pragma_Name_Unmapped (P),
+                             Name_Warnings,
+                             Name_Unmodified,
+                             Name_Unreferenced)
                   then
                      return False;
                   end if;
@@ -624,20 +596,7 @@ package body Lib.Xref is
    --  Start of processing for Generate_Reference
 
    begin
-      --  If Get_Ignore_Errors, then we are in Preanalyze_Without_Errors, and
-      --  we should not record cross references, because that will cause
-      --  duplicates when we call Analyze.
-
-      if Get_Ignore_Errors then
-         return;
-      end if;
-
-      --  May happen in case of severe errors
-
-      if Nkind (E) not in N_Entity then
-         return;
-      end if;
-
+      pragma Assert (Nkind (E) in N_Entity);
       Find_Actual (N, Formal, Call);
 
       if Present (Formal) then
@@ -703,37 +662,6 @@ package body Lib.Xref is
         and then (Typ = 'm' or else Typ = 'r')
       then
          Error_Msg_NE ("& is only defined in Ada 2012?y?", N, E);
-      end if;
-
-      --  Warn if reference to Ada 2022 entity not in Ada 2022 mode. We only
-      --  detect real explicit references (modifications and references).
-
-      if Comes_From_Source (N)
-        and then Is_Ada_2022_Only (E)
-        and then not Is_Subprogram (E)
-        and then Ada_Version < Ada_2022
-        and then Warn_On_Ada_2022_Compatibility
-        and then (Typ = 'm' or else Typ = 'r')
-      then
-         Error_Msg_NE ("& is only defined in Ada 2022?y?", N, E);
-
-      --  Error on static and dispatching calls to Ada 2022 subprograms that
-      --  require overriding if we are not in Ada 2022 mode (since overriding
-      --  was skipped); warn if the subprogram does not require overriding.
-
-      elsif Comes_From_Source (N)
-        and then Is_Ada_2022_Only (E)
-        and then Ada_Version < Ada_2022
-        and then Is_Subprogram (E)
-        and then (Typ = 'r' or else Typ = 's' or else Typ = 'R')
-      then
-         if Requires_Overriding (E) then
-            Error_Msg_NE
-              ("& is only defined in Ada 2022 and requires overriding", N, E);
-
-         elsif Warn_On_Ada_2022_Compatibility then
-            Error_Msg_NE ("& is only defined in Ada 2022?y?", N, E);
-         end if;
       end if;
 
       --  Do not generate references if we are within a postcondition sub-
@@ -856,7 +784,7 @@ package body Lib.Xref is
                end if;
 
             --  For the left hand of an assignment case, we do nothing here.
-            --  The processing for Analyze_Assignment will set the
+            --  The processing for Analyze_Assignment_Statement will set the
             --  Referenced_As_LHS flag.
 
             else
@@ -983,7 +911,7 @@ package body Lib.Xref is
             --  since the attribute acts as an anonymous alias of the function
             --  result and not as a real reference to the function.
 
-            elsif Ekind (E) in E_Function | E_Generic_Function
+            elsif Ekind_In (E, E_Function, E_Generic_Function)
               and then Is_Entity_Name (N)
               and then Is_Attribute_Result (Parent (N))
             then
@@ -1078,18 +1006,18 @@ package body Lib.Xref is
 
         and then Typ /= ' '
       then
-         if Nkind (N) in N_Identifier
-                       | N_Defining_Identifier
-                       | N_Defining_Operator_Symbol
-                       | N_Operator_Symbol
-                       | N_Defining_Character_Literal
-                       | N_Op
+         if Nkind_In (N, N_Identifier,
+                         N_Defining_Identifier,
+                         N_Defining_Operator_Symbol,
+                         N_Operator_Symbol,
+                         N_Defining_Character_Literal)
+           or else Nkind (N) in N_Op
            or else (Nkind (N) = N_Character_Literal
                      and then Sloc (Entity (N)) /= Standard_Location)
          then
             Nod := N;
 
-         elsif Nkind (N) in N_Expanded_Name | N_Selected_Component then
+         elsif Nkind_In (N, N_Expanded_Name, N_Selected_Component) then
             Nod := Selector_Name (N);
 
          else
@@ -1207,7 +1135,7 @@ package body Lib.Xref is
             --  reads/writes of private protected components) and not worth the
             --  effort.
 
-            if Ekind (Ent) in E_Abstract_State | E_Constant | E_Variable
+            if Ekind_In (Ent, E_Abstract_State, E_Constant, E_Variable)
               and then Present (Encapsulating_State (Ent))
               and then Is_Single_Concurrent_Object (Encapsulating_State (Ent))
             then
@@ -1314,8 +1242,18 @@ package body Lib.Xref is
       Formal : Entity_Id;
 
    begin
-      if Is_Access_Subprogram_Type (E) then
+      if Is_Generic_Subprogram (E) then
+         Formal := First_Entity (E);
+
+         while Present (Formal)
+           and then not Is_Formal (Formal)
+         loop
+            Next_Entity (Formal);
+         end loop;
+
+      elsif Ekind (E) in Access_Subprogram_Kind then
          Formal := First_Formal (Designated_Type (E));
+
       else
          Formal := First_Formal (E);
       end if;
@@ -1714,7 +1652,7 @@ package body Lib.Xref is
       begin
          --  Generate language name from convention
 
-         if Conv = Convention_C or else Conv in Convention_C_Variadic then
+         if Conv  = Convention_C then
             Language_Name := Name_C;
 
          elsif Conv = Convention_CPP then
@@ -2376,15 +2314,15 @@ package body Lib.Xref is
                   --  Special handling for access parameters and objects and
                   --  components of an anonymous access type.
 
-                  if Ekind (Etype (XE.Key.Ent)) in
-                               E_Anonymous_Access_Type
-                             | E_Anonymous_Access_Subprogram_Type
-                             | E_Anonymous_Access_Protected_Subprogram_Type
+                  if Ekind_In (Etype (XE.Key.Ent),
+                               E_Anonymous_Access_Type,
+                               E_Anonymous_Access_Subprogram_Type,
+                               E_Anonymous_Access_Protected_Subprogram_Type)
                   then
                      if Is_Formal (XE.Key.Ent)
                        or else
-                         Ekind (XE.Key.Ent) in
-                           E_Variable | E_Constant | E_Component
+                         Ekind_In
+                           (XE.Key.Ent, E_Variable, E_Constant, E_Component)
                      then
                         Ctyp := 'p';
                      end if;

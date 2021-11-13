@@ -8,6 +8,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* mingw runtime don't provide random().  */
+#ifdef __MINGW32__
+#define random rand
+#endif
+
 #define NUM 20
 
 #undef MASK
@@ -59,7 +64,7 @@ sse4_1_test (void)
   init_blendps (src1.f, src2.f);
 
   for (i = 0; i < 4; i++)
-    src3.f[i] = (int) rand ();
+    src3.f[i] = (int) random ();
 
   /* Check blendps imm8, m128, xmm */
   for (i = 0; i < NUM; i++)

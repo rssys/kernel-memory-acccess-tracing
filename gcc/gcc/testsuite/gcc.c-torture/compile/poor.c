@@ -1,5 +1,3 @@
-/* { dg-skip-if "exceeds eBPF stack limit" { bpf-*-* } } */
-
 typedef struct
 {
 	char	c[510];

@@ -1,6 +1,6 @@
 // Implementation of std::function -*- C++ -*-
 
-// Copyright (C) 2004-2021 Free Software Foundation, Inc.
+// Copyright (C) 2004-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -36,7 +36,9 @@
 # include <bits/c++0x_warning.h>
 #else
 
-#include <typeinfo>
+#if __cpp_rtti
+# include <typeinfo>
+#endif
 #include <bits/stl_function.h>
 #include <bits/invoke.h>
 #include <bits/refwrap.h>
@@ -82,17 +84,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   union [[gnu::may_alias]] _Any_data
   {
-    void*       _M_access()       noexcept { return &_M_pod_data[0]; }
-    const void* _M_access() const noexcept { return &_M_pod_data[0]; }
+    void*       _M_access()       { return &_M_pod_data[0]; }
+    const void* _M_access() const { return &_M_pod_data[0]; }
 
     template<typename _Tp>
       _Tp&
-      _M_access() noexcept
+      _M_access()
       { return *static_cast<_Tp*>(_M_access()); }
 
     template<typename _Tp>
       const _Tp&
-      _M_access() const noexcept
+      _M_access() const
       { return *static_cast<const _Tp*>(_M_access()); }
 
     _Nocopy_types _M_unused;
@@ -106,6 +108,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     __clone_functor,
     __destroy_functor
   };
+
+  // Simple type wrapper that helps avoid annoying const problems
+  // when casting between void pointers and pointers-to-pointers.
+  template<typename _Tp>
+    struct _Simple_type_wrapper
+    {
+      _Simple_type_wrapper(_Tp __value) : __value(__value) { }
+
+      _Tp __value;
+    };
+
+  template<typename _Tp>
+    struct __is_location_invariant<_Simple_type_wrapper<_Tp> >
+    : __is_location_invariant<_Tp>
+    { };
 
   template<typename _Signature>
     class function;
@@ -127,11 +144,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	 && __alignof__(_Functor) <= _M_max_align
 	 && (_M_max_align % __alignof__(_Functor) == 0));
 
-	using _Local_storage = integral_constant<bool, __stored_locally>;
+	typedef integral_constant<bool, __stored_locally> _Local_storage;
 
 	// Retrieve a pointer to the function object
 	static _Functor*
-	_M_get_pointer(const _Any_data& __source) noexcept
+	_M_get_pointer(const _Any_data& __source)
 	{
 	  if _GLIBCXX17_CONSTEXPR (__stored_locally)
 	    {
@@ -142,33 +159,32 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    return __source._M_access<_Functor*>();
 	}
 
-      private:
-	// Construct a location-invariant function object that fits within
+	// Clone a location-invariant function object that fits within
 	// an _Any_data structure.
-	template<typename _Fn>
-	  static void
-	  _M_create(_Any_data& __dest, _Fn&& __f, true_type)
-	  {
-	    ::new (__dest._M_access()) _Functor(std::forward<_Fn>(__f));
-	  }
+	static void
+	_M_clone(_Any_data& __dest, const _Any_data& __source, true_type)
+	{
+	  ::new (__dest._M_access()) _Functor(__source._M_access<_Functor>());
+	}
 
-	// Construct a function object on the heap and store a pointer.
-	template<typename _Fn>
-	  static void
-	  _M_create(_Any_data& __dest, _Fn&& __f, false_type)
-	  {
-	    __dest._M_access<_Functor*>()
-	      = new _Functor(std::forward<_Fn>(__f));
-	  }
+	// Clone a function object that is not location-invariant or
+	// that cannot fit into an _Any_data structure.
+	static void
+	_M_clone(_Any_data& __dest, const _Any_data& __source, false_type)
+	{
+	  __dest._M_access<_Functor*>() =
+	    new _Functor(*__source._M_access<const _Functor*>());
+	}
 
-	// Destroy an object stored in the internal buffer.
+	// Destroying a location-invariant object may still require
+	// destruction.
 	static void
 	_M_destroy(_Any_data& __victim, true_type)
 	{
 	  __victim._M_access<_Functor>().~_Functor();
 	}
 
-	// Destroy an object located on the heap.
+	// Destroying an object located on the heap.
 	static void
 	_M_destroy(_Any_data& __victim, false_type)
 	{
@@ -182,21 +198,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	{
 	  switch (__op)
 	    {
-	    case __get_type_info:
 #if __cpp_rtti
+	    case __get_type_info:
 	      __dest._M_access<const type_info*>() = &typeid(_Functor);
-#else
-	      __dest._M_access<const type_info*>() = nullptr;
-#endif
 	      break;
-
+#endif
 	    case __get_functor_ptr:
 	      __dest._M_access<_Functor*>() = _M_get_pointer(__source);
 	      break;
 
 	    case __clone_functor:
-	      _M_init_functor(__dest,
-		  *const_cast<const _Functor*>(_M_get_pointer(__source)));
+	      _M_clone(__dest, __source, _Local_storage());
 	      break;
 
 	    case __destroy_functor:
@@ -206,37 +218,41 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  return false;
 	}
 
-	template<typename _Fn>
-	  static void
-	  _M_init_functor(_Any_data& __functor, _Fn&& __f)
-	  noexcept(__and_<_Local_storage,
-			  is_nothrow_constructible<_Functor, _Fn>>::value)
-	  {
-	    _M_create(__functor, std::forward<_Fn>(__f), _Local_storage());
-	  }
+	static void
+	_M_init_functor(_Any_data& __functor, _Functor&& __f)
+	{ _M_init_functor(__functor, std::move(__f), _Local_storage()); }
 
 	template<typename _Signature>
 	  static bool
-	  _M_not_empty_function(const function<_Signature>& __f) noexcept
+	  _M_not_empty_function(const function<_Signature>& __f)
 	  { return static_cast<bool>(__f); }
 
 	template<typename _Tp>
 	  static bool
-	  _M_not_empty_function(_Tp* __fp) noexcept
+	  _M_not_empty_function(_Tp* __fp)
 	  { return __fp != nullptr; }
 
 	template<typename _Class, typename _Tp>
 	  static bool
-	  _M_not_empty_function(_Tp _Class::* __mp) noexcept
+	  _M_not_empty_function(_Tp _Class::* __mp)
 	  { return __mp != nullptr; }
 
 	template<typename _Tp>
 	  static bool
-	  _M_not_empty_function(const _Tp&) noexcept
+	  _M_not_empty_function(const _Tp&)
 	  { return true; }
+
+      private:
+	static void
+	_M_init_functor(_Any_data& __functor, _Functor&& __f, true_type)
+	{ ::new (__functor._M_access()) _Functor(std::move(__f)); }
+
+	static void
+	_M_init_functor(_Any_data& __functor, _Functor&& __f, false_type)
+	{ __functor._M_access<_Functor*>() = new _Functor(std::move(__f)); }
       };
 
-    _Function_base() = default;
+    _Function_base() : _M_manager(nullptr) { }
 
     ~_Function_base()
     {
@@ -246,11 +262,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     bool _M_empty() const { return !_M_manager; }
 
-    using _Manager_type
-      = bool (*)(_Any_data&, const _Any_data&, _Manager_operation);
+    typedef bool (*_Manager_type)(_Any_data&, const _Any_data&,
+				  _Manager_operation);
 
-    _Any_data     _M_functor{};
-    _Manager_type _M_manager{};
+    _Any_data     _M_functor;
+    _Manager_type _M_manager;
   };
 
   template<typename _Signature, typename _Functor>
@@ -260,7 +276,57 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     class _Function_handler<_Res(_ArgTypes...), _Functor>
     : public _Function_base::_Base_manager<_Functor>
     {
-      using _Base = _Function_base::_Base_manager<_Functor>;
+      typedef _Function_base::_Base_manager<_Functor> _Base;
+
+    public:
+      static _Res
+      _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
+      {
+	return (*_Base::_M_get_pointer(__functor))(
+	    std::forward<_ArgTypes>(__args)...);
+      }
+    };
+
+  template<typename _Functor, typename... _ArgTypes>
+    class _Function_handler<void(_ArgTypes...), _Functor>
+    : public _Function_base::_Base_manager<_Functor>
+    {
+      typedef _Function_base::_Base_manager<_Functor> _Base;
+
+     public:
+      static void
+      _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
+      {
+	(*_Base::_M_get_pointer(__functor))(
+	    std::forward<_ArgTypes>(__args)...);
+      }
+    };
+
+  template<typename _Class, typename _Member, typename _Res,
+	   typename... _ArgTypes>
+    class _Function_handler<_Res(_ArgTypes...), _Member _Class::*>
+    : public _Function_handler<void(_ArgTypes...), _Member _Class::*>
+    {
+      typedef _Function_handler<void(_ArgTypes...), _Member _Class::*>
+	_Base;
+
+     public:
+      static _Res
+      _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
+      {
+	return std::__invoke(_Base::_M_get_pointer(__functor)->__value,
+			     std::forward<_ArgTypes>(__args)...);
+      }
+    };
+
+  template<typename _Class, typename _Member, typename... _ArgTypes>
+    class _Function_handler<void(_ArgTypes...), _Member _Class::*>
+    : public _Function_base::_Base_manager<
+		 _Simple_type_wrapper< _Member _Class::* > >
+    {
+      typedef _Member _Class::* _Functor;
+      typedef _Simple_type_wrapper<_Functor> _Wrapper;
+      typedef _Function_base::_Base_manager<_Wrapper> _Base;
 
     public:
       static bool
@@ -275,7 +341,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    break;
 #endif
 	  case __get_functor_ptr:
-	    __dest._M_access<_Functor*>() = _Base::_M_get_pointer(__source);
+	    __dest._M_access<_Functor*>() =
+	      &_Base::_M_get_pointer(__source)->__value;
 	    break;
 
 	  default:
@@ -284,77 +351,38 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	return false;
       }
 
-      static _Res
+      static void
       _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
       {
-	return std::__invoke_r<_Res>(*_Base::_M_get_pointer(__functor),
-				     std::forward<_ArgTypes>(__args)...);
+	std::__invoke(_Base::_M_get_pointer(__functor)->__value,
+		      std::forward<_ArgTypes>(__args)...);
       }
-
-      template<typename _Fn>
-	static constexpr bool
-	_S_nothrow_init() noexcept
-	{
-	  return __and_<typename _Base::_Local_storage,
-			is_nothrow_constructible<_Functor, _Fn>>::value;
-	}
     };
-
-  // Specialization for invalid types
-  template<>
-    class _Function_handler<void, void>
-    {
-    public:
-      static bool
-      _M_manager(_Any_data&, const _Any_data&, _Manager_operation)
-      { return false; }
-    };
-
-  // Avoids instantiating ill-formed specializations of _Function_handler
-  // in std::function<_Signature>::target<_Functor>().
-  // e.g. _Function_handler<Sig, void()> and _Function_handler<Sig, void>
-  // would be ill-formed.
-  template<typename _Signature, typename _Functor,
-	   bool __valid = is_object<_Functor>::value>
-    struct _Target_handler
-    : _Function_handler<_Signature, typename remove_cv<_Functor>::type>
-    { };
-
-  template<typename _Signature, typename _Functor>
-    struct _Target_handler<_Signature, _Functor, false>
-    : _Function_handler<void, void>
-    { };
 
   /**
-   *  @brief Polymorphic function wrapper.
+   *  @brief Primary class template for std::function.
    *  @ingroup functors
-   *  @since C++11
+   *
+   *  Polymorphic function wrapper.
    */
   template<typename _Res, typename... _ArgTypes>
     class function<_Res(_ArgTypes...)>
     : public _Maybe_unary_or_binary_function<_Res, _ArgTypes...>,
       private _Function_base
     {
-      // Equivalent to std::decay_t except that it produces an invalid type
-      // if the decayed type is the current specialization of std::function.
       template<typename _Func,
-	       bool _Self = is_same<__remove_cvref_t<_Func>, function>::value>
-	using _Decay_t
-	  = typename __enable_if_t<!_Self, decay<_Func>>::type;
-
-      template<typename _Func,
-	       typename _DFunc = _Decay_t<_Func>,
-	       typename _Res2 = __invoke_result<_DFunc&, _ArgTypes...>>
+	       typename _Res2 = __invoke_result<_Func&, _ArgTypes...>>
 	struct _Callable
 	: __is_invocable_impl<_Res2, _Res>::type
 	{ };
 
-      template<typename _Cond, typename _Tp = void>
-	using _Requires = __enable_if_t<_Cond::value, _Tp>;
+      // Used so the return type convertibility checks aren't done when
+      // performing overload resolution for copy construction/assignment.
+      template<typename _Tp>
+	struct _Callable<function, _Tp> : false_type { };
 
-      template<typename _Functor>
-	using _Handler
-	  = _Function_handler<_Res(_ArgTypes...), __decay_t<_Functor>>;
+      template<typename _Cond, typename _Tp>
+	using _Requires = typename enable_if<_Cond::value, _Tp>::type;
 
     public:
       typedef _Res result_type;
@@ -363,7 +391,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       /**
        *  @brief Default construct creates an empty function call wrapper.
-       *  @post `!(bool)*this`
+       *  @post @c !(bool)*this
        */
       function() noexcept
       : _Function_base() { }
@@ -378,92 +406,57 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       /**
        *  @brief %Function copy constructor.
        *  @param __x A %function object with identical call signature.
-       *  @post `bool(*this) == bool(__x)`
+       *  @post @c bool(*this) == bool(__x)
        *
-       *  The newly-created %function contains a copy of the target of
-       *  `__x` (if it has one).
+       *  The newly-created %function contains a copy of the target of @a
+       *  __x (if it has one).
        */
-      function(const function& __x)
-      : _Function_base()
-      {
-	if (static_cast<bool>(__x))
-	  {
-	    __x._M_manager(_M_functor, __x._M_functor, __clone_functor);
-	    _M_invoker = __x._M_invoker;
-	    _M_manager = __x._M_manager;
-	  }
-      }
+      function(const function& __x);
 
       /**
        *  @brief %Function move constructor.
        *  @param __x A %function object rvalue with identical call signature.
        *
-       *  The newly-created %function contains the target of `__x`
+       *  The newly-created %function contains the target of @a __x
        *  (if it has one).
        */
-      function(function&& __x) noexcept
-      : _Function_base(), _M_invoker(__x._M_invoker)
+      function(function&& __x) noexcept : _Function_base()
       {
-	if (static_cast<bool>(__x))
-	  {
-	    _M_functor = __x._M_functor;
-	    _M_manager = __x._M_manager;
-	    __x._M_manager = nullptr;
-	    __x._M_invoker = nullptr;
-	  }
+	__x.swap(*this);
       }
 
       /**
        *  @brief Builds a %function that targets a copy of the incoming
        *  function object.
        *  @param __f A %function object that is callable with parameters of
-       *  type `ArgTypes...` and returns a value convertible to `Res`.
+       *  type @c T1, @c T2, ..., @c TN and returns a value convertible
+       *  to @c Res.
        *
        *  The newly-created %function object will target a copy of
-       *  `__f`. If `__f` is `reference_wrapper<F>`, then this function
-       *  object will contain a reference to the function object `__f.get()`.
-       *  If `__f` is a null function pointer, null pointer-to-member, or
-       *  empty `std::function`, the newly-created object will be empty.
+       *  @a __f. If @a __f is @c reference_wrapper<F>, then this function
+       *  object will contain a reference to the function object @c
+       *  __f.get(). If @a __f is a NULL function pointer or NULL
+       *  pointer-to-member, the newly-created object will be empty.
        *
-       *  If `__f` is a non-null function pointer or an object of type
-       *  `reference_wrapper<F>`, this function will not throw.
+       *  If @a __f is a non-NULL function pointer or an object of type @c
+       *  reference_wrapper<F>, this function will not throw.
        */
-      // _GLIBCXX_RESOLVE_LIB_DEFECTS
-      // 2774. std::function construction vs assignment
       template<typename _Functor,
-	       typename _Constraints = _Requires<_Callable<_Functor>>>
-	function(_Functor&& __f)
-	noexcept(_Handler<_Functor>::template _S_nothrow_init<_Functor>())
-	: _Function_base()
-	{
-	  static_assert(is_copy_constructible<__decay_t<_Functor>>::value,
-	      "std::function target must be copy-constructible");
-	  static_assert(is_constructible<__decay_t<_Functor>, _Functor>::value,
-	      "std::function target must be constructible from the "
-	      "constructor argument");
-
-	  using _My_handler = _Handler<_Functor>;
-
-	  if (_My_handler::_M_not_empty_function(__f))
-	    {
-	      _My_handler::_M_init_functor(_M_functor,
-					   std::forward<_Functor>(__f));
-	      _M_invoker = &_My_handler::_M_invoke;
-	      _M_manager = &_My_handler::_M_manager;
-	    }
-	}
+	       typename = _Requires<__not_<is_same<_Functor, function>>, void>,
+	       typename = _Requires<_Callable<_Functor>, void>>
+	function(_Functor);
 
       /**
-       *  @brief Function assignment operator.
+       *  @brief %Function assignment operator.
        *  @param __x A %function with identical call signature.
-       *  @post `(bool)*this == (bool)x`
-       *  @returns `*this`
+       *  @post @c (bool)*this == (bool)x
+       *  @returns @c *this
        *
-       *  The target of `__x` is copied to `*this`. If `__x` has no
-       *  target, then `*this` will be empty.
+       *  The target of @a __x is copied to @c *this. If @a __x has no
+       *  target, then @c *this will be empty.
        *
-       *  If `__x` targets a function pointer or a reference to a function
-       *  object, then this operation will not throw an exception.
+       *  If @a __x targets a function pointer or a reference to a function
+       *  object, then this operation will not throw an %exception.
        */
       function&
       operator=(const function& __x)
@@ -473,15 +466,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       /**
-       *  @brief Function move-assignment operator.
+       *  @brief %Function move-assignment operator.
        *  @param __x A %function rvalue with identical call signature.
-       *  @returns `*this`
+       *  @returns @c *this
        *
-       *  The target of `__x` is moved to `*this`. If `__x` has no
-       *  target, then `*this` will be empty.
+       *  The target of @a __x is moved to @c *this. If @a __x has no
+       *  target, then @c *this will be empty.
        *
-       *  If `__x` targets a function pointer or a reference to a function
-       *  object, then this operation will not throw an exception.
+       *  If @a __x targets a function pointer or a reference to a function
+       *  object, then this operation will not throw an %exception.
        */
       function&
       operator=(function&& __x) noexcept
@@ -491,11 +484,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       /**
-       *  @brief Function assignment to empty.
-       *  @post `!(bool)*this`
-       *  @returns `*this`
+       *  @brief %Function assignment to zero.
+       *  @post @c !(bool)*this
+       *  @returns @c *this
        *
-       *  The target of `*this` is deallocated, leaving it empty.
+       *  The target of @c *this is deallocated, leaving it empty.
        */
       function&
       operator=(nullptr_t) noexcept
@@ -510,26 +503,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       /**
-       *  @brief Function assignment to a new target.
-       *  @param __f  A function object that is callable with parameters of
-       *              type  `_ArgTypes...` and returns a value convertible
-       *              to `_Res`.
-       *  @return `*this`
-       *  @since C++11
+       *  @brief %Function assignment to a new target.
+       *  @param __f A %function object that is callable with parameters of
+       *  type @c T1, @c T2, ..., @c TN and returns a value convertible
+       *  to @c Res.
+       *  @return @c *this
        *
-       *  This function object wrapper will target a copy of `__f`. If `__f`
-       *  is `reference_wrapper<F>`, then this function object will contain
-       *  a reference to the function object `__f.get()`. If `__f` is a null
-       *  function pointer or null pointer-to-member, this object will be
-       *  empty.
+       *  This  %function object wrapper will target a copy of @a
+       *  __f. If @a __f is @c reference_wrapper<F>, then this function
+       *  object will contain a reference to the function object @c
+       *  __f.get(). If @a __f is a NULL function pointer or NULL
+       *  pointer-to-member, @c this object will be empty.
        *
-       *  If `__f` is a non-null function pointer or an object of type
-       *  `reference_wrapper<F>`, this function will not throw.
+       *  If @a __f is a non-NULL function pointer or an object of type @c
+       *  reference_wrapper<F>, this function will not throw.
        */
       template<typename _Functor>
-	_Requires<_Callable<_Functor>, function&>
+	_Requires<_Callable<typename decay<_Functor>::type>, function&>
 	operator=(_Functor&& __f)
-	noexcept(_Handler<_Functor>::template _S_nothrow_init<_Functor>())
 	{
 	  function(std::forward<_Functor>(__f)).swap(*this);
 	  return *this;
@@ -550,8 +541,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
        *  @brief Swap the targets of two %function objects.
        *  @param __x A %function with identical call signature.
        *
-       *  Swap the targets of `this` function object and `__f`.
-       *  This function will not throw exceptions.
+       *  Swap the targets of @c this function object and @a __f. This
+       *  function will not throw an %exception.
        */
       void swap(function& __x) noexcept
       {
@@ -565,10 +556,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       /**
        *  @brief Determine if the %function wrapper has a target.
        *
-       *  @return `true` when this function object contains a target,
-       *  or `false` when it is empty.
+       *  @return @c true when this %function object contains a target,
+       *  or @c false when it is empty.
        *
-       *  This function will not throw exceptions.
+       *  This function will not throw an %exception.
        */
       explicit operator bool() const noexcept
       { return !_M_empty(); }
@@ -576,20 +567,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // [3.7.2.4] function invocation
 
       /**
-       *  @brief Invokes the function targeted by `*this`.
+       *  @brief Invokes the function targeted by @c *this.
        *  @returns the result of the target.
-       *  @throws `bad_function_call` when `!(bool)*this`
+       *  @throws bad_function_call when @c !(bool)*this
        *
        *  The function call operator invokes the target function object
-       *  stored by `this`.
+       *  stored by @c this.
        */
-      _Res
-      operator()(_ArgTypes... __args) const
-      {
-	if (_M_empty())
-	  __throw_bad_function_call();
-	return _M_invoker(_M_functor, std::forward<_ArgTypes>(__args)...);
-      }
+      _Res operator()(_ArgTypes... __args) const;
 
 #if __cpp_rtti
       // [3.7.2.5] function target access
@@ -598,75 +583,33 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
        *  wrapper.
        *
        *  @returns the type identifier of the target function object, or
-       *  `typeid(void)` if `!(bool)*this`.
+       *  @c typeid(void) if @c !(bool)*this.
        *
-       *  This function will not throw exceptions.
+       *  This function will not throw an %exception.
        */
-      const type_info&
-      target_type() const noexcept
-      {
-	if (_M_manager)
-	  {
-	    _Any_data __typeinfo_result;
-	    _M_manager(__typeinfo_result, _M_functor, __get_type_info);
-	    if (auto __ti =  __typeinfo_result._M_access<const type_info*>())
-	      return *__ti;
-	  }
-	return typeid(void);
-      }
-#endif
+      const type_info& target_type() const noexcept;
 
       /**
        *  @brief Access the stored target function object.
        *
        *  @return Returns a pointer to the stored target function object,
-       *  if `typeid(_Functor).equals(target_type())`; otherwise, a null
+       *  if @c typeid(_Functor).equals(target_type()); otherwise, a NULL
        *  pointer.
        *
        * This function does not throw exceptions.
        *
        * @{
        */
-      template<typename _Functor>
-	_Functor*
-	target() noexcept
-	{
-	  const function* __const_this = this;
-	  const _Functor* __func = __const_this->template target<_Functor>();
-	  // If is_function_v<_Functor> is true then const_cast<_Functor*>
-	  // would be ill-formed, so use *const_cast<_Functor**> instead.
-	  return *const_cast<_Functor**>(&__func);
-	}
+      template<typename _Functor>       _Functor* target() noexcept;
 
-      template<typename _Functor>
-	const _Functor*
-	target() const noexcept
-	{
-	  if _GLIBCXX17_CONSTEXPR (is_object<_Functor>::value)
-	    {
-	      // For C++11 and C++14 if-constexpr is not used above, so
-	      // _Target_handler avoids ill-formed _Function_handler types.
-	      using _Handler = _Target_handler<_Res(_ArgTypes...), _Functor>;
-
-	      if (_M_manager == &_Handler::_M_manager
-#if __cpp_rtti
-		  || (_M_manager && typeid(_Functor) == target_type())
+      template<typename _Functor> const _Functor* target() const noexcept;
+      // @}
 #endif
-		 )
-		{
-		  _Any_data __ptr;
-		  _M_manager(__ptr, _M_functor, __get_functor_ptr);
-		  return __ptr._M_access<const _Functor*>();
-		}
-	    }
-	  return nullptr;
-	}
-      /// @}
 
     private:
       using _Invoker_type = _Res (*)(const _Any_data&, _ArgTypes&&...);
-      _Invoker_type _M_invoker = nullptr;
-    };
+      _Invoker_type _M_invoker;
+  };
 
 #if __cpp_deduction_guides >= 201606
   template<typename>
@@ -705,20 +648,104 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     function(_Functor) -> function<_Signature>;
 #endif
 
+  // Out-of-line member definitions.
+  template<typename _Res, typename... _ArgTypes>
+    function<_Res(_ArgTypes...)>::
+    function(const function& __x)
+    : _Function_base()
+    {
+      if (static_cast<bool>(__x))
+	{
+	  __x._M_manager(_M_functor, __x._M_functor, __clone_functor);
+	  _M_invoker = __x._M_invoker;
+	  _M_manager = __x._M_manager;
+	}
+    }
+
+  template<typename _Res, typename... _ArgTypes>
+    template<typename _Functor, typename, typename>
+      function<_Res(_ArgTypes...)>::
+      function(_Functor __f)
+      : _Function_base()
+      {
+	typedef _Function_handler<_Res(_ArgTypes...), _Functor> _My_handler;
+
+	if (_My_handler::_M_not_empty_function(__f))
+	  {
+	    _My_handler::_M_init_functor(_M_functor, std::move(__f));
+	    _M_invoker = &_My_handler::_M_invoke;
+	    _M_manager = &_My_handler::_M_manager;
+	  }
+      }
+
+  template<typename _Res, typename... _ArgTypes>
+    _Res
+    function<_Res(_ArgTypes...)>::
+    operator()(_ArgTypes... __args) const
+    {
+      if (_M_empty())
+	__throw_bad_function_call();
+      return _M_invoker(_M_functor, std::forward<_ArgTypes>(__args)...);
+    }
+
+#if __cpp_rtti
+  template<typename _Res, typename... _ArgTypes>
+    const type_info&
+    function<_Res(_ArgTypes...)>::
+    target_type() const noexcept
+    {
+      if (_M_manager)
+	{
+	  _Any_data __typeinfo_result;
+	  _M_manager(__typeinfo_result, _M_functor, __get_type_info);
+	  return *__typeinfo_result._M_access<const type_info*>();
+	}
+      else
+	return typeid(void);
+    }
+
+  template<typename _Res, typename... _ArgTypes>
+    template<typename _Functor>
+      _Functor*
+      function<_Res(_ArgTypes...)>::
+      target() noexcept
+      {
+	const function* __const_this = this;
+	const _Functor* __func = __const_this->template target<_Functor>();
+	return const_cast<_Functor*>(__func);
+      }
+
+  template<typename _Res, typename... _ArgTypes>
+    template<typename _Functor>
+      const _Functor*
+      function<_Res(_ArgTypes...)>::
+      target() const noexcept
+      {
+	if (typeid(_Functor) == target_type() && _M_manager)
+	  {
+	    _Any_data __ptr;
+	    _M_manager(__ptr, _M_functor, __get_functor_ptr);
+	    return __ptr._M_access<const _Functor*>();
+	  }
+	else
+	  return nullptr;
+      }
+#endif
+
   // [20.7.15.2.6] null pointer comparisons
 
   /**
-   *  @brief Test whether a polymorphic function object wrapper is empty.
-   *  @returns `true` if the wrapper has no target, `false` otherwise
+   *  @brief Compares a polymorphic function object wrapper against 0
+   *  (the NULL pointer).
+   *  @returns @c true if the wrapper has no target, @c false otherwise
    *
-   *  This function will not throw exceptions.
+   *  This function will not throw an %exception.
    */
   template<typename _Res, typename... _Args>
     inline bool
     operator==(const function<_Res(_Args...)>& __f, nullptr_t) noexcept
     { return !static_cast<bool>(__f); }
 
-#if __cpp_impl_three_way_comparison < 201907L
   /// @overload
   template<typename _Res, typename... _Args>
     inline bool
@@ -726,10 +753,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     { return !static_cast<bool>(__f); }
 
   /**
-   *  @brief Test whether a polymorphic function object wrapper is non-empty.
-   *  @returns `false` if the wrapper has no target, `true` otherwise
+   *  @brief Compares a polymorphic function object wrapper against 0
+   *  (the NULL pointer).
+   *  @returns @c false if the wrapper has no target, @c true otherwise
    *
-   *  This function will not throw exceptions.
+   *  This function will not throw an %exception.
    */
   template<typename _Res, typename... _Args>
     inline bool
@@ -741,14 +769,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     inline bool
     operator!=(nullptr_t, const function<_Res(_Args...)>& __f) noexcept
     { return static_cast<bool>(__f); }
-#endif
+
 
   // [20.7.15.2.7] specialized algorithms
 
   /**
    *  @brief Swap the targets of two polymorphic function object wrappers.
    *
-   *  This function will not throw exceptions.
+   *  This function will not throw an %exception.
    */
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 2062. Effect contradictions w/o no-throw guarantee of std::function swaps

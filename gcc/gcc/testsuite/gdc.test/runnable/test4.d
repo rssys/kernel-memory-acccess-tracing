@@ -605,6 +605,11 @@ extern (C) int cfc(int x, int y)
     return x * 10 + y;
 }
 
+extern (Pascal) int cfp(int x, int y)
+{
+    return x * 10 + y;
+}
+
 int cfd(int x, int y)
 {
     return x * 10 + y;
@@ -613,6 +618,7 @@ int cfd(int x, int y)
 
 extern (Windows) int function (int, int) fpw;
 extern (C) int function (int, int) fpc;
+extern (Pascal) int function (int, int) fpp;
 int function (int, int) fpd;
 
 void test20()
@@ -622,6 +628,7 @@ void test20()
 
     fpw = &cfw;
     fpc = &cfc;
+    fpp = &cfp;
     fpd = &cfd;
 
 //printf("test w\n");
@@ -631,6 +638,10 @@ void test20()
 //printf("test c\n");
     i = (*fpc)(3, 4);
     assert(i == 34);
+
+//printf("test p\n");
+    i = (*fpp)(5, 6);
+    assert(i == 56);
 
 //printf("test d\n");
     i = (*fpd)(7, 8);
@@ -1469,3 +1480,4 @@ int main()
     printf("Success\n");
     return 0;
 }
+

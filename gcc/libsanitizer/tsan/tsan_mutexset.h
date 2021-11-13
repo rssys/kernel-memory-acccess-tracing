@@ -1,8 +1,7 @@
 //===-- tsan_mutexset.h -----------------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -21,22 +20,12 @@ class MutexSet {
  public:
   // Holds limited number of mutexes.
   // The oldest mutexes are discarded on overflow.
-  static constexpr uptr kMaxSize = 16;
+  static const uptr kMaxSize = 16;
   struct Desc {
-    uptr addr;
-    StackID stack_id;
     u64 id;
     u64 epoch;
-    u32 seq;
-    u32 count;
+    int count;
     bool write;
-
-    Desc() { internal_memset(this, 0, sizeof(*this)); }
-    Desc(const Desc& other) { *this = other; }
-    Desc& operator=(const MutexSet::Desc& other) {
-      internal_memcpy(this, &other, sizeof(*this));
-      return *this;
-    }
   };
 
   MutexSet();
@@ -44,37 +33,21 @@ class MutexSet {
   void Add(u64 id, bool write, u64 epoch);
   void Del(u64 id, bool write);
   void Remove(u64 id);  // Removes the mutex completely (if it's destroyed).
-  void AddAddr(uptr addr, StackID stack_id, bool write);
-  void DelAddr(uptr addr, bool destroy = false);
   uptr Size() const;
   Desc Get(uptr i) const;
 
+  void operator=(const MutexSet &other) {
+    internal_memcpy(this, &other, sizeof(*this));
+  }
+
  private:
 #if !SANITIZER_GO
-  u32 seq_ = 0;
-  uptr size_ = 0;
+  uptr size_;
   Desc descs_[kMaxSize];
+#endif
 
   void RemovePos(uptr i);
-#endif
-};
-
-// MutexSet is too large to live on stack.
-// DynamicMutexSet can be use used to create local MutexSet's.
-class DynamicMutexSet {
- public:
-  DynamicMutexSet();
-  ~DynamicMutexSet();
-  MutexSet* operator->() { return ptr_; }
-  operator MutexSet*() { return ptr_; }
-  DynamicMutexSet(const DynamicMutexSet&) = delete;
-  DynamicMutexSet& operator=(const DynamicMutexSet&) = delete;
-
- private:
-  MutexSet* ptr_;
-#if SANITIZER_GO
-  MutexSet set_;
-#endif
+  MutexSet(const MutexSet&);
 };
 
 // Go does not have mutexes, so do not spend memory and time.
@@ -85,12 +58,9 @@ MutexSet::MutexSet() {}
 void MutexSet::Add(u64 id, bool write, u64 epoch) {}
 void MutexSet::Del(u64 id, bool write) {}
 void MutexSet::Remove(u64 id) {}
-void MutexSet::AddAddr(uptr addr, StackID stack_id, bool write) {}
-void MutexSet::DelAddr(uptr addr, bool destroy) {}
+void MutexSet::RemovePos(uptr i) {}
 uptr MutexSet::Size() const { return 0; }
 MutexSet::Desc MutexSet::Get(uptr i) const { return Desc(); }
-DynamicMutexSet::DynamicMutexSet() : ptr_(&set_) {}
-DynamicMutexSet::~DynamicMutexSet() {}
 #endif
 
 }  // namespace __tsan

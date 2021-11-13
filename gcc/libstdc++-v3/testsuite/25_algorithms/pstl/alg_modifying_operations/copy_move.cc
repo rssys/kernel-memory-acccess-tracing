@@ -1,7 +1,6 @@
 // -*- C++ -*-
-// { dg-options "-ltbb" }
+// { dg-options "-std=gnu++17 -ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-timeout-factor 3 }
 // { dg-require-effective-target tbb-backend }
 
 //===-- copy_move.pass.cpp ------------------------------------------------===//
@@ -31,8 +30,8 @@ using namespace TestUtils;
 struct run_copy
 {
 
-#if _PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
-    _PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
+#if __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
+    __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
     template <typename InputIterator, typename OutputIterator, typename OutputIterator2, typename Size, typename T>
     void
     operator()(pstl::execution::unsequenced_policy, InputIterator first, InputIterator last, OutputIterator out_first,
@@ -84,8 +83,8 @@ template <typename T>
 struct run_move
 {
 
-#if _PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
-    _PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
+#if __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
+    __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
     template <typename InputIterator, typename OutputIterator, typename OutputIterator2, typename Size>
     void
     operator()(pstl::execution::unsequenced_policy, InputIterator first, InputIterator last, OutputIterator out_first,
@@ -127,8 +126,8 @@ template <typename T>
 struct run_move<Wrapper<T>>
 {
 
-#if _PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
-    _PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
+#if __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||                                                            \
+    __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN //dummy specialization by policy type, in case of broken configuration
     template <typename InputIterator, typename OutputIterator, typename OutputIterator2, typename Size>
     void
     operator()(pstl::execution::unsequenced_policy, InputIterator first, InputIterator last, OutputIterator out_first,
@@ -200,7 +199,7 @@ main()
     test<int32_t>(-666, [](size_t j) { return int32_t(j); });
     test<Wrapper<float64_t>>(Wrapper<float64_t>(-666.0), [](int32_t j) { return Wrapper<float64_t>(j); });
 
-#if !_PSTL_ICC_16_17_TEST_64_TIMEOUT
+#if !__PSTL_ICC_16_17_TEST_64_TIMEOUT
     test<float64_t>(-666.0, [](size_t j) { return float64_t(j); });
     test<Number>(Number(42, OddTag()), [](int32_t j) { return Number(j, OddTag()); });
 #endif

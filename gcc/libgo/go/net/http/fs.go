@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"mime"
 	"mime/multipart"
 	"net/textproto"
@@ -31,22 +30,20 @@ import (
 // value is a filename on the native file system, not a URL, so it is separated
 // by filepath.Separator, which isn't necessarily '/'.
 //
-// Note that Dir could expose sensitive files and directories. Dir will follow
-// symlinks pointing out of the directory tree, which can be especially dangerous
-// if serving from a directory in which users are able to create arbitrary symlinks.
-// Dir will also allow access to files and directories starting with a period,
-// which could expose sensitive directories like .git or sensitive files like
-// .htpasswd. To exclude files with a leading period, remove the files/directories
-// from the server or create a custom FileSystem implementation.
+// Note that Dir will allow access to files and directories starting with a
+// period, which could expose sensitive directories like a .git directory or
+// sensitive files like .htpasswd. To exclude files with a leading period,
+// remove the files/directories from the server or create a custom FileSystem
+// implementation.
 //
 // An empty Dir is treated as ".".
 type Dir string
 
 // mapDirOpenError maps the provided non-nil error from opening name
 // to a possibly better non-nil error. In particular, it turns OS-specific errors
-// about opening files in non-directories into fs.ErrNotExist. See Issue 18984.
+// about opening files in non-directories into os.ErrNotExist. See Issue 18984.
 func mapDirOpenError(originalErr error, name string) error {
-	if errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {
+	if os.IsNotExist(originalErr) || os.IsPermission(originalErr) {
 		return originalErr
 	}
 
@@ -60,14 +57,12 @@ func mapDirOpenError(originalErr error, name string) error {
 			return originalErr
 		}
 		if !fi.IsDir() {
-			return fs.ErrNotExist
+			return os.ErrNotExist
 		}
 	}
 	return originalErr
 }
 
-// Open implements FileSystem using os.Open, opening files for reading rooted
-// and relative to the directory d.
 func (d Dir) Open(name string) (File, error) {
 	if filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator) {
 		return nil, errors.New("http: invalid character in file path")
@@ -87,10 +82,6 @@ func (d Dir) Open(name string) (File, error) {
 // A FileSystem implements access to a collection of named files.
 // The elements in a file path are separated by slash ('/', U+002F)
 // characters, regardless of host operating system convention.
-// See the FileServer function to convert a FileSystem to a Handler.
-//
-// This interface predates the fs.FS interface, which can be used instead:
-// the FS adapter function converts an fs.FS to a FileSystem.
 type FileSystem interface {
 	Open(name string) (File, error)
 }
@@ -103,56 +94,24 @@ type File interface {
 	io.Closer
 	io.Reader
 	io.Seeker
-	Readdir(count int) ([]fs.FileInfo, error)
-	Stat() (fs.FileInfo, error)
+	Readdir(count int) ([]os.FileInfo, error)
+	Stat() (os.FileInfo, error)
 }
-
-type anyDirs interface {
-	len() int
-	name(i int) string
-	isDir(i int) bool
-}
-
-type fileInfoDirs []fs.FileInfo
-
-func (d fileInfoDirs) len() int          { return len(d) }
-func (d fileInfoDirs) isDir(i int) bool  { return d[i].IsDir() }
-func (d fileInfoDirs) name(i int) string { return d[i].Name() }
-
-type dirEntryDirs []fs.DirEntry
-
-func (d dirEntryDirs) len() int          { return len(d) }
-func (d dirEntryDirs) isDir(i int) bool  { return d[i].IsDir() }
-func (d dirEntryDirs) name(i int) string { return d[i].Name() }
 
 func dirList(w ResponseWriter, r *Request, f File) {
-	// Prefer to use ReadDir instead of Readdir,
-	// because the former doesn't require calling
-	// Stat on every entry of a directory on Unix.
-	var dirs anyDirs
-	var err error
-	if d, ok := f.(fs.ReadDirFile); ok {
-		var list dirEntryDirs
-		list, err = d.ReadDir(-1)
-		dirs = list
-	} else {
-		var list fileInfoDirs
-		list, err = f.Readdir(-1)
-		dirs = list
-	}
-
+	dirs, err := f.Readdir(-1)
 	if err != nil {
 		logf(r, "http: error reading directory: %v", err)
 		Error(w, "Error reading directory", StatusInternalServerError)
 		return
 	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs.name(i) < dirs.name(j) })
+	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name() < dirs[j].Name() })
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, "<pre>\n")
-	for i, n := 0, dirs.len(); i < n; i++ {
-		name := dirs.name(i)
-		if dirs.isDir(i) {
+	for _, d := range dirs {
+		name := d.Name()
+		if d.IsDir() {
 			name += "/"
 		}
 		// name may contain '?' or '#', which must be escaped to remain
@@ -423,18 +382,15 @@ func checkIfUnmodifiedSince(r *Request, modtime time.Time) condResult {
 	if ius == "" || isZeroTime(modtime) {
 		return condNone
 	}
-	t, err := ParseTime(ius)
-	if err != nil {
-		return condNone
+	if t, err := ParseTime(ius); err == nil {
+		// The Date-Modified header truncates sub-second precision, so
+		// use mtime < t+1s instead of mtime <= t to check for unmodified.
+		if modtime.Before(t.Add(1 * time.Second)) {
+			return condTrue
+		}
+		return condFalse
 	}
-
-	// The Last-Modified header truncates sub-second precision so
-	// the modtime needs to be truncated too.
-	modtime = modtime.Truncate(time.Second)
-	if modtime.Before(t) || modtime.Equal(t) {
-		return condTrue
-	}
-	return condFalse
+	return condNone
 }
 
 func checkIfNoneMatch(w ResponseWriter, r *Request) condResult {
@@ -450,7 +406,6 @@ func checkIfNoneMatch(w ResponseWriter, r *Request) condResult {
 		}
 		if buf[0] == ',' {
 			buf = buf[1:]
-			continue
 		}
 		if buf[0] == '*' {
 			return condFalse
@@ -479,10 +434,9 @@ func checkIfModifiedSince(r *Request, modtime time.Time) condResult {
 	if err != nil {
 		return condNone
 	}
-	// The Last-Modified header truncates sub-second precision so
-	// the modtime needs to be truncated too.
-	modtime = modtime.Truncate(time.Second)
-	if modtime.Before(t) || modtime.Equal(t) {
+	// The Date-Modified header truncates sub-second precision, so
+	// use mtime < t+1s instead of mtime <= t to check for unmodified.
+	if modtime.Before(t.Add(1 * time.Second)) {
 		return condFalse
 	}
 	return condTrue
@@ -626,15 +580,17 @@ func serveFile(w ResponseWriter, r *Request, fs FileSystem, name string, redirec
 		}
 	}
 
+	// redirect if the directory name doesn't end in a slash
 	if d.IsDir() {
 		url := r.URL.Path
-		// redirect if the directory name doesn't end in a slash
-		if url == "" || url[len(url)-1] != '/' {
+		if url[len(url)-1] != '/' {
 			localRedirect(w, r, path.Base(url)+"/")
 			return
 		}
+	}
 
-		// use contents of index.html for directory, if present
+	// use contents of index.html for directory, if present
+	if d.IsDir() {
 		index := strings.TrimSuffix(name, "/") + indexPage
 		ff, err := fs.Open(index)
 		if err == nil {
@@ -654,7 +610,7 @@ func serveFile(w ResponseWriter, r *Request, fs FileSystem, name string, redirec
 			writeNotModified(w)
 			return
 		}
-		setLastModified(w, d.ModTime())
+		w.Header().Set("Last-Modified", d.ModTime().UTC().Format(TimeFormat))
 		dirList(w, r, f)
 		return
 	}
@@ -670,10 +626,10 @@ func serveFile(w ResponseWriter, r *Request, fs FileSystem, name string, redirec
 // and historically Go's ServeContent always returned just "404 Not Found" for
 // all errors. We don't want to start leaking information in error messages.
 func toHTTPError(err error) (msg string, httpStatus int) {
-	if errors.Is(err, fs.ErrNotExist) {
+	if os.IsNotExist(err) {
 		return "404 page not found", StatusNotFound
 	}
-	if errors.Is(err, fs.ErrPermission) {
+	if os.IsPermission(err) {
 		return "403 Forbidden", StatusForbidden
 	}
 	// Default:
@@ -743,98 +699,17 @@ type fileHandler struct {
 	root FileSystem
 }
 
-type ioFS struct {
-	fsys fs.FS
-}
-
-type ioFile struct {
-	file fs.File
-}
-
-func (f ioFS) Open(name string) (File, error) {
-	if name == "/" {
-		name = "."
-	} else {
-		name = strings.TrimPrefix(name, "/")
-	}
-	file, err := f.fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	return ioFile{file}, nil
-}
-
-func (f ioFile) Close() error               { return f.file.Close() }
-func (f ioFile) Read(b []byte) (int, error) { return f.file.Read(b) }
-func (f ioFile) Stat() (fs.FileInfo, error) { return f.file.Stat() }
-
-var errMissingSeek = errors.New("io.File missing Seek method")
-var errMissingReadDir = errors.New("io.File directory missing ReadDir method")
-
-func (f ioFile) Seek(offset int64, whence int) (int64, error) {
-	s, ok := f.file.(io.Seeker)
-	if !ok {
-		return 0, errMissingSeek
-	}
-	return s.Seek(offset, whence)
-}
-
-func (f ioFile) ReadDir(count int) ([]fs.DirEntry, error) {
-	d, ok := f.file.(fs.ReadDirFile)
-	if !ok {
-		return nil, errMissingReadDir
-	}
-	return d.ReadDir(count)
-}
-
-func (f ioFile) Readdir(count int) ([]fs.FileInfo, error) {
-	d, ok := f.file.(fs.ReadDirFile)
-	if !ok {
-		return nil, errMissingReadDir
-	}
-	var list []fs.FileInfo
-	for {
-		dirs, err := d.ReadDir(count - len(list))
-		for _, dir := range dirs {
-			info, err := dir.Info()
-			if err != nil {
-				// Pretend it doesn't exist, like (*os.File).Readdir does.
-				continue
-			}
-			list = append(list, info)
-		}
-		if err != nil {
-			return list, err
-		}
-		if count < 0 || len(list) >= count {
-			break
-		}
-	}
-	return list, nil
-}
-
-// FS converts fsys to a FileSystem implementation,
-// for use with FileServer and NewFileTransport.
-func FS(fsys fs.FS) FileSystem {
-	return ioFS{fsys}
-}
-
 // FileServer returns a handler that serves HTTP requests
 // with the contents of the file system rooted at root.
-//
-// As a special case, the returned file server redirects any request
-// ending in "/index.html" to the same path, without the final
-// "index.html".
 //
 // To use the operating system's file system implementation,
 // use http.Dir:
 //
 //     http.Handle("/", http.FileServer(http.Dir("/tmp")))
 //
-// To use an fs.FS implementation, use http.FS to convert it:
-//
-//	http.Handle("/", http.FileServer(http.FS(fsys)))
-//
+// As a special case, the returned file server redirects any request
+// ending in "/index.html" to the same path, without the final
+// "index.html".
 func FileServer(root FileSystem) Handler {
 	return &fileHandler{root}
 }
@@ -877,7 +752,7 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 	var ranges []httpRange
 	noOverlap := false
 	for _, ra := range strings.Split(s[len(b):], ",") {
-		ra = textproto.TrimString(ra)
+		ra = strings.TrimSpace(ra)
 		if ra == "" {
 			continue
 		}
@@ -885,19 +760,13 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 		if i < 0 {
 			return nil, errors.New("invalid range")
 		}
-		start, end := textproto.TrimString(ra[:i]), textproto.TrimString(ra[i+1:])
+		start, end := strings.TrimSpace(ra[:i]), strings.TrimSpace(ra[i+1:])
 		var r httpRange
 		if start == "" {
 			// If no start is specified, end specifies the
-			// range start relative to the end of the file,
-			// and we are dealing with <suffix-length>
-			// which has to be a non-negative integer as per
-			// RFC 7233 Section 2.1 "Byte-Ranges".
-			if end == "" || end[0] == '-' {
-				return nil, errors.New("invalid range")
-			}
+			// range start relative to the end of the file.
 			i, err := strconv.ParseInt(end, 10, 64)
-			if i < 0 || err != nil {
+			if err != nil {
 				return nil, errors.New("invalid range")
 			}
 			if i > size {

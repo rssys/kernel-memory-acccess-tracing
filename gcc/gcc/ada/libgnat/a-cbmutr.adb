@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---             Copyright (C) 2011-2021, Free Software Foundation, Inc.      --
+--             Copyright (C) 2011-2019, Free Software Foundation, Inc.      --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,11 +29,8 @@
 
 with Ada.Finalization;
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Bounded_Multiway_Trees with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Bounded_Multiway_Trees is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -369,8 +366,6 @@ is
       First, Last : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -387,6 +382,8 @@ is
          raise Capacity_Error
            with "requested count exceeds available storage";
       end if;
+
+      TC_Check (Container.TC);
 
       if Container.Count = 0 then
          Initialize_Root (Container);
@@ -600,10 +597,10 @@ is
            Container.TC'Unrestricted_Access;
       begin
          return R : constant Constant_Reference_Type :=
-           (Element => Container.Elements (Position.Node)'Unchecked_Access,
+           (Element => Container.Elements (Position.Node)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -628,12 +625,15 @@ is
      (Source   : Tree;
       Capacity : Count_Type := 0) return Tree
    is
-      C : constant Count_Type :=
-        (if Capacity = 0 then Source.Count
-         else Capacity);
+      C : Count_Type;
+
    begin
-      if Checks and then C < Source.Count then
-         raise Capacity_Error with "Capacity too small";
+      if Capacity = 0 then
+         C := Source.Count;
+      elsif Capacity >= Source.Count then
+         C := Capacity;
+      elsif Checks then
+         raise Capacity_Error with "Capacity value too small";
       end if;
 
       return Target : Tree (Capacity => C) do
@@ -988,8 +988,6 @@ is
       Count : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -997,6 +995,8 @@ is
       if Checks and then Parent.Container /= Container'Unrestricted_Access then
          raise Program_Error with "Parent cursor not in container";
       end if;
+
+      TC_Check (Container.TC);
 
       if Container.Count = 0 then
          pragma Assert (Is_Root (Parent));
@@ -1027,8 +1027,6 @@ is
       X : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Position = No_Element then
          raise Constraint_Error with "Position cursor has no element";
       end if;
@@ -1045,6 +1043,8 @@ is
       if Checks and then not Is_Leaf (Position) then
          raise Constraint_Error with "Position cursor does not designate leaf";
       end if;
+
+      TC_Check (Container.TC);
 
       X := Position.Node;
       Position := No_Element;
@@ -1067,8 +1067,6 @@ is
       Count : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Position = No_Element then
          raise Constraint_Error with "Position cursor has no element";
       end if;
@@ -1081,6 +1079,8 @@ is
       if Checks and then Is_Root (Position) then
          raise Program_Error with "Position cursor designates root";
       end if;
+
+      TC_Check (Container.TC);
 
       X := Position.Node;
       Position := No_Element;
@@ -1509,8 +1509,6 @@ is
       Last  : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -1541,6 +1539,8 @@ is
          raise Capacity_Error
            with "requested count exceeds available storage";
       end if;
+
+      TC_Check (Container.TC);
 
       if Container.Count = 0 then
          Initialize_Root (Container);
@@ -1587,8 +1587,6 @@ is
       --  OK to reference, see below
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -1619,6 +1617,8 @@ is
          raise Capacity_Error
            with "requested count exceeds available storage";
       end if;
+
+      TC_Check (Container.TC);
 
       if Container.Count = 0 then
          Initialize_Root (Container);
@@ -1767,8 +1767,10 @@ is
      (Container : Tree;
       From, To  : Count_Type) return Boolean
    is
-      Idx : Count_Type'Base := From;
+      Idx : Count_Type;
+
    begin
+      Idx := From;
       while Idx >= 0 loop
          if Idx = To then
             return True;
@@ -2184,8 +2186,6 @@ is
       First, Last : Count_Type;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -2202,6 +2202,8 @@ is
          raise Capacity_Error
            with "requested count exceeds available storage";
       end if;
+
+      TC_Check (Container.TC);
 
       if Container.Count = 0 then
          Initialize_Root (Container);
@@ -2294,7 +2296,7 @@ is
       TC : constant Tamper_Counts_Access := Container.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -2322,49 +2324,6 @@ is
          Process (Element => T.Elements (Position.Node));
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Tree)
-   is
-      use System.Put_Images;
-
-      procedure Rec (Position : Cursor);
-      --  Recursive routine operating on cursors
-
-      procedure Rec (Position : Cursor) is
-         First_Time : Boolean := True;
-      begin
-         Array_Before (S);
-
-         for X in Iterate_Children (V, Position) loop
-            if First_Time then
-               First_Time := False;
-            else
-               Array_Between (S);
-            end if;
-
-            Element_Type'Put_Image (S, Element (X));
-            if Child_Count (X) > 0 then
-               Simple_Array_Between (S);
-               Rec (X);
-            end if;
-         end loop;
-
-         Array_After (S);
-      end Rec;
-
-   begin
-      if First_Child (Root (V)) = No_Element then
-         Array_Before (S);
-         Array_After (S);
-      else
-         Rec (First_Child (Root (V)));
-      end if;
-   end Put_Image;
 
    ----------
    -- Read --
@@ -2533,10 +2492,10 @@ is
            Container.TC'Unrestricted_Access;
       begin
          return R : constant Reference_Type :=
-           (Element => Container.Elements (Position.Node)'Unchecked_Access,
+           (Element => Container.Elements (Position.Node)'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -2591,8 +2550,6 @@ is
       New_Item  : Element_Type)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks and then Position = No_Element then
          raise Constraint_Error with "Position cursor has no element";
       end if;
@@ -2605,6 +2562,8 @@ is
       if Checks and then Is_Root (Position) then
          raise Program_Error with "Position cursor designates root";
       end if;
+
+      TE_Check (Container.TC);
 
       Container.Elements (Position.Node) := New_Item;
    end Replace_Element;
@@ -2673,9 +2632,6 @@ is
       Source_Parent : Cursor)
    is
    begin
-      TC_Check (Target.TC);
-      TC_Check (Source.TC);
-
       if Checks and then Target_Parent = No_Element then
          raise Constraint_Error with "Target_Parent cursor has no element";
       end if;
@@ -2720,6 +2676,8 @@ is
             return;
          end if;
 
+         TC_Check (Target.TC);
+
          if Checks and then Is_Reachable (Container => Target,
                           From      => Target_Parent.Node,
                           To        => Source_Parent.Node)
@@ -2736,6 +2694,9 @@ is
 
          return;
       end if;
+
+      TC_Check (Target.TC);
+      TC_Check (Source.TC);
 
       if Target.Count = 0 then
          Initialize_Root (Target);
@@ -2756,8 +2717,6 @@ is
       Source_Parent   : Cursor)
    is
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Target_Parent = No_Element then
          raise Constraint_Error with "Target_Parent cursor has no element";
       end if;
@@ -2800,6 +2759,8 @@ is
       end if;
 
       pragma Assert (Container.Count > 0);
+
+      TC_Check (Container.TC);
 
       if Checks and then Is_Reachable (Container => Container,
                        From      => Target_Parent.Node,
@@ -2955,9 +2916,6 @@ is
       Position : in out Cursor)
    is
    begin
-      TC_Check (Target.TC);
-      TC_Check (Source.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -3004,6 +2962,8 @@ is
             end if;
          end if;
 
+         TC_Check (Target.TC);
+
          if Checks and then Is_Reachable (Container => Target,
                           From      => Parent.Node,
                           To        => Position.Node)
@@ -3018,6 +2978,9 @@ is
 
          return;
       end if;
+
+      TC_Check (Target.TC);
+      TC_Check (Source.TC);
 
       if Target.Count = 0 then
          Initialize_Root (Target);
@@ -3040,8 +3003,6 @@ is
       Position  : Cursor)
    is
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Parent = No_Element then
          raise Constraint_Error with "Parent cursor has no element";
       end if;
@@ -3091,6 +3052,8 @@ is
             return;
          end if;
       end if;
+
+      TC_Check (Container.TC);
 
       if Checks and then Is_Reachable (Container => Container,
                        From      => Parent.Node,
@@ -3218,8 +3181,6 @@ is
       I, J      : Cursor)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks and then I = No_Element then
          raise Constraint_Error with "I cursor has no element";
       end if;
@@ -3247,6 +3208,8 @@ is
       if Checks and then Is_Root (J) then
          raise Program_Error with "J cursor designates root";
       end if;
+
+      TE_Check (Container.TC);
 
       declare
          EE : Element_Array renames Container.Elements;

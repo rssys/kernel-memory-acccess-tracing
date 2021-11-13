@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2002-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2002-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -38,19 +38,9 @@ with System.Exception_Table;  use System.Exception_Table;
 package body GNAT.Exception_Actions is
 
    Global_Action : Exception_Action;
-   pragma Import
-     (Ada, Global_Action, "__gnat_exception_actions_global_action");
-   pragma Atomic (Global_Action);
+   pragma Import (C, Global_Action, "__gnat_exception_actions_global_action");
    --  Imported from Ada.Exceptions. Any change in the external name needs to
-   --  be coordinated with a-exextr.adb.
-
-   Global_Unhandled_Action : Exception_Action;
-   pragma Import
-     (Ada, Global_Unhandled_Action,
-      "__gnat_exception_actions_global_unhandled_action");
-   pragma Atomic (Global_Unhandled_Action);
-   --  Imported from Ada.Exceptions. Any change in the external name needs to
-   --  be coordinated with a-exextr.adb.
+   --  be coordinated with a-except.adb
 
    Raise_Hook_Initialized : Boolean;
    pragma Import
@@ -71,17 +61,10 @@ package body GNAT.Exception_Actions is
 
    procedure Register_Global_Action (Action : Exception_Action) is
    begin
+      Lock_Task.all;
       Global_Action := Action;
+      Unlock_Task.all;
    end Register_Global_Action;
-
-   --------------------------------------
-   -- Register_Global_Unhandled_Action --
-   --------------------------------------
-
-   procedure Register_Global_Unhandled_Action (Action : Exception_Action) is
-   begin
-      Global_Unhandled_Action := Action;
-   end Register_Global_Unhandled_Action;
 
    ------------------------
    -- Register_Id_Action --

@@ -1,5 +1,5 @@
 /* Nested function decomposition for GIMPLE.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -42,107 +42,7 @@
 #include "gimple-low.h"
 #include "gomp-constants.h"
 #include "diagnostic.h"
-#include "alloc-pool.h"
-#include "tree-nested.h"
-#include "symbol-summary.h"
-#include "symtab-thunks.h"
 
-/* Summary of nested functions.  */
-static function_summary <nested_function_info *>
-   *nested_function_sum = NULL;
-
-/* Return nested_function_info, if available.  */
-nested_function_info *
-nested_function_info::get (cgraph_node *node)
-{
-  if (!nested_function_sum)
-    return NULL;
-  return nested_function_sum->get (node);
-}
-
-/* Return nested_function_info possibly creating new one.  */
-nested_function_info *
-nested_function_info::get_create (cgraph_node *node)
-{
-  if (!nested_function_sum)
-    {
-      nested_function_sum = new function_summary <nested_function_info *>
-				   (symtab);
-      nested_function_sum->disable_insertion_hook ();
-    }
-  return nested_function_sum->get_create (node);
-}
-
-/* cgraph_node is no longer nested function; update cgraph accordingly.  */
-void
-unnest_function (cgraph_node *node)
-{
-  nested_function_info *info = nested_function_info::get (node);
-  cgraph_node **node2 = &nested_function_info::get
-		(nested_function_origin (node))->nested;
-
-  gcc_checking_assert (info->origin);
-  while (*node2 != node)
-    node2 = &nested_function_info::get (*node2)->next_nested;
-  *node2 = info->next_nested;
-  info->next_nested = NULL;
-  info->origin = NULL;
-  nested_function_sum->remove (node);
-}
-
-/* Destructor: unlink function from nested function lists.  */
-nested_function_info::~nested_function_info ()
-{
-  cgraph_node *next;
-  for (cgraph_node *n = nested; n; n = next)
-    {
-      nested_function_info *info = nested_function_info::get (n);
-      next = info->next_nested;
-      info->origin = NULL;
-      info->next_nested = NULL;
-    }
-  nested = NULL;
-  if (origin)
-    {
-      cgraph_node **node2
-	     = &nested_function_info::get (origin)->nested;
-
-      nested_function_info *info;
-      while ((info = nested_function_info::get (*node2)) != this && info)
-	node2 = &info->next_nested;
-      *node2 = next_nested;
-    }
-}
-
-/* Free nested function info summaries.  */
-void
-nested_function_info::release ()
-{
-  if (nested_function_sum)
-    delete (nested_function_sum);
-  nested_function_sum = NULL;
-}
-
-/* If NODE is nested function, record it.  */
-void
-maybe_record_nested_function (cgraph_node *node)
-{
-  /* All nested functions gets lowered during the construction of symtab.  */
-  if (symtab->state > CONSTRUCTION)
-    return;
-  if (DECL_CONTEXT (node->decl)
-      && TREE_CODE (DECL_CONTEXT (node->decl)) == FUNCTION_DECL)
-    {
-      cgraph_node *origin = cgraph_node::get_create (DECL_CONTEXT (node->decl));
-      nested_function_info *info = nested_function_info::get_create (node);
-      nested_function_info *origin_info
-		 = nested_function_info::get_create (origin);
-
-      info->origin = origin;
-      info->next_nested = origin_info->nested;
-      origin_info->nested = node;
-    }
-}
 
 /* The object of this pass is to lower the representation of a set of nested
    functions in order to expose all of the gory details of the various
@@ -260,20 +160,13 @@ create_tmp_var_for (struct nesting_info *info, tree type, const char *prefix)
   DECL_CONTEXT (tmp_var) = info->context;
   DECL_CHAIN (tmp_var) = info->new_local_var_chain;
   DECL_SEEN_IN_BIND_EXPR_P (tmp_var) = 1;
+  if (TREE_CODE (type) == COMPLEX_TYPE
+      || TREE_CODE (type) == VECTOR_TYPE)
+    DECL_GIMPLE_REG_P (tmp_var) = 1;
 
   info->new_local_var_chain = tmp_var;
 
   return tmp_var;
-}
-
-/* Like build_simple_mem_ref, but set TREE_THIS_NOTRAP on the result.  */
-
-static tree
-build_simple_mem_ref_notrap (tree ptr)
-{
-  tree t = build_simple_mem_ref (ptr);
-  TREE_THIS_NOTRAP (t) = 1;
-  return t;
 }
 
 /* Take the address of EXP to be used within function CONTEXT.
@@ -405,14 +298,13 @@ lookup_field_for_decl (struct nesting_info *info, tree decl,
 	}
       else
 	{
-	  TREE_TYPE (field) = TREE_TYPE (decl);
-	  DECL_SOURCE_LOCATION (field) = DECL_SOURCE_LOCATION (decl);
-	  SET_DECL_ALIGN (field, DECL_ALIGN (decl));
-	  DECL_USER_ALIGN (field) = DECL_USER_ALIGN (decl);
-	  DECL_IGNORED_P (field) = DECL_IGNORED_P (decl);
-	  DECL_NONADDRESSABLE_P (field) = !TREE_ADDRESSABLE (decl);
-	  TREE_THIS_VOLATILE (field) = TREE_THIS_VOLATILE (decl);
-	  copy_warning (field, decl);
+          TREE_TYPE (field) = TREE_TYPE (decl);
+          DECL_SOURCE_LOCATION (field) = DECL_SOURCE_LOCATION (decl);
+          SET_DECL_ALIGN (field, DECL_ALIGN (decl));
+          DECL_USER_ALIGN (field) = DECL_USER_ALIGN (decl);
+          TREE_ADDRESSABLE (field) = TREE_ADDRESSABLE (decl);
+          DECL_NONADDRESSABLE_P (field) = !TREE_ADDRESSABLE (decl);
+          TREE_THIS_VOLATILE (field) = TREE_THIS_VOLATILE (decl);
 
 	  /* Declare the transformation and adjust the original DECL.  For a
 	     variable or for a parameter when not optimizing, we make it point
@@ -686,7 +578,7 @@ lookup_element_for_decl (struct nesting_info *info, tree decl,
     *slot = build_tree_list (NULL_TREE, NULL_TREE);
 
   return (tree) *slot;
-}
+} 
 
 /* Given DECL, a nested function, create a field in the non-local
    frame structure for this function.  */
@@ -917,8 +809,7 @@ check_for_nested_with_variably_modified (tree fndecl, tree orig_fndecl)
   struct cgraph_node *cgn = cgraph_node::get (fndecl);
   tree arg;
 
-  for (cgn = first_nested_function (cgn); cgn;
-       cgn = next_nested_function (cgn))
+  for (cgn = cgn->nested; cgn ; cgn = cgn->next_nested)
     {
       for (arg = DECL_ARGUMENTS (cgn->decl); arg; arg = DECL_CHAIN (arg))
 	if (variably_modified_type_p (TREE_TYPE (arg), orig_fndecl))
@@ -944,10 +835,9 @@ create_nesting_tree (struct cgraph_node *cgn)
   info->mem_refs = new hash_set<tree *>;
   info->suppress_expansion = BITMAP_ALLOC (&nesting_info_bitmap_obstack);
   info->context = cgn->decl;
-  info->thunk_p = cgn->thunk;
+  info->thunk_p = cgn->thunk.thunk_p;
 
-  for (cgn = first_nested_function (cgn); cgn;
-       cgn = next_nested_function (cgn))
+  for (cgn = cgn->nested; cgn ; cgn = cgn->next_nested)
     {
       struct nesting_info *sub = create_nesting_tree (cgn);
       sub->outer = info;
@@ -987,7 +877,7 @@ get_static_chain (struct nesting_info *info, tree target_context,
 	{
 	  tree field = get_chain_field (i);
 
-	  x = build_simple_mem_ref_notrap (x);
+	  x = build_simple_mem_ref (x);
 	  x = build3 (COMPONENT_REF, TREE_TYPE (field), x, field, NULL_TREE);
 	  x = init_tmp_var (info, x, gsi);
 	}
@@ -1024,16 +914,15 @@ get_frame_field (struct nesting_info *info, tree target_context,
 	{
 	  tree field = get_chain_field (i);
 
-	  x = build_simple_mem_ref_notrap (x);
+	  x = build_simple_mem_ref (x);
 	  x = build3 (COMPONENT_REF, TREE_TYPE (field), x, field, NULL_TREE);
 	  x = init_tmp_var (info, x, gsi);
 	}
 
-      x = build_simple_mem_ref_notrap (x);
+      x = build_simple_mem_ref (x);
     }
 
   x = build3 (COMPONENT_REF, TREE_TYPE (field), x, field, NULL_TREE);
-  TREE_THIS_VOLATILE (x) = TREE_THIS_VOLATILE (field);
   return x;
 }
 
@@ -1074,16 +963,16 @@ get_nonlocal_debug_decl (struct nesting_info *info, tree decl)
       for (i = info->outer; i->context != target_context; i = i->outer)
 	{
 	  field = get_chain_field (i);
-	  x = build_simple_mem_ref_notrap (x);
+	  x = build_simple_mem_ref (x);
 	  x = build3 (COMPONENT_REF, TREE_TYPE (field), x, field, NULL_TREE);
 	}
-      x = build_simple_mem_ref_notrap (x);
+      x = build_simple_mem_ref (x);
     }
 
   field = lookup_field_for_decl (i, decl, INSERT);
   x = build3 (COMPONENT_REF, TREE_TYPE (field), x, field, NULL_TREE);
   if (use_pointer_in_frame (decl))
-    x = build_simple_mem_ref_notrap (x);
+    x = build_simple_mem_ref (x);
 
   /* ??? We should be remapping types as well, surely.  */
   new_decl = build_decl (DECL_SOURCE_LOCATION (decl),
@@ -1171,7 +1060,7 @@ convert_nonlocal_reference_op (tree *tp, int *walk_subtrees, void *data)
 	    if (use_pointer_in_frame (t))
 	      {
 		x = init_tmp_var (info, x, &wi->gsi);
-		x = build_simple_mem_ref_notrap (x);
+		x = build_simple_mem_ref (x);
 	      }
 	  }
 
@@ -1215,6 +1104,7 @@ convert_nonlocal_reference_op (tree *tp, int *walk_subtrees, void *data)
 	    save_context = current_function_decl;
 	    current_function_decl = info->context;
 	    recompute_tree_invariant_for_addr_expr (t);
+	    current_function_decl = save_context;
 
 	    /* If the callback converted the address argument in a context
 	       where we only accept variables (and min_invariant, presumably),
@@ -1222,7 +1112,6 @@ convert_nonlocal_reference_op (tree *tp, int *walk_subtrees, void *data)
 	    if (save_val_only)
 	      *tp = gsi_gimplify_val ((struct nesting_info *) wi->info,
 				      t, &wi->gsi);
-	    current_function_decl = save_context;
 	  }
       }
       break;
@@ -1289,7 +1178,7 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 {
   struct nesting_info *const info = (struct nesting_info *) wi->info;
   bool need_chain = false, need_stmts = false;
-  tree clause, decl, *pdecl;
+  tree clause, decl;
   int dummy;
   bitmap new_suppress;
 
@@ -1298,7 +1187,6 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 
   for (clause = *pclauses; clause ; clause = OMP_CLAUSE_CHAIN (clause))
     {
-      pdecl = NULL;
       switch (OMP_CLAUSE_CODE (clause))
 	{
 	case OMP_CLAUSE_REDUCTION:
@@ -1306,15 +1194,6 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_TASK_REDUCTION:
 	  if (OMP_CLAUSE_REDUCTION_PLACEHOLDER (clause))
 	    need_stmts = true;
-	  if (TREE_CODE (OMP_CLAUSE_DECL (clause)) == MEM_REF)
-	    {
-	      pdecl = &TREE_OPERAND (OMP_CLAUSE_DECL (clause), 0);
-	      if (TREE_CODE (*pdecl) == POINTER_PLUS_EXPR)
-		pdecl = &TREE_OPERAND (*pdecl, 0);
-	      if (TREE_CODE (*pdecl) == INDIRECT_REF
-		  || TREE_CODE (*pdecl) == ADDR_EXPR)
-		pdecl = &TREE_OPERAND (*pdecl, 0);
-	    }
 	  goto do_decl_clause;
 
 	case OMP_CLAUSE_LASTPRIVATE:
@@ -1338,13 +1217,9 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_TO_DECLARE:
 	case OMP_CLAUSE_LINK:
 	case OMP_CLAUSE_USE_DEVICE_PTR:
-	case OMP_CLAUSE_USE_DEVICE_ADDR:
 	case OMP_CLAUSE_IS_DEVICE_PTR:
-	case OMP_CLAUSE_DETACH:
 	do_decl_clause:
-	  if (pdecl == NULL)
-	    pdecl = &OMP_CLAUSE_DECL (clause);
-	  decl = *pdecl;
+	  decl = OMP_CLAUSE_DECL (clause);
 	  if (VAR_P (decl)
 	      && (TREE_STATIC (decl) || DECL_EXTERNAL (decl)))
 	    break;
@@ -1353,7 +1228,7 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	      if (OMP_CLAUSE_CODE (clause) == OMP_CLAUSE_SHARED)
 		OMP_CLAUSE_SHARED_READONLY (clause) = 0;
 	      bitmap_set_bit (new_suppress, DECL_UID (decl));
-	      *pdecl = get_nonlocal_debug_decl (info, decl);
+	      OMP_CLAUSE_DECL (clause) = get_nonlocal_debug_decl (info, decl);
 	      if (OMP_CLAUSE_CODE (clause) != OMP_CLAUSE_PRIVATE)
 		need_chain = true;
 	    }
@@ -1376,7 +1251,6 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_GRAINSIZE:
 	case OMP_CLAUSE_NUM_TASKS:
 	case OMP_CLAUSE_HINT:
-	case OMP_CLAUSE_FILTER:
 	case OMP_CLAUSE_NUM_GANGS:
 	case OMP_CLAUSE_NUM_WORKERS:
 	case OMP_CLAUSE_VECTOR_LENGTH:
@@ -1444,7 +1318,6 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	    }
 	  /* FALLTHRU */
 	case OMP_CLAUSE_NONTEMPORAL:
-	do_decl_clause_no_supp:
 	  /* Like do_decl_clause, but don't add any suppression.  */
 	  decl = OMP_CLAUSE_DECL (clause);
 	  if (VAR_P (decl)
@@ -1456,16 +1329,6 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	      need_chain = true;
 	    }
 	  break;
-
-	case OMP_CLAUSE_ALLOCATE:
-	  if (OMP_CLAUSE_ALLOCATE_ALLOCATOR (clause))
-	    {
-	      wi->val_only = true;
-	      wi->is_lhs = false;
-	      convert_nonlocal_reference_op
-		(&OMP_CLAUSE_ALLOCATE_ALLOCATOR (clause), &dummy, wi);
-	    }
-	  goto do_decl_clause_no_supp;
 
 	case OMP_CLAUSE_NOWAIT:
 	case OMP_CLAUSE_ORDERED:
@@ -1480,15 +1343,11 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_THREADS:
 	case OMP_CLAUSE_SIMD:
 	case OMP_CLAUSE_DEFAULTMAP:
-	case OMP_CLAUSE_ORDER:
 	case OMP_CLAUSE_SEQ:
 	case OMP_CLAUSE_INDEPENDENT:
 	case OMP_CLAUSE_AUTO:
 	case OMP_CLAUSE_IF_PRESENT:
 	case OMP_CLAUSE_FINALIZE:
-	case OMP_CLAUSE_BIND:
-	case OMP_CLAUSE__CONDTEMP_:
-	case OMP_CLAUSE__SCANTEMP_:
 	  break;
 
 	  /* The following clause belongs to the OpenACC cache directive, which
@@ -1511,10 +1370,8 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE__LOOPTEMP_:
 	case OMP_CLAUSE__REDUCTEMP_:
 	case OMP_CLAUSE__SIMDUID_:
+	case OMP_CLAUSE__GRIDDIM_:
 	case OMP_CLAUSE__SIMT_:
-	  /* The following clauses are only allowed on OpenACC 'routine'
-	     directives, not seen here.  */
-	case OMP_CLAUSE_NOHOST:
 	  /* Anything else.  */
 	default:
 	  gcc_unreachable ();
@@ -1539,22 +1396,12 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	      if (OMP_CLAUSE_REDUCTION_DECL_PLACEHOLDER (clause))
 		DECL_CONTEXT (OMP_CLAUSE_REDUCTION_DECL_PLACEHOLDER (clause))
 		  = info->context;
-	      tree save_local_var_chain = info->new_local_var_chain;
-	      info->new_local_var_chain = NULL;
-	      gimple_seq *seq = &OMP_CLAUSE_REDUCTION_GIMPLE_INIT (clause);
 	      walk_body (convert_nonlocal_reference_stmt,
-			 convert_nonlocal_reference_op, info, seq);
-	      if (info->new_local_var_chain)
-		declare_vars (info->new_local_var_chain,
-			      gimple_seq_first_stmt (*seq), false);
-	      info->new_local_var_chain = NULL;
-	      seq = &OMP_CLAUSE_REDUCTION_GIMPLE_MERGE (clause);
+			 convert_nonlocal_reference_op, info,
+			 &OMP_CLAUSE_REDUCTION_GIMPLE_INIT (clause));
 	      walk_body (convert_nonlocal_reference_stmt,
-			 convert_nonlocal_reference_op, info, seq);
-	      if (info->new_local_var_chain)
-		declare_vars (info->new_local_var_chain,
-			      gimple_seq_first_stmt (*seq), false);
-	      info->new_local_var_chain = save_local_var_chain;
+			 convert_nonlocal_reference_op, info,
+			 &OMP_CLAUSE_REDUCTION_GIMPLE_MERGE (clause));
 	      DECL_CONTEXT (OMP_CLAUSE_REDUCTION_PLACEHOLDER (clause))
 		= old_context;
 	      if (OMP_CLAUSE_REDUCTION_DECL_PLACEHOLDER (clause))
@@ -1564,31 +1411,15 @@ convert_nonlocal_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	  break;
 
 	case OMP_CLAUSE_LASTPRIVATE:
-	  {
-	    tree save_local_var_chain = info->new_local_var_chain;
-	    info->new_local_var_chain = NULL;
-	    gimple_seq *seq = &OMP_CLAUSE_LASTPRIVATE_GIMPLE_SEQ (clause);
-	    walk_body (convert_nonlocal_reference_stmt,
-		       convert_nonlocal_reference_op, info, seq);
-	    if (info->new_local_var_chain)
-	      declare_vars (info->new_local_var_chain,
-			    gimple_seq_first_stmt (*seq), false);
-	    info->new_local_var_chain = save_local_var_chain;
-	  }
+	  walk_body (convert_nonlocal_reference_stmt,
+		     convert_nonlocal_reference_op, info,
+		     &OMP_CLAUSE_LASTPRIVATE_GIMPLE_SEQ (clause));
 	  break;
 
 	case OMP_CLAUSE_LINEAR:
-	  {
-	    tree save_local_var_chain = info->new_local_var_chain;
-	    info->new_local_var_chain = NULL;
-	    gimple_seq *seq = &OMP_CLAUSE_LINEAR_GIMPLE_SEQ (clause);
-	    walk_body (convert_nonlocal_reference_stmt,
-		       convert_nonlocal_reference_op, info, seq);
-	    if (info->new_local_var_chain)
-	      declare_vars (info->new_local_var_chain,
-			    gimple_seq_first_stmt (*seq), false);
-	    info->new_local_var_chain = save_local_var_chain;
-	  }
+	  walk_body (convert_nonlocal_reference_stmt,
+		     convert_nonlocal_reference_op, info,
+		     &OMP_CLAUSE_LINEAR_GIMPLE_SEQ (clause));
 	  break;
 
 	default:
@@ -1736,14 +1567,6 @@ convert_nonlocal_reference_stmt (gimple_stmt_iterator *gsi, bool *handled_ops_p,
       info->suppress_expansion = save_suppress;
       break;
 
-    case GIMPLE_OMP_SCOPE:
-      save_suppress = info->suppress_expansion;
-      convert_nonlocal_omp_clauses (gimple_omp_scope_clauses_ptr (stmt), wi);
-      walk_body (convert_nonlocal_reference_stmt, convert_nonlocal_reference_op,
-		 info, gimple_omp_body_ptr (stmt));
-      info->suppress_expansion = save_suppress;
-      break;
-
     case GIMPLE_OMP_TASKGROUP:
       save_suppress = info->suppress_expansion;
       convert_nonlocal_omp_clauses (gimple_omp_taskgroup_clauses_ptr (stmt), wi);
@@ -1794,9 +1617,7 @@ convert_nonlocal_reference_stmt (gimple_stmt_iterator *gsi, bool *handled_ops_p,
 
     case GIMPLE_OMP_SECTION:
     case GIMPLE_OMP_MASTER:
-    case GIMPLE_OMP_MASKED:
     case GIMPLE_OMP_ORDERED:
-    case GIMPLE_OMP_SCAN:
       walk_body (convert_nonlocal_reference_stmt, convert_nonlocal_reference_op,
 	         info, gimple_omp_body_ptr (stmt));
       break;
@@ -1984,13 +1805,13 @@ convert_local_reference_op (tree *tp, int *walk_subtrees, void *data)
 	  save_context = current_function_decl;
 	  current_function_decl = info->context;
 	  recompute_tree_invariant_for_addr_expr (t);
+	  current_function_decl = save_context;
 
 	  /* If we are in a context where we only accept values, then
 	     compute the address into a temporary.  */
 	  if (save_val_only)
 	    *tp = gsi_gimplify_val ((struct nesting_info *) wi->info,
 				    t, &wi->gsi);
-	  current_function_decl = save_context;
 	}
       break;
 
@@ -2073,7 +1894,7 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 {
   struct nesting_info *const info = (struct nesting_info *) wi->info;
   bool need_frame = false, need_stmts = false;
-  tree clause, decl, *pdecl;
+  tree clause, decl;
   int dummy;
   bitmap new_suppress;
 
@@ -2082,7 +1903,6 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 
   for (clause = *pclauses; clause ; clause = OMP_CLAUSE_CHAIN (clause))
     {
-      pdecl = NULL;
       switch (OMP_CLAUSE_CODE (clause))
 	{
 	case OMP_CLAUSE_REDUCTION:
@@ -2090,15 +1910,6 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_TASK_REDUCTION:
 	  if (OMP_CLAUSE_REDUCTION_PLACEHOLDER (clause))
 	    need_stmts = true;
-	  if (TREE_CODE (OMP_CLAUSE_DECL (clause)) == MEM_REF)
-	    {
-	      pdecl = &TREE_OPERAND (OMP_CLAUSE_DECL (clause), 0);
-	      if (TREE_CODE (*pdecl) == POINTER_PLUS_EXPR)
-		pdecl = &TREE_OPERAND (*pdecl, 0);
-	      if (TREE_CODE (*pdecl) == INDIRECT_REF
-		  || TREE_CODE (*pdecl) == ADDR_EXPR)
-		pdecl = &TREE_OPERAND (*pdecl, 0);
-	    }
 	  goto do_decl_clause;
 
 	case OMP_CLAUSE_LASTPRIVATE:
@@ -2122,13 +1933,9 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_TO_DECLARE:
 	case OMP_CLAUSE_LINK:
 	case OMP_CLAUSE_USE_DEVICE_PTR:
-	case OMP_CLAUSE_USE_DEVICE_ADDR:
 	case OMP_CLAUSE_IS_DEVICE_PTR:
-	case OMP_CLAUSE_DETACH:
 	do_decl_clause:
-	  if (pdecl == NULL)
-	    pdecl = &OMP_CLAUSE_DECL (clause);
-	  decl = *pdecl;
+	  decl = OMP_CLAUSE_DECL (clause);
 	  if (VAR_P (decl)
 	      && (TREE_STATIC (decl) || DECL_EXTERNAL (decl)))
 	    break;
@@ -2141,7 +1948,8 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 		  if (OMP_CLAUSE_CODE (clause) == OMP_CLAUSE_SHARED)
 		    OMP_CLAUSE_SHARED_READONLY (clause) = 0;
 		  bitmap_set_bit (new_suppress, DECL_UID (decl));
-		  *pdecl = get_local_debug_decl (info, decl, field);
+		  OMP_CLAUSE_DECL (clause)
+		    = get_local_debug_decl (info, decl, field);
 		  need_frame = true;
 		}
 	    }
@@ -2164,7 +1972,6 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_GRAINSIZE:
 	case OMP_CLAUSE_NUM_TASKS:
 	case OMP_CLAUSE_HINT:
-	case OMP_CLAUSE_FILTER:
 	case OMP_CLAUSE_NUM_GANGS:
 	case OMP_CLAUSE_NUM_WORKERS:
 	case OMP_CLAUSE_VECTOR_LENGTH:
@@ -2232,7 +2039,6 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	    }
 	  /* FALLTHRU */
 	case OMP_CLAUSE_NONTEMPORAL:
-	do_decl_clause_no_supp:
 	  /* Like do_decl_clause, but don't add any suppression.  */
 	  decl = OMP_CLAUSE_DECL (clause);
 	  if (VAR_P (decl)
@@ -2251,16 +2057,6 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	    }
 	  break;
 
-	case OMP_CLAUSE_ALLOCATE:
-	  if (OMP_CLAUSE_ALLOCATE_ALLOCATOR (clause))
-	    {
-	      wi->val_only = true;
-	      wi->is_lhs = false;
-	      convert_local_reference_op
-		(&OMP_CLAUSE_ALLOCATE_ALLOCATOR (clause), &dummy, wi);
-	    }
-	  goto do_decl_clause_no_supp;
-
 	case OMP_CLAUSE_NOWAIT:
 	case OMP_CLAUSE_ORDERED:
 	case OMP_CLAUSE_DEFAULT:
@@ -2274,15 +2070,11 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE_THREADS:
 	case OMP_CLAUSE_SIMD:
 	case OMP_CLAUSE_DEFAULTMAP:
-	case OMP_CLAUSE_ORDER:
 	case OMP_CLAUSE_SEQ:
 	case OMP_CLAUSE_INDEPENDENT:
 	case OMP_CLAUSE_AUTO:
 	case OMP_CLAUSE_IF_PRESENT:
 	case OMP_CLAUSE_FINALIZE:
-	case OMP_CLAUSE_BIND:
-	case OMP_CLAUSE__CONDTEMP_:
-	case OMP_CLAUSE__SCANTEMP_:
 	  break;
 
 	  /* The following clause belongs to the OpenACC cache directive, which
@@ -2305,10 +2097,8 @@ convert_local_omp_clauses (tree *pclauses, struct walk_stmt_info *wi)
 	case OMP_CLAUSE__LOOPTEMP_:
 	case OMP_CLAUSE__REDUCTEMP_:
 	case OMP_CLAUSE__SIMDUID_:
+	case OMP_CLAUSE__GRIDDIM_:
 	case OMP_CLAUSE__SIMT_:
-	  /* The following clauses are only allowed on OpenACC 'routine'
-	     directives, not seen here.  */
-	case OMP_CLAUSE_NOHOST:
 	  /* Anything else.  */
 	default:
 	  gcc_unreachable ();
@@ -2466,14 +2256,6 @@ convert_local_reference_stmt (gimple_stmt_iterator *gsi, bool *handled_ops_p,
       info->suppress_expansion = save_suppress;
       break;
 
-    case GIMPLE_OMP_SCOPE:
-      save_suppress = info->suppress_expansion;
-      convert_local_omp_clauses (gimple_omp_scope_clauses_ptr (stmt), wi);
-      walk_body (convert_local_reference_stmt, convert_local_reference_op,
-		 info, gimple_omp_body_ptr (stmt));
-      info->suppress_expansion = save_suppress;
-      break;
-
     case GIMPLE_OMP_TASKGROUP:
       save_suppress = info->suppress_expansion;
       convert_local_omp_clauses (gimple_omp_taskgroup_clauses_ptr (stmt), wi);
@@ -2537,9 +2319,7 @@ convert_local_reference_stmt (gimple_stmt_iterator *gsi, bool *handled_ops_p,
 
     case GIMPLE_OMP_SECTION:
     case GIMPLE_OMP_MASTER:
-    case GIMPLE_OMP_MASKED:
     case GIMPLE_OMP_ORDERED:
-    case GIMPLE_OMP_SCAN:
       walk_body (convert_local_reference_stmt, convert_local_reference_op,
 		 info, gimple_omp_body_ptr (stmt));
       break;
@@ -2555,7 +2335,6 @@ convert_local_reference_stmt (gimple_stmt_iterator *gsi, bool *handled_ops_p,
 	{
 	  tree lhs = gimple_assign_lhs (stmt);
 	  if (DECL_P (lhs)
-	      && decl_function_context (lhs) == info->context
 	      && !use_pointer_in_frame (lhs)
 	      && lookup_field_for_decl (info, lhs, NO_INSERT))
 	    {
@@ -3047,12 +2826,9 @@ convert_gimple_call (gimple_stmt_iterator *gsi, bool *handled_ops_p,
     case GIMPLE_OMP_SECTIONS:
     case GIMPLE_OMP_SECTION:
     case GIMPLE_OMP_SINGLE:
-    case GIMPLE_OMP_SCOPE:
     case GIMPLE_OMP_MASTER:
-    case GIMPLE_OMP_MASKED:
     case GIMPLE_OMP_TASKGROUP:
     case GIMPLE_OMP_ORDERED:
-    case GIMPLE_OMP_SCAN:
     case GIMPLE_OMP_CRITICAL:
       walk_body (convert_gimple_call, NULL, info, gimple_omp_body_ptr (stmt));
       break;
@@ -3110,7 +2886,7 @@ convert_all_function_calls (struct nesting_info *root)
     if (n->thunk_p)
       {
 	tree decl = n->context;
-	tree alias = thunk_info::get (cgraph_node::get (decl))->alias;
+	tree alias = cgraph_node::get (decl)->thunk.alias;
 	DECL_STATIC_CHAIN (decl) = DECL_STATIC_CHAIN (alias);
       }
 
@@ -3146,7 +2922,7 @@ convert_all_function_calls (struct nesting_info *root)
 	if (n->thunk_p)
 	  {
 	    tree decl = n->context;
-	    tree alias = thunk_info::get (cgraph_node::get (decl))->alias;
+	    tree alias = cgraph_node::get (decl)->thunk.alias;
 	    DECL_STATIC_CHAIN (decl) = DECL_STATIC_CHAIN (alias);
 	  }
     }
@@ -3656,9 +3432,9 @@ unnest_nesting_tree_1 (struct nesting_info *root)
 
   /* For nested functions update the cgraph to reflect unnesting.
      We also delay finalizing of these functions up to this point.  */
-  if (nested_function_info::get (node)->origin)
+  if (node->origin)
     {
-       unnest_function (node);
+       node->unnest ();
        if (!root->thunk_p)
 	 cgraph_node::finalize_function (root->context, true);
     }
@@ -3699,9 +3475,8 @@ gimplify_all_functions (struct cgraph_node *root)
   struct cgraph_node *iter;
   if (!gimple_body (root->decl))
     gimplify_function_tree (root->decl);
-  for (iter = first_nested_function (root); iter;
-       iter = next_nested_function (iter))
-    if (!iter->thunk)
+  for (iter = root->nested; iter; iter = iter->next_nested)
+    if (!iter->thunk.thunk_p)
       gimplify_all_functions (iter);
 }
 
@@ -3716,7 +3491,7 @@ lower_nested_functions (tree fndecl)
 
   /* If there are no nested functions, there's nothing to do.  */
   cgn = cgraph_node::get (fndecl);
-  if (!first_nested_function (cgn))
+  if (!cgn->nested)
     return;
 
   gimplify_all_functions (cgn);

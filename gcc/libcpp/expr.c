@@ -1,5 +1,5 @@
 /* Parse C expressions for cpplib.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
    Contributed by Per Bothner, 1994.
 
 This program is free software; you can redistribute it and/or modify it
@@ -64,6 +64,8 @@ static unsigned int interpret_float_suffix (cpp_reader *, const uchar *, size_t)
 static unsigned int interpret_int_suffix (cpp_reader *, const uchar *, size_t);
 static void check_promotion (cpp_reader *, const struct op *);
 
+static cpp_num parse_has_include (cpp_reader *, enum include_type);
+
 /* Token type abuse to create unary plus and minus operators.  */
 #define CPP_UPLUS ((enum cpp_ttype) (CPP_LAST_CPP_OP + 1))
 #define CPP_UMINUS ((enum cpp_ttype) (CPP_LAST_CPP_OP + 2))
@@ -96,8 +98,8 @@ interpret_float_suffix (cpp_reader *pfile, const uchar *s, size_t len)
   flags = 0;
   f = d = l = w = q = i = fn = fnx = fn_bits = 0;
 
-  /* The following decimal float suffixes, from TR 24732:2009, TS
-     18661-2:2015 and C2X, are supported:
+  /* The following decimal float suffixes, from TR 24732:2009 and TS
+     18661-2:2015, are supported:
 
      df, DF - _Decimal32.
      dd, DD - _Decimal64.
@@ -313,14 +315,13 @@ static unsigned int
 interpret_int_suffix (cpp_reader *pfile, const uchar *s, size_t len)
 {
   size_t orig_len = len;
-  size_t u, l, i, z;
+  size_t u, l, i;
 
-  u = l = i = z = 0;
+  u = l = i = 0;
 
   while (len--)
     switch (s[len])
       {
-      case 'z': case 'Z':	z++; break;
       case 'u': case 'U':	u++; break;
       case 'i': case 'I':
       case 'j': case 'J':	i++; break;
@@ -333,16 +334,8 @@ interpret_int_suffix (cpp_reader *pfile, const uchar *s, size_t len)
 	return 0;
       }
 
-  if (l > 2 || u > 1 || i > 1 || z > 1)
+  if (l > 2 || u > 1 || i > 1)
     return 0;
-
-  if (z)
-    {
-      if (l > 0 || i > 0)
-	return 0;
-      if (!CPP_OPTION (pfile, cplusplus))
-	return 0;
-    }
 
   if (i)
     {
@@ -361,8 +354,7 @@ interpret_int_suffix (cpp_reader *pfile, const uchar *s, size_t len)
   return ((i ? CPP_N_IMAGINARY : 0)
 	  | (u ? CPP_N_UNSIGNED : 0)
 	  | ((l == 0) ? CPP_N_SMALL
-	     : (l == 1) ? CPP_N_MEDIUM : CPP_N_LARGE)
-	  | (z ? CPP_N_SIZE_T : 0));
+	     : (l == 1) ? CPP_N_MEDIUM : CPP_N_LARGE));
 }
 
 /* Return the classification flags for an int suffix.  */
@@ -582,7 +574,11 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
 	    max_digit = c;
 	}
       else if (DIGIT_SEP (c))
-	seen_digit_sep = true;
+	{
+	  if (seen_digit_sep)
+	    SYNTAX_ERROR_AT (virtual_location, "adjacent digit separators");
+	  seen_digit_sep = true;
+	}
       else if (c == '.')
 	{
 	  if (seen_digit_sep || DIGIT_SEP (*str))
@@ -748,16 +744,9 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
 	cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
 			     "fixed-point constants are a GCC extension");
 
-      if (result & CPP_N_DFLOAT)
-	{
-	  if (CPP_PEDANTIC (pfile) && !CPP_OPTION (pfile, dfp_constants))
-	    cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
-				 "decimal float constants are a C2X feature");
-	  else if (CPP_OPTION (pfile, cpp_warn_c11_c2x_compat) > 0)
-	    cpp_warning_with_line (pfile, CPP_W_C11_C2X_COMPAT,
-				   virtual_location, 0,
-				   "decimal float constants are a C2X feature");
-	}
+      if ((result & CPP_N_DFLOAT) && CPP_PEDANTIC (pfile))
+	cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
+			     "decimal float constants are a GCC extension");
 
       result |= CPP_N_FLOATING;
     }
@@ -811,16 +800,6 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
 				      virtual_location, 0, message);
         }
 
-      if ((result & CPP_N_SIZE_T) == CPP_N_SIZE_T
-	  && !CPP_OPTION (pfile, size_t_literals))
-       {
-	  const char *message = (result & CPP_N_UNSIGNED) == CPP_N_UNSIGNED
-				? N_("use of C++23 %<size_t%> integer constant")
-				: N_("use of C++23 %<make_signed_t<size_t>%> integer constant");
-	  cpp_warning_with_line (pfile, CPP_W_SIZE_T_LITERALS,
-				 virtual_location, 0, message);
-       }
-
       result |= CPP_N_INTEGER;
     }
 
@@ -828,21 +807,14 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
   if ((result & CPP_N_IMAGINARY) && CPP_PEDANTIC (pfile))
     cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
 			 "imaginary constants are a GCC extension");
-  if (radix == 2)
-    {
-      if (!CPP_OPTION (pfile, binary_constants)
-	  && CPP_PEDANTIC (pfile))
-	cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
-			     CPP_OPTION (pfile, cplusplus)
-			     ? N_("binary constants are a C++14 feature "
-				  "or GCC extension")
-			     : N_("binary constants are a C2X feature "
-				  "or GCC extension"));
-      else if (CPP_OPTION (pfile, cpp_warn_c11_c2x_compat) > 0)
-	cpp_warning_with_line (pfile, CPP_W_C11_C2X_COMPAT,
-			       virtual_location, 0,
-			       "binary constants are a C2X feature");
-    }
+  if (radix == 2
+      && !CPP_OPTION (pfile, binary_constants)
+      && CPP_PEDANTIC (pfile))
+    cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
+			 CPP_OPTION (pfile, cplusplus)
+			 ? N_("binary constants are a C++14 feature "
+			      "or GCC extension")
+			 : N_("binary constants are a GCC extension"));
 
   if (radix == 10)
     result |= CPP_N_DECIMAL;
@@ -1084,7 +1056,6 @@ parse_defined (cpp_reader *pfile)
 	}
     }
 
-  bool is_defined = false;
   if (node)
     {
       if ((pfile->context != initial_context
@@ -1092,11 +1063,9 @@ parse_defined (cpp_reader *pfile)
 	  && CPP_OPTION (pfile, warn_expansion_to_defined))
         cpp_pedwarning (pfile, CPP_W_EXPANSION_TO_DEFINED,
 		        "this use of \"defined\" may not be portable");
-      is_defined = _cpp_defined_macro_p (node);
-      if (!_cpp_maybe_notify_macro_use (pfile, node, token->src_loc))
-	/* It wasn't a macro after all.  */
-	is_defined = false;
+
       _cpp_mark_macro_used (node);
+      _cpp_maybe_notify_macro_use (pfile, node);
 
       /* A possible controlling macro of the form #if !defined ().
 	 _cpp_parse_expr checks there was no other junk on the line.  */
@@ -1106,13 +1075,14 @@ parse_defined (cpp_reader *pfile)
   pfile->state.prevent_expansion--;
 
   /* Do not treat conditional macros as being defined.  This is due to the
-     powerpc port using conditional macros for 'vector', 'bool', and 'pixel'
-     to act as conditional keywords.  This messes up tests like #ifndef
+     powerpc and spu ports using conditional macros for 'vector', 'bool', and
+     'pixel' to act as conditional keywords.  This messes up tests like #ifndef
      bool.  */
   result.unsignedp = false;
   result.high = 0;
   result.overflow = false;
-  result.low = is_defined;
+  result.low = (node && cpp_macro_p (node)
+		&& !(node->flags & NODE_CONDITIONAL));
   return result;
 }
 
@@ -1183,6 +1153,10 @@ eval_token (cpp_reader *pfile, const cpp_token *token,
     case CPP_NAME:
       if (token->val.node.node == pfile->spec_nodes.n_defined)
 	return parse_defined (pfile);
+      else if (token->val.node.node == pfile->spec_nodes.n__has_include__)
+	return parse_has_include (pfile, IT_INCLUDE);
+      else if (token->val.node.node == pfile->spec_nodes.n__has_include_next__)
+	return parse_has_include (pfile, IT_INCLUDE_NEXT);
       else if (CPP_OPTION (pfile, cplusplus)
 	       && (token->val.node.node == pfile->spec_nodes.n_true
 		   || token->val.node.node == pfile->spec_nodes.n_false))
@@ -2209,3 +2183,71 @@ num_div_op (cpp_reader *pfile, cpp_num lhs, cpp_num rhs, enum cpp_ttype op,
   return lhs;
 }
 
+/* Handle meeting "__has_include__" in a preprocessor expression.  */
+static cpp_num
+parse_has_include (cpp_reader *pfile, enum include_type type)
+{
+  cpp_num result;
+  bool paren = false;
+  cpp_hashnode *node = 0;
+  const cpp_token *token;
+  bool bracket = false;
+  char *fname = 0;
+
+  result.unsignedp = false;
+  result.high = 0;
+  result.overflow = false;
+  result.low = 0;
+
+  pfile->state.in__has_include__++;
+
+  token = cpp_get_token (pfile);
+  if (token->type == CPP_OPEN_PAREN)
+    {
+      paren = true;
+      token = cpp_get_token (pfile);
+    }
+
+  if (token->type == CPP_STRING || token->type == CPP_HEADER_NAME)
+    {
+      if (token->type == CPP_HEADER_NAME)
+	bracket = true;
+      fname = XNEWVEC (char, token->val.str.len - 1);
+      memcpy (fname, token->val.str.text + 1, token->val.str.len - 2);
+      fname[token->val.str.len - 2] = '\0';
+      node = token->val.node.node;
+    }
+  else if (token->type == CPP_LESS)
+    {
+      bracket = true;
+      fname = _cpp_bracket_include (pfile);
+    }
+  else
+    cpp_error (pfile, CPP_DL_ERROR,
+	       "operator \"__has_include__\" requires a header string");
+
+  if (fname)
+    {
+      int angle_brackets = (bracket ? 1 : 0);
+
+      if (_cpp_has_header (pfile, fname, angle_brackets, type))
+	result.low = 1;
+      else
+	result.low = 0;
+
+      XDELETEVEC (fname);
+    }
+
+  if (paren && !SEEN_EOL () && cpp_get_token (pfile)->type != CPP_CLOSE_PAREN)
+    cpp_error (pfile, CPP_DL_ERROR,
+	       "missing ')' after \"__has_include__\"");
+
+  /* A possible controlling macro of the form #if !__has_include__ ().
+     _cpp_parse_expr checks there was no other junk on the line.  */
+  if (node)
+    pfile->mi_ind_cmacro = node;
+
+  pfile->state.in__has_include__--;
+
+  return result;
+}

@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js
-// +build !js
-
 package pprof
 
 import (
 	"bytes"
 	"fmt"
-	"internal/profile"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -29,10 +25,6 @@ func allocateTransient1M() {
 //go:noinline
 func allocateTransient2M() {
 	memSink = make([]byte, 2<<20)
-}
-
-func allocateTransient2MInline() {
-	memSink = make([]byte, 4<<20)
 }
 
 type Obj32 struct {
@@ -71,7 +63,7 @@ func TestMemoryProfiler(t *testing.T) {
 		runtime.MemProfileRate = oldRate
 	}()
 
-	// Allocate a meg to ensure that mcache.nextSample is updated to 1.
+	// Allocate a meg to ensure that mcache.next_sample is updated to 1.
 	for i := 0; i < 1024; i++ {
 		memSink = make([]byte, 1024)
 	}
@@ -79,113 +71,47 @@ func TestMemoryProfiler(t *testing.T) {
 	// Do the interesting allocations.
 	allocateTransient1M()
 	allocateTransient2M()
-	allocateTransient2MInline()
 	allocatePersistent1K()
 	allocateReflect()
 	memSink = nil
 
 	runtime.GC() // materialize stats
-
-	// TODO(mknyszek): Fix #45315 and remove this extra call.
-	//
-	// Unfortunately, it's possible for the sweep termination condition
-	// to flap, so with just one runtime.GC call, a freed object could be
-	// missed, leading this test to fail. A second call reduces the chance
-	// of this happening to zero, because sweeping actually has to finish
-	// to move on to the next GC, during which nothing will happen.
-	//
-	// See #46500 for more details.
-	runtime.GC()
+	var buf bytes.Buffer
+	if err := Lookup("heap").WriteTo(&buf, 1); err != nil {
+		t.Fatalf("failed to write heap profile: %v", err)
+	}
 
 	memoryProfilerRun++
 
-	tests := []struct {
-		stk    []string
-		legacy string
-	}{{
-		stk: []string{"runtime/pprof.allocatePersistent1K", "runtime/pprof.TestMemoryProfiler"},
-		legacy: fmt.Sprintf(`%v: %v \[%v: %v\] @ 0x[0-9,a-f x]+
-#	0x[0-9,a-f]+	runtime/pprof\.allocatePersistent1K\+0x[0-9,a-f]+	.*/mprof_test\.go:48
-#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test\.go:83
+	tests := []string{
+
+		fmt.Sprintf(`%v: %v \[%v: %v\] @ 0x[0-9,a-f x]+
+#	0x[0-9,a-f]+	pprof\.allocatePersistent1K\+0x[0-9,a-f]+	.*/mprof_test\.go:40
+#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test\.go:74
 `, 32*memoryProfilerRun, 1024*memoryProfilerRun, 32*memoryProfilerRun, 1024*memoryProfilerRun),
-	}, {
-		stk: []string{"runtime/pprof.allocateTransient1M", "runtime/pprof.TestMemoryProfiler"},
-		legacy: fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @ 0x[0-9,a-f x]+
-#	0x[0-9,a-f]+	runtime/pprof\.allocateTransient1M\+0x[0-9,a-f]+	.*/mprof_test.go:25
-#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test.go:80
-`, (1<<10)*memoryProfilerRun, (1<<20)*memoryProfilerRun, (1<<10)*memoryProfilerRun, (1<<20)*memoryProfilerRun),
-	}, {
-		stk: []string{"runtime/pprof.allocateTransient2M", "runtime/pprof.TestMemoryProfiler"},
+
+		fmt.Sprintf(`0: 0 \[%v: %v\] @ 0x[0-9,a-f x]+
+#	0x[0-9,a-f]+	pprof\.allocateTransient1M\+0x[0-9,a-f]+	.*/mprof_test.go:21
+#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test.go:72
+`, (1<<10)*memoryProfilerRun, (1<<20)*memoryProfilerRun),
+
 		// This should start with "0: 0" but gccgo's imprecise
 		// GC means that sometimes the value is not collected.
-		legacy: fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @ 0x[0-9,a-f x]+
-#	0x[0-9,a-f]+	runtime/pprof\.allocateTransient2M\+0x[0-9,a-f]+	.*/mprof_test.go:31
-#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test.go:81
+		fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @ 0x[0-9,a-f x]+
+#	0x[0-9,a-f]+	pprof\.allocateTransient2M\+0x[0-9,a-f]+	.*/mprof_test.go:27
+#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test.go:73
 `, memoryProfilerRun, (2<<20)*memoryProfilerRun, memoryProfilerRun, (2<<20)*memoryProfilerRun),
-	}, {
-		stk: []string{"runtime/pprof.allocateTransient2MInline", "runtime/pprof.TestMemoryProfiler"},
-		legacy: fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @ 0x[0-9,a-f x]+
-#	0x[0-9,a-f]+	runtime/pprof\.allocateTransient2MInline\+0x[0-9,a-f]+	.*/mprof_test.go:35
-#	0x[0-9,a-f]+	runtime/pprof\.TestMemoryProfiler\+0x[0-9,a-f]+	.*/mprof_test.go:82
-`, memoryProfilerRun, (4<<20)*memoryProfilerRun, memoryProfilerRun, (4<<20)*memoryProfilerRun),
-	}, {
-		stk: []string{"runtime/pprof.allocateReflectTransient"},
-		legacy: fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @( 0x[0-9,a-f]+)+
-#	0x[0-9,a-f]+	runtime/pprof\.allocateReflectTransient\+0x[0-9,a-f]+	.*/mprof_test.go:56
+
+		// This should start with "0: 0" but gccgo's imprecise
+		// GC means that sometimes the value is not collected.
+		fmt.Sprintf(`(0|%v): (0|%v) \[%v: %v\] @( 0x[0-9,a-f]+)+
+#	0x[0-9,a-f]+	pprof\.allocateReflectTransient\+0x[0-9,a-f]+	.*/mprof_test.go:48
 `, memoryProfilerRun, (3<<20)*memoryProfilerRun, memoryProfilerRun, (3<<20)*memoryProfilerRun),
-	}}
+	}
 
-	t.Run("debug=1", func(t *testing.T) {
-		var buf bytes.Buffer
-		if err := Lookup("heap").WriteTo(&buf, 1); err != nil {
-			t.Fatalf("failed to write heap profile: %v", err)
+	for _, test := range tests {
+		if !regexp.MustCompile(test).Match(buf.Bytes()) {
+			t.Fatalf("The entry did not match:\n%v\n\nProfile:\n%v\n", test, buf.String())
 		}
-
-		for _, test := range tests {
-			if !regexp.MustCompile(test.legacy).Match(buf.Bytes()) {
-				t.Fatalf("The entry did not match:\n%v\n\nProfile:\n%v\n", test.legacy, buf.String())
-			}
-		}
-	})
-
-	t.Run("proto", func(t *testing.T) {
-		var buf bytes.Buffer
-		if err := Lookup("heap").WriteTo(&buf, 0); err != nil {
-			t.Fatalf("failed to write heap profile: %v", err)
-		}
-		p, err := profile.Parse(&buf)
-		if err != nil {
-			t.Fatalf("failed to parse heap profile: %v", err)
-		}
-		t.Logf("Profile = %v", p)
-
-		stks := stacks(p)
-		for _, test := range tests {
-			if !containsStack(stks, test.stk) {
-				t.Logf("stks:\n%v", stks)
-				t.Fatalf("No matching stack entry for %q\n\nProfile:\n%v\n", test.stk, p)
-			}
-		}
-
-		if !containsInlinedCall(TestMemoryProfiler, 4<<10) {
-			t.Logf("Can't determine whether allocateTransient2MInline was inlined into TestMemoryProfiler.")
-			return
-		}
-
-		// Check the inlined function location is encoded correctly.
-		for _, loc := range p.Location {
-			inlinedCaller, inlinedCallee := false, false
-			for _, line := range loc.Line {
-				if line.Function.Name == "runtime/pprof.allocateTransient2MInline" {
-					inlinedCallee = true
-				}
-				if inlinedCallee && line.Function.Name == "runtime/pprof.TestMemoryProfiler" {
-					inlinedCaller = true
-				}
-			}
-			if inlinedCallee != inlinedCaller {
-				t.Errorf("want allocateTransient2MInline after TestMemoryProfiler in one location, got separate location entries:\n%v", loc)
-			}
-		}
-	})
+	}
 }

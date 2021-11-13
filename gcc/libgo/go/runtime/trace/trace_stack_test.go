@@ -233,7 +233,6 @@ func TestTraceSymbolize(t *testing.T) {
 		}},
 		{trace.EvGomaxprocs, []frame{
 			{"runtime.startTheWorld", 0}, // this is when the current gomaxprocs is logged.
-			{"runtime.startTheWorldGC", 0},
 			{"runtime.GOMAXPROCS", 0},
 			{"runtime/trace_test.TestTraceSymbolize", 0},
 			{"testing.tRunner", 0},
@@ -252,7 +251,6 @@ func TestTraceSymbolize(t *testing.T) {
 			{trace.EvGoSysCall, []frame{
 				{"syscall.read", 0},
 				{"syscall.Read", 0},
-				{"internal/poll.ignoringEINTRIO", 0},
 				{"internal/poll.(*FD).Read", 0},
 				{"os.(*File).read", 0},
 				{"os.(*File).Read", 0},

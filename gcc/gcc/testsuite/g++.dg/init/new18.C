@@ -1,5 +1,6 @@
 // { dg-do compile }
-// { dg-options "-O2 -fstrict-aliasing -Wno-return-type" }
+// { dg-options "-O2 -fstrict-aliasing" }
+// { dg-additional-options "-Wno-return-type" }
 
 // This caused an ICE during placement new.
 

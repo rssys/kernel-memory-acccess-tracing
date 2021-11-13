@@ -1,4 +1,4 @@
-#  Copyright (C) 2003-2021 Free Software Foundation, Inc.
+#  Copyright (C) 2003-2019 Free Software Foundation, Inc.
 #  Contributed by Kelley Cook, June 2004.
 #  Original code from Neil Booth, May 2003.
 #
@@ -104,9 +104,6 @@ for (i = 0; i < n_opts; i++) {
 	enabledby_negarg = nth_arg(3, enabledby_arg);
         lang_enabled_by(enabledby_langs, enabledby_name, enabledby_posarg, enabledby_negarg);
     }
-
-    if (flag_set_p("Param", flags[i]) && !(opts[i] ~ "^-param="))
-      print "#error Parameter option name '" opts[i] "' must start with '-param='"
 }
 
 
@@ -195,14 +192,10 @@ for (i = 0; i < n_extra_vars; i++) {
 }
 for (i = 0; i < n_opts; i++) {
 	name = var_name(flags[i]);
-	init = opt_args("Init", flags[i])
-
-	if (name == "") {
-		if (init != "")
-		    print "#error " opts[i] " must specify Var to use Init"
+	if (name == "")
 		continue;
-	}
 
+	init = opt_args("Init", flags[i])
 	if (init != "") {
 		if (name in var_init && var_init[name] != init)
 			print "#error multiple initializers for " name
@@ -336,13 +329,15 @@ for (i = 0; i < n_opts; i++) {
 				  print "#error Ignored option with Warn"
         if (var_name(flags[i]) != "")
 				  print "#error Ignored option with Var"
+        if (flag_set_p("Report", flags[i]))
+				  print "#error Ignored option with Report"
       }
-    else if (flag_set_p("Deprecated", flags[i]))
-        print "#error Deprecated was replaced with WarnRemoved"
-    else if (flag_set_p("WarnRemoved", flags[i])) {
-			  alias_data = "NULL, NULL, OPT_SPECIAL_warn_removed"
+    else if (flag_set_p("Deprecated", flags[i])) {
+			  alias_data = "NULL, NULL, OPT_SPECIAL_deprecated"
         if (warn_message != "NULL")
-				  print "#error WarnRemoved option with Warn"
+				  print "#error Deprecated option with Warn"
+        if (flag_set_p("Report", flags[i]))
+				  print "#error Deprecated option with Report"
       }
 		else
 			alias_data = "NULL, NULL, N_OPTS"
@@ -422,7 +417,7 @@ for (i = 0; i < n_opts; i++) {
 		       cl_flags, cl_bit_fields)
 	printf("    %s, %s, %s }%s\n", var_ref(opts[i], flags[i]),
 	       var_set(flags[i]), integer_range_info(opt_args("IntegerRange", flags[i]),
-		    opt_args("Init", flags[i]), opts[i], flag_set_p("UInteger", flags[i])), comma)
+		    opt_args("Init", flags[i]), opts[i]), comma)
 
 	# Bump up the informational option index.
 	++optindex
@@ -595,29 +590,5 @@ for (i = 0; i < n_opts; i++) {
 }
 print "}               "
 
-split("", var_seen, ":")
-print "\n#if !defined(GENERATOR_FILE) && defined(ENABLE_PLUGIN)"
-print "DEBUG_VARIABLE const struct cl_var cl_vars[] =\n{"
-
-for (i = 0; i < n_opts; i++) {
-	name = var_name(flags[i]);
-	if (name == "")
-		continue;
-	var_seen[name] = 1;
 }
 
-for (i = 0; i < n_extra_vars; i++) {
-	var = extra_vars[i]
-	sub(" *=.*", "", var)
-	name = var
-	sub("^.*[ *]", "", name)
-	sub("\\[.*\\]$", "", name)
-	if (name in var_seen)
-		continue;
-	print "  { " quote name quote ", offsetof (struct gcc_options, x_" name ") },"
-	var_seen[name] = 1
-}
-
-print "  { NULL, (unsigned short) -1 }\n};\n#endif"
-
-}

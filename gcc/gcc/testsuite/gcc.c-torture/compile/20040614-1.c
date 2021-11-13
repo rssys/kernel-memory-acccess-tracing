@@ -1,5 +1,4 @@
 /* { dg-require-effective-target label_values } */
-/* { dg-require-effective-target indirect_calls } */
 
 void f(int r1, int *fp) 
 {     

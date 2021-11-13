@@ -1,8 +1,7 @@
 //===-- sanitizer_quarantine.h ----------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -149,8 +148,7 @@ class Quarantine {
   Cache cache_;
   char pad2_[kCacheLineSize];
 
-  void NOINLINE Recycle(uptr min_size, Callback cb) REQUIRES(recycle_mutex_)
-      RELEASE(recycle_mutex_) {
+  void NOINLINE Recycle(uptr min_size, Callback cb) {
     Cache tmp;
     {
       SpinMutexLock l(&cache_mutex_);

@@ -5,7 +5,6 @@ public import core.sys.posix.unistd;
 version (linux):
 extern(C):
 nothrow:
-@system:
 
 // Additional seek constants for sparse file handling
 // from Linux's unistd.h, stdio.h, and linux/fs.h
@@ -19,6 +18,3 @@ enum {
 
 /// Prompt for a password without echoing it.
 char* getpass(const(char)* prompt);
-
-// Exit all threads in a process
-void exit_group(int status);

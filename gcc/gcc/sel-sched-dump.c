@@ -1,5 +1,5 @@
 /* Instruction scheduling pass.   Log dumping infrastructure.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -528,7 +528,10 @@ dump_flist (flist_t l)
 void
 dump_insn_vector (rtx_vec_t succs)
 {
-  for (rtx_insn *succ : succs)
+  int i;
+  rtx_insn *succ;
+
+  FOR_EACH_VEC_ELT (succs, i, succ)
     if (succ)
       dump_insn (succ);
     else

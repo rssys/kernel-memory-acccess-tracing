@@ -11,7 +11,7 @@ struct Meow {};
 
 void f ()
 {
-  decltype (Meow.purr ()) d;   // { dg-error "expected primary-expression" }
+  decltype (Meow.purr ()) d;   // { dg-error "expected primary-expression" "pr89875" { xfail c++98_only } }
   (void)&d;
 }
 
@@ -19,3 +19,4 @@ void g ()
 {
   decltype (Meow.purr);        // { dg-error "expected primary-expression" }
 }
+

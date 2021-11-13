@@ -1,11 +1,12 @@
 /* { dg-do run } */
 /* { dg-require-effective-target sse4 } */
 /* { dg-options "-O2 -msse4.1" } */
+/* { dg-skip-if "no M_PI" { vxworks_kernel } } */
 
 #include "sse4_1-check.h"
 
 #include <smmintrin.h>
-#include "math_m_pi.h"
+#include <math.h>
 #include <string.h>
 
 #define NUM 64

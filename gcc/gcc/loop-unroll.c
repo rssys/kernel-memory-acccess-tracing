@@ -1,5 +1,5 @@
 /* Loop unrolling.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -32,6 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "profile.h"
 #include "cfgrtl.h"
 #include "cfgloop.h"
+#include "params.h"
 #include "dojump.h"
 #include "expr.h"
 #include "dumpfile.h"
@@ -162,19 +163,19 @@ struct opt_info
   basic_block loop_preheader;      /* The loop preheader basic block.  */
 };
 
-static void decide_unroll_stupid (class loop *, int);
-static void decide_unroll_constant_iterations (class loop *, int);
-static void decide_unroll_runtime_iterations (class loop *, int);
-static void unroll_loop_stupid (class loop *);
+static void decide_unroll_stupid (struct loop *, int);
+static void decide_unroll_constant_iterations (struct loop *, int);
+static void decide_unroll_runtime_iterations (struct loop *, int);
+static void unroll_loop_stupid (struct loop *);
 static void decide_unrolling (int);
-static void unroll_loop_constant_iterations (class loop *);
-static void unroll_loop_runtime_iterations (class loop *);
-static struct opt_info *analyze_insns_in_loop (class loop *);
+static void unroll_loop_constant_iterations (struct loop *);
+static void unroll_loop_runtime_iterations (struct loop *);
+static struct opt_info *analyze_insns_in_loop (struct loop *);
 static void opt_info_start_duplication (struct opt_info *);
 static void apply_opt_in_copies (struct opt_info *, unsigned, bool, bool);
 static void free_opt_info (struct opt_info *);
-static struct var_to_expand *analyze_insn_to_expand_var (class loop*, rtx_insn *);
-static bool referenced_in_one_insn_in_loop_p (class loop *, rtx, int *);
+static struct var_to_expand *analyze_insn_to_expand_var (struct loop*, rtx_insn *);
+static bool referenced_in_one_insn_in_loop_p (struct loop *, rtx, int *);
 static struct iv_to_split *analyze_iv_to_split_insn (rtx_insn *);
 static void expand_var_during_unrolling (struct var_to_expand *, rtx_insn *);
 static void insert_var_expansion_initialization (struct var_to_expand *,
@@ -188,7 +189,7 @@ static rtx get_expansion (struct var_to_expand *);
    appropriate given the dump or -fopt-info settings.  */
 
 static void
-report_unroll (class loop *loop, dump_location_t locus)
+report_unroll (struct loop *loop, dump_location_t locus)
 {
   dump_flags_t report_flags = MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS;
 
@@ -214,8 +215,10 @@ report_unroll (class loop *loop, dump_location_t locus)
 static void
 decide_unrolling (int flags)
 {
+  struct loop *loop;
+
   /* Scan the loops, inner ones first.  */
-  for (auto loop : loops_list (cfun, LI_FROM_INNERMOST))
+  FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
     {
       loop->lpt_decision.decision = LPT_NONE;
       dump_user_location_t locus = get_loop_location (loop);
@@ -276,13 +279,14 @@ decide_unrolling (int flags)
 void
 unroll_loops (int flags)
 {
+  struct loop *loop;
   bool changed = false;
 
   /* Now decide rest of unrolling.  */
   decide_unrolling (flags);
 
   /* Scan the loops, inner ones first.  */
-  for (auto loop : loops_list (cfun, LI_FROM_INNERMOST))
+  FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
     {
       /* And perform the appropriate transformations.  */
       switch (loop->lpt_decision.decision)
@@ -318,9 +322,9 @@ unroll_loops (int flags)
 /* Check whether exit of the LOOP is at the end of loop body.  */
 
 static bool
-loop_exit_at_end_p (class loop *loop)
+loop_exit_at_end_p (struct loop *loop)
 {
-  class niter_desc *desc = get_simple_loop_desc (loop);
+  struct niter_desc *desc = get_simple_loop_desc (loop);
   rtx_insn *insn;
 
   /* We should never have conditional in latch block.  */
@@ -343,10 +347,10 @@ loop_exit_at_end_p (class loop *loop)
    and how much.  */
 
 static void
-decide_unroll_constant_iterations (class loop *loop, int flags)
+decide_unroll_constant_iterations (struct loop *loop, int flags)
 {
   unsigned nunroll, nunroll_by_av, best_copies, best_unroll = 0, n_copies, i;
-  class niter_desc *desc;
+  struct niter_desc *desc;
   widest_int iterations;
 
   /* If we were not asked to unroll this loop, just return back silently.  */
@@ -360,13 +364,13 @@ decide_unroll_constant_iterations (class loop *loop, int flags)
 
   /* nunroll = total number of copies of the original loop body in
      unrolled loop (i.e. if it is 2, we have to duplicate loop body once).  */
-  nunroll = param_max_unrolled_insns / loop->ninsns;
+  nunroll = PARAM_VALUE (PARAM_MAX_UNROLLED_INSNS) / loop->ninsns;
   nunroll_by_av
-    = param_max_average_unrolled_insns / loop->av_ninsns;
+    = PARAM_VALUE (PARAM_MAX_AVERAGE_UNROLLED_INSNS) / loop->av_ninsns;
   if (nunroll > nunroll_by_av)
     nunroll = nunroll_by_av;
-  if (nunroll > (unsigned) param_max_unroll_times)
-    nunroll = param_max_unroll_times;
+  if (nunroll > (unsigned) PARAM_VALUE (PARAM_MAX_UNROLL_TIMES))
+    nunroll = PARAM_VALUE (PARAM_MAX_UNROLL_TIMES);
 
   if (targetm.loop_unroll_adjust)
     nunroll = targetm.loop_unroll_adjust (nunroll, loop);
@@ -476,14 +480,14 @@ decide_unroll_constant_iterations (class loop *loop, int flags)
      }
   */
 static void
-unroll_loop_constant_iterations (class loop *loop)
+unroll_loop_constant_iterations (struct loop *loop)
 {
   unsigned HOST_WIDE_INT niter;
   unsigned exit_mod;
   unsigned i;
   edge e;
   unsigned max_unroll = loop->lpt_decision.times;
-  class niter_desc *desc = get_simple_loop_desc (loop);
+  struct niter_desc *desc = get_simple_loop_desc (loop);
   bool exit_at_end = loop_exit_at_end_p (loop);
   struct opt_info *opt_info = NULL;
   bool ok;
@@ -520,11 +524,14 @@ unroll_loop_constant_iterations (class loop *loop)
       if (exit_mod)
 	{
 	  opt_info_start_duplication (opt_info);
-	  ok = duplicate_loop_body_to_header_edge (
-	    loop, loop_preheader_edge (loop), exit_mod, wont_exit,
-	    desc->out_edge, &remove_edges,
-	    DLTHE_FLAG_UPDATE_FREQ
-	      | (opt_info && exit_mod > 1 ? DLTHE_RECORD_COPY_NUMBER : 0));
+          ok = duplicate_loop_to_header_edge (loop, loop_preheader_edge (loop),
+					      exit_mod,
+					      wont_exit, desc->out_edge,
+					      &remove_edges,
+					      DLTHE_FLAG_UPDATE_FREQ
+					      | (opt_info && exit_mod > 1
+						 ? DLTHE_RECORD_COPY_NUMBER
+						   : 0));
 	  gcc_assert (ok);
 
           if (opt_info && exit_mod > 1)
@@ -566,11 +573,14 @@ unroll_loop_constant_iterations (class loop *loop)
 	    bitmap_clear_bit (wont_exit, 1);
 
           opt_info_start_duplication (opt_info);
-	  ok = duplicate_loop_body_to_header_edge (
-	    loop, loop_preheader_edge (loop), exit_mod + 1, wont_exit,
-	    desc->out_edge, &remove_edges,
-	    DLTHE_FLAG_UPDATE_FREQ
-	      | (opt_info && exit_mod > 0 ? DLTHE_RECORD_COPY_NUMBER : 0));
+	  ok = duplicate_loop_to_header_edge (loop, loop_preheader_edge (loop),
+					      exit_mod + 1,
+					      wont_exit, desc->out_edge,
+					      &remove_edges,
+					      DLTHE_FLAG_UPDATE_FREQ
+					      | (opt_info && exit_mod > 0
+						 ? DLTHE_RECORD_COPY_NUMBER
+						   : 0));
 	  gcc_assert (ok);
 
           if (opt_info && exit_mod > 0)
@@ -600,10 +610,14 @@ unroll_loop_constant_iterations (class loop *loop)
   /* Now unroll the loop.  */
 
   opt_info_start_duplication (opt_info);
-  ok = duplicate_loop_body_to_header_edge (
-    loop, loop_latch_edge (loop), max_unroll, wont_exit, desc->out_edge,
-    &remove_edges,
-    DLTHE_FLAG_UPDATE_FREQ | (opt_info ? DLTHE_RECORD_COPY_NUMBER : 0));
+  ok = duplicate_loop_to_header_edge (loop, loop_latch_edge (loop),
+				      max_unroll,
+				      wont_exit, desc->out_edge,
+				      &remove_edges,
+				      DLTHE_FLAG_UPDATE_FREQ
+				      | (opt_info
+					 ? DLTHE_RECORD_COPY_NUMBER
+					   : 0));
   gcc_assert (ok);
 
   if (opt_info)
@@ -653,10 +667,10 @@ unroll_loop_constant_iterations (class loop *loop)
 /* Decide whether to unroll LOOP iterating runtime computable number of times
    and how much.  */
 static void
-decide_unroll_runtime_iterations (class loop *loop, int flags)
+decide_unroll_runtime_iterations (struct loop *loop, int flags)
 {
   unsigned nunroll, nunroll_by_av, i;
-  class niter_desc *desc;
+  struct niter_desc *desc;
   widest_int iterations;
 
   /* If we were not asked to unroll this loop, just return back silently.  */
@@ -670,12 +684,12 @@ decide_unroll_runtime_iterations (class loop *loop, int flags)
 
   /* nunroll = total number of copies of the original loop body in
      unrolled loop (i.e. if it is 2, we have to duplicate loop body once.  */
-  nunroll = param_max_unrolled_insns / loop->ninsns;
-  nunroll_by_av = param_max_average_unrolled_insns / loop->av_ninsns;
+  nunroll = PARAM_VALUE (PARAM_MAX_UNROLLED_INSNS) / loop->ninsns;
+  nunroll_by_av = PARAM_VALUE (PARAM_MAX_AVERAGE_UNROLLED_INSNS) / loop->av_ninsns;
   if (nunroll > nunroll_by_av)
     nunroll = nunroll_by_av;
-  if (nunroll > (unsigned) param_max_unroll_times)
-    nunroll = param_max_unroll_times;
+  if (nunroll > (unsigned) PARAM_VALUE (PARAM_MAX_UNROLL_TIMES))
+    nunroll = PARAM_VALUE (PARAM_MAX_UNROLL_TIMES);
 
   if (targetm.loop_unroll_adjust)
     nunroll = targetm.loop_unroll_adjust (nunroll, loop);
@@ -867,11 +881,11 @@ compare_and_jump_seq (rtx op0, rtx op1, enum rtx_code comp,
      }
    */
 static void
-unroll_loop_runtime_iterations (class loop *loop)
+unroll_loop_runtime_iterations (struct loop *loop)
 {
   rtx old_niter, niter, tmp;
   rtx_insn *init_code, *branch_code;
-  unsigned i;
+  unsigned i, j;
   profile_probability p;
   basic_block preheader, *body, swtch, ezc_swtch = NULL;
   int may_exit_copy;
@@ -880,7 +894,7 @@ unroll_loop_runtime_iterations (class loop *loop)
   edge e;
   bool extra_zero_check, last_may_exit;
   unsigned max_unroll = loop->lpt_decision.times;
-  class niter_desc *desc = get_simple_loop_desc (loop);
+  struct niter_desc *desc = get_simple_loop_desc (loop);
   bool exit_at_end = loop_exit_at_end_p (loop);
   struct opt_info *opt_info = NULL;
   bool ok;
@@ -895,9 +909,15 @@ unroll_loop_runtime_iterations (class loop *loop)
   body = get_loop_body (loop);
   for (i = 0; i < loop->num_nodes; i++)
     {
-      for (basic_block bb : get_dominated_by (CDI_DOMINATORS, body[i]))
+      vec<basic_block> ldom;
+      basic_block bb;
+
+      ldom = get_dominated_by (CDI_DOMINATORS, body[i]);
+      FOR_EACH_VEC_ELT (ldom, j, bb)
 	if (!flow_bb_inside_loop_p (loop, bb))
 	  dom_bbs.safe_push (bb);
+
+      ldom.release ();
     }
   free (body);
 
@@ -965,10 +985,10 @@ unroll_loop_runtime_iterations (class loop *loop)
       if (!desc->noloop_assumptions)
 	bitmap_set_bit (wont_exit, 1);
       ezc_swtch = loop_preheader_edge (loop)->src;
-      ok = duplicate_loop_body_to_header_edge (loop, loop_preheader_edge (loop),
-					       1, wont_exit, desc->out_edge,
-					       &remove_edges,
-					       DLTHE_FLAG_UPDATE_FREQ);
+      ok = duplicate_loop_to_header_edge (loop, loop_preheader_edge (loop),
+					  1, wont_exit, desc->out_edge,
+					  &remove_edges,
+					  DLTHE_FLAG_UPDATE_FREQ);
       gcc_assert (ok);
     }
 
@@ -987,14 +1007,14 @@ unroll_loop_runtime_iterations (class loop *loop)
       bitmap_clear (wont_exit);
       if (i != n_peel - 1 || !last_may_exit)
 	bitmap_set_bit (wont_exit, 1);
-      ok = duplicate_loop_body_to_header_edge (loop, loop_preheader_edge (loop),
-					       1, wont_exit, desc->out_edge,
-					       &remove_edges,
-					       DLTHE_FLAG_UPDATE_FREQ);
+      ok = duplicate_loop_to_header_edge (loop, loop_preheader_edge (loop),
+					  1, wont_exit, desc->out_edge,
+					  &remove_edges,
+					  DLTHE_FLAG_UPDATE_FREQ);
       gcc_assert (ok);
 
       /* Create item for switch.  */
-      unsigned j = n_peel - i - (extra_zero_check ? 0 : 1);
+      j = n_peel - i - (extra_zero_check ? 0 : 1);
       p = profile_probability::always ().apply_scale (1, i + 2);
 
       preheader = split_edge (loop_preheader_edge (loop));
@@ -1051,10 +1071,14 @@ unroll_loop_runtime_iterations (class loop *loop)
   bitmap_clear_bit (wont_exit, may_exit_copy);
   opt_info_start_duplication (opt_info);
 
-  ok = duplicate_loop_body_to_header_edge (
-    loop, loop_latch_edge (loop), max_unroll, wont_exit, desc->out_edge,
-    &remove_edges,
-    DLTHE_FLAG_UPDATE_FREQ | (opt_info ? DLTHE_RECORD_COPY_NUMBER : 0));
+  ok = duplicate_loop_to_header_edge (loop, loop_latch_edge (loop),
+				      max_unroll,
+				      wont_exit, desc->out_edge,
+				      &remove_edges,
+				      DLTHE_FLAG_UPDATE_FREQ
+				      | (opt_info
+					 ? DLTHE_RECORD_COPY_NUMBER
+					   : 0));
   gcc_assert (ok);
 
   if (opt_info)
@@ -1128,10 +1152,10 @@ unroll_loop_runtime_iterations (class loop *loop)
 
 /* Decide whether to unroll LOOP stupidly and how much.  */
 static void
-decide_unroll_stupid (class loop *loop, int flags)
+decide_unroll_stupid (struct loop *loop, int flags)
 {
   unsigned nunroll, nunroll_by_av, i;
-  class niter_desc *desc;
+  struct niter_desc *desc;
   widest_int iterations;
 
   /* If we were not asked to unroll this loop, just return back silently.  */
@@ -1143,13 +1167,13 @@ decide_unroll_stupid (class loop *loop, int flags)
 
   /* nunroll = total number of copies of the original loop body in
      unrolled loop (i.e. if it is 2, we have to duplicate loop body once.  */
-  nunroll = param_max_unrolled_insns / loop->ninsns;
+  nunroll = PARAM_VALUE (PARAM_MAX_UNROLLED_INSNS) / loop->ninsns;
   nunroll_by_av
-    = param_max_average_unrolled_insns / loop->av_ninsns;
+    = PARAM_VALUE (PARAM_MAX_AVERAGE_UNROLLED_INSNS) / loop->av_ninsns;
   if (nunroll > nunroll_by_av)
     nunroll = nunroll_by_av;
-  if (nunroll > (unsigned) param_max_unroll_times)
-    nunroll = param_max_unroll_times;
+  if (nunroll > (unsigned) PARAM_VALUE (PARAM_MAX_UNROLL_TIMES))
+    nunroll = PARAM_VALUE (PARAM_MAX_UNROLL_TIMES);
 
   if (targetm.loop_unroll_adjust)
     nunroll = targetm.loop_unroll_adjust (nunroll, loop);
@@ -1226,10 +1250,10 @@ decide_unroll_stupid (class loop *loop, int flags)
      }
    */
 static void
-unroll_loop_stupid (class loop *loop)
+unroll_loop_stupid (struct loop *loop)
 {
   unsigned nunroll = loop->lpt_decision.times;
-  class niter_desc *desc = get_simple_loop_desc (loop);
+  struct niter_desc *desc = get_simple_loop_desc (loop);
   struct opt_info *opt_info = NULL;
   bool ok;
 
@@ -1241,9 +1265,13 @@ unroll_loop_stupid (class loop *loop)
   bitmap_clear (wont_exit);
   opt_info_start_duplication (opt_info);
 
-  ok = duplicate_loop_body_to_header_edge (
-    loop, loop_latch_edge (loop), nunroll, wont_exit, NULL, NULL,
-    DLTHE_FLAG_UPDATE_FREQ | (opt_info ? DLTHE_RECORD_COPY_NUMBER : 0));
+  ok = duplicate_loop_to_header_edge (loop, loop_latch_edge (loop),
+				      nunroll, wont_exit,
+				      NULL, NULL,
+				      DLTHE_FLAG_UPDATE_FREQ
+				      | (opt_info
+					 ? DLTHE_RECORD_COPY_NUMBER
+					   : 0));
   gcc_assert (ok);
 
   if (opt_info)
@@ -1273,7 +1301,7 @@ unroll_loop_stupid (class loop *loop)
    variable.  */
 
 static bool
-referenced_in_one_insn_in_loop_p (class loop *loop, rtx reg,
+referenced_in_one_insn_in_loop_p (struct loop *loop, rtx reg,
 				  int *debug_uses)
 {
   basic_block *body, bb;
@@ -1301,7 +1329,7 @@ referenced_in_one_insn_in_loop_p (class loop *loop, rtx reg,
 /* Reset the DEBUG_USES debug insns in LOOP that reference REG.  */
 
 static void
-reset_debug_uses_in_loop (class loop *loop, rtx reg, int debug_uses)
+reset_debug_uses_in_loop (struct loop *loop, rtx reg, int debug_uses)
 {
   basic_block *body, bb;
   unsigned i;
@@ -1350,7 +1378,7 @@ reset_debug_uses_in_loop (class loop *loop, rtx reg, int debug_uses)
 */
 
 static struct var_to_expand *
-analyze_insn_to_expand_var (class loop *loop, rtx_insn *insn)
+analyze_insn_to_expand_var (struct loop *loop, rtx_insn *insn)
 {
   rtx set, dest, src;
   struct var_to_expand *ves;
@@ -1491,7 +1519,7 @@ static struct iv_to_split *
 analyze_iv_to_split_insn (rtx_insn *insn)
 {
   rtx set, dest;
-  class rtx_iv iv;
+  struct rtx_iv iv;
   struct iv_to_split *ivts;
   scalar_int_mode mode;
   bool ok;
@@ -1543,7 +1571,7 @@ analyze_iv_to_split_insn (rtx_insn *insn)
    is undefined for the return value.  */
 
 static struct opt_info *
-analyze_insns_in_loop (class loop *loop)
+analyze_insns_in_loop (struct loop *loop)
 {
   basic_block *body, bb;
   unsigned i;
@@ -1553,7 +1581,7 @@ analyze_insns_in_loop (class loop *loop)
   struct var_to_expand *ves = NULL;
   iv_to_split **slot1;
   var_to_expand **slot2;
-  auto_vec<edge> edges = get_loop_exit_edges (loop);
+  vec<edge> edges = get_loop_exit_edges (loop);
   edge exit;
   bool can_apply = false;
 
@@ -1629,6 +1657,7 @@ analyze_insns_in_loop (class loop *loop)
       }
     }
 
+  edges.release ();
   free (body);
   return opt_info;
 }
@@ -1795,7 +1824,7 @@ expand_var_during_unrolling (struct var_to_expand *ve, rtx_insn *insn)
 
   /* Generate a new register only if the expansion limit has not been
      reached.  Else reuse an already existing expansion.  */
-  if (param_max_variable_expansions > ve->expansion_count)
+  if (PARAM_VALUE (PARAM_MAX_VARIABLE_EXPANSIONS) > ve->expansion_count)
     {
       really_new_expansion = true;
       new_reg = gen_reg_rtx (GET_MODE (ve->reg));
@@ -2001,7 +2030,7 @@ apply_opt_in_copies (struct opt_info *opt_info,
       orig_bb = get_bb_original (bb);
 
       /* bb->aux holds position in copy sequence initialized by
-	 duplicate_loop_body_to_header_edge.  */
+	 duplicate_loop_to_header_edge.  */
       delta = determine_split_iv_delta ((size_t)bb->aux, n_copies,
 					unrolling);
       bb->aux = 0;

@@ -7,7 +7,6 @@ package net
 import (
 	"context"
 	"internal/bytealg"
-	"runtime"
 	"sync"
 )
 
@@ -45,13 +44,6 @@ func supportsIPv6() bool {
 // IPv4 address inside an IPv6 address at transport layer
 // protocols. See RFC 4291, RFC 4038 and RFC 3493.
 func supportsIPv4map() bool {
-	// Some operating systems provide no support for mapping IPv4
-	// addresses to IPv6, and a runtime check is unnecessary.
-	switch runtime.GOOS {
-	case "dragonfly", "openbsd":
-		return false
-	}
-
 	ipStackCaps.Once.Do(ipStackCaps.probe)
 	return ipStackCaps.ipv4MappedIPv6Enabled
 }

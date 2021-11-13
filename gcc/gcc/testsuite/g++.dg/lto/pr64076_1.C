@@ -1,4 +1,4 @@
-// { dg-options "-fno-lto -fPIC" }
+// { dg-options -fno-lto }
 
 #include "pr64076.H"
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2003-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2003-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,17 +29,10 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Ghost code, loop invariants and assertions in this unit are meant for
---  analysis only, not for run-time checking, as it would be too costly
---  otherwise. This is enforced by setting the assertion policy to Ignore.
+with Ada.Strings.Maps;   use Ada.Strings.Maps;
+with Ada.Strings.Search;
 
-pragma Assertion_Policy (Ghost          => Ignore,
-                         Loop_Invariant => Ignore,
-                         Assert         => Ignore);
-
-with Ada.Strings.Maps; use Ada.Strings.Maps;
-
-package body Ada.Strings.Superbounded with SPARK_Mode is
+package body Ada.Strings.Superbounded is
 
    ------------
    -- Concat --
@@ -60,13 +53,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                raise Ada.Strings.Length_Error;
             end if;
 
-            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-
-            if Rlen > 0 then
-               Result.Data (Llen + 1 .. Nlen) := Right.Data (1 .. Rlen);
-            end if;
-
             Result.Current_Length := Nlen;
+            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
+            Result.Data (Llen + 1 .. Nlen) := Right.Data (1 .. Rlen);
          end;
       end return;
    end Concat;
@@ -85,13 +74,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                raise Ada.Strings.Length_Error;
             end if;
 
-            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-
-            if Right'Length > 0 then
-               Result.Data (Llen + 1 .. Nlen) := Super_String_Data (Right);
-            end if;
-
             Result.Current_Length := Nlen;
+            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
+            Result.Data (Llen + 1 .. Nlen) := Right;
          end;
       end return;
    end Concat;
@@ -112,13 +97,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                raise Ada.Strings.Length_Error;
             end if;
 
-            Result.Data (1 .. Llen) := Super_String_Data (Left);
-
-            if Rlen > 0 then
-               Result.Data (Llen + 1 .. Nlen) := Right.Data (1 .. Rlen);
-            end if;
-
             Result.Current_Length := Nlen;
+            Result.Data (1 .. Llen) := Left;
+            Result.Data (Llen + 1 .. Nlen) := Right.Data (1 .. Rlen);
          end;
       end return;
    end Concat;
@@ -136,9 +117,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                raise Ada.Strings.Length_Error;
             end if;
 
-            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-            Result.Data (Llen + 1) := Right;
             Result.Current_Length := Llen + 1;
+            Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
+            Result.Data (Result.Current_Length) := Right;
          end;
       end return;
    end Concat;
@@ -156,9 +137,10 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                raise Ada.Strings.Length_Error;
             end if;
 
-            Result.Data (1) := Left;
-            Result.Data (2 .. Rlen + 1) := Right.Data (1 .. Rlen);
             Result.Current_Length := Rlen + 1;
+            Result.Data (1) := Left;
+            Result.Data (2 .. Result.Current_Length) :=
+              Right.Data (1 .. Rlen);
          end;
       end return;
    end Concat;
@@ -172,7 +154,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Super_To_String (Left) = Super_To_String (Right);
+      return Left.Current_Length = Right.Current_Length
+        and then Left.Data (1 .. Left.Current_Length) =
+                   Right.Data (1 .. Right.Current_Length);
    end "=";
 
    function Equal
@@ -180,7 +164,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : String) return Boolean
    is
    begin
-      return Super_To_String (Left) = Right;
+      return Left.Current_Length = Right'Length
+        and then Left.Data (1 .. Left.Current_Length) = Right;
    end Equal;
 
    function Equal
@@ -188,7 +173,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Left = Super_To_String (Right);
+      return Left'Length = Right.Current_Length
+        and then Left = Right.Data (1 .. Right.Current_Length);
    end Equal;
 
    -------------
@@ -200,7 +186,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Super_To_String (Left) > Super_To_String (Right);
+      return Left.Data (1 .. Left.Current_Length) >
+               Right.Data (1 .. Right.Current_Length);
    end Greater;
 
    function Greater
@@ -208,7 +195,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : String) return Boolean
    is
    begin
-      return Super_To_String (Left) > Right;
+      return Left.Data (1 .. Left.Current_Length) > Right;
    end Greater;
 
    function Greater
@@ -216,7 +203,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Left > Super_To_String (Right);
+      return Left > Right.Data (1 .. Right.Current_Length);
    end Greater;
 
    ----------------------
@@ -228,7 +215,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Super_To_String (Left) >= Super_To_String (Right);
+      return Left.Data (1 .. Left.Current_Length) >=
+               Right.Data (1 .. Right.Current_Length);
    end Greater_Or_Equal;
 
    function Greater_Or_Equal
@@ -236,7 +224,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : String) return Boolean
    is
    begin
-      return Super_To_String (Left) >= Right;
+      return Left.Data (1 .. Left.Current_Length) >= Right;
    end Greater_Or_Equal;
 
    function Greater_Or_Equal
@@ -244,7 +232,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Left >= Super_To_String (Right);
+      return Left >= Right.Data (1 .. Right.Current_Length);
    end Greater_Or_Equal;
 
    ----------
@@ -256,7 +244,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Super_To_String (Left) < Super_To_String (Right);
+      return Left.Data (1 .. Left.Current_Length) <
+               Right.Data (1 .. Right.Current_Length);
    end Less;
 
    function Less
@@ -264,7 +253,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : String) return Boolean
    is
    begin
-      return Super_To_String (Left) < Right;
+      return Left.Data (1 .. Left.Current_Length) < Right;
    end Less;
 
    function Less
@@ -272,7 +261,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Left < Super_To_String (Right);
+      return Left < Right.Data (1 .. Right.Current_Length);
    end Less;
 
    -------------------
@@ -284,7 +273,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Super_To_String (Left) <= Super_To_String (Right);
+      return Left.Data (1 .. Left.Current_Length) <=
+               Right.Data (1 .. Right.Current_Length);
    end Less_Or_Equal;
 
    function Less_Or_Equal
@@ -292,7 +282,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : String) return Boolean
    is
    begin
-      return Super_To_String (Left) <= Right;
+      return Left.Data (1 .. Left.Current_Length) <= Right;
    end Less_Or_Equal;
 
    function Less_Or_Equal
@@ -300,7 +290,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Boolean
    is
    begin
-      return Left <= Super_To_String (Right);
+      return Left <= Right.Data (1 .. Right.Current_Length);
    end Less_Or_Equal;
 
    ----------------------
@@ -317,20 +307,20 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Slen <= Max_Length then
-         Target.Data (1 .. Slen) := Super_String_Data (Source);
          Target.Current_Length := Slen;
+         Target.Data (1 .. Slen) := Source;
 
       else
          case Drop is
             when Strings.Right =>
-               Target.Data (1 .. Max_Length) := Super_String_Data
-                 (Source (Source'First .. Source'First - 1 + Max_Length));
                Target.Current_Length := Max_Length;
+               Target.Data (1 .. Max_Length) :=
+                 Source (Source'First .. Source'First - 1 + Max_Length);
 
             when Strings.Left =>
-               Target.Data (1 .. Max_Length) := Super_String_Data
-                 (Source (Source'Last - (Max_Length - 1) .. Source'Last));
                Target.Current_Length := Max_Length;
+               Target.Data (1 .. Max_Length) :=
+                 Source (Source'Last - (Max_Length - 1) .. Source'Last);
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
@@ -353,18 +343,17 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Result : Super_String (Max_Length);
       Llen   : constant Natural := Left.Current_Length;
       Rlen   : constant Natural := Right.Current_Length;
+      Nlen   : constant Natural := Llen + Rlen;
 
    begin
-      if Llen <= Max_Length - Rlen then
+      if Nlen <= Max_Length then
+         Result.Current_Length := Nlen;
          Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-
-         if Rlen > 0 then
-            Result.Data (Llen + 1 .. Llen + Rlen) := Right.Data (1 .. Rlen);
-         end if;
-
-         Result.Current_Length := Llen + Rlen;
+         Result.Data (Llen + 1 .. Nlen) := Right.Data (1 .. Rlen);
 
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Llen >= Max_Length then -- only case is Llen = Max_Length
@@ -390,8 +379,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -405,15 +392,16 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Max_Length : constant Positive := Source.Max_Length;
       Llen       : constant Natural := Source.Current_Length;
       Rlen       : constant Natural := New_Item.Current_Length;
+      Nlen       : constant Natural := Llen + Rlen;
 
    begin
-      if Llen <= Max_Length - Rlen then
-         if Rlen > 0 then
-            Source.Data (Llen + 1 .. Llen + Rlen) := New_Item.Data (1 .. Rlen);
-            Source.Current_Length := Llen + Rlen;
-         end if;
+      if Nlen <= Max_Length then
+         Source.Current_Length := Nlen;
+         Source.Data (Llen + 1 .. Nlen) := New_Item.Data (1 .. Rlen);
 
       else
+         Source.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Llen < Max_Length then
@@ -435,8 +423,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Source.Current_Length := Max_Length;
       end if;
 
    end Super_Append;
@@ -452,18 +438,17 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Result : Super_String (Max_Length);
       Llen   : constant Natural := Left.Current_Length;
       Rlen   : constant Natural := Right'Length;
+      Nlen   : constant Natural := Llen + Rlen;
 
    begin
-      if Llen <= Max_Length - Rlen then
+      if Nlen <= Max_Length then
+         Result.Current_Length := Nlen;
          Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-
-         if Rlen > 0 then
-            Result.Data (Llen + 1 .. Llen + Rlen) := Super_String_Data (Right);
-         end if;
-
-         Result.Current_Length := Llen + Rlen;
+         Result.Data (Llen + 1 .. Nlen) := Right;
 
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Llen >= Max_Length then -- only case is Llen = Max_Length
@@ -471,29 +456,27 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
                else
                   Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
-                  Result.Data (Llen + 1 .. Max_Length) := Super_String_Data
-                    (Right
-                       (Right'First .. Right'First - 1 - Llen + Max_Length));
+                  Result.Data (Llen + 1 .. Max_Length) :=
+                    Right (Right'First .. Right'First - 1 +
+                             Max_Length - Llen);
 
                end if;
 
             when Strings.Left =>
                if Rlen >= Max_Length then
-                  Result.Data (1 .. Max_Length) := Super_String_Data
-                    (Right (Right'Last - (Max_Length - 1) .. Right'Last));
+                  Result.Data (1 .. Max_Length) :=
+                    Right (Right'Last - (Max_Length - 1) .. Right'Last);
 
                else
                   Result.Data (1 .. Max_Length - Rlen) :=
                     Left.Data (Llen - (Max_Length - Rlen - 1) .. Llen);
                   Result.Data (Max_Length - Rlen + 1 .. Max_Length) :=
-                    Super_String_Data (Right);
+                    Right;
                end if;
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -507,42 +490,40 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Max_Length : constant Positive := Source.Max_Length;
       Llen   : constant Natural := Source.Current_Length;
       Rlen   : constant Natural := New_Item'Length;
+      Nlen   : constant Natural := Llen + Rlen;
 
    begin
-      if Llen <= Max_Length - Rlen then
-         if Rlen > 0 then
-            Source.Data (Llen + 1 .. Llen + Rlen) :=
-              Super_String_Data (New_Item);
-            Source.Current_Length := Llen + Rlen;
-         end if;
+      if Nlen <= Max_Length then
+         Source.Current_Length := Nlen;
+         Source.Data (Llen + 1 .. Nlen) := New_Item;
 
       else
+         Source.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Llen < Max_Length then
-                  Source.Data (Llen + 1 .. Max_Length) := Super_String_Data
-                    (New_Item (New_Item'First ..
-                                New_Item'First - 1 - Llen + Max_Length));
+                  Source.Data (Llen + 1 .. Max_Length) :=
+                    New_Item (New_Item'First ..
+                                New_Item'First - 1 + Max_Length - Llen);
                end if;
 
             when Strings.Left =>
                if Rlen >= Max_Length then
-                  Source.Data (1 .. Max_Length) := Super_String_Data
-                    (New_Item (New_Item'Last - (Max_Length - 1) ..
-                                New_Item'Last));
+                  Source.Data (1 .. Max_Length) :=
+                    New_Item (New_Item'Last - (Max_Length - 1) ..
+                                New_Item'Last);
 
                else
                   Source.Data (1 .. Max_Length - Rlen) :=
                     Source.Data (Llen - (Max_Length - Rlen - 1) .. Llen);
                   Source.Data (Max_Length - Rlen + 1 .. Max_Length) :=
-                    Super_String_Data (New_Item);
+                    New_Item;
                end if;
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Source.Current_Length := Max_Length;
       end if;
 
    end Super_Append;
@@ -558,25 +539,25 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Result     : Super_String (Max_Length);
       Llen       : constant Natural := Left'Length;
       Rlen       : constant Natural := Right.Current_Length;
+      Nlen       : constant Natural := Llen + Rlen;
 
    begin
-      if Llen <= Max_Length - Rlen then
-         Result.Data (1 .. Llen) := Super_String_Data (Left);
+      if Nlen <= Max_Length then
+         Result.Current_Length := Nlen;
+         Result.Data (1 .. Llen) := Left;
+         Result.Data (Llen + 1 .. Llen + Rlen) := Right.Data (1 .. Rlen);
 
-         if Rlen > 0 then
-            Result.Data (Llen + 1 .. Llen + Rlen) := Right.Data (1 .. Rlen);
-         end if;
-
-         Result.Current_Length := Llen + Rlen;
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Llen >= Max_Length then
-                  Result.Data (1 .. Max_Length) := Super_String_Data
-                    (Left (Left'First .. Left'First + (Max_Length - 1)));
+                  Result.Data (1 .. Max_Length) :=
+                    Left (Left'First .. Left'First + (Max_Length - 1));
 
                else
-                  Result.Data (1 .. Llen) := Super_String_Data (Left);
+                  Result.Data (1 .. Llen) := Left;
                   Result.Data (Llen + 1 .. Max_Length) :=
                     Right.Data (1 .. Max_Length - Llen);
                end if;
@@ -587,8 +568,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                     Right.Data (Rlen - (Max_Length - 1) .. Rlen);
 
                else
-                  Result.Data (1 .. Max_Length - Rlen) := Super_String_Data
-                    (Left (Left'Last - (Max_Length - Rlen - 1) .. Left'Last));
+                  Result.Data (1 .. Max_Length - Rlen) :=
+                    Left (Left'Last - (Max_Length - Rlen - 1) .. Left'Last);
                   Result.Data (Max_Length - Rlen + 1 .. Max_Length) :=
                     Right.Data (1 .. Rlen);
                end if;
@@ -596,8 +577,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -616,9 +595,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Llen  < Max_Length then
+         Result.Current_Length := Llen + 1;
          Result.Data (1 .. Llen) := Left.Data (1 .. Llen);
          Result.Data (Llen + 1) := Right;
-         Result.Current_Length := Llen + 1;
          return Result;
 
       else
@@ -627,10 +606,10 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                return Left;
 
             when Strings.Left =>
+               Result.Current_Length := Max_Length;
                Result.Data (1 .. Max_Length - 1) :=
                  Left.Data (2 .. Max_Length);
                Result.Data (Max_Length) := Right;
-               Result.Current_Length := Max_Length;
                return Result;
 
             when Strings.Error =>
@@ -649,10 +628,12 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Llen  < Max_Length then
-         Source.Data (Llen + 1) := New_Item;
          Source.Current_Length := Llen + 1;
+         Source.Data (Llen + 1) := New_Item;
 
       else
+         Source.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                null;
@@ -682,18 +663,18 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Rlen < Max_Length then
+         Result.Current_Length := Rlen + 1;
          Result.Data (1) := Left;
          Result.Data (2 .. Rlen + 1) := Right.Data (1 .. Rlen);
-         Result.Current_Length := Rlen + 1;
          return Result;
 
       else
          case Drop is
             when Strings.Right =>
+               Result.Current_Length := Max_Length;
                Result.Data (1) := Left;
                Result.Data (2 .. Max_Length) :=
                  Right.Data (1 .. Max_Length - 1);
-               Result.Current_Length := Max_Length;
                return Result;
 
             when Strings.Left =>
@@ -715,7 +696,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Mapping : Maps.Character_Mapping := Maps.Identity) return Natural
    is
    begin
-      return Search.Count (Super_To_String (Source), Pattern, Mapping);
+      return
+        Search.Count
+          (Source.Data (1 .. Source.Current_Length), Pattern, Mapping);
    end Super_Count;
 
    function Super_Count
@@ -724,7 +707,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Mapping : Maps.Character_Mapping_Function) return Natural
    is
    begin
-      return Search.Count (Super_To_String (Source), Pattern, Mapping);
+      return
+        Search.Count
+          (Source.Data (1 .. Source.Current_Length), Pattern, Mapping);
    end Super_Count;
 
    function Super_Count
@@ -732,7 +717,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Set    : Maps.Character_Set) return Natural
    is
    begin
-      return Search.Count (Super_To_String (Source), Set);
+      return Search.Count (Source.Data (1 .. Source.Current_Length), Set);
    end Super_Count;
 
    ------------------
@@ -752,19 +737,19 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       if Num_Delete <= 0 then
          return Source;
 
-      elsif From - 1 > Slen then
+      elsif From > Slen + 1 then
          raise Ada.Strings.Index_Error;
 
       elsif Through >= Slen then
-         Result.Data (1 .. From - 1) := Source.Data (1 .. From - 1);
          Result.Current_Length := From - 1;
+         Result.Data (1 .. From - 1) := Source.Data (1 .. From - 1);
          return Result;
 
       else
-         Result.Data (1 .. From - 1) := Source.Data (1 .. From - 1);
-         Result.Data (From .. Slen - Num_Delete) :=
-           Source.Data (Through + 1 .. Slen);
          Result.Current_Length := Slen - Num_Delete;
+         Result.Data (1 .. From - 1) := Source.Data (1 .. From - 1);
+         Result.Data (From .. Result.Current_Length) :=
+           Source.Data (Through + 1 .. Slen);
          return Result;
       end if;
    end Super_Delete;
@@ -781,7 +766,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       if Num_Delete <= 0 then
          return;
 
-      elsif From - 1 > Slen then
+      elsif From > Slen + 1 then
          raise Ada.Strings.Index_Error;
 
       elsif Through >= Slen then
@@ -793,6 +778,22 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
            Source.Data (Through + 1 .. Slen);
       end if;
    end Super_Delete;
+
+   -------------------
+   -- Super_Element --
+   -------------------
+
+   function Super_Element
+     (Source : Super_String;
+      Index  : Positive) return Character
+   is
+   begin
+      if Index <= Source.Current_Length then
+         return Source.Data (Index);
+      else
+         raise Strings.Index_Error;
+      end if;
+   end Super_Element;
 
    ----------------------
    -- Super_Find_Token --
@@ -808,7 +809,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    is
    begin
       Search.Find_Token
-        (Super_To_String (Source), Set, From, Test, First, Last);
+        (Source.Data (From .. Source.Current_Length), Set, Test, First, Last);
    end Super_Find_Token;
 
    procedure Super_Find_Token
@@ -819,7 +820,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Last   : out Natural)
    is
    begin
-      Search.Find_Token (Super_To_String (Source), Set, Test, First, Last);
+      Search.Find_Token
+        (Source.Data (1 .. Source.Current_Length), Set, Test, First, Last);
    end Super_Find_Token;
 
    ----------------
@@ -839,22 +841,21 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Npad <= 0 then
-         Result.Data (1 .. Count) := Source.Data (1 .. Count);
          Result.Current_Length := Count;
+         Result.Data (1 .. Count) := Source.Data (1 .. Count);
 
       elsif Count <= Max_Length then
+         Result.Current_Length := Count;
          Result.Data (1 .. Slen) := Source.Data (1 .. Slen);
          Result.Data (Slen + 1 .. Count) := (others => Pad);
-         Result.Current_Length := Count;
 
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                Result.Data (1 .. Slen) := Source.Data (1 .. Slen);
-
-               if Slen < Max_Length then
-                  Result.Data (Slen + 1 .. Max_Length) := (others => Pad);
-               end if;
+               Result.Data (Slen + 1 .. Max_Length) := (others => Pad);
 
             when Strings.Left =>
                if Npad >= Max_Length then
@@ -870,8 +871,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -886,22 +885,22 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Max_Length : constant Positive := Source.Max_Length;
       Slen       : constant Natural  := Source.Current_Length;
       Npad       : constant Integer  := Count - Slen;
-      Temp       : Super_String_Data (1 .. Max_Length);
+      Temp       : String (1 .. Max_Length);
 
    begin
       if Npad <= 0 then
          Source.Current_Length := Count;
 
       elsif Count <= Max_Length then
-         Source.Data (Slen + 1 .. Count) := (others => Pad);
          Source.Current_Length := Count;
+         Source.Data (Slen + 1 .. Count) := (others => Pad);
 
       else
+         Source.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
-               if Slen < Max_Length then
-                  Source.Data (Slen + 1 .. Max_Length) := (others => Pad);
-               end if;
+               Source.Data (Slen + 1 .. Max_Length) := (others => Pad);
 
             when Strings.Left =>
                if Npad > Max_Length then
@@ -911,15 +910,15 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                   Temp := Source.Data;
                   Source.Data (1 .. Max_Length - Npad) :=
                     Temp (Count - Max_Length + 1 .. Slen);
-                  Source.Data (Max_Length - Npad + 1 .. Max_Length) :=
-                    (others => Pad);
+
+                  for J in Max_Length - Npad + 1 .. Max_Length loop
+                     Source.Data (J) := Pad;
+                  end loop;
                end if;
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Source.Current_Length := Max_Length;
       end if;
    end Super_Head;
 
@@ -934,7 +933,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Mapping : Maps.Character_Mapping := Maps.Identity) return Natural
    is
    begin
-      return Search.Index (Super_To_String (Source), Pattern, Going, Mapping);
+      return Search.Index
+        (Source.Data (1 .. Source.Current_Length), Pattern, Going, Mapping);
    end Super_Index;
 
    function Super_Index
@@ -944,7 +944,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Mapping : Maps.Character_Mapping_Function) return Natural
    is
    begin
-      return Search.Index (Super_To_String (Source), Pattern, Going, Mapping);
+      return Search.Index
+        (Source.Data (1 .. Source.Current_Length), Pattern, Going, Mapping);
    end Super_Index;
 
    function Super_Index
@@ -954,7 +955,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Going  : Strings.Direction  := Strings.Forward) return Natural
    is
    begin
-      return Search.Index (Super_To_String (Source), Set, Test, Going);
+      return Search.Index
+        (Source.Data (1 .. Source.Current_Length), Set, Test, Going);
    end Super_Index;
 
    function Super_Index
@@ -966,7 +968,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    is
    begin
       return Search.Index
-        (Super_To_String (Source), Pattern, From, Going, Mapping);
+        (Source.Data (1 .. Source.Current_Length),
+         Pattern, From, Going, Mapping);
    end Super_Index;
 
    function Super_Index
@@ -978,7 +981,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    is
    begin
       return Search.Index
-        (Super_To_String (Source), Pattern, From, Going, Mapping);
+        (Source.Data (1 .. Source.Current_Length),
+         Pattern, From, Going, Mapping);
    end Super_Index;
 
    function Super_Index
@@ -989,15 +993,8 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Going  : Direction := Forward) return Natural
    is
    begin
-      return Result : Natural do
-         Result :=
-           Search.Index (Super_To_String (Source), Set, From, Test, Going);
-         pragma Assert
-           (if (for all J in 1 .. Super_Length (Source) =>
-                  (if J = From or else (J > From) = (Going = Forward) then
-                     (Test = Inside) /= Maps.Is_In (Source.Data (J), Set)))
-            then Result = 0);
-      end return;
+      return Search.Index
+        (Source.Data (1 .. Source.Current_Length), Set, From, Test, Going);
    end Super_Index;
 
    ---------------------------
@@ -1009,7 +1006,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Going  : Strings.Direction := Strings.Forward) return Natural
    is
    begin
-      return Search.Index_Non_Blank (Super_To_String (Source), Going);
+      return
+        Search.Index_Non_Blank
+          (Source.Data (1 .. Source.Current_Length), Going);
    end Super_Index_Non_Blank;
 
    function Super_Index_Non_Blank
@@ -1018,7 +1017,9 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Going  : Direction := Forward) return Natural
    is
    begin
-      return Search.Index_Non_Blank (Super_To_String (Source), From, Going);
+      return
+        Search.Index_Non_Blank
+          (Source.Data (1 .. Source.Current_Length), From, Going);
    end Super_Index_Non_Blank;
 
    ------------------
@@ -1030,71 +1031,60 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Before   : Positive;
       New_Item : String;
       Drop     : Strings.Truncation := Strings.Error) return Super_String
-   with SPARK_Mode => Off
    is
       Max_Length : constant Positive := Source.Max_Length;
       Result     : Super_String (Max_Length);
       Slen       : constant Natural := Source.Current_Length;
       Nlen       : constant Natural := New_Item'Length;
+      Tlen       : constant Natural := Slen + Nlen;
       Blen       : constant Natural := Before - 1;
       Alen       : constant Integer := Slen - Blen;
-      Droplen    : constant Integer := Slen - Max_Length + Nlen;
+      Droplen    : constant Integer := Tlen - Max_Length;
 
+      --  Tlen is the length of the total string before possible truncation.
       --  Blen, Alen are the lengths of the before and after pieces of the
-      --  source string. The number of dropped characters is Natural'Max (0,
-      --  Droplen).
+      --  source string.
 
    begin
       if Alen < 0 then
          raise Ada.Strings.Index_Error;
 
       elsif Droplen <= 0 then
+         Result.Current_Length := Tlen;
          Result.Data (1 .. Blen) := Source.Data (1 .. Blen);
-         Result.Data (Before .. Before - 1 + Nlen) :=
-           Super_String_Data (New_Item);
-
-         if Before <= Slen then
-            Result.Data (Before + Nlen .. Slen + Nlen) :=
-              Source.Data (Before .. Slen);
-         end if;
-
-         Result.Current_Length := Slen + Nlen;
+         Result.Data (Before .. Before + Nlen - 1) := New_Item;
+         Result.Data (Before + Nlen .. Tlen) :=
+           Source.Data (Before .. Slen);
 
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                Result.Data (1 .. Blen) := Source.Data (1 .. Blen);
 
-               if Droplen >= Alen then
-                  Result.Data (Before .. Max_Length) := Super_String_Data
-                    (New_Item (New_Item'First
-                               .. New_Item'First - Before + Max_Length));
-                  pragma Assert
-                    (String (Result.Data (Before .. Max_Length)) =
-                       New_Item (New_Item'First
-                                 .. New_Item'First - Before + Max_Length));
+               if Droplen > Alen then
+                  Result.Data (Before .. Max_Length) :=
+                    New_Item (New_Item'First
+                                .. New_Item'First + Max_Length - Before);
                else
-                  Result.Data (Before .. Before - 1 + Nlen) :=
-                    Super_String_Data (New_Item);
+                  Result.Data (Before .. Before + Nlen - 1) := New_Item;
                   Result.Data (Before + Nlen .. Max_Length) :=
                     Source.Data (Before .. Slen - Droplen);
                end if;
 
             when Strings.Left =>
-               if Alen > 0 then
-                  Result.Data (Max_Length - (Alen - 1) .. Max_Length) :=
-                    Source.Data (Before .. Slen);
-               end if;
+               Result.Data (Max_Length - (Alen - 1) .. Max_Length) :=
+                 Source.Data (Before .. Slen);
 
-               if Droplen > Blen then
-                  if Alen < Max_Length then
-                     Result.Data (1 .. Max_Length - Alen) := Super_String_Data
-                       (New_Item (New_Item'Last - (Max_Length - Alen) + 1
-                                  .. New_Item'Last));
-                  end if;
+               if Droplen >= Blen then
+                  Result.Data (1 .. Max_Length - Alen) :=
+                    New_Item (New_Item'Last - (Max_Length - Alen) + 1
+                                .. New_Item'Last);
                else
-                  Result.Data (Blen - Droplen + 1 .. Max_Length - Alen) :=
-                    Super_String_Data (New_Item);
+                  Result.Data
+                    (Blen - Droplen + 1 .. Max_Length - Alen) :=
+                    New_Item;
                   Result.Data (1 .. Blen - Droplen) :=
                     Source.Data (Droplen + 1 .. Blen);
                end if;
@@ -1102,8 +1092,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -1123,6 +1111,15 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Source := Super_Insert (Source, Before, New_Item, Drop);
    end Super_Insert;
 
+   ------------------
+   -- Super_Length --
+   ------------------
+
+   function Super_Length (Source : Super_String) return Natural is
+   begin
+      return Source.Current_Length;
+   end Super_Length;
+
    ---------------------
    -- Super_Overwrite --
    ---------------------
@@ -1135,61 +1132,61 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    is
       Max_Length : constant Positive := Source.Max_Length;
       Result     : Super_String (Max_Length);
+      Endpos     : constant Natural  := Position + New_Item'Length - 1;
       Slen       : constant Natural  := Source.Current_Length;
       Droplen    : Natural;
 
    begin
-      if Position - 1 > Slen then
+      if Position > Slen + 1 then
          raise Ada.Strings.Index_Error;
 
       elsif New_Item'Length = 0 then
          return Source;
 
-      elsif Position - 1 <= Slen - New_Item'Length then
-         Result.Data (1 .. Slen) := Source.Data (1 .. Slen);
-         Result.Data (Position .. Position - 1 + New_Item'Length) :=
-           Super_String_Data (New_Item);
+      elsif Endpos <= Slen then
          Result.Current_Length := Source.Current_Length;
+         Result.Data (1 .. Slen) := Source.Data (1 .. Slen);
+         Result.Data (Position .. Endpos) := New_Item;
          return Result;
 
-      elsif Position - 1 <= Max_Length - New_Item'Length then
+      elsif Endpos <= Max_Length then
+         Result.Current_Length := Endpos;
          Result.Data (1 .. Position - 1) := Source.Data (1 .. Position - 1);
-         Result.Data (Position .. Position - 1 + New_Item'Length) :=
-           Super_String_Data (New_Item);
-         Result.Current_Length := Position - 1 + New_Item'Length;
+         Result.Data (Position .. Endpos) := New_Item;
          return Result;
 
       else
-         Droplen := Position - 1 - Max_Length + New_Item'Length;
+         Result.Current_Length := Max_Length;
+         Droplen := Endpos - Max_Length;
 
          case Drop is
             when Strings.Right =>
                Result.Data (1 .. Position - 1) :=
                  Source.Data (1 .. Position - 1);
 
-               Result.Data (Position .. Max_Length) := Super_String_Data
-                 (New_Item (New_Item'First .. New_Item'Last - Droplen));
+               Result.Data (Position .. Max_Length) :=
+                 New_Item (New_Item'First .. New_Item'Last - Droplen);
+               return Result;
 
             when Strings.Left =>
                if New_Item'Length >= Max_Length then
-                  Result.Data (1 .. Max_Length) := Super_String_Data
-                    (New_Item (New_Item'Last - Max_Length + 1 ..
-                                New_Item'Last));
+                  Result.Data (1 .. Max_Length) :=
+                    New_Item (New_Item'Last - Max_Length + 1 ..
+                                New_Item'Last);
+                  return Result;
 
                else
                   Result.Data (1 .. Max_Length - New_Item'Length) :=
                     Source.Data (Droplen + 1 .. Position - 1);
                   Result.Data
                     (Max_Length - New_Item'Length + 1 .. Max_Length) :=
-                    Super_String_Data (New_Item);
+                    New_Item;
+                  return Result;
                end if;
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
-         return Result;
       end if;
    end Super_Overwrite;
 
@@ -1198,52 +1195,50 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Position  : Positive;
       New_Item  : String;
       Drop      : Strings.Truncation := Strings.Error)
-   with SPARK_Mode => Off
    is
       Max_Length : constant Positive := Source.Max_Length;
+      Endpos     : constant Positive := Position + New_Item'Length - 1;
       Slen       : constant Natural  := Source.Current_Length;
       Droplen    : Natural;
 
    begin
-      if Position - 1 > Slen then
+      if Position > Slen + 1 then
          raise Ada.Strings.Index_Error;
 
-      elsif Position - 1 <= Slen - New_Item'Length then
-         Source.Data (Position .. Position - 1 + New_Item'Length) :=
-           Super_String_Data (New_Item);
+      elsif Endpos <= Slen then
+         Source.Data (Position .. Endpos) := New_Item;
 
-      elsif Position - 1 <= Max_Length - New_Item'Length then
-         Source.Data (Position .. Position - 1 + New_Item'Length) :=
-           Super_String_Data (New_Item);
-         Source.Current_Length := Position - 1 + New_Item'Length;
+      elsif Endpos <= Max_Length then
+         Source.Data (Position .. Endpos) := New_Item;
+         Source.Current_Length := Endpos;
 
       else
-         Droplen := Position - 1 - Max_Length + New_Item'Length;
+         Source.Current_Length := Max_Length;
+         Droplen := Endpos - Max_Length;
 
          case Drop is
             when Strings.Right =>
-               Source.Data (Position .. Max_Length) := Super_String_Data
-                 (New_Item (New_Item'First .. New_Item'Last - Droplen));
+               Source.Data (Position .. Max_Length) :=
+                 New_Item (New_Item'First .. New_Item'Last - Droplen);
 
             when Strings.Left =>
                if New_Item'Length > Max_Length then
-                  Source.Data (1 .. Max_Length) := Super_String_Data
-                    (New_Item
-                      (New_Item'Last - Max_Length + 1 .. New_Item'Last));
+                  Source.Data (1 .. Max_Length) :=
+                    New_Item (New_Item'Last - Max_Length + 1 ..
+                                New_Item'Last);
 
                else
                   Source.Data (1 .. Max_Length - New_Item'Length) :=
                     Source.Data (Droplen + 1 .. Position - 1);
+
                   Source.Data
                     (Max_Length - New_Item'Length + 1 .. Max_Length) :=
-                    Super_String_Data (New_Item);
+                    New_Item;
                end if;
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Source.Current_Length := Max_Length;
       end if;
    end Super_Overwrite;
 
@@ -1274,13 +1269,12 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       High   : Natural;
       By     : String;
       Drop   : Strings.Truncation := Strings.Error) return Super_String
-   with SPARK_Mode => Off
    is
       Max_Length : constant Positive := Source.Max_Length;
       Slen       : constant Natural  := Source.Current_Length;
 
    begin
-      if Low - 1 > Slen then
+      if Low > Slen + 1 then
          raise Strings.Index_Error;
 
       elsif High < Low then
@@ -1288,58 +1282,51 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
       else
          declare
-            Blen    : constant Natural := Low - 1;
+            Blen    : constant Natural := Natural'Max (0, Low - 1);
             Alen    : constant Natural := Natural'Max (0, Slen - High);
-            Droplen : constant Integer := Blen + Alen - Max_Length + By'Length;
+            Tlen    : constant Natural := Blen + By'Length + Alen;
+            Droplen : constant Integer := Tlen - Max_Length;
             Result  : Super_String (Max_Length);
 
-            --  Blen and Alen are the lengths of the pieces of the original
-            --  string that end up in the result string before and after the
-            --  replaced slice. The number of dropped characters is Natural'Max
-            --  (0, Droplen).
+            --  Tlen is the total length of the result string before any
+            --  truncation. Blen and Alen are the lengths of the pieces
+            --  of the original string that end up in the result string
+            --  before and after the replaced slice.
 
          begin
             if Droplen <= 0 then
+               Result.Current_Length := Tlen;
                Result.Data (1 .. Blen) := Source.Data (1 .. Blen);
-               Result.Data (Low .. Blen + By'Length) :=
-                 Super_String_Data (By);
-
-               if Alen > 0 then
-                  Result.Data (Low + By'Length .. Blen + By'Length + Alen) :=
-                    Source.Data (High + 1 .. Slen);
-               end if;
-
-               Result.Current_Length := Blen + By'Length + Alen;
+               Result.Data (Low .. Low + By'Length - 1) := By;
+               Result.Data (Low + By'Length .. Tlen) :=
+                 Source.Data (High + 1 .. Slen);
 
             else
+               Result.Current_Length := Max_Length;
+
                case Drop is
                   when Strings.Right =>
                      Result.Data (1 .. Blen) := Source.Data (1 .. Blen);
 
-                     if Droplen >= Alen then
-                        Result.Data (Low .. Max_Length) := Super_String_Data
-                          (By (By'First .. By'First - Low + Max_Length));
+                     if Droplen > Alen then
+                        Result.Data (Low .. Max_Length) :=
+                          By (By'First .. By'First + Max_Length - Low);
                      else
-                        Result.Data (Low .. Low - 1 + By'Length) :=
-                          Super_String_Data (By);
+                        Result.Data (Low .. Low + By'Length - 1) := By;
                         Result.Data (Low + By'Length .. Max_Length) :=
                           Source.Data (High + 1 .. Slen - Droplen);
                      end if;
 
                   when Strings.Left =>
-                     if Alen > 0 then
-                        Result.Data (Max_Length - (Alen - 1) .. Max_Length) :=
-                          Source.Data (High + 1 .. Slen);
-                     end if;
+                     Result.Data (Max_Length - (Alen - 1) .. Max_Length) :=
+                       Source.Data (High + 1 .. Slen);
 
                      if Droplen >= Blen then
                         Result.Data (1 .. Max_Length - Alen) :=
-                          Super_String_Data (By
-                            (By'Last - (Max_Length - Alen) + 1 .. By'Last));
+                          By (By'Last - (Max_Length - Alen) + 1 .. By'Last);
                      else
                         Result.Data
-                          (Blen - Droplen + 1 .. Max_Length - Alen) :=
-                            Super_String_Data (By);
+                          (Blen - Droplen + 1 .. Max_Length - Alen) := By;
                         Result.Data (1 .. Blen - Droplen) :=
                           Source.Data (Droplen + 1 .. Blen);
                      end if;
@@ -1347,8 +1334,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                   when Strings.Error =>
                      raise Ada.Strings.Length_Error;
                end case;
-
-               Result.Current_Length := Max_Length;
             end if;
 
             return Result;
@@ -1385,17 +1370,16 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Count <= Max_Length then
-         Result.Data (1 .. Count) := (others => Item);
          Result.Current_Length := Count;
 
       elsif Drop = Strings.Error then
          raise Ada.Strings.Length_Error;
 
       else
-         Result.Data (1 .. Max_Length) := (others => Item);
          Result.Current_Length := Max_Length;
       end if;
 
+      Result.Data (1 .. Result.Current_Length) := (others => Item);
       return Result;
    end Super_Replicate;
 
@@ -1405,203 +1389,52 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Drop       : Truncation := Error;
       Max_Length : Positive) return Super_String
    is
+      Length : constant Integer := Count * Item'Length;
       Result : Super_String (Max_Length);
-      Indx   : Natural;
-      Ilen   : constant Natural := Item'Length;
-
-      --  Parts of the proof involving manipulations with the modulo operator
-      --  are complicated for the prover and can't be done automatically in
-      --  the global subprogram. That's why we isolate them in these two ghost
-      --  lemmas.
-
-      procedure Lemma_Mod (K : Natural; Q : Natural) with
-        Ghost,
-        Pre  => Ilen /= 0
-          and then Q mod Ilen = 0
-          and then K - Q in 0 .. Ilen - 1,
-        Post => K mod Ilen = K - Q;
-      --  Lemma_Mod is applied to an index considered in Lemma_Split to prove
-      --  that it has the right value modulo Item'Length.
-
-      procedure Lemma_Mod_Zero (X : Natural) with
-        Ghost,
-        Pre  => Ilen /= 0
-          and then X mod Ilen = 0
-          and then X <= Natural'Last - Ilen,
-        Post => (X + Ilen) mod Ilen = 0;
-      --  Lemma_Mod_Zero is applied to prove that the length of the range
-      --  of indexes considered in the loop, when dropping on the Left, is
-      --  a multiple of Item'Length.
-
-      procedure Lemma_Split (Going : Direction) with
-        Ghost,
-        Pre  =>
-          Ilen /= 0
-            and then Indx in 0 .. Max_Length - Ilen
-            and then
-              (if Going = Forward
-               then Indx mod Ilen = 0
-               else (Max_Length - Indx - Ilen) mod Ilen = 0)
-            and then Result.Data (Indx + 1 .. Indx + Ilen)'Initialized
-            and then String (Result.Data (Indx + 1 .. Indx + Ilen)) = Item,
-        Post =>
-          (if Going = Forward then
-             (for all J in Indx + 1 .. Indx + Ilen =>
-                Result.Data (J) = Item (Item'First + (J - 1) mod Ilen))
-           else
-             (for all J in Indx + 1 .. Indx + Ilen =>
-                Result.Data (J) =
-                  Item (Item'Last - (Max_Length - J) mod Ilen)));
-      --  Lemma_Split is used after Result.Data (Indx + 1 .. Indx + Ilen) is
-      --  updated to Item and concludes that the characters match for each
-      --  index when taken modulo Item'Length, as the considered slice starts
-      --  at index 1 (or ends at index Max_Length, if Going = Backward) modulo
-      --  Item'Length.
-
-      ---------------
-      -- Lemma_Mod --
-      ---------------
-
-      procedure Lemma_Mod (K : Natural; Q : Natural) is null;
-
-      --------------------
-      -- Lemma_Mod_Zero --
-      --------------------
-
-      procedure Lemma_Mod_Zero (X : Natural) is null;
-
-      -----------------
-      -- Lemma_Split --
-      -----------------
-
-      procedure Lemma_Split (Going : Direction) is
-      begin
-         if Going = Forward then
-            for K in Indx + 1 .. Indx + Ilen loop
-               Lemma_Mod (K - 1, Indx);
-               pragma Loop_Invariant
-                 (for all J in Indx + 1 .. K =>
-                    Result.Data (J) = Item (Item'First + (J - 1) mod Ilen));
-            end loop;
-         else
-            for K in Indx + 1 .. Indx + Ilen loop
-               Lemma_Mod (Max_Length - K, Max_Length - Indx - Ilen);
-               pragma Loop_Invariant
-                 (for all J in Indx + 1 .. K =>
-                    Result.Data (J) =
-                      Item (Item'Last - (Max_Length - J) mod Ilen));
-            end loop;
-         end if;
-      end Lemma_Split;
+      Indx   : Positive;
 
    begin
-      if Count = 0 or else Ilen <= Max_Length / Count then
-         if Count * Ilen > 0 then
-            Indx := 0;
+      if Length <= Max_Length then
+         Result.Current_Length := Length;
+
+         if Length > 0 then
+            Indx := 1;
 
             for J in 1 .. Count loop
-               Result.Data (Indx + 1 .. Indx + Ilen) :=
-                 Super_String_Data (Item);
-               pragma Assert
-                 (for all K in 1 .. Ilen =>
-                    Result.Data (Indx + K) = Item (Item'First - 1 + K));
-               pragma Assert
-                 (String (Result.Data (Indx + 1 .. Indx + Ilen)) = Item);
-               Lemma_Split (Forward);
-               Indx := Indx + Ilen;
-               pragma Loop_Invariant (Indx = J * Ilen);
-               pragma Loop_Invariant (Result.Data (1 .. Indx)'Initialized);
-               pragma Loop_Invariant
-                 (for all K in 1 .. Indx =>
-                    Result.Data (K) =
-                      Item (Item'First + (K - 1) mod Ilen));
+               Result.Data (Indx .. Indx + Item'Length - 1) := Item;
+               Indx := Indx + Item'Length;
             end loop;
          end if;
 
-         Result.Current_Length := Count * Ilen;
-
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
-               Indx := 0;
+               Indx := 1;
 
-               while Indx < Max_Length - Ilen loop
-                  Result.Data (Indx + 1 .. Indx + Ilen) :=
-                    Super_String_Data (Item);
-                  pragma Assert
-                    (for all K in 1 .. Ilen =>
-                       Result.Data (Indx + K) = Item (Item'First - 1 + K));
-                  pragma Assert
-                    (String (Result.Data (Indx + 1 .. Indx + Ilen)) = Item);
-                  Lemma_Split (Forward);
-                  Indx := Indx + Ilen;
-                  pragma Loop_Invariant (Indx mod Ilen = 0);
-                  pragma Loop_Invariant (Indx in 0 .. Max_Length - 1);
-                  pragma Loop_Invariant (Result.Data (1 .. Indx)'Initialized);
-                  pragma Loop_Invariant
-                    (for all K in 1 .. Indx =>
-                       Result.Data (K) =
-                         Item (Item'First + (K - 1) mod Ilen));
+               while Indx + Item'Length <= Max_Length + 1 loop
+                  Result.Data (Indx .. Indx + Item'Length - 1) := Item;
+                  Indx := Indx + Item'Length;
                end loop;
 
-               Result.Data (Indx + 1 .. Max_Length) := Super_String_Data
-                 (Item (Item'First .. Item'First + (Max_Length - Indx - 1)));
-               pragma Assert
-                 (for all J in Indx + 1 .. Max_Length =>
-                    Result.Data (J) = Item (Item'First - 1 - Indx + J));
-
-               for J in Indx + 1 .. Max_Length loop
-                  Lemma_Mod (J - 1, Indx);
-                  pragma Loop_Invariant
-                    (for all K in 1 .. J =>
-                       Result.Data (K) =
-                         Item (Item'First + (K - 1) mod Ilen));
-               end loop;
+               Result.Data (Indx .. Max_Length) :=
+                 Item (Item'First .. Item'First + Max_Length - Indx);
 
             when Strings.Left =>
                Indx := Max_Length;
 
-               while Indx > Ilen loop
-                  Indx := Indx - Ilen;
-                  Result.Data (Indx + 1 .. Indx + Ilen) :=
-                    Super_String_Data (Item);
-                  pragma Assert
-                    (for all K in 1 .. Ilen =>
-                       Result.Data (Indx + K) = Item (Item'First - 1 + K));
-                  pragma Assert
-                    (String (Result.Data (Indx + 1 .. Indx + Ilen)) = Item);
-                  Lemma_Split (Backward);
-                  Lemma_Mod_Zero (Max_Length - Indx - Ilen);
-                  pragma Loop_Invariant
-                    ((Max_Length - Indx) mod Ilen = 0);
-                  pragma Loop_Invariant (Indx in 1 .. Max_Length);
-                  pragma Loop_Invariant
-                    (Result.Data (Indx + 1 .. Max_Length)'Initialized);
-                  pragma Loop_Invariant
-                    (for all K in Indx + 1 .. Max_Length =>
-                       Result.Data (K) =
-                         Item (Item'Last - (Max_Length - K) mod Ilen));
+               while Indx - Item'Length >= 1 loop
+                  Result.Data (Indx - (Item'Length - 1) .. Indx) := Item;
+                  Indx := Indx - Item'Length;
                end loop;
 
                Result.Data (1 .. Indx) :=
-                 Super_String_Data (Item (Item'Last - Indx + 1 .. Item'Last));
-               pragma Assert
-                 (for all J in 1 .. Indx =>
-                    Result.Data (J) = Item (Item'Last - Indx + J));
-
-               for J in reverse 1 .. Indx loop
-                  Lemma_Mod (Max_Length - J, Max_Length - Indx);
-                  pragma Loop_Invariant
-                    (for all K in J .. Max_Length =>
-                       Result.Data (K) =
-                         Item (Item'Last - (Max_Length - K) mod Ilen));
-               end loop;
+                 Item (Item'Last - Indx + 1 .. Item'Last);
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -1614,7 +1447,11 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    is
    begin
       return
-        Super_Replicate (Count, Super_To_String (Item), Drop, Item.Max_Length);
+        Super_Replicate
+          (Count,
+           Item.Data (1 .. Item.Current_Length),
+           Drop,
+           Item.Max_Length);
    end Super_Replicate;
 
    -----------------
@@ -1624,20 +1461,42 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    function Super_Slice
      (Source : Super_String;
       Low    : Positive;
-      High   : Natural) return Super_String
+      High   : Natural) return String
    is
    begin
-      return Result : Super_String (Source.Max_Length) do
-         if Low - 1 > Source.Current_Length
+      --  Note: test of High > Length is in accordance with AI95-00128
+
+      return R : String (Low .. High) do
+         if Low > Source.Current_Length + 1
            or else High > Source.Current_Length
          then
             raise Index_Error;
          end if;
 
-         if High >= Low then
-            Result.Data (1 .. High - Low + 1) := Source.Data (Low .. High);
-            Result.Current_Length := High - Low + 1;
+         --  Note: in this case, superflat bounds are not a problem, we just
+         --  get the null string in accordance with normal Ada slice rules.
+
+         R := Source.Data (Low .. High);
+      end return;
+   end Super_Slice;
+
+   function Super_Slice
+     (Source : Super_String;
+      Low    : Positive;
+      High   : Natural) return Super_String
+   is
+   begin
+      return Result : Super_String (Source.Max_Length) do
+         if Low > Source.Current_Length + 1
+           or else High > Source.Current_Length
+         then
+            raise Index_Error;
          end if;
+
+         --  Note: the Max operation here deals with the superflat case
+
+         Result.Current_Length := Integer'Max (0, High - Low + 1);
+         Result.Data (1 .. Result.Current_Length) := Source.Data (Low .. High);
       end return;
    end Super_Slice;
 
@@ -1648,18 +1507,16 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       High   : Natural)
    is
    begin
-      if Low - 1 > Source.Current_Length
+      if Low > Source.Current_Length + 1
         or else High > Source.Current_Length
       then
          raise Index_Error;
       end if;
 
-      if High >= Low then
-         Target.Data (1 .. High - Low + 1) := Source.Data (Low .. High);
-         Target.Current_Length := High - Low + 1;
-      else
-         Target.Current_Length := 0;
-      end if;
+      --  Note: the Max operation here deals with the superflat case
+
+      Target.Current_Length := Integer'Max (0, High - Low + 1);
+      Target.Data (1 .. Target.Current_Length) := Source.Data (Low .. High);
    end Super_Slice;
 
    ----------------
@@ -1679,22 +1536,18 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Npad <= 0 then
-         if Count > 0 then
-            Result.Data (1 .. Count) :=
-              Source.Data (Slen - (Count - 1) .. Slen);
-            Result.Current_Length := Count;
-         end if;
+         Result.Current_Length := Count;
+         Result.Data (1 .. Count) :=
+           Source.Data (Slen - (Count - 1) .. Slen);
 
       elsif Count <= Max_Length then
-         Result.Data (1 .. Npad) := (others => Pad);
-
-         if Slen > 0 then
-            Result.Data (Npad + 1 .. Count) := Source.Data (1 .. Slen);
-         end if;
-
          Result.Current_Length := Count;
+         Result.Data (1 .. Npad) := (others => Pad);
+         Result.Data (Npad + 1 .. Count) := Source.Data (1 .. Slen);
 
       else
+         Result.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Npad >= Max_Length then
@@ -1714,8 +1567,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Result.Current_Length := Max_Length;
       end if;
 
       return Result;
@@ -1731,27 +1582,22 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Slen       : constant Natural  := Source.Current_Length;
       Npad       : constant Integer  := Count - Slen;
 
-      Temp : constant Super_String_Data (1 .. Max_Length) := Source.Data;
+      Temp : constant String (1 .. Max_Length) := Source.Data;
 
    begin
       if Npad <= 0 then
          Source.Current_Length := Count;
-
-         if Count > 0 then
-            Source.Data (1 .. Count) :=
-              Temp (Slen - (Count - 1) .. Slen);
-         end if;
+         Source.Data (1 .. Count) :=
+           Temp (Slen - (Count - 1) .. Slen);
 
       elsif Count <= Max_Length then
-         Source.Data (1 .. Npad) := (others => Pad);
-
-         if Slen > 0 then
-            Source.Data (Npad + 1 .. Count) := Temp (1 .. Slen);
-         end if;
-
          Source.Current_Length := Count;
+         Source.Data (1 .. Npad) := (others => Pad);
+         Source.Data (Npad + 1 .. Count) := Temp (1 .. Slen);
 
       else
+         Source.Current_Length := Max_Length;
+
          case Drop is
             when Strings.Right =>
                if Npad >= Max_Length then
@@ -1764,17 +1610,29 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                end if;
 
             when Strings.Left =>
-               Source.Data (1 .. Max_Length - Slen) := (others => Pad);
+               for J in 1 .. Max_Length - Slen loop
+                  Source.Data (J) := Pad;
+               end loop;
+
                Source.Data (Max_Length - Slen + 1 .. Max_Length) :=
                  Temp (1 .. Slen);
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;
          end case;
-
-         Source.Current_Length := Max_Length;
       end if;
    end Super_Tail;
+
+   ---------------------
+   -- Super_To_String --
+   ---------------------
+
+   function Super_To_String (Source : Super_String) return String is
+   begin
+      return R : String (1 .. Source.Current_Length) do
+         R := Source.Data (1 .. Source.Current_Length);
+      end return;
+   end Super_To_String;
 
    ---------------------
    -- Super_Translate --
@@ -1787,15 +1645,12 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Result : Super_String (Source.Max_Length);
 
    begin
+      Result.Current_Length := Source.Current_Length;
+
       for J in 1 .. Source.Current_Length loop
          Result.Data (J) := Value (Mapping, Source.Data (J));
-         pragma Loop_Invariant (Result.Data (1 .. J)'Initialized);
-         pragma Loop_Invariant
-           (for all K in 1 .. J =>
-              Result.Data (K) = Value (Mapping, Source.Data (K)));
       end loop;
 
-      Result.Current_Length := Source.Current_Length;
       return Result;
    end Super_Translate;
 
@@ -1806,9 +1661,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    begin
       for J in 1 .. Source.Current_Length loop
          Source.Data (J) := Value (Mapping, Source.Data (J));
-         pragma Loop_Invariant
-           (for all K in 1 .. J =>
-              Source.Data (K) = Value (Mapping, Source'Loop_Entry.Data (K)));
       end loop;
    end Super_Translate;
 
@@ -1819,15 +1671,12 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Result : Super_String (Source.Max_Length);
 
    begin
+      Result.Current_Length := Source.Current_Length;
+
       for J in 1 .. Source.Current_Length loop
          Result.Data (J) := Mapping.all (Source.Data (J));
-         pragma Loop_Invariant (Result.Data (1 .. J)'Initialized);
-         pragma Loop_Invariant
-           (for all K in 1 .. J =>
-              Result.Data (K) = Mapping (Source.Data (K)));
       end loop;
 
-      Result.Current_Length := Source.Current_Length;
       return Result;
    end Super_Translate;
 
@@ -1838,9 +1687,6 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
    begin
       for J in 1 .. Source.Current_Length loop
          Source.Data (J) := Mapping.all (Source.Data (J));
-         pragma Loop_Invariant
-           (for all K in 1 .. J =>
-              Source.Data (K) = Mapping (Source'Loop_Entry.Data (K)));
       end loop;
    end Super_Translate;
 
@@ -1853,62 +1699,24 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Side   : Trim_End) return Super_String
    is
       Result : Super_String (Source.Max_Length);
-      Last   : constant Natural := Source.Current_Length;
+      Last   : Natural := Source.Current_Length;
+      First  : Positive := 1;
 
    begin
-      case Side is
-         when Strings.Left =>
-            declare
-               Low : constant Natural :=
-                 Super_Index_Non_Blank (Source, Forward);
-            begin
-               --  All blanks case
+      if Side = Left or else Side = Both then
+         while First <= Last and then Source.Data (First) = ' ' loop
+            First := First + 1;
+         end loop;
+      end if;
 
-               if Low = 0 then
-                  return Result;
-               end if;
+      if Side = Right or else Side = Both then
+         while Last >= First and then Source.Data (Last) = ' ' loop
+            Last := Last - 1;
+         end loop;
+      end if;
 
-               Result.Data (1 .. Last - Low + 1) := Source.Data (Low .. Last);
-               Result.Current_Length := Last - Low + 1;
-            end;
-
-         when Strings.Right =>
-            declare
-               High : constant Natural :=
-                 Super_Index_Non_Blank (Source, Backward);
-            begin
-               --  All blanks case
-
-               if High = 0 then
-                  return Result;
-               end if;
-
-               Result.Data (1 .. High) := Source.Data (1 .. High);
-               Result.Current_Length := High;
-            end;
-
-         when Strings.Both =>
-            declare
-               Low : constant Natural :=
-                 Super_Index_Non_Blank (Source, Forward);
-            begin
-               --  All blanks case
-
-               if Low = 0 then
-                  return Result;
-               end if;
-
-               declare
-                  High : constant Natural :=
-                    Super_Index_Non_Blank (Source, Backward);
-               begin
-                  Result.Data (1 .. High - Low + 1) :=
-                    Source.Data (Low .. High);
-                  Result.Current_Length := High - Low + 1;
-               end;
-            end;
-      end case;
-
+      Result.Current_Length := Last - First + 1;
+      Result.Data (1 .. Result.Current_Length) := Source.Data (First .. Last);
       return Result;
    end Super_Trim;
 
@@ -1916,54 +1724,28 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
      (Source : in out Super_String;
       Side   : Trim_End)
    is
-      Last : constant Natural := Source.Current_Length;
+      Max_Length : constant Positive := Source.Max_Length;
+      Last       : Natural           := Source.Current_Length;
+      First      : Positive          := 1;
+      Temp       : String (1 .. Max_Length);
+
    begin
-      case Side is
-         when Strings.Left =>
-            declare
-               Low : constant Natural :=
-                 Super_Index_Non_Blank (Source, Forward);
-            begin
-               --  All blanks case
+      Temp (1 .. Last) := Source.Data (1 .. Last);
 
-               if Low = 0 then
-                  Source.Current_Length := 0;
-               else
-                  Source.Data (1 .. Last - Low + 1) :=
-                    Source.Data (Low .. Last);
-                  Source.Current_Length := Last - Low + 1;
-               end if;
-            end;
+      if Side = Left or else Side = Both then
+         while First <= Last and then Temp (First) = ' ' loop
+            First := First + 1;
+         end loop;
+      end if;
 
-         when Strings.Right =>
-            declare
-               High : constant Natural :=
-                 Super_Index_Non_Blank (Source, Backward);
-            begin
-               Source.Current_Length := High;
-            end;
+      if Side = Right or else Side = Both then
+         while Last >= First and then Temp (Last) = ' ' loop
+            Last := Last - 1;
+         end loop;
+      end if;
 
-         when Strings.Both =>
-            declare
-               Low : constant Natural :=
-                 Super_Index_Non_Blank (Source, Forward);
-            begin
-               --  All blanks case
-
-               if Low = 0 then
-                  Source.Current_Length := 0;
-               else
-                  declare
-                     High : constant Natural :=
-                       Super_Index_Non_Blank (Source, Backward);
-                  begin
-                     Source.Data (1 .. High - Low + 1) :=
-                       Source.Data (Low .. High);
-                     Source.Current_Length := High - Low + 1;
-                  end;
-               end if;
-            end;
-      end case;
+      Source.Current_Length := Last - First + 1;
+      Source.Data (1 .. Source.Current_Length) := Temp (First .. Last);
    end Super_Trim;
 
    function Super_Trim
@@ -1972,31 +1754,22 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right  : Maps.Character_Set) return Super_String
    is
       Result : Super_String (Source.Max_Length);
-      Low    : Natural;
-      High   : Natural;
 
    begin
-      Low := Super_Index (Source, Left, Outside, Forward);
+      for First in 1 .. Source.Current_Length loop
+         if not Is_In (Source.Data (First), Left) then
+            for Last in reverse First .. Source.Current_Length loop
+               if not Is_In (Source.Data (Last), Right) then
+                  Result.Current_Length := Last - First + 1;
+                  Result.Data (1 .. Result.Current_Length) :=
+                    Source.Data (First .. Last);
+                  return Result;
+               end if;
+            end loop;
+         end if;
+      end loop;
 
-      --  Case where source comprises only characters in Left
-
-      if Low = 0 then
-         return Result;
-      end if;
-
-      High := Super_Index (Source, Right, Outside, Backward);
-
-      --  Case where source comprises only characters in Right
-
-      if High = 0 then
-         return Result;
-      end if;
-
-      if High >= Low then
-         Result.Data (1 .. High - Low + 1) := Source.Data (Low .. High);
-         Result.Current_Length := High - Low + 1;
-      end if;
-
+      Result.Current_Length := 0;
       return Result;
    end Super_Trim;
 
@@ -2005,39 +1778,29 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Left   : Maps.Character_Set;
       Right  : Maps.Character_Set)
    is
-      Last : constant Natural := Source.Current_Length;
-      Temp : Super_String_Data (1 .. Last);
-      Low  : Natural;
-      High : Natural;
-
    begin
-      Temp := Source.Data (1 .. Last);
-      Low := Super_Index (Source, Left, Outside, Forward);
+      for First in 1 .. Source.Current_Length loop
+         if not Is_In (Source.Data (First), Left) then
+            for Last in reverse First .. Source.Current_Length loop
+               if not Is_In (Source.Data (Last), Right) then
+                  if First = 1 then
+                     Source.Current_Length := Last;
+                     return;
+                  else
+                     Source.Current_Length := Last - First + 1;
+                     Source.Data (1 .. Source.Current_Length) :=
+                       Source.Data (First .. Last);
+                     return;
+                  end if;
+               end if;
+            end loop;
 
-      --  Case where source comprises only characters in Left
-
-      if Low = 0 then
-         Source.Current_Length := 0;
-
-      else
-         High := Super_Index (Source, Right, Outside, Backward);
-
-         --  Case where source comprises only characters in Right
-
-         if High = 0 then
             Source.Current_Length := 0;
-
-         elsif Low = 1 then
-            Source.Current_Length := High;
-
-         elsif High < Low then
-            Source.Current_Length := 0;
-
-         else
-            Source.Data (1 .. High - Low + 1) := Temp (Low .. High);
-            Source.Current_Length := High - Low + 1;
+            return;
          end if;
-      end if;
+      end loop;
+
+      Source.Current_Length := 0;
    end Super_Trim;
 
    -----------
@@ -2056,14 +1819,11 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
          raise Ada.Strings.Length_Error;
 
       else
+         Result.Current_Length := Left;
+
          for J in 1 .. Left loop
             Result.Data (J) := Right;
-            pragma Loop_Invariant (Result.Data (1 .. J)'Initialized);
-            pragma Loop_Invariant
-              (for all K in 1 .. J => Result.Data (K) = Right);
          end loop;
-
-         Result.Current_Length := Left;
       end if;
 
       return Result;
@@ -2075,88 +1835,23 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Max_Length : Positive) return Super_String
    is
       Result : Super_String (Max_Length);
-      Pos    : Natural          := 0;
+      Pos    : Positive         := 1;
       Rlen   : constant Natural := Right'Length;
       Nlen   : constant Natural := Left * Rlen;
-
-      --  Parts of the proof involving manipulations with the modulo operator
-      --  are complicated for the prover and can't be done automatically in
-      --  the global subprogram. That's why we isolate them in these two ghost
-      --  lemmas.
-
-      procedure Lemma_Mod (K : Integer) with
-        Ghost,
-        Pre =>
-          Rlen /= 0
-          and then Pos mod Rlen = 0
-          and then Pos in 0 .. Max_Length - Rlen
-          and then K in Pos .. Pos + Rlen - 1,
-        Post => K mod Rlen = K - Pos;
-      --  Lemma_Mod is applied to an index considered in Lemma_Split to prove
-      --  that it has the right value modulo Right'Length.
-
-      procedure Lemma_Split with
-        Ghost,
-        Pre  =>
-          Rlen /= 0
-            and then Pos mod Rlen = 0
-            and then Pos in 0 .. Max_Length - Rlen
-            and then Result.Data (1 .. Pos + Rlen)'Initialized
-            and then String (Result.Data (Pos + 1 .. Pos + Rlen)) = Right,
-        Post =>
-          (for all K in Pos + 1 .. Pos + Rlen =>
-            Result.Data (K) = Right (Right'First + (K - 1) mod Rlen));
-      --  Lemma_Split is used after Result.Data (Pos + 1 .. Pos + Rlen) is
-      --  updated to Right and concludes that the characters match for each
-      --  index when taken modulo Right'Length, as the considered slice starts
-      --  at index 1 modulo Right'Length.
-
-      ---------------
-      -- Lemma_Mod --
-      ---------------
-
-      procedure Lemma_Mod (K : Integer) is null;
-
-      -----------------
-      -- Lemma_Split --
-      -----------------
-
-      procedure Lemma_Split is
-      begin
-         for K in Pos + 1 .. Pos + Rlen loop
-            Lemma_Mod (K - 1);
-            pragma Loop_Invariant
-              (for all J in Pos + 1 .. K =>
-                 Result.Data (J) = Right (Right'First + (J - 1) mod Rlen));
-         end loop;
-      end Lemma_Split;
 
    begin
       if Nlen > Max_Length then
          raise Ada.Strings.Length_Error;
 
       else
+         Result.Current_Length := Nlen;
+
          if Nlen > 0 then
             for J in 1 .. Left loop
-               Result.Data (Pos + 1 .. Pos + Rlen) :=
-                 Super_String_Data (Right);
-               pragma Assert
-                 (for all K in 1 .. Rlen => Result.Data (Pos + K) =
-                    Right (Right'First - 1 + K));
-               pragma Assert
-                 (String (Result.Data (Pos + 1 .. Pos + Rlen)) = Right);
-               Lemma_Split;
+               Result.Data (Pos .. Pos + Rlen - 1) := Right;
                Pos := Pos + Rlen;
-               pragma Loop_Invariant (Pos = J * Rlen);
-               pragma Loop_Invariant (Result.Data (1 .. Pos)'Initialized);
-               pragma Loop_Invariant
-                 (for all K in 1 .. Pos =>
-                    Result.Data (K) =
-                      Right (Right'First + (K - 1) mod Rlen));
             end loop;
          end if;
-
-         Result.Current_Length := Nlen;
       end if;
 
       return Result;
@@ -2167,7 +1862,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
       Right : Super_String) return Super_String
    is
       Result : Super_String (Right.Max_Length);
-      Pos    : Natural          := 0;
+      Pos    : Positive := 1;
       Rlen   : constant Natural := Right.Current_Length;
       Nlen   : constant Natural := Left * Rlen;
 
@@ -2176,21 +1871,15 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
          raise Ada.Strings.Length_Error;
 
       else
+         Result.Current_Length := Nlen;
+
          if Nlen > 0 then
             for J in 1 .. Left loop
-               Result.Data (Pos + 1 .. Pos + Rlen) :=
+               Result.Data (Pos .. Pos + Rlen - 1) :=
                  Right.Data (1 .. Rlen);
                Pos := Pos + Rlen;
-               pragma Loop_Invariant (Pos = J * Rlen);
-               pragma Loop_Invariant (Result.Data (1 .. Pos)'Initialized);
-               pragma Loop_Invariant
-                 (for all K in 1 .. Pos =>
-                    Result.Data (K) =
-                      Right.Data (1 + (K - 1) mod Rlen));
             end loop;
          end if;
-
-         Result.Current_Length := Nlen;
       end if;
 
       return Result;
@@ -2202,7 +1891,7 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    function To_Super_String
      (Source     : String;
-      Max_Length : Positive;
+      Max_Length : Natural;
       Drop       : Truncation := Error) return Super_String
    is
       Result : Super_String (Max_Length);
@@ -2210,20 +1899,20 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
 
    begin
       if Slen <= Max_Length then
-         Result.Data (1 .. Slen) := Super_String_Data (Source);
          Result.Current_Length := Slen;
+         Result.Data (1 .. Slen) := Source;
 
       else
          case Drop is
             when Strings.Right =>
-               Result.Data (1 .. Max_Length) := Super_String_Data
-                 (Source (Source'First .. Source'First - 1 + Max_Length));
                Result.Current_Length := Max_Length;
+               Result.Data (1 .. Max_Length) :=
+                 Source (Source'First .. Source'First - 1 + Max_Length);
 
             when Strings.Left =>
-               Result.Data (1 .. Max_Length) := Super_String_Data
-                 (Source (Source'Last - (Max_Length - 1) .. Source'Last));
                Result.Current_Length := Max_Length;
+               Result.Data (1 .. Max_Length) :=
+                 Source (Source'Last - (Max_Length - 1) .. Source'Last);
 
             when Strings.Error =>
                raise Ada.Strings.Length_Error;

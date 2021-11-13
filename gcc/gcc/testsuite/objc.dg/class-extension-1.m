@@ -1,6 +1,5 @@
 /* Contributed by Nicola Pero <nicola.pero@meta-innovation.com>, December 2010.  */
 /* { dg-do compile } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 /* This test tests the basic of class extensions.  */
 

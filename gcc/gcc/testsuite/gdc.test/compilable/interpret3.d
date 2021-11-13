@@ -1,11 +1,4 @@
-// PERMUTE_ARGS: -inline
-/*
-TEST_OUTPUT:
----
-compilable/interpret3.d(2914): Deprecation: `case` variables have to be `const` or `immutable`
-compilable/interpret3.d(6351): Deprecation: identity comparison of static arrays implicitly coerces them to slices, which are compared by reference
----
-*/
+﻿// PERMUTE_ARGS: -inline
 
 template compiles(int T)
 {
@@ -3242,44 +3235,6 @@ int ctfeSort6250()
 
 static assert(ctfeSort6250() == 57);
 
-/**************************************************/
-
-long[]* simple6250b(long[]* x) { return x; }
-
-void swap6250b(long[]* lhs, long[]* rhs)
-{
-    long[] kk = *lhs;
-    assert(simple6250b(lhs) == lhs);
-    lhs = simple6250b(lhs);
-    assert(kk[0] == 18);
-    assert((*lhs)[0] == 18);
-    assert((*rhs)[0] == 19);
-    *lhs = *rhs;
-    assert((*lhs)[0] == 19);
-    *rhs = kk;
-    assert(*rhs == kk);
-    assert(kk[0] == 18);
-    assert((*rhs)[0] == 18);
-}
-
-long ctfeSort6250b()
-{
-     long[][2] x;
-     long[3] a = [17, 18, 19];
-     x[0] = a[1 .. 2];
-     x[1] = a[2 .. $];
-     assert(x[0][0] == 18);
-     assert(x[0][1] == 19);
-     swap6250b(&x[0], &x[1]);
-     assert(x[0][0] == 19);
-     assert(x[1][0] == 18);
-     a[1] = 57;
-     assert(x[0][0] == 19);
-     return x[1][0];
-}
-
-static assert(ctfeSort6250b() == 57);
-
 /**************************************************
     6672 circular references in array
 **************************************************/
@@ -3441,13 +3396,13 @@ bool test3512()
     assert(q == 6);
 
     // _aApplycw2
-    foreach (ptrdiff_t i, wchar c; s)
+    foreach (int i, wchar c; s)
     {
         assert(i >= 0 && i < s.length);
     }
 
     // _aApplycd2
-    foreach (ptrdiff_t i, dchar c; s)
+    foreach (int i, dchar c; s)
     {
         assert(i >= 0 && i < s.length);
     }
@@ -3469,13 +3424,13 @@ bool test3512()
     assert(q == 13);
 
     // _aApplywc2
-    foreach (ptrdiff_t i, char c; w)
+    foreach (int i, char c; w)
     {
         assert(i >= 0 && i < w.length);
     }
 
     // _aApplywd2
-    foreach (ptrdiff_t i, dchar c; w)
+    foreach (int i, dchar c; w)
     {
         assert(i >= 0 && i < w.length);
     }
@@ -3499,19 +3454,19 @@ bool test3512()
     assert(q == 3);
 
     // _aApplydc2
-    foreach (ptrdiff_t i, char c; d)
+    foreach (int i, char c; d)
     {
         assert(i >= 0 && i < d.length);
     }
     // _aApplydw2
-    foreach (ptrdiff_t i, wchar c; d)
+    foreach (int i, wchar c; d)
     {
         assert(i >= 0 && i < d.length);
     }
 
     dchar[] dr = "squop"d.dup;
 
-    foreach (ptrdiff_t n, char c; dr)
+    foreach (int n, char c; dr)
     {
         if (n == 2)
             break;
@@ -3527,7 +3482,7 @@ bool test3512()
     {}
 
     // _aApplyRdc2
-    foreach_reverse (ptrdiff_t n, char c; dr)
+    foreach_reverse (int n, char c; dr)
     {
         if (n == 4)
             break;
@@ -3535,14 +3490,14 @@ bool test3512()
     }
 
     // _aApplyRdw2
-    foreach_reverse (ptrdiff_t i, wchar c; dr)
+    foreach_reverse (int i, wchar c; dr)
     {
         assert(i >= 0 && i < dr.length);
     }
 
     q = 0;
     wstring w2 = ['x', 'ü', 'm']; // foreach over array literals
-    foreach_reverse (ptrdiff_t n, char c; w2)
+    foreach_reverse (int n, char c; w2)
     {
         ++q;
         if (c == 'm') assert(n == 2 && q == 1);
@@ -7787,19 +7742,3 @@ struct RBNode(T)
 
 static assert(!__traits(compiles, { alias bug18057 = RBNode!int; }));
 
-/************************************************/
-// https://issues.dlang.org/show_bug.cgi?id=9937
-
-int test9937()
-{
-    import core.math;
-
-    float x = float.max;
-    x *= 2;
-    x = toPrec!float(x);
-    x /= 2;
-    assert(x == float.infinity);
-    return 1;
-}
-
-static assert(test9937());

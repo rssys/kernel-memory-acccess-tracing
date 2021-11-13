@@ -4,7 +4,7 @@
 --                                                                          --
 --                       A D A . A S S E R T I O N S                        --
 --                                                                          --
---            Copyright (C) 2015-2021, Free Software Foundation, Inc.       --
+--            Copyright (C) 2015-2019, Free Software Foundation, Inc.       --
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
@@ -39,12 +39,23 @@
 
 pragma Assertion_Policy (Pre => Ignore);
 
-pragma Compiler_Unit_Warning;
+--  We do a with of System.Assertions to get hold of the exception (following
+--  the specific RM permission that lets' Assertion_Error being a renaming).
+--  The suppression of Warnings stops the warning about bad categorization.
+
+pragma Warnings (Off);
+with System.Assertions;
+pragma Warnings (On);
 
 package Ada.Assertions with
-  SPARK_Mode, Pure
+  SPARK_Mode
 is
-   Assertion_Error : exception;
+   pragma Pure (Assertions);
+
+   Assertion_Error : exception renames System.Assertions.Assert_Failure;
+   --  This is the renaming that is allowed by 11.4.2(24). Note that the
+   --  Exception_Name will refer to the one in System.Assertions (see
+   --  AARM-11.4.1(12.b)).
 
    procedure Assert (Check : Boolean) with
      Pre => Check;

@@ -8,11 +8,10 @@
 
 class A {
 public:
-     int b; 
+     int b; // { dg-message "" } private
 };
 
-class C : private A // { dg-message "" } private
-{                   
+class C : private A {                   // NOTE WELL. private, not public
 public:
         int d;
 };

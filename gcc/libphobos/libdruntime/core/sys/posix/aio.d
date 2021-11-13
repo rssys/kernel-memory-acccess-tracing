@@ -8,8 +8,8 @@
  */
 module core.sys.posix.aio;
 
-import core.sys.posix.signal;
-import core.sys.posix.sys.types;
+private import core.sys.posix.signal;
+private import core.sys.posix.sys.types;
 
 version (OSX)
     version = Darwin;
@@ -71,10 +71,6 @@ version (CRuntime_Glibc)
             ubyte[32] __glibc_reserved;
         }
     }
-}
-else version (CRuntime_Bionic)
-{
-    // Bionic does not define aiocb.
 }
 else version (CRuntime_Musl)
 {
@@ -206,10 +202,6 @@ else version (NetBSD)
     }
 
     version = BSD_Posix;
-}
-else version (OpenBSD)
-{
-    // OpenBSD does not define aiocb.
 }
 else version (DragonFlyBSD)
 {
@@ -450,11 +442,7 @@ version (CRuntime_Glibc)
         int lio_listio(int mode, const(aiocb*)* aiocb_list, int nitems, sigevent* sevp);
     }
 }
-else version (CRuntime_Bionic)
-{
-    // Bionic does not implement aio.h
-}
-else version (CRuntime_UClibc)
+version (CRuntime_UClibc)
 {
     static if (__USE_LARGEFILE64)
     {
@@ -487,10 +475,6 @@ else version (CRuntime_UClibc)
         int aio_cancel(int fd, aiocb* aiocbp);
         int lio_listio(int mode, const(aiocb*)* aiocb_list, int nitems, sigevent* sevp);
     }
-}
-else version (OpenBSD)
-{
-    // OpenBSD does not implement aio.h
 }
 else
 {
@@ -525,7 +509,7 @@ version (CRuntime_Glibc)
         void aio_init(const(aioinit)* init);
     }
 }
-else version (CRuntime_UClibc)
+version (CRuntime_UClibc)
 {
     static if (__USE_GNU)
     {

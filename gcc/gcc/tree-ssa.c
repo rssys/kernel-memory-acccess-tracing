@@ -1,5 +1,5 @@
 /* Miscellaneous SSA utility functions.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -358,11 +358,6 @@ insert_debug_temp_for_var_def (gimple_stmt_iterator *gsi, tree var)
       else if (value == error_mark_node)
 	value = NULL;
     }
-  else if (gimple_clobber_p (def_stmt))
-    /* We can end up here when rewriting a decl into SSA and coming
-       along a clobber for the original decl.  Turn that into
-       # DEBUG decl => NULL  */
-    value = NULL;
   else if (is_gimple_assign (def_stmt))
     {
       bool no_value = false;
@@ -607,7 +602,7 @@ release_defs_bitset (bitmap toremove)
 		}
 
 	      if (!remove_now)
-		break;
+		BREAK_FROM_IMM_USE_STMT (uit);
 	    }
 
 	  if (remove_now)
@@ -633,15 +628,6 @@ release_defs_bitset (bitmap toremove)
   bitmap_list_view (toremove);
 }
 
-/* Disable warnings about missing quoting in GCC diagnostics for
-   the verification errors.  Their format strings don't follow GCC
-   diagnostic conventions and the calls are ultimately followed by
-   one to internal_error.  */
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-diag"
-#endif
-
 /* Verify virtual SSA form.  */
 
 bool
@@ -649,8 +635,10 @@ verify_vssa (basic_block bb, tree current_vdef, sbitmap visited)
 {
   bool err = false;
 
-  if (!bitmap_set_bit (visited, bb->index))
+  if (bitmap_bit_p (visited, bb->index))
     return false;
+
+  bitmap_set_bit (visited, bb->index);
 
   /* Pick up the single virtual PHI def.  */
   gphi *phi = NULL;
@@ -985,12 +973,6 @@ verify_phi_args (gphi *phi, basic_block bb, basic_block *definition_block)
 	  err = true;
 	}
 
-      if ((e->flags & EDGE_ABNORMAL) && TREE_CODE (op) != SSA_NAME)
-	{
-	  error ("PHI argument on abnormal edge is not SSA_NAME");
-	  err = true;
-	}
-
       if (TREE_CODE (op) == SSA_NAME)
 	{
 	  err = verify_ssa_name (op, virtual_operand_p (gimple_phi_result (phi)));
@@ -1212,20 +1194,16 @@ err:
   internal_error ("verify_ssa failed");
 }
 
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic pop
-#endif
 
-/* Initialize global DFA and SSA structures.
-   If SIZE is non-zero allocated ssa names array of a given size.  */
+/* Initialize global DFA and SSA structures.  */
 
 void
-init_tree_ssa (struct function *fn, int size)
+init_tree_ssa (struct function *fn)
 {
   fn->gimple_df = ggc_cleared_alloc<gimple_df> ();
   fn->gimple_df->default_defs = hash_table<ssa_name_hasher>::create_ggc (20);
   pt_solution_reset (&fn->gimple_df->escaped);
-  init_ssanames (fn, size);
+  init_ssanames (fn, 0);
 }
 
 /* Deallocate memory associated with SSA data structures for FNDECL.  */
@@ -1322,46 +1300,6 @@ ssa_undefined_value_p (tree t, bool partial)
   def_stmt = SSA_NAME_DEF_STMT (t);
   if (gimple_nop_p (def_stmt))
     return true;
-
-  /* The value is undefined if the definition statement is a call
-     to .DEFERRED_INIT function.  */
-  if (gimple_call_internal_p (def_stmt, IFN_DEFERRED_INIT))
-    return true;
-
-  /* The value is partially undefined if the definition statement is
-     a REALPART_EXPR or IMAGPART_EXPR and its operand is defined by
-     the call to .DEFERRED_INIT function.  This is for handling the
-     following case:
-
-  1 typedef _Complex float C;
-  2 C foo (int cond)
-  3 {
-  4   C f;
-  5   __imag__ f = 0;
-  6   if (cond)
-  7     {
-  8       __real__ f = 1;
-  9       return f;
- 10     }
- 11   return f;
- 12 }
-
-    with -ftrivial-auto-var-init, compiler will insert the following
-    artificial initialization:
-  f = .DEFERRED_INIT (f, 2);
-  _1 = REALPART_EXPR <f>;
-
-    we should treat the definition _1 = REALPART_EXPR <f> as undefined.  */
-  if (partial && is_gimple_assign (def_stmt)
-      && (gimple_assign_rhs_code (def_stmt) == REALPART_EXPR
-	  || gimple_assign_rhs_code (def_stmt) == IMAGPART_EXPR))
-    {
-      tree real_imag_part = TREE_OPERAND (gimple_assign_rhs1 (def_stmt), 0);
-      if (TREE_CODE (real_imag_part) == SSA_NAME
-	 && gimple_call_internal_p (SSA_NAME_DEF_STMT (real_imag_part),
-				    IFN_DEFERRED_INIT))
-	return true;
-    }
 
   /* Check if the complex was not only partially defined.  */
   if (partial && is_gimple_assign (def_stmt)
@@ -1532,16 +1470,6 @@ non_rewritable_mem_ref_base (tree ref)
       return decl;
     }
 
-  /* We cannot rewrite TARGET_MEM_REFs.  */
-  if (TREE_CODE (base) == TARGET_MEM_REF
-      && TREE_CODE (TREE_OPERAND (base, 0)) == ADDR_EXPR)
-    {
-      tree decl = TREE_OPERAND (TREE_OPERAND (base, 0), 0);
-      if (! DECL_P (decl))
-	return NULL_TREE;
-      return decl;
-    }
-
   return NULL_TREE;
 }
 
@@ -1594,32 +1522,14 @@ non_rewritable_lvalue_p (tree lhs)
       if (DECL_P (decl)
 	  && VECTOR_TYPE_P (TREE_TYPE (decl))
 	  && TYPE_MODE (TREE_TYPE (decl)) != BLKmode
+	  && operand_equal_p (TYPE_SIZE_UNIT (TREE_TYPE (lhs)),
+			      TYPE_SIZE_UNIT (TREE_TYPE (TREE_TYPE (decl))), 0)
 	  && known_ge (mem_ref_offset (lhs), 0)
 	  && known_gt (wi::to_poly_offset (TYPE_SIZE_UNIT (TREE_TYPE (decl))),
 		       mem_ref_offset (lhs))
 	  && multiple_of_p (sizetype, TREE_OPERAND (lhs, 1),
-			    TYPE_SIZE_UNIT (TREE_TYPE (lhs)))
-	  && known_ge (wi::to_poly_offset (TYPE_SIZE (TREE_TYPE (decl))),
-		       wi::to_poly_offset (TYPE_SIZE (TREE_TYPE (lhs)))))
-	{
-	  poly_uint64 lhs_bits, nelts;
-	  if (poly_int_tree_p (TYPE_SIZE (TREE_TYPE (lhs)), &lhs_bits)
-	      && multiple_p (lhs_bits,
-			     tree_to_uhwi
-			       (TYPE_SIZE (TREE_TYPE (TREE_TYPE (decl)))),
-			     &nelts)
-	      && valid_vector_subparts_p (nelts))
-	    {
-	      if (known_eq (nelts, 1u))
-		return false;
-	      /* For sub-vector inserts the insert vector mode has to be
-		 supported.  */
-	      tree vtype = build_vector_type (TREE_TYPE (TREE_TYPE (decl)),
-					      nelts);
-	      if (TYPE_MODE (vtype) != BLKmode)
-		return false;
-	    }
-	}
+			    TYPE_SIZE_UNIT (TREE_TYPE (lhs))))
+	return false;
     }
 
   /* A vector-insert using a BIT_FIELD_REF is rewritable using
@@ -1638,8 +1548,8 @@ non_rewritable_lvalue_p (tree lhs)
   return true;
 }
 
-/* When possible, clear TREE_ADDRESSABLE bit, set or clear DECL_NOT_GIMPLE_REG_P
-   and mark the variable VAR for conversion into SSA.  Return true when updating
+/* When possible, clear TREE_ADDRESSABLE bit or set DECL_GIMPLE_REG_P bit and
+   mark the variable VAR for conversion into SSA.  Return true when updating
    stmts is required.  */
 
 static void
@@ -1652,11 +1562,24 @@ maybe_optimize_var (tree var, bitmap addresses_taken, bitmap not_reg_needs,
       || bitmap_bit_p (addresses_taken, DECL_UID (var)))
     return;
 
-  bool maybe_reg = false;
-  if (TREE_ADDRESSABLE (var))
+  if (TREE_ADDRESSABLE (var)
+      /* Do not change TREE_ADDRESSABLE if we need to preserve var as
+	 a non-register.  Otherwise we are confused and forget to
+	 add virtual operands for it.  */
+      && (!is_gimple_reg_type (TREE_TYPE (var))
+	  || TREE_CODE (TREE_TYPE (var)) == VECTOR_TYPE
+	  || TREE_CODE (TREE_TYPE (var)) == COMPLEX_TYPE
+	  || !bitmap_bit_p (not_reg_needs, DECL_UID (var))))
     {
       TREE_ADDRESSABLE (var) = 0;
-      maybe_reg = true;
+      /* If we cleared TREE_ADDRESSABLE make sure DECL_GIMPLE_REG_P
+         is unset if we cannot rewrite the var into SSA.  */
+      if ((TREE_CODE (TREE_TYPE (var)) == VECTOR_TYPE
+	   || TREE_CODE (TREE_TYPE (var)) == COMPLEX_TYPE)
+	  && bitmap_bit_p (not_reg_needs, DECL_UID (var)))
+	DECL_GIMPLE_REG_P (var) = 0;
+      if (is_gimple_reg (var))
+	bitmap_set_bit (suitable_for_renaming, DECL_UID (var));
       if (dump_file)
 	{
 	  fprintf (dump_file, "No longer having address taken: ");
@@ -1665,36 +1588,20 @@ maybe_optimize_var (tree var, bitmap addresses_taken, bitmap not_reg_needs,
 	}
     }
 
-  /* For register type decls if we do not have any partial defs
-     we cannot express in SSA form mark them as DECL_NOT_GIMPLE_REG_P
-     as to avoid SSA rewrite.  For the others go ahead and mark
-     them for renaming.  */
-  if (is_gimple_reg_type (TREE_TYPE (var)))
+  if (!DECL_GIMPLE_REG_P (var)
+      && !bitmap_bit_p (not_reg_needs, DECL_UID (var))
+      && (TREE_CODE (TREE_TYPE (var)) == COMPLEX_TYPE
+	  || TREE_CODE (TREE_TYPE (var)) == VECTOR_TYPE)
+      && !TREE_THIS_VOLATILE (var)
+      && (!VAR_P (var) || !DECL_HARD_REGISTER (var)))
     {
-      if (bitmap_bit_p (not_reg_needs, DECL_UID (var)))
+      DECL_GIMPLE_REG_P (var) = 1;
+      bitmap_set_bit (suitable_for_renaming, DECL_UID (var));
+      if (dump_file)
 	{
-	  DECL_NOT_GIMPLE_REG_P (var) = 1;
-	  if (dump_file)
-	    {
-	      fprintf (dump_file, "Has partial defs: ");
-	      print_generic_expr (dump_file, var);
-	      fprintf (dump_file, "\n");
-	    }
-	}
-      else if (DECL_NOT_GIMPLE_REG_P (var))
-	{
-	  maybe_reg = true;
-	  DECL_NOT_GIMPLE_REG_P (var) = 0;
-	}
-      if (maybe_reg && is_gimple_reg (var))
-	{
-	  if (dump_file)
-	    {
-	      fprintf (dump_file, "Now a gimple register: ");
-	      print_generic_expr (dump_file, var);
-	      fprintf (dump_file, "\n");
-	    }
-	  bitmap_set_bit (suitable_for_renaming, DECL_UID (var));
+	  fprintf (dump_file, "Now a gimple register: ");
+	  print_generic_expr (dump_file, var);
+	  fprintf (dump_file, "\n");
 	}
     }
 }
@@ -1727,8 +1634,7 @@ is_asan_mark_p (gimple *stmt)
   return false;
 }
 
-/* Compute TREE_ADDRESSABLE and whether we have unhandled partial defs
-   for local variables.  */
+/* Compute TREE_ADDRESSABLE and DECL_GIMPLE_REG_P for local variables.  */
 
 void
 execute_update_addresses_taken (void)
@@ -1961,36 +1867,20 @@ execute_update_addresses_taken (void)
 		    && bitmap_bit_p (suitable_for_renaming, DECL_UID (sym))
 		    && VECTOR_TYPE_P (TREE_TYPE (sym))
 		    && TYPE_MODE (TREE_TYPE (sym)) != BLKmode
-		    /* If it is a full replacement we can do better below.  */
-		    && maybe_ne (wi::to_poly_offset
-				   (TYPE_SIZE_UNIT (TREE_TYPE (lhs))),
-				 wi::to_poly_offset
-                                   (TYPE_SIZE_UNIT (TREE_TYPE (sym))))
-		    && known_ge (mem_ref_offset (lhs), 0)
-		    && known_gt (wi::to_poly_offset
-				   (TYPE_SIZE_UNIT (TREE_TYPE (sym))),
-				 mem_ref_offset (lhs))
-		    && multiple_of_p (sizetype,
-				      TREE_OPERAND (lhs, 1),
-				      TYPE_SIZE_UNIT (TREE_TYPE (lhs))))
+		    && operand_equal_p (TYPE_SIZE_UNIT (TREE_TYPE (lhs)),
+					TYPE_SIZE_UNIT
+					  (TREE_TYPE (TREE_TYPE (sym))), 0)
+		    && tree_fits_uhwi_p (TREE_OPERAND (lhs, 1))
+		    && tree_int_cst_lt (TREE_OPERAND (lhs, 1),
+					TYPE_SIZE_UNIT (TREE_TYPE (sym)))
+		    && (tree_to_uhwi (TREE_OPERAND (lhs, 1))
+			% tree_to_uhwi (TYPE_SIZE_UNIT (TREE_TYPE (lhs)))) == 0)
 		  {
 		    tree val = gimple_assign_rhs1 (stmt);
 		    if (! types_compatible_p (TREE_TYPE (val),
 					      TREE_TYPE (TREE_TYPE (sym))))
 		      {
-			poly_uint64 lhs_bits, nelts;
-			tree temtype = TREE_TYPE (TREE_TYPE (sym));
-			if (poly_int_tree_p (TYPE_SIZE (TREE_TYPE (lhs)),
-					     &lhs_bits)
-			    && multiple_p (lhs_bits,
-					   tree_to_uhwi
-					     (TYPE_SIZE (TREE_TYPE
-							   (TREE_TYPE (sym)))),
-					   &nelts)
-			    && maybe_ne (nelts, 1u)
-			    && valid_vector_subparts_p (nelts))
-			  temtype = build_vector_type (temtype, nelts);
-			tree tem = make_ssa_name (temtype);
+			tree tem = make_ssa_name (TREE_TYPE (TREE_TYPE (sym)));
 			gimple *pun
 			  = gimple_build_assign (tem,
 						 build1 (VIEW_CONVERT_EXPR,
@@ -2077,16 +1967,18 @@ execute_update_addresses_taken (void)
 			    gcall *call
 			      = gimple_build_call_internal (IFN_ASAN_POISON, 0);
 			    gimple_call_set_lhs (call, var);
-			    gsi_replace (&gsi, call, true);
+			    gsi_replace (&gsi, call, GSI_SAME_STMT);
 			  }
 			else
 			  {
 			    /* In ASAN_MARK (UNPOISON, &b, ...) the variable
 			       is uninitialized.  Avoid dependencies on
 			       previous out of scope value.  */
-			    tree clobber = build_clobber (TREE_TYPE (var));
+			    tree clobber
+			      = build_constructor (TREE_TYPE (var), NULL);
+			    TREE_THIS_VOLATILE (clobber) = 1;
 			    gimple *g = gimple_build_assign (var, clobber);
-			    gsi_replace (&gsi, g, true);
+			    gsi_replace (&gsi, g, GSI_SAME_STMT);
 			  }
 			continue;
 		      }

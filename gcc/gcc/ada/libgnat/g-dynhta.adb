@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 2002-2021, AdaCore                     --
+--                     Copyright (C) 2002-2019, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -32,34 +32,6 @@
 with Ada.Unchecked_Deallocation;
 
 package body GNAT.Dynamic_HTables is
-
-   -------------------
-   -- Hash_Two_Keys --
-   -------------------
-
-   function Hash_Two_Keys
-     (Left  : Bucket_Range_Type;
-      Right : Bucket_Range_Type) return Bucket_Range_Type
-   is
-      Half : constant := 2 ** (Bucket_Range_Type'Size / 2);
-      Mask : constant := Half - 1;
-
-   begin
-      --  The hash is obtained in the following manner:
-      --
-      --    1) The low bits of Left are obtained, then shifted over to the high
-      --       bits position.
-      --
-      --    2) The low bits of Right are obtained
-      --
-      --  The results from 1) and 2) are or-ed to produce a value within the
-      --  range of Bucket_Range_Type.
-
-      return
-        ((Left  and Mask) * Half)
-            or
-         (Right and Mask);
-   end Hash_Two_Keys;
 
    -------------------
    -- Static_HTable --
@@ -392,11 +364,11 @@ package body GNAT.Dynamic_HTables is
       end Set_Next;
    end Simple_HTable;
 
-   -------------------------
-   -- Dynamic_Hash_Tables --
-   -------------------------
+   --------------------
+   -- Dynamic_HTable --
+   --------------------
 
-   package body Dynamic_Hash_Tables is
+   package body Dynamic_HTable is
       Minimum_Size : constant Bucket_Range_Type := 8;
       --  Minimum size of the buckets
 
@@ -410,12 +382,6 @@ package body GNAT.Dynamic_HTables is
       --  Maximum safe size for hash table expansion. Beyond this size, an
       --  expansion will overflow the buckets.
 
-      procedure Delete_Node
-        (T   : Dynamic_Hash_Table;
-         Nod : Node_Ptr);
-      pragma Inline (Delete_Node);
-      --  Detach and delete node Nod from table T
-
       procedure Destroy_Buckets (Bkts : Bucket_Table_Ptr);
       pragma Inline (Destroy_Buckets);
       --  Destroy all nodes within buckets Bkts
@@ -428,12 +394,12 @@ package body GNAT.Dynamic_HTables is
       pragma Inline (Ensure_Circular);
       --  Ensure that dummy head Head is circular with respect to itself
 
-      procedure Ensure_Created (T : Dynamic_Hash_Table);
+      procedure Ensure_Created (T : Instance);
       pragma Inline (Ensure_Created);
       --  Verify that hash table T is created. Raise Not_Created if this is not
       --  the case.
 
-      procedure Ensure_Unlocked (T : Dynamic_Hash_Table);
+      procedure Ensure_Unlocked (T : Instance);
       pragma Inline (Ensure_Unlocked);
       --  Verify that hash table T is unlocked. Raise Iterated if this is not
       --  the case.
@@ -452,7 +418,7 @@ package body GNAT.Dynamic_HTables is
       --  otherwise return null.
 
       procedure First_Valid_Node
-        (T        : Dynamic_Hash_Table;
+        (T        : Instance;
          Low_Bkt  : Bucket_Range_Type;
          High_Bkt : Bucket_Range_Type;
          Idx      : out Bucket_Range_Type;
@@ -467,8 +433,7 @@ package body GNAT.Dynamic_HTables is
         new Ada.Unchecked_Deallocation (Bucket_Table, Bucket_Table_Ptr);
 
       procedure Free is
-        new Ada.Unchecked_Deallocation
-              (Dynamic_Hash_Table_Attributes, Dynamic_Hash_Table);
+        new Ada.Unchecked_Deallocation (Hash_Table, Instance);
 
       procedure Free is
         new Ada.Unchecked_Deallocation (Node, Node_Ptr);
@@ -482,17 +447,15 @@ package body GNAT.Dynamic_HTables is
       --  Determine whether node Nod is non-null and does not refer to dummy
       --  head Head, thus making it valid.
 
-      function Load_Factor (T : Dynamic_Hash_Table) return Threshold_Type;
+      function Load_Factor (T : Instance) return Threshold_Type;
       pragma Inline (Load_Factor);
       --  Calculate the load factor of hash table T
 
-      procedure Lock (T : Dynamic_Hash_Table);
+      procedure Lock (T : Instance);
       pragma Inline (Lock);
       --  Lock all mutation functionality of hash table T
 
-      procedure Mutate_And_Rehash
-        (T    : Dynamic_Hash_Table;
-         Size : Bucket_Range_Type);
+      procedure Mutate_And_Rehash (T : Instance; Size : Bucket_Range_Type);
       pragma Inline (Mutate_And_Rehash);
       --  Replace the buckets of hash table T with a new set of buckets of size
       --  Size. Rehash all key-value pairs from the old to the new buckets.
@@ -501,55 +464,21 @@ package body GNAT.Dynamic_HTables is
       pragma Inline (Prepend);
       --  Insert node Nod immediately after dummy head Head
 
-      function Present (Bkts : Bucket_Table_Ptr) return Boolean;
-      pragma Inline (Present);
-      --  Determine whether buckets Bkts exist
-
-      function Present (Nod : Node_Ptr) return Boolean;
-      pragma Inline (Present);
-      --  Determine whether node Nod exists
-
-      procedure Unlock (T : Dynamic_Hash_Table);
+      procedure Unlock (T : Instance);
       pragma Inline (Unlock);
       --  Unlock all mutation functionality of hash table T
-
-      --------------
-      -- Contains --
-      --------------
-
-      function Contains
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type) return Boolean
-      is
-         Head : Node_Ptr;
-         Nod  : Node_Ptr;
-
-      begin
-         Ensure_Created (T);
-
-         --  Obtain the dummy head of the bucket which should house the
-         --  key-value pair.
-
-         Head := Find_Bucket (T.Buckets, Key);
-
-         --  Try to find a node in the bucket which matches the key
-
-         Nod := Find_Node (Head, Key);
-
-         return Is_Valid (Nod, Head);
-      end Contains;
 
       ------------
       -- Create --
       ------------
 
-      function Create (Initial_Size : Positive) return Dynamic_Hash_Table is
+      function Create (Initial_Size : Positive) return Instance is
          Size : constant Bucket_Range_Type :=
                            Bucket_Range_Type'Max
                              (Bucket_Range_Type (Initial_Size), Minimum_Size);
          --  Ensure that the buckets meet a minimum size
 
-         T : constant Dynamic_Hash_Table := new Dynamic_Hash_Table_Attributes;
+         T : constant Instance := new Hash_Table;
 
       begin
          T.Buckets      := new Bucket_Table (0 .. Size - 1);
@@ -562,12 +491,39 @@ package body GNAT.Dynamic_HTables is
       -- Delete --
       ------------
 
-      procedure Delete
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type)
-      is
+      procedure Delete (T : Instance; Key : Key_Type) is
+         procedure Compress;
+         pragma Inline (Compress);
+         --  Determine whether hash table T requires compression, and if so,
+         --  half its size.
+
+         --------------
+         -- Compress --
+         --------------
+
+         procedure Compress is
+            pragma Assert (T /= null);
+            pragma Assert (T.Buckets /= null);
+
+            Old_Size : constant Bucket_Range_Type := T.Buckets'Length;
+
+         begin
+            --  The ratio of pairs to buckets is under the desited threshold.
+            --  Compress the hash table only when there is still room to do so.
+
+            if Load_Factor (T) < Compression_Threshold
+              and then Old_Size >= Safe_Compression_Size
+            then
+               Mutate_And_Rehash (T, Old_Size / Compression_Factor);
+            end if;
+         end Compress;
+
+         --  Local variables
+
          Head : Node_Ptr;
          Nod  : Node_Ptr;
+
+      --  Start of processing for Delete
 
       begin
          Ensure_Created  (T);
@@ -585,73 +541,26 @@ package body GNAT.Dynamic_HTables is
          --  If such a node exists, remove it from the bucket and deallocate it
 
          if Is_Valid (Nod, Head) then
-            Delete_Node (T, Nod);
+            Detach (Nod);
+            Free   (Nod);
+
+            --  The number of key-value pairs is updated when the hash table
+            --  contains a valid node which represents the pair.
+
+            T.Pairs := T.Pairs - 1;
+
+            --  Compress the hash table if the load factor drops below
+            --  Compression_Threshold.
+
+            Compress;
          end if;
       end Delete;
-
-      -----------------
-      -- Delete_Node --
-      -----------------
-
-      procedure Delete_Node
-        (T   : Dynamic_Hash_Table;
-         Nod : Node_Ptr)
-      is
-         procedure Compress;
-         pragma Inline (Compress);
-         --  Determine whether hash table T requires compression, and if so,
-         --  half its size.
-
-         --------------
-         -- Compress --
-         --------------
-
-         procedure Compress is
-            pragma Assert (Present (T));
-            pragma Assert (Present (T.Buckets));
-
-            Old_Size : constant Bucket_Range_Type := T.Buckets'Length;
-
-         begin
-            --  The ratio of pairs to buckets is under the desited threshold.
-            --  Compress the hash table only when there is still room to do so.
-
-            if Load_Factor (T) < Compression_Threshold
-              and then Old_Size >= Safe_Compression_Size
-            then
-               Mutate_And_Rehash (T, Old_Size / Compression_Factor);
-            end if;
-         end Compress;
-
-         --  Local variables
-
-         Ref : Node_Ptr := Nod;
-
-      --  Start of processing for Delete_Node
-
-      begin
-         pragma Assert (Present (Ref));
-         pragma Assert (Present (T));
-
-         Detach (Ref);
-         Free   (Ref);
-
-         --  The number of key-value pairs is updated when the hash table
-         --  contains a valid node which represents the pair.
-
-         T.Pairs := T.Pairs - 1;
-
-         --  Compress the hash table if the load factor drops below the value
-         --  of Compression_Threshold.
-
-         Compress;
-      end Delete_Node;
 
       -------------
       -- Destroy --
       -------------
 
-      procedure Destroy (T : in out Dynamic_Hash_Table) is
+      procedure Destroy (T : in out Instance) is
       begin
          Ensure_Created  (T);
          Ensure_Unlocked (T);
@@ -685,10 +594,6 @@ package body GNAT.Dynamic_HTables is
             while Is_Valid (Head.Next, Head) loop
                Nod := Head.Next;
 
-               --  Invoke the value destructor before deallocating the node
-
-               Destroy_Value (Nod.Value);
-
                Detach (Nod);
                Free   (Nod);
             end loop;
@@ -697,7 +602,7 @@ package body GNAT.Dynamic_HTables is
       --  Start of processing for Destroy_Buckets
 
       begin
-         pragma Assert (Present (Bkts));
+         pragma Assert (Bkts /= null);
 
          for Scan_Idx in Bkts'Range loop
             Destroy_Bucket (Bkts (Scan_Idx)'Access);
@@ -709,17 +614,17 @@ package body GNAT.Dynamic_HTables is
       ------------
 
       procedure Detach (Nod : Node_Ptr) is
-         pragma Assert (Present (Nod));
+         pragma Assert (Nod /= null);
 
          Next : constant Node_Ptr := Nod.Next;
          Prev : constant Node_Ptr := Nod.Prev;
 
       begin
-         pragma Assert (Present (Next));
-         pragma Assert (Present (Prev));
+         pragma Assert (Next /= null);
+         pragma Assert (Prev /= null);
 
-         Prev.Next := Next;  --  Prev ---> Next
-         Next.Prev := Prev;  --  Prev <--> Next
+         Prev.Next := Next;
+         Next.Prev := Prev;
 
          Nod.Next := null;
          Nod.Prev := null;
@@ -730,10 +635,10 @@ package body GNAT.Dynamic_HTables is
       ---------------------
 
       procedure Ensure_Circular (Head : Node_Ptr) is
-         pragma Assert (Present (Head));
+         pragma Assert (Head /= null);
 
       begin
-         if not Present (Head.Next) and then not Present (Head.Prev) then
+         if Head.Next = null and then Head.Prev = null then
             Head.Next := Head;
             Head.Prev := Head;
          end if;
@@ -743,9 +648,9 @@ package body GNAT.Dynamic_HTables is
       -- Ensure_Created --
       --------------------
 
-      procedure Ensure_Created (T : Dynamic_Hash_Table) is
+      procedure Ensure_Created (T : Instance) is
       begin
-         if not Present (T) then
+         if T = null then
             raise Not_Created;
          end if;
       end Ensure_Created;
@@ -754,9 +659,9 @@ package body GNAT.Dynamic_HTables is
       -- Ensure_Unlocked --
       ---------------------
 
-      procedure Ensure_Unlocked (T : Dynamic_Hash_Table) is
+      procedure Ensure_Unlocked (T : Instance) is
       begin
-         pragma Assert (Present (T));
+         pragma Assert (T /= null);
 
          --  The hash table has at least one outstanding iterator
 
@@ -773,7 +678,7 @@ package body GNAT.Dynamic_HTables is
         (Bkts : Bucket_Table_Ptr;
          Key  : Key_Type) return Node_Ptr
       is
-         pragma Assert (Present (Bkts));
+         pragma Assert (Bkts /= null);
 
          Idx : constant Bucket_Range_Type := Hash (Key) mod Bkts'Length;
 
@@ -786,7 +691,7 @@ package body GNAT.Dynamic_HTables is
       ---------------
 
       function Find_Node (Head : Node_Ptr; Key : Key_Type) return Node_Ptr is
-         pragma Assert (Present (Head));
+         pragma Assert (Head /= null);
 
          Nod : Node_Ptr;
 
@@ -811,7 +716,7 @@ package body GNAT.Dynamic_HTables is
       ----------------------
 
       procedure First_Valid_Node
-        (T        : Dynamic_Hash_Table;
+        (T        : Instance;
          Low_Bkt  : Bucket_Range_Type;
          High_Bkt : Bucket_Range_Type;
          Idx      : out Bucket_Range_Type;
@@ -820,8 +725,8 @@ package body GNAT.Dynamic_HTables is
          Head : Node_Ptr;
 
       begin
-         pragma Assert (Present (T));
-         pragma Assert (Present (T.Buckets));
+         pragma Assert (T /= null);
+         pragma Assert (T.Buckets /= null);
 
          --  Assume that no valid node exists
 
@@ -849,10 +754,7 @@ package body GNAT.Dynamic_HTables is
       -- Get --
       ---------
 
-      function Get
-        (T   : Dynamic_Hash_Table;
-         Key : Key_Type) return Value_Type
-      is
+      function Get (T : Instance; Key : Key_Type) return Value_Type is
          Head : Node_Ptr;
          Nod  : Node_Ptr;
 
@@ -882,11 +784,11 @@ package body GNAT.Dynamic_HTables is
       --------------
 
       function Has_Next (Iter : Iterator) return Boolean is
-         Is_OK : constant Boolean := Is_Valid (Iter);
-         T     : constant Dynamic_Hash_Table := Iter.Table;
+         Is_OK : constant Boolean  := Is_Valid (Iter);
+         T     : constant Instance := Iter.Table;
 
       begin
-         pragma Assert (Present (T));
+         pragma Assert (T /= null);
 
          --  The iterator is no longer valid which indicates that it has been
          --  exhausted. Unlock all mutation functionality of the hash table
@@ -903,7 +805,7 @@ package body GNAT.Dynamic_HTables is
       -- Is_Empty --
       --------------
 
-      function Is_Empty (T : Dynamic_Hash_Table) return Boolean is
+      function Is_Empty (T : Instance) return Boolean is
       begin
          Ensure_Created (T);
 
@@ -919,7 +821,7 @@ package body GNAT.Dynamic_HTables is
          --  The invariant of Iterate and Next ensures that the iterator always
          --  refers to a valid node if there exists one.
 
-         return Present (Iter.Curr_Nod);
+         return Iter.Nod /= null;
       end Is_Valid;
 
       --------------
@@ -931,19 +833,19 @@ package body GNAT.Dynamic_HTables is
          --  A node is valid if it is non-null, and does not refer to the dummy
          --  head of some bucket.
 
-         return Present (Nod) and then Nod /= Head;
+         return Nod /= null and then Nod /= Head;
       end Is_Valid;
 
       -------------
       -- Iterate --
       -------------
 
-      function Iterate (T : Dynamic_Hash_Table) return Iterator is
+      function Iterate (T : Instance) return Iterator is
          Iter : Iterator;
 
       begin
          Ensure_Created (T);
-         pragma Assert (Present (T.Buckets));
+         pragma Assert (T.Buckets /= null);
 
          --  Initialize the iterator to reference the first valid node in
          --  the full range of hash table buckets. If no such node exists,
@@ -954,8 +856,8 @@ package body GNAT.Dynamic_HTables is
            (T        => T,
             Low_Bkt  => T.Buckets'First,
             High_Bkt => T.Buckets'Last,
-            Idx      => Iter.Curr_Idx,
-            Nod      => Iter.Curr_Nod);
+            Idx      => Iter.Idx,
+            Nod      => Iter.Nod);
 
          --  Associate the iterator with the hash table to allow for future
          --  mutation functionality unlocking.
@@ -974,9 +876,9 @@ package body GNAT.Dynamic_HTables is
       -- Load_Factor --
       -----------------
 
-      function Load_Factor (T : Dynamic_Hash_Table) return Threshold_Type is
-         pragma Assert (Present (T));
-         pragma Assert (Present (T.Buckets));
+      function Load_Factor (T : Instance) return Threshold_Type is
+         pragma Assert (T /= null);
+         pragma Assert (T.Buckets /= null);
 
       begin
          --  The load factor is the ratio of key-value pairs to buckets
@@ -988,7 +890,7 @@ package body GNAT.Dynamic_HTables is
       -- Lock --
       ----------
 
-      procedure Lock (T : Dynamic_Hash_Table) is
+      procedure Lock (T : Instance) is
       begin
          --  The hash table may be locked multiple times if multiple iterators
          --  are operating over it.
@@ -1000,10 +902,7 @@ package body GNAT.Dynamic_HTables is
       -- Mutate_And_Rehash --
       -----------------------
 
-      procedure Mutate_And_Rehash
-        (T    : Dynamic_Hash_Table;
-         Size : Bucket_Range_Type)
-      is
+      procedure Mutate_And_Rehash (T : Instance; Size : Bucket_Range_Type) is
          procedure Rehash (From : Bucket_Table_Ptr; To : Bucket_Table_Ptr);
          pragma Inline (Rehash);
          --  Remove all nodes from buckets From and rehash them into buckets To
@@ -1023,8 +922,8 @@ package body GNAT.Dynamic_HTables is
 
          procedure Rehash (From : Bucket_Table_Ptr; To : Bucket_Table_Ptr) is
          begin
-            pragma Assert (Present (From));
-            pragma Assert (Present (To));
+            pragma Assert (From /= null);
+            pragma Assert (To /= null);
 
             for Scan_Idx in From'Range loop
                Rehash_Bucket (From (Scan_Idx)'Access, To);
@@ -1036,7 +935,7 @@ package body GNAT.Dynamic_HTables is
          -------------------
 
          procedure Rehash_Bucket (Head : Node_Ptr; To : Bucket_Table_Ptr) is
-            pragma Assert (Present (Head));
+            pragma Assert (Head /= null);
 
             Nod : Node_Ptr;
 
@@ -1056,7 +955,7 @@ package body GNAT.Dynamic_HTables is
          -----------------
 
          procedure Rehash_Node (Nod : Node_Ptr; To : Bucket_Table_Ptr) is
-            pragma Assert (Present (Nod));
+            pragma Assert (Nod /= null);
 
             Head : Node_Ptr;
 
@@ -1083,7 +982,7 @@ package body GNAT.Dynamic_HTables is
       --  Start of processing for Mutate_And_Rehash
 
       begin
-         pragma Assert (Present (T));
+         pragma Assert (T /= null);
 
          Old_Bkts  := T.Buckets;
          T.Buckets := new Bucket_Table (0 .. Size - 1);
@@ -1101,13 +1000,13 @@ package body GNAT.Dynamic_HTables is
 
       procedure Next (Iter : in out Iterator; Key : out Key_Type) is
          Is_OK : constant Boolean  := Is_Valid (Iter);
-         Saved : constant Node_Ptr := Iter.Curr_Nod;
-         T     : constant Dynamic_Hash_Table := Iter.Table;
+         Saved : constant Node_Ptr := Iter.Nod;
+         T     : constant Instance := Iter.Table;
          Head  : Node_Ptr;
 
       begin
-         pragma Assert (Present (T));
-         pragma Assert (Present (T.Buckets));
+         pragma Assert (T /= null);
+         pragma Assert (T.Buckets /= null);
 
          --  The iterator is no longer valid which indicates that it has been
          --  exhausted. Unlock all mutation functionality of the hash table as
@@ -1120,21 +1019,21 @@ package body GNAT.Dynamic_HTables is
 
          --  Advance to the next node along the same bucket
 
-         Iter.Curr_Nod := Iter.Curr_Nod.Next;
-         Head := T.Buckets (Iter.Curr_Idx)'Access;
+         Iter.Nod := Iter.Nod.Next;
+         Head     := T.Buckets (Iter.Idx)'Access;
 
          --  If the new node is no longer valid, then this indicates that the
          --  current bucket has been exhausted. Advance to the next valid node
          --  within the remaining range of buckets. If no such node exists, the
          --  iterator is left in a state which does not allow it to advance.
 
-         if not Is_Valid (Iter.Curr_Nod, Head) then
+         if not Is_Valid (Iter.Nod, Head) then
             First_Valid_Node
-              (T        => T,
-               Low_Bkt  => Iter.Curr_Idx + 1,
+              (T      => T,
+               Low_Bkt  => Iter.Idx + 1,
                High_Bkt => T.Buckets'Last,
-               Idx      => Iter.Curr_Idx,
-               Nod      => Iter.Curr_Nod);
+               Idx      => Iter.Idx,
+               Nod      => Iter.Nod);
          end if;
 
          Key := Saved.Key;
@@ -1145,8 +1044,8 @@ package body GNAT.Dynamic_HTables is
       -------------
 
       procedure Prepend (Nod : Node_Ptr; Head : Node_Ptr) is
-         pragma Assert (Present (Nod));
-         pragma Assert (Present (Head));
+         pragma Assert (Nod /= null);
+         pragma Assert (Head /= null);
 
          Next : constant Node_Ptr := Head.Next;
 
@@ -1158,42 +1057,11 @@ package body GNAT.Dynamic_HTables is
          Nod.Prev := Head;
       end Prepend;
 
-      -------------
-      -- Present --
-      -------------
-
-      function Present (Bkts : Bucket_Table_Ptr) return Boolean is
-      begin
-         return Bkts /= null;
-      end Present;
-
-      -------------
-      -- Present --
-      -------------
-
-      function Present (Nod : Node_Ptr) return Boolean is
-      begin
-         return Nod /= null;
-      end Present;
-
-      -------------
-      -- Present --
-      -------------
-
-      function Present (T : Dynamic_Hash_Table) return Boolean is
-      begin
-         return T /= Nil;
-      end Present;
-
       ---------
       -- Put --
       ---------
 
-      procedure Put
-        (T     : Dynamic_Hash_Table;
-         Key   : Key_Type;
-         Value : Value_Type)
-      is
+      procedure Put (T : Instance; Key : Key_Type; Value : Value_Type) is
          procedure Expand;
          pragma Inline (Expand);
          --  Determine whether hash table T requires expansion, and if so,
@@ -1210,8 +1078,8 @@ package body GNAT.Dynamic_HTables is
          ------------
 
          procedure Expand is
-            pragma Assert (Present (T));
-            pragma Assert (Present (T.Buckets));
+            pragma Assert (T /= null);
+            pragma Assert (T.Buckets /= null);
 
             Old_Size : constant Bucket_Range_Type := T.Buckets'Length;
 
@@ -1231,7 +1099,7 @@ package body GNAT.Dynamic_HTables is
          ------------------------
 
          procedure Prepend_Or_Replace (Head : Node_Ptr) is
-            pragma Assert (Present (Head));
+            pragma Assert (Head /= null);
 
             Nod : Node_Ptr;
 
@@ -1298,7 +1166,7 @@ package body GNAT.Dynamic_HTables is
       -- Reset --
       -----------
 
-      procedure Reset (T : Dynamic_Hash_Table) is
+      procedure Reset (T : Instance) is
       begin
          Ensure_Created  (T);
          Ensure_Unlocked (T);
@@ -1318,7 +1186,7 @@ package body GNAT.Dynamic_HTables is
       -- Size --
       ----------
 
-      function Size (T : Dynamic_Hash_Table) return Natural is
+      function Size (T : Instance) return Natural is
       begin
          Ensure_Created (T);
 
@@ -1329,13 +1197,13 @@ package body GNAT.Dynamic_HTables is
       -- Unlock --
       ------------
 
-      procedure Unlock (T : Dynamic_Hash_Table) is
+      procedure Unlock (T : Instance) is
       begin
          --  The hash table may be locked multiple times if multiple iterators
          --  are operating over it.
 
          T.Iterators := T.Iterators - 1;
       end Unlock;
-   end Dynamic_Hash_Tables;
+   end Dynamic_HTable;
 
 end GNAT.Dynamic_HTables;

@@ -3,12 +3,6 @@
 /* { dg-require-effective-target freorder } */
 /* { dg-options "-O2 -freorder-blocks-and-partition -save-temps -fdump-tree-optimized" } */
 
-#ifdef FOR_AUTOFDO_TESTING
-#define MAXITER 1000000
-#else
-#define MAXITER 10000
-#endif
-
 #define SIZE 10000
 
 const char *sarr[SIZE];
@@ -38,7 +32,7 @@ main (int argc, char *argv[])
   int i;
   buf_hot =  "hello";
   buf_cold = "world";
-  for (i = 0; i < MAXITER; i++)
+  for (i = 0; i < 1000000; i++)
     foo (argc);
   return 0;
 }

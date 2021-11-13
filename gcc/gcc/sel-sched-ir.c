@@ -1,5 +1,5 @@
 /* Instruction scheduling pass.  Selective scheduler and pipeliner.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -33,6 +33,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "insn-config.h"
 #include "insn-attr.h"
 #include "recog.h"
+#include "params.h"
 #include "target.h"
 #include "sched-int.h"
 #include "emit-rtl.h"  /* FIXME: Can go away once crtl is moved to rtl.h.  */
@@ -60,7 +61,7 @@ struct succs_info current_succs;
 static struct common_sched_info_def sel_common_sched_info;
 
 /* The loop nest being pipelined.  */
-class loop *current_loop_nest;
+struct loop *current_loop_nest;
 
 /* LOOP_NESTS is a vector containing the corresponding loop nest for
    each region.  */
@@ -310,10 +311,9 @@ flist_clear (flist_t *lp)
     flist_remove (lp);
 }
 
-/* Add ORIGINAL_INSN the def list DL honoring CROSSED_CALL_ABIS.  */
+/* Add ORIGINAL_INSN the def list DL honoring CROSSES_CALL.  */
 void
-def_list_add (def_list_t *dl, insn_t original_insn,
-	      unsigned int crossed_call_abis)
+def_list_add (def_list_t *dl, insn_t original_insn, bool crosses_call)
 {
   def_t d;
 
@@ -321,7 +321,7 @@ def_list_add (def_list_t *dl, insn_t original_insn,
   d = DEF_LIST_DEF (*dl);
 
   d->orig_insn = original_insn;
-  d->crossed_call_abis = crossed_call_abis;
+  d->crosses_call = crosses_call;
 }
 
 
@@ -424,7 +424,7 @@ reset_target_context (tc_t tc, bool clean_p)
 }
 
 /* Functions to work with dependence contexts.
-   Dc (aka deps context, aka deps_t, aka class deps_desc *) is short for dependence
+   Dc (aka deps context, aka deps_t, aka struct deps_desc *) is short for dependence
    context.  It accumulates information about processed insns to decide if
    current insn is dependent on the processed ones.  */
 
@@ -440,7 +440,7 @@ copy_deps_context (deps_t to, deps_t from)
 static deps_t
 alloc_deps_context (void)
 {
-  return XNEW (class deps_desc);
+  return XNEW (struct deps_desc);
 }
 
 /* Allocate and initialize dep context.  */
@@ -722,63 +722,63 @@ merge_fences (fence_t f, insn_t insn,
                         != BLOCK_FOR_INSN (last_scheduled_insn));
           }
 
-      /* Find edge of first predecessor (last_scheduled_insn_old->insn).  */
-      FOR_EACH_SUCC_1 (succ, si, last_scheduled_insn_old,
-		       SUCCS_NORMAL | SUCCS_SKIP_TO_LOOP_EXITS)
-	{
-	  if (succ == insn)
-	    {
-	      /* No same successor allowed from several edges.  */
-	      gcc_assert (!edge_old);
-	      edge_old = si.e1;
-	    }
-	}
-      /* Find edge of second predecessor (last_scheduled_insn->insn).  */
-      FOR_EACH_SUCC_1 (succ, si, last_scheduled_insn,
-		       SUCCS_NORMAL | SUCCS_SKIP_TO_LOOP_EXITS)
-	{
-	  if (succ == insn)
-	    {
-	      /* No same successor allowed from several edges.  */
-	      gcc_assert (!edge_new);
-	      edge_new = si.e1;
-	    }
-	}
+        /* Find edge of first predecessor (last_scheduled_insn_old->insn).  */
+        FOR_EACH_SUCC_1 (succ, si, last_scheduled_insn_old,
+                         SUCCS_NORMAL | SUCCS_SKIP_TO_LOOP_EXITS)
+          {
+            if (succ == insn)
+              {
+                /* No same successor allowed from several edges.  */
+                gcc_assert (!edge_old);
+                edge_old = si.e1;
+              }
+          }
+        /* Find edge of second predecessor (last_scheduled_insn->insn).  */
+        FOR_EACH_SUCC_1 (succ, si, last_scheduled_insn,
+                         SUCCS_NORMAL | SUCCS_SKIP_TO_LOOP_EXITS)
+          {
+            if (succ == insn)
+              {
+                /* No same successor allowed from several edges.  */
+                gcc_assert (!edge_new);
+                edge_new = si.e1;
+              }
+          }
 
-      /* Check if we can choose most probable predecessor.  */
-      if (edge_old == NULL || edge_new == NULL)
-	{
-	  reset_deps_context (FENCE_DC (f));
-	  delete_deps_context (dc);
-	  vec_free (executing_insns);
-	  free (ready_ticks);
+        /* Check if we can choose most probable predecessor.  */
+        if (edge_old == NULL || edge_new == NULL)
+          {
+            reset_deps_context (FENCE_DC (f));
+            delete_deps_context (dc);
+            vec_free (executing_insns);
+            free (ready_ticks);
 
-	  FENCE_CYCLE (f) = MAX (FENCE_CYCLE (f), cycle);
-	  if (FENCE_EXECUTING_INSNS (f))
-	    FENCE_EXECUTING_INSNS (f)->block_remove (0,
-			      FENCE_EXECUTING_INSNS (f)->length ());
-	  if (FENCE_READY_TICKS (f))
-	    memset (FENCE_READY_TICKS (f), 0, FENCE_READY_TICKS_SIZE (f));
-	}
-      else
-	if (edge_new->probability > edge_old->probability)
-	  {
-	    delete_deps_context (FENCE_DC (f));
-	    FENCE_DC (f) = dc;
-	    vec_free (FENCE_EXECUTING_INSNS (f));
-	    FENCE_EXECUTING_INSNS (f) = executing_insns;
-	    free (FENCE_READY_TICKS (f));
-	    FENCE_READY_TICKS (f) = ready_ticks;
-	    FENCE_READY_TICKS_SIZE (f) = ready_ticks_size;
-	    FENCE_CYCLE (f) = cycle;
-	  }
-	else
-	  {
-	    /* Leave DC and CYCLE untouched.  */
-	    delete_deps_context (dc);
-	    vec_free (executing_insns);
-	    free (ready_ticks);
-	  }
+            FENCE_CYCLE (f) = MAX (FENCE_CYCLE (f), cycle);
+            if (FENCE_EXECUTING_INSNS (f))
+              FENCE_EXECUTING_INSNS (f)->block_remove (0,
+                                FENCE_EXECUTING_INSNS (f)->length ());
+            if (FENCE_READY_TICKS (f))
+              memset (FENCE_READY_TICKS (f), 0, FENCE_READY_TICKS_SIZE (f));
+          }
+        else
+          if (edge_new->probability > edge_old->probability)
+            {
+              delete_deps_context (FENCE_DC (f));
+              FENCE_DC (f) = dc;
+              vec_free (FENCE_EXECUTING_INSNS (f));
+              FENCE_EXECUTING_INSNS (f) = executing_insns;
+              free (FENCE_READY_TICKS (f));
+              FENCE_READY_TICKS (f) = ready_ticks;
+              FENCE_READY_TICKS_SIZE (f) = ready_ticks_size;
+              FENCE_CYCLE (f) = cycle;
+            }
+          else
+            {
+              /* Leave DC and CYCLE untouched.  */
+              delete_deps_context (dc);
+              vec_free (executing_insns);
+              free (ready_ticks);
+            }
     }
 
   /* Fill remaining invariant fields.  */
@@ -2661,9 +2661,12 @@ setup_id_implicit_regs (idata_t id, insn_t insn)
     return;
 
   HARD_REG_SET temp;
+  unsigned regno;
+  hard_reg_set_iterator hrsi;
 
   get_implicit_reg_pending_clobbers (&temp, insn);
-  IOR_REG_SET_HRS (IDATA_REG_SETS (id), temp);
+  EXECUTE_IF_SET_IN_HARD_REG_SET (temp, 0, regno, hrsi)
+    SET_REGNO_REG_SET (IDATA_REG_SETS (id), regno);
 }
 
 /* Setup register sets describing INSN in ID.  */
@@ -2746,7 +2749,7 @@ init_id_from_df (idata_t id, insn_t insn, bool force_unique_p)
 static void
 deps_init_id (idata_t id, insn_t insn, bool force_unique_p)
 {
-  class deps_desc _dc, *dc = &_dc;
+  struct deps_desc _dc, *dc = &_dc;
 
   deps_init_id_data.where = DEPS_IN_NOWHERE;
   deps_init_id_data.id = id;
@@ -3387,7 +3390,7 @@ has_dependence_p (expr_t expr, insn_t pred, ds_t **has_dep_pp)
 {
   int i;
   ds_t ds;
-  class deps_desc *dc;
+  struct deps_desc *dc;
 
   if (INSN_SIMPLEJUMP_P (pred))
     /* Unconditional jump is just a transfer of control flow.
@@ -3793,8 +3796,7 @@ maybe_tidy_empty_bb (basic_block bb)
 	  else if (single_succ_p (pred_bb) && any_condjump_p (BB_END (pred_bb)))
 	    {
 	      /* If possible, try to remove the unneeded conditional jump.  */
-	      if (onlyjump_p (BB_END (pred_bb))
-		  && INSN_SCHED_TIMES (BB_END (pred_bb)) == 0
+	      if (INSN_SCHED_TIMES (BB_END (pred_bb)) == 0
 		  && !IN_CURRENT_FENCE_P (BB_END (pred_bb)))
 		{
 		  if (!sel_remove_insn (BB_END (pred_bb), false, false))
@@ -4153,14 +4155,14 @@ get_seqno_by_preds (rtx_insn *insn)
 void
 sel_extend_global_bb_info (void)
 {
-  sel_global_bb_info.safe_grow_cleared (last_basic_block_for_fn (cfun), true);
+  sel_global_bb_info.safe_grow_cleared (last_basic_block_for_fn (cfun));
 }
 
 /* Extend region-scope data structures for basic blocks.  */
 static void
 extend_region_bb_info (void)
 {
-  sel_region_bb_info.safe_grow_cleared (last_basic_block_for_fn (cfun), true);
+  sel_region_bb_info.safe_grow_cleared (last_basic_block_for_fn (cfun));
 }
 
 /* Extend all data structures to fit for all basic blocks.  */
@@ -4210,7 +4212,7 @@ extend_insn_data (void)
         size = 3 * sched_max_luid / 2;
 
 
-      s_i_d.safe_grow_cleared (size, true);
+      s_i_d.safe_grow_cleared (size);
     }
 }
 
@@ -5395,7 +5397,7 @@ change_loops_latches (basic_block from, basic_block to)
 
   if (current_loop_nest)
     {
-      class loop *loop;
+      struct loop *loop;
 
       for (loop = current_loop_nest; loop; loop = loop_outer (loop))
         if (considered_for_pipelining_p (loop) && loop->latch == from)
@@ -6000,11 +6002,11 @@ bb_top_order_comparator (const void *x, const void *y)
 /* Create a region for LOOP and return its number.  If we don't want
    to pipeline LOOP, return -1.  */
 static int
-make_region_from_loop (class loop *loop)
+make_region_from_loop (struct loop *loop)
 {
   unsigned int i;
   int new_rgn_number = -1;
-  class loop *inner;
+  struct loop *inner;
 
   /* Basic block index, to be assigned to BLOCK_TO_BB.  */
   int bb_ord_index = 0;
@@ -6012,7 +6014,7 @@ make_region_from_loop (class loop *loop)
   basic_block preheader_block;
 
   if (loop->num_nodes
-      > (unsigned) param_max_pipeline_region_blocks)
+      > (unsigned) PARAM_VALUE (PARAM_MAX_PIPELINE_REGION_BLOCKS))
     return -1;
 
   /* Don't pipeline loops whose latch belongs to some of its inner loops.  */
@@ -6021,7 +6023,7 @@ make_region_from_loop (class loop *loop)
       return -1;
 
   loop->ninsns = num_loop_insns (loop);
-  if ((int) loop->ninsns > param_max_pipeline_region_insns)
+  if ((int) loop->ninsns > PARAM_VALUE (PARAM_MAX_PIPELINE_REGION_INSNS))
     return -1;
 
   loop_blocks = get_loop_body_in_custom_order (loop, bb_top_order_comparator);
@@ -6093,9 +6095,9 @@ make_region_from_loop_preheader (vec<basic_block> *&loop_blocks)
    pipelined before outer loops.  Returns true when a region for LOOP
    is created.  */
 static bool
-make_regions_from_loop_nest (class loop *loop)
+make_regions_from_loop_nest (struct loop *loop)
 {
-  class loop *cur_loop;
+  struct loop *cur_loop;
   int rgn_number;
 
   /* Traverse all inner nodes of the loop.  */
@@ -6131,7 +6133,7 @@ sel_init_pipelining (void)
   recompute_rev_top_order ();
 }
 
-/* Returns a class loop for region RGN.  */
+/* Returns a struct loop for region RGN.  */
 loop_p
 get_loop_nest_for_rgn (unsigned int rgn)
 {
@@ -6145,7 +6147,7 @@ get_loop_nest_for_rgn (unsigned int rgn)
 
 /* True when LOOP was included into pipelining regions.   */
 bool
-considered_for_pipelining_p (class loop *loop)
+considered_for_pipelining_p (struct loop *loop)
 {
   if (loop_depth (loop) == 0)
     return false;
@@ -6247,8 +6249,10 @@ make_regions_from_the_rest (void)
 /* Free data structures used in pipelining of loops.  */
 void sel_finish_pipelining (void)
 {
+  struct loop *loop;
+
   /* Release aux fields so we don't free them later by mistake.  */
-  for (auto loop : loops_list (cfun, 0))
+  FOR_EACH_LOOP (loop, 0)
     loop->aux = NULL;
 
   loop_optimizer_finalize ();
@@ -6269,11 +6273,11 @@ sel_find_rgns (void)
 
   if (current_loops)
     {
-      unsigned flags = flag_sel_sched_pipelining_outer_loops
-			 ? LI_FROM_INNERMOST
-			 : LI_ONLY_INNERMOST;
+      loop_p loop;
 
-      for (auto loop : loops_list (cfun, flags))
+      FOR_EACH_LOOP (loop, (flag_sel_sched_pipelining_outer_loops
+			    ? LI_FROM_INNERMOST
+			    : LI_ONLY_INNERMOST))
 	make_regions_from_loop_nest (loop);
     }
 
@@ -6320,7 +6324,7 @@ sel_is_loop_preheader_p (basic_block bb)
 {
   if (current_loop_nest)
     {
-      class loop *outer;
+      struct loop *outer;
 
       if (preheader_removed)
         return false;

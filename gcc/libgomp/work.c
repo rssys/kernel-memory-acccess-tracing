@@ -1,4 +1,4 @@
-/* Copyright (C) 2005-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2005-2019 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>.
 
    This file is part of the GNU Offloading and Multi Processing Library
@@ -120,7 +120,7 @@ gomp_init_work_share (struct gomp_work_share *ws, size_t ordered,
       else
 	ordered = nthreads * sizeof (*ws->ordered_team_ids);
       if (ordered > INLINE_ORDERED_TEAM_IDS_SIZE)
-	ws->ordered_team_ids = team_malloc (ordered);
+	ws->ordered_team_ids = gomp_malloc (ordered);
       else
 	ws->ordered_team_ids = ws->inline_ordered_team_ids;
       memset (ws->ordered_team_ids, '\0', ordered);
@@ -142,7 +142,7 @@ gomp_fini_work_share (struct gomp_work_share *ws)
 {
   gomp_mutex_destroy (&ws->lock);
   if (ws->ordered_team_ids != ws->inline_ordered_team_ids)
-    team_free (ws->ordered_team_ids);
+    free (ws->ordered_team_ids);
   gomp_ptrlock_destroy (&ws->next_ws);
 }
 
@@ -191,12 +191,7 @@ gomp_work_share_start (size_t ordered)
   /* Work sharing constructs can be orphaned.  */
   if (team == NULL)
     {
-#ifdef GOMP_HAVE_EFFICIENT_ALIGNED_ALLOC
-      ws = gomp_aligned_alloc (__alignof (struct gomp_work_share),
-			       sizeof (*ws));
-#else
       ws = gomp_malloc (sizeof (*ws));
-#endif
       gomp_init_work_share (ws, ordered, 1);
       thr->ts.work_share = ws;
       return true;

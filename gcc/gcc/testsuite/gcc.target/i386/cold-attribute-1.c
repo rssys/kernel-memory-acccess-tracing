@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -mno-avx" } */
+/* { dg-options "-O2" } */
 #include <string.h>
 static inline
 __attribute__ ((cold)) void

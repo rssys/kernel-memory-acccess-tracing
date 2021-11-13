@@ -1,5 +1,5 @@
 /* Change pseudos by memory.
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -97,9 +97,8 @@ static struct pseudo_slot *pseudo_slots;
 
 /* The structure describes a register or a stack slot which can be
    used for several spilled pseudos.  */
-class slot
+struct slot
 {
-public:
   /* First pseudo with given stack slot.  */
   int regno;
   /* Hard reg into which the slot pseudos are spilled.	The value is
@@ -122,7 +121,7 @@ public:
 
 /* Array containing info about the stack slots.	 The array element is
    indexed by the stack slot number in the range [0..slots_num).  */
-static class slot *slots;
+static struct slot *slots;
 /* The number of the stack slots currently existing.  */
 static int slots_num;
 
@@ -243,7 +242,7 @@ assign_spill_hard_regs (int *pseudo_regnos, int n)
   /* Set up reserved hard regs for every program point.	 */
   reserved_hard_regs = XNEWVEC (HARD_REG_SET, lra_live_max_point);
   for (p = 0; p < lra_live_max_point; p++)
-    reserved_hard_regs[p] = lra_no_alloc_regs;
+    COPY_HARD_REG_SET (reserved_hard_regs[p], lra_no_alloc_regs);
   for (i = FIRST_PSEUDO_REGISTER; i < regs_num; i++)
     if (lra_reg_info[i].nrefs != 0
 	&& (hard_regno = lra_get_regno_hard_regno (i)) >= 0)
@@ -274,18 +273,16 @@ assign_spill_hard_regs (int *pseudo_regnos, int n)
 	  continue;
 	}
       lra_assert (spill_class != NO_REGS);
-      conflict_hard_regs = lra_reg_info[regno].conflict_hard_regs;
+      COPY_HARD_REG_SET (conflict_hard_regs,
+			 lra_reg_info[regno].conflict_hard_regs);
       for (r = lra_reg_info[regno].live_ranges; r != NULL; r = r->next)
 	for (p = r->start; p <= r->finish; p++)
-	  conflict_hard_regs |= reserved_hard_regs[p];
+	  IOR_HARD_REG_SET (conflict_hard_regs, reserved_hard_regs[p]);
       spill_class_size = ira_class_hard_regs_num[spill_class];
       mode = lra_reg_info[regno].biggest_mode;
       for (k = 0; k < spill_class_size; k++)
 	{
 	  hard_regno = ira_class_hard_regs[spill_class][k];
-	  if (TEST_HARD_REG_BIT (eliminable_regset, hard_regno)
-	      || !targetm.hard_regno_mode_ok (hard_regno, mode))
-	    continue;
 	  if (! overlaps_hard_reg_set_p (conflict_hard_regs, mode, hard_regno))
 	    break;
 	}
@@ -421,32 +418,13 @@ remove_pseudos (rtx *loc, rtx_insn *insn)
   if (*loc == NULL_RTX)
     return res;
   code = GET_CODE (*loc);
-  if (code == SUBREG && REG_P (SUBREG_REG (*loc)))
-    {
-      /* Try to remove memory subregs to simplify LRA job
-         and avoid LRA cycling in case of subreg memory reload.  */
-      res = remove_pseudos (&SUBREG_REG (*loc), insn);
-      if (GET_CODE (SUBREG_REG (*loc)) == MEM)
-	{
-	  alter_subreg (loc, false);
-	  if (GET_CODE (*loc) == MEM)
-	    {
-	      lra_update_insn_recog_data (insn);
-	      if (lra_dump_file != NULL)
-		fprintf (lra_dump_file,
-			 "Memory subreg was simplified in insn #%u\n",
-			 INSN_UID (insn));
-	    }
-	}
-      return res;
-    }
-  else if (code == REG && (i = REGNO (*loc)) >= FIRST_PSEUDO_REGISTER
+  if (code == REG && (i = REGNO (*loc)) >= FIRST_PSEUDO_REGISTER
       && lra_get_regno_hard_regno (i) < 0
       /* We do not want to assign memory for former scratches because
 	 it might result in an address reload for some targets.	 In
 	 any case we transform such pseudos not getting hard registers
 	 into scratches back.  */
-      && ! ira_former_scratch_p (i))
+      && ! lra_former_scratch_p (i))
     {
       if (lra_reg_info[i].nrefs == 0
 	  && pseudo_slots[i].mem == NULL && spill_hard_reg[i] == NULL)
@@ -494,7 +472,7 @@ spill_pseudos (void)
   for (i = FIRST_PSEUDO_REGISTER; i < regs_num; i++)
     {
       if (lra_reg_info[i].nrefs != 0 && lra_get_regno_hard_regno (i) < 0
-	  && ! ira_former_scratch_p (i))
+	  && ! lra_former_scratch_p (i))
 	{
 	  bitmap_set_bit (spilled_pseudos, i);
 	  bitmap_ior_into (changed_insns, &lra_reg_info[i].insn_bitmap);
@@ -578,7 +556,7 @@ lra_need_for_scratch_reg_p (void)
 
   for (i = FIRST_PSEUDO_REGISTER; i < max_regno; i++)
     if (lra_reg_info[i].nrefs != 0 && lra_get_regno_hard_regno (i) < 0
-	&& ira_former_scratch_p (i))
+	&& lra_former_scratch_p (i))
       return true;
   return false;
 }
@@ -591,7 +569,7 @@ lra_need_for_spills_p (void)
 
   for (i = FIRST_PSEUDO_REGISTER; i < max_regno; i++)
     if (lra_reg_info[i].nrefs != 0 && lra_get_regno_hard_regno (i) < 0
-	&& ! ira_former_scratch_p (i))
+	&& ! lra_former_scratch_p (i))
       return true;
   return false;
 }
@@ -612,7 +590,7 @@ lra_spill (void)
   for (n = 0, i = FIRST_PSEUDO_REGISTER; i < regs_num; i++)
     if (lra_reg_info[i].nrefs != 0 && lra_get_regno_hard_regno (i) < 0
 	/* We do not want to assign memory for former scratches.  */
-	&& ! ira_former_scratch_p (i))
+	&& ! lra_former_scratch_p (i))
       pseudo_regnos[n++] = i;
   lra_assert (n > 0);
   pseudo_slots = XNEWVEC (struct pseudo_slot, regs_num);
@@ -621,7 +599,7 @@ lra_spill (void)
       spill_hard_reg[i] = NULL_RTX;
       pseudo_slots[i].mem = NULL_RTX;
     }
-  slots = XNEWVEC (class slot, regs_num);
+  slots = XNEWVEC (struct slot, regs_num);
   /* Sort regnos according their usage frequencies.  */
   qsort (pseudo_regnos, n, sizeof (int), regno_freq_compare);
   n = assign_spill_hard_regs (pseudo_regnos, n);
@@ -788,14 +766,6 @@ lra_final_code_change (void)
 	{
 	  rtx pat = PATTERN (insn);
 
-	  if (GET_CODE (pat) == USE && XEXP (pat, 0) == const1_rtx)
-	    {
-	      /* Remove markers to eliminate critical edges for jump insn
-		 output reloads (see code in ira.c::ira).  */
-	      lra_invalidate_insn_data (insn);
-	      delete_insn (insn);
-	      continue;
-	    }
 	  if (GET_CODE (pat) == CLOBBER && LRA_TEMP_CLOBBER_P (pat))
 	    {
 	      /* Remove clobbers temporarily created in LRA.  We don't

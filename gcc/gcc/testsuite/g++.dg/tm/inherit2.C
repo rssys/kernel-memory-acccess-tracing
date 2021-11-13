@@ -26,8 +26,8 @@ int main()
     B b; // ok
     D1 d1; // ok
     B& b1 = d1;
-    D2 x;
+    D2 x; // { dg-error "" "destructor of D2 is not transaction-safe" }
     b1.f(); // ok, calls D1::f()
     delete b2; // undefined behavior: calls unsafe destructor of D2
-  } // { dg-error "" "destructor of D2 is not transaction-safe" }
+  }
 }

@@ -115,31 +115,28 @@ void test_strncpy (char **d, const char* s, int i)
   T (d, "123", sizeof "123");
   T (d, ar, sizeof ar);
 
-  /* There is no overflow in the following calls but they are diagnosed
-     by -Wstringop-truncation.  Verify that they aren'y also diagnosed
-     by -Wstringop-overflow.  */
-  T (d, s, strlen (s));
+  T (d, s, strlen (s));       /* { dg-warning "\\\[-Wstringop-overflow=]" } */
 
   {
-    int n = strlen (s);
-    T (d, s, n);
+    int n = strlen (s);       /* { dg-message "length computed here" } */
+    T (d, s, n);              /* { dg-warning "\\\[-Wstringop-overflow=]" } */
   }
 
   {
-    unsigned n = strlen (s);
-    T (d, s, n);
-  }
-
-  {
-    size_t n;
-    n = strlen (s);
-    T (d, s, n);
+    unsigned n = strlen (s);   /* { dg-message "length computed here" } */
+    T (d, s, n);               /* { dg-warning "\\\[-Wstringop-overflow=]" } */
   }
 
   {
     size_t n;
-    n = strlen (s) - 1;
-    T (d, s, n);
+    n = strlen (s);           /* { dg-message "length computed here" } */
+    T (d, s, n);              /* { dg-warning "\\\[-Wstringop-overflow=]" } */
+  }
+
+  {
+    size_t n;
+    n = strlen (s) - 1;       /* { dg-message "length computed here" } */
+    T (d, s, n);              /* { dg-warning "\\\[-Wstringop-overflow=]" } */
   }
 
   {
@@ -151,8 +148,11 @@ void test_strncpy (char **d, const char* s, int i)
 
   {
     /* This use of strncpy is certainly dubious and it could well be
-       diagnosed by -Wstringop-truncation but it isn't.  */
-    size_t n = i < strlen (s) ? i : strlen (s);   /* { dg-message "length computed here" "note" { xfail *-*-* } } */
-    T (d, s, n);                  /* { dg-message ".strncpy\[^\n\r]* specified bound depends on the length of the source argument" "pr?????" { xfail *-*-* } } */
+       diagnosed by -Wstringop-truncation but it isn't.  That it is
+       diagnosed with -Wstringop-overflow is more by accident than
+       by design.  -Wstringop-overflow considers any dependency of
+       the bound on strlen(s) a potential bug.  */
+    size_t n = i < strlen (s) ? i : strlen (s);   /* { dg-message "length computed here" } */
+    T (d, s, n);                  /* { dg-message ".strncpy\[^\n\r]* specified bound depends on the length of the source argument" } */
   }
 }

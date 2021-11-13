@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-ffast-math -O3 -fdump-tree-dom3-details" } */
+/* { dg-options "-ffast-math -O3 -fdump-tree-vrp1-details" } */
 
 int I = 50, J = 50;
 int S, L;
@@ -39,8 +39,4 @@ void foo (int K)
 	bar (LD, SD);
     }
 }
-
-/* We used to get 1 vrp-thread1 candidates here, but they now get
-   deferred until after loop opts are done, because they were rotating
-   loops.  */
-/* { dg-final { scan-tree-dump-times "Threaded jump " 2 "dom3" } } */
+/* { dg-final { scan-tree-dump-times "Threaded jump " 2 "vrp1" } } */

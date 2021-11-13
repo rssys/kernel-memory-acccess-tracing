@@ -3,8 +3,7 @@
 
 #include "arm_neon.h"
 
-int32x2_t
-foo (int a)
+void foo (int a)
 {
   int32x2_t arg1;
   int32x2_t arg2;
@@ -16,5 +15,4 @@ foo (int a)
      we have to tell dg-error to ignore the line number.  */
   result = vrsra_n_s32 (arg1, arg2, a);
   /* { dg-error "must be a constant immediate" "" { target *-*-* } 0 } */
-  return result;
 }

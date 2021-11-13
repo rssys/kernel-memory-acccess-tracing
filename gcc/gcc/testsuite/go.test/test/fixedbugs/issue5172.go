@@ -12,15 +12,8 @@ type foo struct {
 	x bar // ERROR "undefined"
 }
 
-type T struct{}
-
-func (t T) Bar() {}
-
 func main() {
 	var f foo
-	go f.bar()    // ERROR "undefined"
-	defer f.bar() // ERROR "undefined"
-
-	t := T{1} // ERROR "too many"
-	go t.Bar()
+	go f.bar()	// GCCGO_ERROR "undefined"
+	defer f.bar()	// GCCGO_ERROR "undefined"
 }

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -43,19 +43,7 @@ with Ada.Unchecked_Deallocation;
 pragma Elaborate_All (System.File_IO);
 --  Needed because of calls to Chain_File in package body elaboration
 
-package body Ada.Text_IO with
-  SPARK_Mode => Off,
-  Refined_State => (File_System => (Standard_In,
-                                    Standard_Out,
-                                    Standard_Err,
-                                    Current_In,
-                                    Current_Out,
-                                    Current_Err,
-                                    In_Name,
-                                    Out_Name,
-                                    Err_Name,
-                                    WC_Encoding))
-is
+package body Ada.Text_IO is
 
    package FIO renames System.File_IO;
 
@@ -67,7 +55,7 @@ is
 
    use type System.CRTL.size_t;
 
-   WC_Encoding : constant Character;
+   WC_Encoding : Character;
    pragma Import (C, WC_Encoding, "__gl_wc_encoding");
    --  Default wide character encoding
 
@@ -172,15 +160,15 @@ is
       --  is required (RM A.10.3(23)) but it seems reasonable, and besides
       --  ACVC test CE3208A expects this behavior.
 
-      if File = Current_In then
+      if File_Type (File) = Current_In then
          Current_In := null;
-      elsif File = Current_Out then
+      elsif File_Type (File) = Current_Out then
          Current_Out := null;
-      elsif File = Current_Err then
+      elsif File_Type (File) = Current_Err then
          Current_Err := null;
       end if;
 
-      Terminate_Line (File.all'Access);
+      Terminate_Line (File_Type (File));
    end AFCB_Close;
 
    ---------------
@@ -188,9 +176,10 @@ is
    ---------------
 
    procedure AFCB_Free (File : not null access Text_AFCB) is
-      FT : File_Type := File.all'Access;
+      type FCB_Ptr is access all Text_AFCB;
+      FT : FCB_Ptr := FCB_Ptr (File);
 
-      procedure Free is new Ada.Unchecked_Deallocation (Text_AFCB, File_Type);
+      procedure Free is new Ada.Unchecked_Deallocation (Text_AFCB, FCB_Ptr);
 
    begin
       Free (FT);

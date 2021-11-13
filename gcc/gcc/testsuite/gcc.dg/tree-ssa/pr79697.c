@@ -3,17 +3,17 @@
 
 void f(void)
 {
-  __builtin_strdup ("abc"); /* { dg-warning "ignoring return value of '__builtin_strdup' declared with attribute 'warn_unused_result'" } */
+  __builtin_strdup ("abc");
 }
 
 void g(void)
 {
-  __builtin_strndup ("abc", 3); /* { dg-warning "ignoring return value of '__builtin_strndup' declared with attribute 'warn_unused_result'" } */
+  __builtin_strndup ("abc", 3);
 }
 
 void h(void)
 {
-  __builtin_realloc (0, 10); /* { dg-warning "ignoring return value of '__builtin_realloc' declared with attribute 'warn_unused_result'" } */
+  __builtin_realloc (0, 10);
 }
 
 /* { dg-final { scan-tree-dump "Deleting : __builtin_strdup" "cddce1" } } */

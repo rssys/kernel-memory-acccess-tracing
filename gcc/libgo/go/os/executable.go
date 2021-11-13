@@ -15,6 +15,8 @@ package os
 //
 // The main use case is finding resources located relative to an
 // executable.
+//
+// Executable is not supported on nacl.
 func Executable() (string, error) {
 	return executable()
 }

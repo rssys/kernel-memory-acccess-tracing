@@ -6,6 +6,7 @@ package user
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"syscall"
 )
@@ -22,7 +23,7 @@ func init() {
 }
 
 func current() (*User, error) {
-	ubytes, err := os.ReadFile(userFile)
+	ubytes, err := ioutil.ReadFile(userFile)
 	if err != nil {
 		return nil, fmt.Errorf("user: %s", err)
 	}

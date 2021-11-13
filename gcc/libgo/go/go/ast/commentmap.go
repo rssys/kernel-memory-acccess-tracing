@@ -315,17 +315,9 @@ loop:
 }
 
 func (cmap CommentMap) String() string {
-	// print map entries in sorted order
-	var nodes []Node
-	for node := range cmap {
-		nodes = append(nodes, node)
-	}
-	sort.Sort(byInterval(nodes))
-
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, "CommentMap {")
-	for _, node := range nodes {
-		comment := cmap[node]
+	for node, comment := range cmap {
 		// print name of identifiers; print node type for other nodes
 		var s string
 		if ident, ok := node.(*Ident); ok {

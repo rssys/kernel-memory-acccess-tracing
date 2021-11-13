@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -41,11 +41,8 @@ with Ada.Containers.Red_Black_Trees.Generic_Set_Operations;
 pragma Elaborate_All (Ada.Containers.Red_Black_Trees.Generic_Set_Operations);
 
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Ordered_Sets with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Ordered_Sets is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -352,7 +349,7 @@ is
            (Element => Position.Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -709,7 +706,7 @@ is
               (Element => Node.Element'Access,
                Control => (Controlled with TC))
             do
-               Busy (TC.all);
+               Lock (TC.all);
             end return;
          end;
       end Constant_Reference;
@@ -902,11 +899,11 @@ is
                  Control =>
                    (Controlled with
                      Tree.TC'Unrestricted_Access,
-                     Container => Container'Unchecked_Access,
+                     Container => Container'Access,
                      Pos       => Position,
                      Old_Key   => new Key_Type'(Key (Position))))
             do
-               Busy (Tree.TC);
+               Lock (Tree.TC);
             end return;
          end;
       end Reference_Preserving_Key;
@@ -930,11 +927,11 @@ is
                  Control =>
                    (Controlled with
                      Tree.TC'Unrestricted_Access,
-                     Container => Container'Unchecked_Access,
+                     Container => Container'Access,
                      Pos       => Find (Container, Key),
                      Old_Key   => new Key_Type'(Key)))
             do
-               Busy (Tree.TC);
+               Lock (Tree.TC);
             end return;
          end;
       end Reference_Preserving_Key;
@@ -1553,7 +1550,7 @@ is
         Container.Tree.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -1580,31 +1577,6 @@ is
          Process (Position.Node.Element);
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Set)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-   begin
-      Array_Before (S);
-
-      for X of V loop
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Element_Type'Put_Image (S, X);
-      end loop;
-
-      Array_After (S);
-   end Put_Image;
 
    ----------
    -- Read --
@@ -1669,12 +1641,12 @@ is
         Element_Keys.Find (Container.Tree, New_Item);
 
    begin
-      TE_Check (Container.Tree.TC);
-
       if Checks and then Node = null then
          raise Constraint_Error with
            "attempt to replace element not in set";
       end if;
+
+      TE_Check (Container.Tree.TC);
 
       Node.Element := New_Item;
    end Replace;

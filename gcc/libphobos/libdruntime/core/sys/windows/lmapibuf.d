@@ -10,7 +10,7 @@ module core.sys.windows.lmapibuf;
 version (Windows):
 pragma(lib, "netapi32");
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 extern (Windows) {
     NET_API_STATUS NetApiBufferAllocate(DWORD, PVOID*);

@@ -7,7 +7,7 @@ int
 main()
 {
   // sizeof may not be applied to the type void
-  int l = sizeof (void);// { dg-error "11:invalid application of .sizeof. to a void type" } .*
+  int l = sizeof (void);// { dg-error "" } .*
 
   return 0;
 }

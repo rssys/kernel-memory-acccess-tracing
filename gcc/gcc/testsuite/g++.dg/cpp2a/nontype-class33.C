@@ -1,5 +1,5 @@
 // PR c++/90938 - Initializing array with {1} works, but not {0}
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 // { dg-options "-Wall" }
 
 struct A { int i; };

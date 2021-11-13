@@ -6,12 +6,11 @@
 package fmtcmd
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"cmd/go/internal/base"
@@ -23,8 +22,6 @@ import (
 
 func init() {
 	base.AddBuildFlagsNX(&CmdFmt.Flag)
-	base.AddModFlag(&CmdFmt.Flag)
-	base.AddModCommonFlags(&CmdFmt.Flag)
 }
 
 var CmdFmt = &base.Command{
@@ -41,16 +38,13 @@ For more about specifying packages, see 'go help packages'.
 The -n flag prints commands that would be executed.
 The -x flag prints commands as they are executed.
 
-The -mod flag's value sets which module download mode
-to use: readonly or vendor. See 'go help modules' for more.
-
 To run gofmt with specific options, run gofmt itself.
 
 See also: go fix, go vet.
 	`,
 }
 
-func runFmt(ctx context.Context, cmd *base.Command, args []string) {
+func runFmt(cmd *base.Command, args []string) {
 	printed := false
 	gofmt := gofmtPath()
 	procs := runtime.GOMAXPROCS(0)
@@ -65,7 +59,7 @@ func runFmt(ctx context.Context, cmd *base.Command, args []string) {
 			}
 		}()
 	}
-	for _, pkg := range load.PackagesAndErrors(ctx, load.PackageOpts{}, args) {
+	for _, pkg := range load.PackagesAndErrors(args) {
 		if modload.Enabled() && pkg.Module != nil && !pkg.Module.Main {
 			if !printed {
 				fmt.Fprintf(os.Stderr, "go: not formatting packages in dependency modules\n")
@@ -74,13 +68,11 @@ func runFmt(ctx context.Context, cmd *base.Command, args []string) {
 			continue
 		}
 		if pkg.Error != nil {
-			var nogo *load.NoGoError
-			var embed *load.EmbedError
-			if (errors.As(pkg.Error, &nogo) || errors.As(pkg.Error, &embed)) && len(pkg.InternalAllGoFiles()) > 0 {
+			if strings.HasPrefix(pkg.Error.Err, "build constraints exclude all Go files") {
 				// Skip this error, as we will format
 				// all files regardless.
 			} else {
-				base.Errorf("%v", pkg.Error)
+				base.Errorf("can't load package: %s", pkg.Error)
 				continue
 			}
 		}

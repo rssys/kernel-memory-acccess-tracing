@@ -2,7 +2,7 @@
 # Generate mova.md, a file containing patterns that can be implemented
 # using the h8sx mova instruction.
 
-# Copyright (C) 2004-2021 Free Software Foundation, Inc.
+# Copyright (C) 2004-2019 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -22,7 +22,7 @@
 
 echo ";; -*- buffer-read-only: t -*-"
 echo ";; Generated automatically from genmova.sh"
-echo ";; Copyright (C) 2004-2021 Free Software Foundation, Inc."
+echo ";; Copyright (C) 2004-2019 Free Software Foundation, Inc."
 echo ";;"
 echo ";; This file is part of GCC."
 echo ";;"
@@ -71,7 +71,8 @@ for s in QI HI; do
 		 (match_operand:$d 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/b.l @(%o2%C2,$src),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 EOF
 	;;
@@ -114,7 +115,8 @@ EOF
 		 (match_operand:$d 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/$opsize.l @(%o2%C2,$src),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 EOF
 	    ;;
@@ -132,7 +134,8 @@ EOF
 		  (const_int $amount)))]
   "TARGET_H8300SX"
   "mova/$opsize.l @(0,$src),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:$d 0 "register_operand" "=r,r")
@@ -141,7 +144,8 @@ EOF
 		 (match_operand:$d 2 "immediate_operand" "i,i")))]
   "TARGET_H8300SX"
   "mova/$opsize.l @(%o2%C2,$src),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 EOF
 
@@ -170,7 +174,8 @@ EOF
 		(const_int $mask)))]
   "TARGET_H8300SX"
   "mova/$opsize.l @(0,$src),%S0"
-  [(set_attr "length_table" "mova_zero")])
+  [(set_attr "length_table" "mova_zero")
+   (set_attr "cc" "none")])
 
 (define_insn ""
   [(set (match_operand:$d 0 "register_operand" "=r")
@@ -180,7 +185,8 @@ EOF
 		 (match_operand:$d 2 "immediate_operand" "i")))]
   "TARGET_H8300SX"
   "mova/$opsize.l @(%o2%C2,$src),%S0"
-  [(set_attr "length_table" "mova")])
+  [(set_attr "length_table" "mova")
+   (set_attr "cc" "none")])
 
 EOF
 	      done

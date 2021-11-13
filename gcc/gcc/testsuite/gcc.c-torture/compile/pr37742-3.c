@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 void matmul_i4 (int * __restrict dest_y,
 		const int * __restrict abase,
 		const int * __restrict bbase_y,

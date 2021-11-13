@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     assert (r == 0);				/* count(5*) */
   }
 
-  void *ret;
+  int ret;
   for (int i = 0; i < NR; i++)
     {
       int r = pthread_join (t[i], (void**)&ret);

@@ -42,15 +42,15 @@ const (
 	flushBuffer        = 1 << maxWidth
 )
 
-// Reader is an io.Reader which can be used to read compressed data in the
-// LZW format.
-type Reader struct {
+// decoder is the state from which the readXxx method converts a byte
+// stream into a code stream.
+type decoder struct {
 	r        io.ByteReader
 	bits     uint32
 	nBits    uint
 	width    uint
-	read     func(*Reader) (uint16, error) // readLSB or readMSB
-	litWidth int                           // width in bits of literal codes
+	read     func(*decoder) (uint16, error) // readLSB or readMSB
+	litWidth int                            // width in bits of literal codes
 	err      error
 
 	// The first 1<<litWidth codes are literal codes.
@@ -63,7 +63,8 @@ type Reader struct {
 	//
 	// last is the most recently seen code, or decoderInvalidCode.
 	//
-	// An invariant is that hi < overflow.
+	// An invariant is that
+	// (hi < overflow) || (hi == overflow && last == decoderInvalidCode)
 	clear, eof, hi, overflow, last uint16
 
 	// Each code c in [lo, hi] expands to two or more bytes. For c != hi:
@@ -87,156 +88,143 @@ type Reader struct {
 }
 
 // readLSB returns the next code for "Least Significant Bits first" data.
-func (r *Reader) readLSB() (uint16, error) {
-	for r.nBits < r.width {
-		x, err := r.r.ReadByte()
+func (d *decoder) readLSB() (uint16, error) {
+	for d.nBits < d.width {
+		x, err := d.r.ReadByte()
 		if err != nil {
 			return 0, err
 		}
-		r.bits |= uint32(x) << r.nBits
-		r.nBits += 8
+		d.bits |= uint32(x) << d.nBits
+		d.nBits += 8
 	}
-	code := uint16(r.bits & (1<<r.width - 1))
-	r.bits >>= r.width
-	r.nBits -= r.width
+	code := uint16(d.bits & (1<<d.width - 1))
+	d.bits >>= d.width
+	d.nBits -= d.width
 	return code, nil
 }
 
 // readMSB returns the next code for "Most Significant Bits first" data.
-func (r *Reader) readMSB() (uint16, error) {
-	for r.nBits < r.width {
-		x, err := r.r.ReadByte()
+func (d *decoder) readMSB() (uint16, error) {
+	for d.nBits < d.width {
+		x, err := d.r.ReadByte()
 		if err != nil {
 			return 0, err
 		}
-		r.bits |= uint32(x) << (24 - r.nBits)
-		r.nBits += 8
+		d.bits |= uint32(x) << (24 - d.nBits)
+		d.nBits += 8
 	}
-	code := uint16(r.bits >> (32 - r.width))
-	r.bits <<= r.width
-	r.nBits -= r.width
+	code := uint16(d.bits >> (32 - d.width))
+	d.bits <<= d.width
+	d.nBits -= d.width
 	return code, nil
 }
 
-// Read implements io.Reader, reading uncompressed bytes from its underlying Reader.
-func (r *Reader) Read(b []byte) (int, error) {
+func (d *decoder) Read(b []byte) (int, error) {
 	for {
-		if len(r.toRead) > 0 {
-			n := copy(b, r.toRead)
-			r.toRead = r.toRead[n:]
+		if len(d.toRead) > 0 {
+			n := copy(b, d.toRead)
+			d.toRead = d.toRead[n:]
 			return n, nil
 		}
-		if r.err != nil {
-			return 0, r.err
+		if d.err != nil {
+			return 0, d.err
 		}
-		r.decode()
+		d.decode()
 	}
 }
 
 // decode decompresses bytes from r and leaves them in d.toRead.
 // read specifies how to decode bytes into codes.
 // litWidth is the width in bits of literal codes.
-func (r *Reader) decode() {
+func (d *decoder) decode() {
 	// Loop over the code stream, converting codes into decompressed bytes.
 loop:
 	for {
-		code, err := r.read(r)
+		code, err := d.read(d)
 		if err != nil {
 			if err == io.EOF {
 				err = io.ErrUnexpectedEOF
 			}
-			r.err = err
+			d.err = err
 			break
 		}
 		switch {
-		case code < r.clear:
+		case code < d.clear:
 			// We have a literal code.
-			r.output[r.o] = uint8(code)
-			r.o++
-			if r.last != decoderInvalidCode {
+			d.output[d.o] = uint8(code)
+			d.o++
+			if d.last != decoderInvalidCode {
 				// Save what the hi code expands to.
-				r.suffix[r.hi] = uint8(code)
-				r.prefix[r.hi] = r.last
+				d.suffix[d.hi] = uint8(code)
+				d.prefix[d.hi] = d.last
 			}
-		case code == r.clear:
-			r.width = 1 + uint(r.litWidth)
-			r.hi = r.eof
-			r.overflow = 1 << r.width
-			r.last = decoderInvalidCode
+		case code == d.clear:
+			d.width = 1 + uint(d.litWidth)
+			d.hi = d.eof
+			d.overflow = 1 << d.width
+			d.last = decoderInvalidCode
 			continue
-		case code == r.eof:
-			r.err = io.EOF
+		case code == d.eof:
+			d.err = io.EOF
 			break loop
-		case code <= r.hi:
-			c, i := code, len(r.output)-1
-			if code == r.hi && r.last != decoderInvalidCode {
+		case code <= d.hi:
+			c, i := code, len(d.output)-1
+			if code == d.hi && d.last != decoderInvalidCode {
 				// code == hi is a special case which expands to the last expansion
 				// followed by the head of the last expansion. To find the head, we walk
 				// the prefix chain until we find a literal code.
-				c = r.last
-				for c >= r.clear {
-					c = r.prefix[c]
+				c = d.last
+				for c >= d.clear {
+					c = d.prefix[c]
 				}
-				r.output[i] = uint8(c)
+				d.output[i] = uint8(c)
 				i--
-				c = r.last
+				c = d.last
 			}
 			// Copy the suffix chain into output and then write that to w.
-			for c >= r.clear {
-				r.output[i] = r.suffix[c]
+			for c >= d.clear {
+				d.output[i] = d.suffix[c]
 				i--
-				c = r.prefix[c]
+				c = d.prefix[c]
 			}
-			r.output[i] = uint8(c)
-			r.o += copy(r.output[r.o:], r.output[i:])
-			if r.last != decoderInvalidCode {
+			d.output[i] = uint8(c)
+			d.o += copy(d.output[d.o:], d.output[i:])
+			if d.last != decoderInvalidCode {
 				// Save what the hi code expands to.
-				r.suffix[r.hi] = uint8(c)
-				r.prefix[r.hi] = r.last
+				d.suffix[d.hi] = uint8(c)
+				d.prefix[d.hi] = d.last
 			}
 		default:
-			r.err = errors.New("lzw: invalid code")
+			d.err = errors.New("lzw: invalid code")
 			break loop
 		}
-		r.last, r.hi = code, r.hi+1
-		if r.hi >= r.overflow {
-			if r.hi > r.overflow {
-				panic("unreachable")
-			}
-			if r.width == maxWidth {
-				r.last = decoderInvalidCode
+		d.last, d.hi = code, d.hi+1
+		if d.hi >= d.overflow {
+			if d.width == maxWidth {
+				d.last = decoderInvalidCode
 				// Undo the d.hi++ a few lines above, so that (1) we maintain
-				// the invariant that d.hi < d.overflow, and (2) d.hi does not
+				// the invariant that d.hi <= d.overflow, and (2) d.hi does not
 				// eventually overflow a uint16.
-				r.hi--
+				d.hi--
 			} else {
-				r.width++
-				r.overflow = 1 << r.width
+				d.width++
+				d.overflow <<= 1
 			}
 		}
-		if r.o >= flushBuffer {
+		if d.o >= flushBuffer {
 			break
 		}
 	}
 	// Flush pending output.
-	r.toRead = r.output[:r.o]
-	r.o = 0
+	d.toRead = d.output[:d.o]
+	d.o = 0
 }
 
 var errClosed = errors.New("lzw: reader/writer is closed")
 
-// Close closes the Reader and returns an error for any future read operation.
-// It does not close the underlying io.Reader.
-func (r *Reader) Close() error {
-	r.err = errClosed // in case any Reads come along
+func (d *decoder) Close() error {
+	d.err = errClosed // in case any Reads come along
 	return nil
-}
-
-// Reset clears the Reader's state and allows it to be reused again
-// as a new Reader.
-func (r *Reader) Reset(src io.Reader, order Order, litWidth int) {
-	*r = Reader{}
-	r.init(src, order, litWidth)
 }
 
 // NewReader creates a new io.ReadCloser.
@@ -248,43 +236,32 @@ func (r *Reader) Reset(src io.Reader, order Order, litWidth int) {
 // The number of bits to use for literal codes, litWidth, must be in the
 // range [2,8] and is typically 8. It must equal the litWidth
 // used during compression.
-//
-// It is guaranteed that the underlying type of the returned io.ReadCloser
-// is a *Reader.
 func NewReader(r io.Reader, order Order, litWidth int) io.ReadCloser {
-	return newReader(r, order, litWidth)
-}
-
-func newReader(src io.Reader, order Order, litWidth int) *Reader {
-	r := new(Reader)
-	r.init(src, order, litWidth)
-	return r
-}
-
-func (r *Reader) init(src io.Reader, order Order, litWidth int) {
+	d := new(decoder)
 	switch order {
 	case LSB:
-		r.read = (*Reader).readLSB
+		d.read = (*decoder).readLSB
 	case MSB:
-		r.read = (*Reader).readMSB
+		d.read = (*decoder).readMSB
 	default:
-		r.err = errors.New("lzw: unknown order")
-		return
+		d.err = errors.New("lzw: unknown order")
+		return d
 	}
 	if litWidth < 2 || 8 < litWidth {
-		r.err = fmt.Errorf("lzw: litWidth %d out of range", litWidth)
-		return
+		d.err = fmt.Errorf("lzw: litWidth %d out of range", litWidth)
+		return d
 	}
+	if br, ok := r.(io.ByteReader); ok {
+		d.r = br
+	} else {
+		d.r = bufio.NewReader(r)
+	}
+	d.litWidth = litWidth
+	d.width = 1 + uint(litWidth)
+	d.clear = uint16(1) << uint(litWidth)
+	d.eof, d.hi = d.clear+1, d.clear+1
+	d.overflow = uint16(1) << d.width
+	d.last = decoderInvalidCode
 
-	br, ok := src.(io.ByteReader)
-	if !ok && src != nil {
-		br = bufio.NewReader(src)
-	}
-	r.r = br
-	r.litWidth = litWidth
-	r.width = 1 + uint(litWidth)
-	r.clear = uint16(1) << uint(litWidth)
-	r.eof, r.hi = r.clear+1, r.clear+1
-	r.overflow = uint16(1) << r.width
-	r.last = decoderInvalidCode
+	return d
 }

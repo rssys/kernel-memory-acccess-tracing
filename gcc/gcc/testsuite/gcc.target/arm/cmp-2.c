@@ -30,7 +30,9 @@ int x, y;
   TEST_EXPR (NAME##_cr, (TYPE a1), OPERATOR (100, a1))
 
 #define TEST_OP(NAME, OPERATOR) \
-  TEST (f_##NAME, float, OPERATOR)
+  TEST (f_##NAME, float, OPERATOR)		\
+  TEST (d_##NAME, double, OPERATOR)		\
+  TEST (ld_##NAME, long double, OPERATOR)
 
 TEST_OP (eq, EQ)
 TEST_OP (ne, NE)

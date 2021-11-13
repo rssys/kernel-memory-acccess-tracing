@@ -8,7 +8,6 @@
 package runtime
 
 import (
-	"internal/bytealg"
 	"runtime/internal/sys"
 	"unsafe"
 )
@@ -21,7 +20,7 @@ func printcreatedby(gp *g) {
 	if entry != 0 && tracepc > entry {
 		tracepc -= sys.PCQuantum
 	}
-	function, file, line, _ := funcfileline(tracepc, -1, false)
+	function, file, line := funcfileline(tracepc, -1)
 	if function != "" && showframe(function, gp, false) && gp.goid != 1 {
 		printcreatedby1(function, file, line, entry, pc)
 	}
@@ -62,16 +61,6 @@ func callers(skip int, locbuf []location) int {
 	return int(n)
 }
 
-//go:noescape
-//extern runtime_callersRaw
-func c_callersRaw(pcs *uintptr, max int32) int32
-
-// callersRaw returns a raw (PCs only) stack trace of the current goroutine.
-func callersRaw(pcbuf []uintptr) int {
-	n := c_callersRaw(&pcbuf[0], int32(len(pcbuf)))
-	return int(n)
-}
-
 // traceback prints a traceback of the current goroutine.
 // This differs from the gc version, which is given pc, sp, lr and g and
 // can print a traceback of any goroutine.
@@ -94,7 +83,7 @@ func traceback(skip int32) {
 func printAncestorTraceback(ancestor ancestorInfo) {
 	print("[originating from goroutine ", ancestor.goid, "]:\n")
 	for fidx, pc := range ancestor.pcs {
-		function, file, line, _ := funcfileline(pc, -1, false)
+		function, file, line := funcfileline(pc, -1)
 		if showfuncinfo(function, fidx == 0) {
 			printAncestorTracebackFuncInfo(function, file, line, pc)
 		}
@@ -103,7 +92,7 @@ func printAncestorTraceback(ancestor ancestorInfo) {
 		print("...additional frames elided...\n")
 	}
 	// Show what created goroutine, except main goroutine (goid 1).
-	function, file, line, _ := funcfileline(ancestor.gopc, -1, false)
+	function, file, line := funcfileline(ancestor.gopc, -1)
 	if function != "" && showfuncinfo(function, false) && ancestor.goid != 1 {
 		printcreatedby1(function, file, line, funcentry(ancestor.gopc), ancestor.gopc)
 	}
@@ -156,7 +145,7 @@ func showfuncinfo(name string, firstFrame bool) bool {
 	// We want to print those in the traceback.
 	// But unless GOTRACEBACK > 1 (checked below), still skip
 	// internal C functions and cgo-generated functions.
-	if name != "" && bytealg.IndexByteString(name, '.') < 0 && !hasPrefix(name, "__go_") && !hasPrefix(name, "_cgo_") {
+	if name != "" && !contains(name, ".") && !hasPrefix(name, "__go_") && !hasPrefix(name, "_cgo_") {
 		return true
 	}
 
@@ -179,16 +168,16 @@ func showfuncinfo(name string, firstFrame bool) bool {
 		return true
 	}
 
-	return bytealg.IndexByteString(name, '.') >= 0 && (!hasPrefix(name, "runtime.") || isExportedRuntime(name))
+	return contains(name, ".") && (!hasPrefix(name, "runtime.") || isExportedRuntime(name))
 }
 
 // isExportedRuntime reports whether name is an exported runtime function.
 // It is only for runtime functions, so ASCII A-Z is fine. Here also check
 // for mangled functions from runtime/<...>, which will be prefixed with
-// "runtime_1".
+// "runtime..z2f".
 func isExportedRuntime(name string) bool {
 	const n = len("runtime.")
-	if hasPrefix(name, "runtime_1") {
+	if hasPrefix(name, "runtime..z2f") {
 		return true
 	}
 	return len(name) > n && name[:n] == "runtime." && 'A' <= name[n] && name[n] <= 'Z'

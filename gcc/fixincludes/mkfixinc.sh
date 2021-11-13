@@ -19,7 +19,6 @@ case $machine in
     powerpc-*-rtems*   | \
     powerpcle-*-eabisim* | \
     powerpcle-*-eabi* | \
-    *-*-vxworks7* | \
     *-musl* )
 	#  IF there is no include fixing,
 	#  THEN create a no-op fixer and exit

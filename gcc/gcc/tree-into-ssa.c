@@ -1,5 +1,5 @@
 /* Rewrite a program in Normal form into SSA.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -41,7 +41,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "stringpool.h"
 #include "attribs.h"
 #include "asan.h"
-#include "attr-fnspec.h"
 
 #define PERCENT(x,y) ((float)(x) * 100.0 / (float)(y))
 
@@ -324,7 +323,7 @@ get_ssa_name_ann (tree name)
 
   /* Re-allocate the vector at most once per update/into-SSA.  */
   if (ver >= len)
-    info_for_ssa_name.safe_grow_cleared (num_ssa_names, true);
+    info_for_ssa_name.safe_grow_cleared (num_ssa_names);
 
   /* But allocate infos lazily.  */
   info = info_for_ssa_name[ver];
@@ -941,18 +940,14 @@ mark_phi_for_rewrite (basic_block bb, gphi *phi)
   if (!blocks_with_phis_to_rewrite)
     return;
 
-  if (bitmap_set_bit (blocks_with_phis_to_rewrite, idx))
-    {
-      n = (unsigned) last_basic_block_for_fn (cfun) + 1;
-      if (phis_to_rewrite.length () < n)
-	phis_to_rewrite.safe_grow_cleared (n, true);
+  bitmap_set_bit (blocks_with_phis_to_rewrite, idx);
 
-      phis = phis_to_rewrite[idx];
-      gcc_assert (!phis.exists ());
-      phis.create (10);
-    }
-  else
-    phis = phis_to_rewrite[idx];
+  n = (unsigned) last_basic_block_for_fn (cfun) + 1;
+  if (phis_to_rewrite.length () < n)
+    phis_to_rewrite.safe_grow_cleared (n);
+
+  phis = phis_to_rewrite[idx];
+  phis.reserve (10);
 
   phis.safe_push (phi);
   phis_to_rewrite[idx] = phis;
@@ -1071,6 +1066,8 @@ insert_phi_nodes (bitmap_head *dfs)
   unsigned i;
   var_info *info;
 
+  timevar_push (TV_TREE_INSERT_PHI_NODES);
+
   /* When the gimplifier introduces SSA names it cannot easily avoid
      situations where abnormal edges added by CFG construction break
      the use-def dominance requirement.  For this case rewrite SSA
@@ -1139,6 +1136,8 @@ insert_phi_nodes (bitmap_head *dfs)
       insert_phi_nodes_for (info->var, idf, false);
       BITMAP_FREE (idf);
     }
+
+  timevar_pop (TV_TREE_INSERT_PHI_NODES);
 }
 
 
@@ -1408,10 +1407,6 @@ rewrite_stmt (gimple_stmt_iterator *si)
 	SET_DEF (def_p, name);
 	register_new_def (DEF_FROM_PTR (def_p), var);
 
-	/* Do not insert debug stmts if the stmt ends the BB.  */
-	if (stmt_ends_bb_p (stmt))
-	  continue;
-	
 	tracked_var = target_for_debug_bind (var);
 	if (tracked_var)
 	  {
@@ -1638,11 +1633,14 @@ debug_defs_stack (int n)
 void
 dump_currdefs (FILE *file)
 {
+  unsigned i;
+  tree var;
+
   if (symbols_to_rename.is_empty ())
     return;
 
   fprintf (file, "\n\nCurrent reaching definitions\n\n");
-  for (tree var : symbols_to_rename)
+  FOR_EACH_VEC_ELT (symbols_to_rename, i, var)
     {
       common_info *info = get_common_info (var);
       fprintf (file, "CURRDEF (");
@@ -2066,16 +2064,18 @@ rewrite_update_phi_arguments (basic_block bb)
 {
   edge e;
   edge_iterator ei;
+  unsigned i;
 
   FOR_EACH_EDGE (e, ei, bb->succs)
     {
+      gphi *phi;
       vec<gphi *> phis;
 
       if (!bitmap_bit_p (blocks_with_phis_to_rewrite, e->dest->index))
 	continue;
 
       phis = phis_to_rewrite[e->dest->index];
-      for (gphi *phi : phis)
+      FOR_EACH_VEC_ELT (phis, i, phi)
 	{
 	  tree arg, lhs_sym, reaching_def = NULL;
 	  use_operand_p arg_p;
@@ -2273,6 +2273,9 @@ rewrite_update_dom_walker::after_dom_children (basic_block bb ATTRIBUTE_UNUSED)
 static void
 rewrite_blocks (basic_block entry, enum rewrite_mode what)
 {
+  /* Rewrite all the basic blocks in the program.  */
+  timevar_push (TV_TREE_SSA_REWRITE_BLOCKS);
+
   block_defs_stack.create (10);
 
   /* Recursively walk the dominator tree rewriting each statement in
@@ -2293,6 +2296,8 @@ rewrite_blocks (basic_block entry, enum rewrite_mode what)
     }
 
   block_defs_stack.release ();
+
+  timevar_pop (TV_TREE_SSA_REWRITE_BLOCKS);
 }
 
 class mark_def_dom_walker : public dom_walker
@@ -2388,7 +2393,7 @@ const pass_data pass_data_build_ssa =
   GIMPLE_PASS, /* type */
   "ssa", /* name */
   OPTGROUP_NONE, /* optinfo_flags */
-  TV_TREE_INTO_SSA, /* tv_id */
+  TV_TREE_SSA_OTHER, /* tv_id */
   PROP_cfg, /* properties_required */
   PROP_ssa, /* properties_provided */
   0, /* properties_destroyed */
@@ -2419,11 +2424,6 @@ pass_build_ssa::execute (function *fun)
 {
   bitmap_head *dfs;
   basic_block bb;
-
-  /* Increase the set of variables we can rewrite into SSA form
-     by clearing TREE_ADDRESSABLE and transform the IL to support this.  */
-  if (optimize)
-    execute_update_addresses_taken ();
 
   /* Initialize operand data structures.  */
   init_ssa_operands (fun);
@@ -2483,19 +2483,19 @@ pass_build_ssa::execute (function *fun)
     }
 
   /* Initialize SSA_NAME_POINTS_TO_READONLY_MEMORY.  */
-  tree fnspec_tree
-	 = lookup_attribute ("fn spec",
-			     TYPE_ATTRIBUTES (TREE_TYPE (fun->decl)));
-  if (fnspec_tree)
+  tree fnspec = lookup_attribute ("fn spec",
+				  TYPE_ATTRIBUTES (TREE_TYPE (fun->decl)));
+  if (fnspec)
     {
-      attr_fnspec fnspec (TREE_VALUE (TREE_VALUE (fnspec_tree)));
-      unsigned i = 0;
+      fnspec = TREE_VALUE (TREE_VALUE (fnspec));
+      unsigned i = 1;
       for (tree arg = DECL_ARGUMENTS (cfun->decl);
 	   arg; arg = DECL_CHAIN (arg), ++i)
 	{
-	  if (!fnspec.arg_specified_p (i))
-	   break;
-	  if (fnspec.arg_readonly_p (i))
+	  if (i >= (unsigned) TREE_STRING_LENGTH (fnspec))
+	    break;
+	  if (TREE_STRING_POINTER (fnspec)[i]  == 'R'
+	      || TREE_STRING_POINTER (fnspec)[i] == 'r')
 	    {
 	      tree name = ssa_default_def (fun, arg);
 	      if (name)
@@ -2583,9 +2583,11 @@ mark_use_interesting (tree var, gimple *stmt, basic_block bb,
     }
 }
 
-/* Processing statements in BB that reference symbols in SSA operands.
-   This is very similar to mark_def_sites, but the scan handles
-   statements whose operands may already be SSA names.
+
+/* Do a dominator walk starting at BB processing statements that
+   reference symbols in SSA operands.  This is very similar to
+   mark_def_sites, but the scan handles statements whose operands may
+   already be SSA names.
 
    If INSERT_PHI_P is true, mark those uses as live in the
    corresponding block.  This is later used by the PHI placement
@@ -2598,8 +2600,9 @@ mark_use_interesting (tree var, gimple *stmt, basic_block bb,
 	   that.  */
 
 static void
-prepare_block_for_update_1 (basic_block bb, bool insert_phi_p)
+prepare_block_for_update (basic_block bb, bool insert_phi_p)
 {
+  basic_block son;
   edge e;
   edge_iterator ei;
 
@@ -2681,51 +2684,13 @@ prepare_block_for_update_1 (basic_block bb, bool insert_phi_p)
 	}
     }
 
+  /* Now visit all the blocks dominated by BB.  */
+  for (son = first_dom_son (CDI_DOMINATORS, bb);
+       son;
+       son = next_dom_son (CDI_DOMINATORS, son))
+    prepare_block_for_update (son, insert_phi_p);
 }
 
-/* Do a dominator walk starting at BB processing statements that
-   reference symbols in SSA operands.  This is very similar to
-   mark_def_sites, but the scan handles statements whose operands may
-   already be SSA names.
-
-   If INSERT_PHI_P is true, mark those uses as live in the
-   corresponding block.  This is later used by the PHI placement
-   algorithm to make PHI pruning decisions.
-
-   FIXME.  Most of this would be unnecessary if we could associate a
-	   symbol to all the SSA names that reference it.  But that
-	   sounds like it would be expensive to maintain.  Still, it
-	   would be interesting to see if it makes better sense to do
-	   that.  */
-static void
-prepare_block_for_update (basic_block bb, bool insert_phi_p)
-{
-  size_t sp = 0;
-  basic_block *worklist;
-
-  /* Allocate the worklist.  */
-  worklist = XNEWVEC (basic_block, n_basic_blocks_for_fn (cfun));
-  /* Add the BB to the worklist.  */
-  worklist[sp++] = bb;
-
-  while (sp)
-    {
-      basic_block bb;
-      basic_block son;
-
-      /* Pick a block from the worklist.  */
-      bb = worklist[--sp];
-
-      prepare_block_for_update_1 (bb, insert_phi_p);
-
-      /* Now add all the blocks dominated by BB to the worklist.  */
-      for (son = first_dom_son (CDI_DOMINATORS, bb);
-	   son;
-	   son = next_dom_son (CDI_DOMINATORS, son))
-	worklist[sp++] = son;
-    }
-  free (worklist);
-}
 
 /* Helper for prepare_names_to_update.  Mark all the use sites for
    NAME as interesting.  BLOCKS and INSERT_PHI_P are as in
@@ -2966,7 +2931,11 @@ delete_update_ssa (void)
 
   if (blocks_with_phis_to_rewrite)
     EXECUTE_IF_SET_IN_BITMAP (blocks_with_phis_to_rewrite, 0, i, bi)
-      phis_to_rewrite[i].release ();
+      {
+	vec<gphi *> phis = phis_to_rewrite[i];
+	phis.release ();
+	phis_to_rewrite[i].create (0);
+      }
 
   BITMAP_FREE (blocks_with_phis_to_rewrite);
   BITMAP_FREE (blocks_to_update);
@@ -3335,7 +3304,7 @@ update_ssa (unsigned update_flags)
 
 		  if (SSA_NAME_IN_FREE_LIST (use))
 		    {
-		      error ("statement uses released SSA name");
+		      error ("statement uses released SSA name:");
 		      debug_gimple_stmt (stmt);
 		      fprintf (stderr, "The use of ");
 		      print_generic_expr (stderr, use);

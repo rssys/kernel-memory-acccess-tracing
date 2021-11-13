@@ -1814,8 +1814,8 @@ assert(equal(rbt[], [5]));
     test!byte();
 }
 
-import std.range.primitives : isInputRange, ElementType;
-import std.traits : isArray, isSomeString;
+import std.range.primitives : isInputRange, isSomeString, ElementType;
+import std.traits : isArray;
 
 /++
     Convenience function for creating a $(D RedBlackTree!E) from a list of

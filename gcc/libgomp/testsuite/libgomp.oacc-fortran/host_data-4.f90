@@ -2,7 +2,6 @@
 
 ! { dg-do run { target openacc_nvidia_accel_selected } }
 ! { dg-additional-options "-lcublas -Wall -Wextra" }
-! { dg-require-effective-target openacc_cublas }
 
 module cublas
   interface
@@ -34,7 +33,7 @@ contains
     real*4 :: a(n), b(n)
 
     do i = 1, N
-       if (abs(a(i) - b(i)) > 0.0001) stop 1
+       if (abs(a(i) - b(i)) > 0.0001) call abort
     end do
   end subroutine validate_results
 end module cublas

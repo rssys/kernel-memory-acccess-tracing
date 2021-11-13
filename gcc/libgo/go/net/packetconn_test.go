@@ -5,7 +5,6 @@
 // This file implements API tests across platforms and will never have a build
 // tag.
 
-//go:build !js
 // +build !js
 
 package net

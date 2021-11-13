@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for the pdp-11
-   Copyright (C) 1994-2021 Free Software Foundation, Inc.
+   Copyright (C) 1994-2019 Free Software Foundation, Inc.
    Contributed by Michael K. Gschwind (mike@vlsivie.tuwien.ac.at).
 
 This file is part of GCC.
@@ -53,9 +53,6 @@ along with GCC; see the file COPYING3.  If not see
 /* Generate DBX debugging information.  */
 
 #define DBX_DEBUGGING_INFO
-
-#undef PREFERRED_DEBUGGING_TYPE
-#define PREFERRED_DEBUGGING_TYPE DBX_DEBUG
 
 #define TARGET_40_PLUS		(TARGET_40 || TARGET_45)
 #define TARGET_10		(! TARGET_40_PLUS)
@@ -621,12 +618,10 @@ extern int current_first_parm_offset;
     fprintf (FILE, "\t.even\n")
 
 #define ASM_OUTPUT_SKIP(FILE,SIZE)  \
-  do {								\
-    if (TARGET_DEC_ASM)						\
-      fprintf (FILE, "\t.blkb\t%o\n", (int) ((SIZE) & 0xffff));	\
-    else							\
-      fprintf (FILE, "\t.=.+ %#o\n", (int) ((SIZE) & 0xffff));	\
-  } while (0)
+  if (TARGET_DEC_ASM) \
+    fprintf (FILE, "\t.blkb\t%o\n", (SIZE) & 0xffff);	\
+  else							\
+    fprintf (FILE, "\t.=.+ %#o\n", (SIZE) & 0xffff);
 
 /* This says how to output an assembler line
    to define a global common symbol.  */

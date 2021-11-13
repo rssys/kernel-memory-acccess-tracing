@@ -9,10 +9,9 @@
  */
 module core.sys.windows.iprtrmib;
 version (Windows):
-@system:
 
 import core.sys.windows.ipifcons;
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 // FIXME: check types of constants
 

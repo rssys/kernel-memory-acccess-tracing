@@ -18,7 +18,7 @@ void f() throw()
 
 int main()
 {
-  std::set_unexpected (my_unexpected); // { dg-warning "deprecated" }
+  std::set_unexpected (my_unexpected);
   f();
   return 1;
 }

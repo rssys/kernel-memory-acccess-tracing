@@ -7,7 +7,7 @@ namespace std __attribute__ ((__visibility__ ("default")))
 {
   using::mbstate_t;
   typedef int *__c_locale;
-  struct locale
+  class locale
   {
     class facet;
   };

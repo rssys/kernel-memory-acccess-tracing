@@ -66,10 +66,6 @@ var readImportsTests = []readTest{
 		`,
 		"",
 	},
-	{
-		"\ufeff𝔻" + `package p; import "x";ℙvar x = 1`,
-		"",
-	},
 }
 
 var readCommentsTests = []readTest{
@@ -86,29 +82,12 @@ var readCommentsTests = []readTest{
 		"",
 	},
 	{
-		"\ufeff𝔻" + `ℙpackage p; import . "x"`,
-		"",
-	},
-	{
 		`// foo
 
 		/* bar */
 
 		/* quux */ // baz
 		
-		/*/ zot */
-
-		// asdf
-		ℙHello, world`,
-		"",
-	},
-	{
-		"\ufeff𝔻" + `// foo
-
-		/* bar */
-
-		/* quux */ // baz
-
 		/*/ zot */
 
 		// asdf
@@ -127,11 +106,6 @@ func testRead(t *testing.T, tests []readTest, read func(io.Reader) ([]byte, erro
 		} else {
 			in = tt.in[:j] + tt.in[j+len("ℙ"):]
 			testOut = tt.in[:j]
-		}
-		d := strings.Index(tt.in, "𝔻")
-		if d >= 0 {
-			in = in[:d] + in[d+len("𝔻"):]
-			testOut = testOut[d+len("𝔻"):]
 		}
 		r := strings.NewReader(in)
 		buf, err := read(r)

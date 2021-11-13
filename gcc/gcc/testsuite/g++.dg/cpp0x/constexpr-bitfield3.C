@@ -1,6 +1,5 @@
 // PR c++/49136
 // { dg-do compile { target c++11 } }
-// { dg-require-effective-target int32plus }
 
 struct S
 {

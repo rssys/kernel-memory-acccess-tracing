@@ -1,7 +1,7 @@
 // -*- C++ -*-
 // Testing allocator for the C++ library testsuite.
 //
-// Copyright (C) 2002-2021 Free Software Foundation, Inc.
+// Copyright (C) 2002-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -26,6 +26,7 @@
 #ifndef _GLIBCXX_TESTSUITE_ALLOCATOR_H
 #define _GLIBCXX_TESTSUITE_ALLOCATOR_H
 
+#include <tr1/unordered_map>
 #include <bits/move.h>
 #include <ext/pointer.h>
 #include <ext/alloc_traits.h>
@@ -35,28 +36,8 @@
 # include <new>
 #endif
 
-#if __cplusplus >= 201103L
-# include <unordered_map>
-namespace unord = std;
-#else
-# include <tr1/unordered_map>
-namespace unord = std::tr1;
-#endif
-
 namespace __gnu_test
 {
-  // A common API for calling max_size() on an allocator in any -std mode.
-  template<typename A>
-    typename A::size_type
-    max_size(const A& a)
-    {
-#if __cplusplus >= 201103L
-      return std::allocator_traits<A>::max_size(a);
-#else
-      return a.max_size();
-#endif
-    }
-
   class tracker_allocator_counter
   {
   public:
@@ -257,7 +238,6 @@ namespace __gnu_test
       return true;
     }
 
-#if __cpp_exceptions
   template<typename Alloc>
     bool
     check_allocate_max_size()
@@ -265,7 +245,7 @@ namespace __gnu_test
       Alloc a;
       try
 	{
-	  (void) a.allocate(__gnu_test::max_size(a) + 1);
+	  (void) a.allocate(a.max_size() + 1);
 	}
       catch(std::bad_alloc&)
 	{
@@ -277,7 +257,6 @@ namespace __gnu_test
 	}
       throw;
     }
-#endif
 
   // A simple allocator which can be constructed endowed of a given
   // "personality" (an integer), queried in operator== to simulate the
@@ -290,7 +269,7 @@ namespace __gnu_test
   // (see N1599).
   struct uneq_allocator_base
   {
-    typedef unord::unordered_map<void*, int>   map_type;
+    typedef std::tr1::unordered_map<void*, int>   map_type;
 
     // Avoid static initialization troubles and/or bad interactions
     // with tests linking testsuite_allocator.o and playing globally
@@ -486,12 +465,12 @@ namespace __gnu_test
 	  return *this;
   	}
 
-      // postcondition: LWG2593 a.get_personality() un-changed.
+      // postcondition: a.get_personality() == 0
       propagating_allocator(propagating_allocator&& a) noexcept
-      : base_alloc(std::move(a.base()))
-      { }
+      : base_alloc()
+      { swap_base(a); }
 
-      // postcondition: LWG2593 a.get_personality() un-changed
+      // postcondition: a.get_personality() == 0
       propagating_allocator&
       operator=(propagating_allocator&& a) noexcept
       {
@@ -514,7 +493,7 @@ namespace __gnu_test
     {
       typedef Tp value_type;
 
-      constexpr SimpleAllocator() noexcept { }
+      SimpleAllocator() noexcept { }
 
       template <class T>
         SimpleAllocator(const SimpleAllocator<T>&) { }
@@ -610,54 +589,9 @@ namespace __gnu_test
       { std::allocator<Tp>::deallocate(std::addressof(*p), n); }
     };
 
-  // A class type meeting *only* the Cpp17NullablePointer requirements.
-  // Can be used as a base class for fancy pointers (like PointerBase, below)
-  // or to wrap a built-in pointer type to remove operations not required
-  // by the Cpp17NullablePointer requirements (dereference, increment etc.)
-  template<typename Ptr>
-    struct NullablePointer
-    {
-      // N.B. default constructor does not initialize value
-      NullablePointer() = default;
-      NullablePointer(std::nullptr_t) noexcept : value() { }
-
-      explicit operator bool() const noexcept { return value != nullptr; }
-
-      friend inline bool
-      operator==(NullablePointer lhs, NullablePointer rhs) noexcept
-      { return lhs.value == rhs.value; }
-
-      friend inline bool
-      operator!=(NullablePointer lhs, NullablePointer rhs) noexcept
-      { return lhs.value != rhs.value; }
-
-    protected:
-      explicit NullablePointer(Ptr p) noexcept : value(p) { }
-      Ptr value;
-    };
-
-  // NullablePointer<void> is an empty type that models Cpp17NullablePointer.
-  template<>
-    struct NullablePointer<void>
-    {
-      NullablePointer() = default;
-      NullablePointer(std::nullptr_t) noexcept { }
-      explicit NullablePointer(const volatile void*) noexcept { }
-
-      explicit operator bool() const noexcept { return false; }
-
-      friend inline bool
-      operator==(NullablePointer, NullablePointer) noexcept
-      { return true; }
-
-      friend inline bool
-      operator!=(NullablePointer, NullablePointer) noexcept
-      { return false; }
-    };
-
   // Utility for use as CRTP base class of custom pointer types
   template<typename Derived, typename T>
-    struct PointerBase : NullablePointer<T*>
+    struct PointerBase
     {
       typedef T element_type;
 
@@ -668,38 +602,29 @@ namespace __gnu_test
       typedef Derived pointer;
       typedef T& reference;
 
-      using NullablePointer<T*>::NullablePointer;
+      T* value;
 
-      // Public (but explicit) constructor from raw pointer:
-      explicit PointerBase(T* p) noexcept : NullablePointer<T*>(p) { }
+      explicit PointerBase(T* p = nullptr) : value(p) { }
+
+      PointerBase(std::nullptr_t) : value(nullptr) { }
 
       template<typename D, typename U,
 	       typename = decltype(static_cast<T*>(std::declval<U*>()))>
-	PointerBase(const PointerBase<D, U>& p)
-	: NullablePointer<T*>(p.operator->()) { }
+	PointerBase(const PointerBase<D, U>& p) : value(p.value) { }
 
-      T& operator*() const { return *this->value; }
-      T* operator->() const { return this->value; }
-      T& operator[](difference_type n) const { return this->value[n]; }
+      T& operator*() const { return *value; }
+      T* operator->() const { return value; }
+      T& operator[](difference_type n) const { return value[n]; }
 
-      Derived& operator++() { ++this->value; return derived(); }
-      Derived& operator--() { --this->value; return derived(); }
+      Derived& operator++() { ++value; return derived(); }
+      Derived operator++(int) { Derived tmp(derived()); ++value; return tmp; }
+      Derived& operator--() { --value; return derived(); }
+      Derived operator--(int) { Derived tmp(derived()); --value; return tmp; }
 
-      Derived operator++(int) { return Derived(this->value++); }
+      Derived& operator+=(difference_type n) { value += n; return derived(); }
+      Derived& operator-=(difference_type n) { value -= n; return derived(); }
 
-      Derived operator--(int) { return Derived(this->value--); }
-
-      Derived& operator+=(difference_type n)
-      {
-	this->value += n;
-	return derived();
-      }
-
-      Derived& operator-=(difference_type n)
-      {
-	this->value -= n;
-	return derived();
-      }
+      explicit operator bool() const { return value != nullptr; }
 
       Derived
       operator+(difference_type n) const
@@ -716,9 +641,6 @@ namespace __gnu_test
       }
 
     private:
-      friend std::ptrdiff_t operator-(PointerBase l, PointerBase r)
-      { return l.value - r.value; }
-
       Derived&
       derived() { return static_cast<Derived&>(*this); }
 
@@ -726,9 +648,21 @@ namespace __gnu_test
       derived() const { return static_cast<const Derived&>(*this); }
     };
 
-  // implementation for pointer-to-void specializations
-  template<typename T>
-    struct PointerBase_void : NullablePointer<T*>
+    template<typename D, typename T>
+    std::ptrdiff_t operator-(PointerBase<D, T> l, PointerBase<D, T> r)
+    { return l.value - r.value; }
+
+    template<typename D, typename T>
+    bool operator==(PointerBase<D, T> l, PointerBase<D, T> r)
+    { return l.value == r.value; }
+
+    template<typename D, typename T>
+    bool operator!=(PointerBase<D, T> l, PointerBase<D, T> r)
+    { return l.value != r.value; }
+
+    // implementation for void specializations
+    template<typename T>
+    struct PointerBase_void
     {
       typedef T element_type;
 
@@ -737,24 +671,25 @@ namespace __gnu_test
       typedef std::ptrdiff_t difference_type;
       typedef std::random_access_iterator_tag iterator_category;
 
-      using NullablePointer<T*>::NullablePointer;
+      T* value;
 
-      T* operator->() const { return this->value; }
+      explicit PointerBase_void(T* p = nullptr) : value(p) { }
 
       template<typename D, typename U,
 	       typename = decltype(static_cast<T*>(std::declval<U*>()))>
-	PointerBase_void(const PointerBase<D, U>& p)
-	: NullablePointer<T*>(p.operator->()) { }
+	PointerBase_void(const PointerBase<D, U>& p) : value(p.value) { }
+
+      explicit operator bool() const { return value != nullptr; }
     };
 
-  template<typename Derived>
+    template<typename Derived>
     struct PointerBase<Derived, void> : PointerBase_void<void>
     {
       using PointerBase_void::PointerBase_void;
       typedef Derived pointer;
     };
 
-  template<typename Derived>
+    template<typename Derived>
     struct PointerBase<Derived, const void> : PointerBase_void<const void>
     {
       using PointerBase_void::PointerBase_void;
@@ -763,7 +698,7 @@ namespace __gnu_test
 #endif // C++11
 
 #if __cplusplus >= 201703L
-#if __cpp_aligned_new
+#if __cpp_aligned_new && __cpp_rtti
   // A concrete memory_resource, with error checking.
   class memory_resource : public std::pmr::memory_resource
   {
@@ -842,9 +777,9 @@ namespace __gnu_test
 	  if (p == a->p)
 	    {
 	      if (bytes != a->bytes)
-		_S_throw<bad_size>();
+		throw bad_size();
 	      if (alignment != a->alignment)
-		_S_throw<bad_alignment>();
+		throw bad_alignment();
 #if __cpp_sized_deallocation
 	      ::operator delete(p, bytes, std::align_val_t(alignment));
 #else
@@ -857,35 +792,19 @@ namespace __gnu_test
 	    }
 	  aptr = &a->next;
 	}
-      _S_throw<bad_address>();
+      throw bad_address();
     }
 
     bool
     do_is_equal(const std::pmr::memory_resource& r) const noexcept override
     {
-#if __cpp_rtti
       // Equality is determined by sharing the same allocation_lists object.
       if (auto p = dynamic_cast<const memory_resource*>(&r))
 	return p->lists == lists;
-#else
-      if (this == &r) // Is this the best we can do without RTTI?
-	return true;
-#endif
       return false;
     }
 
   private:
-    template<typename E>
-      static void
-      _S_throw()
-      {
-#if __cpp_exceptions
-	throw E();
-#else
-	__builtin_abort();
-#endif
-      }
-
     struct allocation
     {
       void* p;
@@ -921,7 +840,7 @@ namespace __gnu_test
 
     allocation_lists* lists;
   };
-#endif // aligned-new
+#endif // aligned-new && rtti
 
   // Set the default resource, and restore the previous one on destruction.
   struct default_resource_mgr

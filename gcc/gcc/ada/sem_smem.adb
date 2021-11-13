@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,16 +23,13 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;          use Atree;
-with Einfo;          use Einfo;
-with Einfo.Entities; use Einfo.Entities;
-with Einfo.Utils;    use Einfo.Utils;
-with Errout;         use Errout;
-with Namet;          use Namet;
-with Sem_Aux;        use Sem_Aux;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Snames;         use Snames;
+with Atree;   use Atree;
+with Einfo;   use Einfo;
+with Errout;  use Errout;
+with Namet;   use Namet;
+with Sem_Aux; use Sem_Aux;
+with Sinfo;   use Sinfo;
+with Snames;  use Snames;
 
 package body Sem_Smem is
 
@@ -129,7 +126,7 @@ package body Sem_Smem is
                if Is_Access_Type (Etype (C)) then
                   return True;
                else
-                  Next_Discriminant (C);
+                  C := Next_Discriminant (C);
                end if;
             end loop;
          end if;
@@ -148,7 +145,7 @@ package body Sem_Smem is
             then
                return True;
             else
-               Next_Component (C);
+               C := Next_Component (C);
             end if;
          end loop;
 

@@ -1,4 +1,5 @@
-/* { dg-skip-if "" { *-*-* } { "*" } { "-DACC_MEM_SHARED=0" } } */
+/* Only nvptx plugin does the required error checking.
+   { dg-do run { target openacc_nvidia_accel_selected } } */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,9 +22,6 @@ main (int argc, char **argv)
   return 0;
 }
 
-/* { dg-output "CheCKpOInT(\n|\r\n|\r)+" } */
-/* { dg-output "libgomp: invalid device address(\n|\r\n|\r)+" { target openacc_nvidia_accel_selected } } */
-/* { dg-output "libgomp: GCN fatal error: Could not free device memory(\n|\r\n|\r)+" { target openacc_radeon_accel_selected } }
-   { dg-output "Runtime message: HSA_STATUS_ERROR_INVALID_ALLOCATION: The requested allocation is not valid\.(\n|\r\n|\r)+" { target openacc_radeon_accel_selected } } */
-/* { dg-output "libgomp: error in freeing device memory in acc_free(\n|\r\n|\r)+$" } */
+/* { dg-output "CheCKpOInT(\n|\r\n|\r).*" } */
+/* { dg-output "invalid device address" } */
 /* { dg-shouldfail "" } */

@@ -1,6 +1,6 @@
 /* Language specific subroutines used for code generation on IBM S/390
    and zSeries
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2019 Free Software Foundation, Inc.
 
    Contributed by Andreas Krebbel (Andreas.Krebbel@de.ibm.com).
 
@@ -294,9 +294,9 @@ s390_macro_to_expand (cpp_reader *pfile, const cpp_token *tok)
 /* Helper function that defines or undefines macros.  If SET is true, the macro
    MACRO_DEF is defined.  If SET is false, the macro MACRO_UNDEF is undefined.
    Nothing is done if SET and WAS_SET have the same value.  */
-template <typename F>
 static void
-s390_def_or_undef_macro (cpp_reader *pfile, F is_set,
+s390_def_or_undef_macro (cpp_reader *pfile,
+			 unsigned int mask,
 			 const struct cl_target_option *old_opts,
 			 const struct cl_target_option *new_opts,
 			 const char *macro_def, const char *macro_undef)
@@ -304,8 +304,8 @@ s390_def_or_undef_macro (cpp_reader *pfile, F is_set,
   bool was_set;
   bool set;
 
-  was_set = (!old_opts) ? false : is_set (old_opts);
-  set = is_set (new_opts);
+  was_set = (!old_opts) ? false : old_opts->x_target_flags & mask;
+  set = new_opts->x_target_flags & mask;
   if (was_set == set)
     return;
   if (set)
@@ -314,19 +314,6 @@ s390_def_or_undef_macro (cpp_reader *pfile, F is_set,
     cpp_undef (pfile, macro_undef);
 }
 
-struct target_flag_set_p
-{
-  target_flag_set_p (unsigned int mask) : m_mask (mask) {}
-
-  bool
-  operator() (const struct cl_target_option *opts) const
-  {
-    return opts->x_target_flags & m_mask;
-  }
-
-  unsigned int m_mask;
-};
-
 /* Internal function to either define or undef the appropriate system
    macros.  */
 static void
@@ -334,18 +321,18 @@ s390_cpu_cpp_builtins_internal (cpp_reader *pfile,
 				struct cl_target_option *opts,
 				const struct cl_target_option *old_opts)
 {
-  s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_OPT_HTM), old_opts,
-			   opts, "__HTM__", "__HTM__");
-  s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_OPT_VX), old_opts,
-			   opts, "__VX__", "__VX__");
-  s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR), old_opts,
-			   opts, "__VEC__=10304", "__VEC__");
-  s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR), old_opts,
-			   opts, "__vector=__attribute__((vector_size(16)))",
+  s390_def_or_undef_macro (pfile, MASK_OPT_HTM, old_opts, opts,
+			   "__HTM__", "__HTM__");
+  s390_def_or_undef_macro (pfile, MASK_OPT_VX, old_opts, opts,
+			   "__VX__", "__VX__");
+  s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			   "__VEC__=10303", "__VEC__");
+  s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			   "__vector=__attribute__((vector_size(16)))",
 			   "__vector__");
-  s390_def_or_undef_macro (
-      pfile, target_flag_set_p (MASK_ZVECTOR), old_opts, opts,
-      "__bool=__attribute__((s390_vector_bool)) unsigned", "__bool");
+  s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			   "__bool=__attribute__((s390_vector_bool)) unsigned",
+			   "__bool");
   {
     char macro_def[64];
     gcc_assert (s390_arch != PROCESSOR_NATIVE);
@@ -353,22 +340,16 @@ s390_cpu_cpp_builtins_internal (cpp_reader *pfile,
     cpp_undef (pfile, "__ARCH__");
     cpp_define (pfile, macro_def);
   }
-  s390_def_or_undef_macro (
-      pfile,
-      [] (const struct cl_target_option *opts) { return TARGET_VXE_P (opts); },
-      old_opts, opts, "__LONG_DOUBLE_VX__", "__LONG_DOUBLE_VX__");
 
   if (!flag_iso)
     {
-      s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR),
-			       old_opts, opts, "__VECTOR_KEYWORD_SUPPORTED__",
+      s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			       "__VECTOR_KEYWORD_SUPPORTED__",
 			       "__VECTOR_KEYWORD_SUPPORTED__");
-      s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR),
-			       old_opts, opts, "vector=vector", "vector");
-      s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR),
-			       old_opts, opts, "bool=bool", "bool");
-      s390_def_or_undef_macro (pfile, target_flag_set_p (MASK_ZVECTOR),
-			       old_opts, opts, "_Bool=_Bool", "_Bool");
+      s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			       "vector=vector", "vector");
+      s390_def_or_undef_macro (pfile, MASK_ZVECTOR, old_opts, opts,
+			       "bool=bool", "bool");
       if (TARGET_ZVECTOR_P (opts->x_target_flags) && __vector_keyword == NULL)
 	{
 	  __vector_keyword = get_identifier ("__vector");
@@ -407,7 +388,7 @@ s390_cpu_cpp_builtins (cpp_reader *pfile)
     cpp_define (pfile, "__s390x__");
   if (TARGET_LONG_DOUBLE_128)
     cpp_define (pfile, "__LONG_DOUBLE_128__");
-  cl_target_option_save (&opts, &global_options, &global_options_set);
+  cl_target_option_save (&opts, &global_options);
   s390_cpu_cpp_builtins_internal (pfile, &opts, NULL);
 }
 
@@ -419,8 +400,7 @@ s390_cpu_cpp_builtins (cpp_reader *pfile)
 static bool
 s390_pragma_target_parse (tree args, tree pop_target)
 {
-  tree prev_tree = build_target_option_node (&global_options,
-					     &global_options_set);
+  tree prev_tree = build_target_option_node (&global_options);
   tree cur_tree;
 
   if (! args)
@@ -431,7 +411,7 @@ s390_pragma_target_parse (tree args, tree pop_target)
 						   &global_options_set, true);
       if (!cur_tree || cur_tree == error_mark_node)
 	{
-	  cl_target_option_restore (&global_options, &global_options_set,
+	  cl_target_option_restore (&global_options,
 				    TREE_TARGET_OPTION (prev_tree));
 	  return false;
 	}
@@ -880,7 +860,7 @@ s390_resolve_overloaded_builtin (location_t loc,
   vec<tree, va_gc> *arglist = static_cast<vec<tree, va_gc> *> (passed_arglist);
   unsigned int in_args_num = vec_safe_length (arglist);
   unsigned int ob_args_num = 0;
-  unsigned int ob_fcode = DECL_MD_FUNCTION_CODE (ob_fndecl);
+  unsigned int ob_fcode = DECL_FUNCTION_CODE (ob_fndecl);
   enum s390_overloaded_builtin_vars bindex;
   unsigned int i;
   int last_match_type = INT_MAX;

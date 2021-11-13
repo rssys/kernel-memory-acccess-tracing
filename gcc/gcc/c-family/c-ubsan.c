@@ -1,5 +1,5 @@
 /* UndefinedBehaviorSanitizer, undefined behavior detector.
-   Copyright (C) 2013-2021 Free Software Foundation, Inc.
+   Copyright (C) 2013-2019 Free Software Foundation, Inc.
    Contributed by Marek Polacek <polacek@redhat.com>
 
 This file is part of GCC.
@@ -39,9 +39,8 @@ along with GCC; see the file COPYING3.  If not see
 tree
 ubsan_instrument_division (location_t loc, tree op0, tree op1)
 {
-  tree t, tt, x = NULL_TREE;
+  tree t, tt;
   tree type = TREE_TYPE (op0);
-  enum sanitize_code flag = SANITIZE_DIVIDE;
 
   /* At this point both operands should have the same type,
      because they are already converted to RESULT_TYPE.
@@ -59,42 +58,24 @@ ubsan_instrument_division (location_t loc, tree op0, tree op1)
 		     op1, build_int_cst (type, 0));
   else if (TREE_CODE (type) == REAL_TYPE
 	   && sanitize_flags_p (SANITIZE_FLOAT_DIVIDE))
-    {
-      t = fold_build2 (EQ_EXPR, boolean_type_node,
-		       op1, build_real (type, dconst0));
-      flag = SANITIZE_FLOAT_DIVIDE;
-    }
+    t = fold_build2 (EQ_EXPR, boolean_type_node,
+		     op1, build_real (type, dconst0));
   else
-    t = NULL_TREE;
+    return NULL_TREE;
 
   /* We check INT_MIN / -1 only for signed types.  */
   if (TREE_CODE (type) == INTEGER_TYPE
-      && sanitize_flags_p (SANITIZE_SI_OVERFLOW)
+      && sanitize_flags_p (SANITIZE_DIVIDE)
       && !TYPE_UNSIGNED (type))
     {
+      tree x;
       tt = fold_build2 (EQ_EXPR, boolean_type_node, unshare_expr (op1),
 			build_int_cst (type, -1));
       x = fold_build2 (EQ_EXPR, boolean_type_node, op0,
 		       TYPE_MIN_VALUE (type));
       x = fold_build2 (TRUTH_AND_EXPR, boolean_type_node, x, tt);
-      if (t == NULL_TREE || integer_zerop (t))
-	{
-	  t = x;
-	  x = NULL_TREE;
-	  flag = SANITIZE_SI_OVERFLOW;
-	}
-      else if (flag_sanitize_undefined_trap_on_error
-	       || (((flag_sanitize_recover & SANITIZE_DIVIDE) == 0)
-		   == ((flag_sanitize_recover & SANITIZE_SI_OVERFLOW) == 0)))
-	{
-	  t = fold_build2 (TRUTH_OR_EXPR, boolean_type_node, t, x);
-	  x = NULL_TREE;
-	}
-      else if (integer_zerop (x))
-	x = NULL_TREE;
+      t = fold_build2 (TRUTH_OR_EXPR, boolean_type_node, t, x);
     }
-  else if (t == NULL_TREE)
-    return NULL_TREE;
 
   /* If the condition was folded to 0, no need to instrument
      this expression.  */
@@ -114,7 +95,7 @@ ubsan_instrument_division (location_t loc, tree op0, tree op1)
 				     NULL_TREE);
       data = build_fold_addr_expr_loc (loc, data);
       enum built_in_function bcode
-	= (flag_sanitize_recover & flag)
+	= (flag_sanitize_recover & SANITIZE_DIVIDE)
 	  ? BUILT_IN_UBSAN_HANDLE_DIVREM_OVERFLOW
 	  : BUILT_IN_UBSAN_HANDLE_DIVREM_OVERFLOW_ABORT;
       tt = builtin_decl_explicit (bcode);
@@ -122,20 +103,8 @@ ubsan_instrument_division (location_t loc, tree op0, tree op1)
       op1 = unshare_expr (op1);
       tt = build_call_expr_loc (loc, tt, 3, data, ubsan_encode_value (op0),
 				ubsan_encode_value (op1));
-      if (x)
-	{
-	  bcode = (flag_sanitize_recover & SANITIZE_SI_OVERFLOW)
-		  ? BUILT_IN_UBSAN_HANDLE_DIVREM_OVERFLOW
-		  : BUILT_IN_UBSAN_HANDLE_DIVREM_OVERFLOW_ABORT;
-	  tree xt = builtin_decl_explicit (bcode);
-	  op0 = unshare_expr (op0);
-	  op1 = unshare_expr (op1);
-	  xt = build_call_expr_loc (loc, xt, 3, data, ubsan_encode_value (op0),
-				    ubsan_encode_value (op1));
-	  x = fold_build3 (COND_EXPR, void_type_node, x, xt, void_node);
-	}
     }
-  t = fold_build3 (COND_EXPR, void_type_node, t, tt, x ? x : void_node);
+  t = fold_build3 (COND_EXPR, void_type_node, t, tt, void_node);
 
   return t;
 }
@@ -168,9 +137,9 @@ ubsan_instrument_shift (location_t loc, enum tree_code code,
       || maybe_ne (GET_MODE_BITSIZE (TYPE_MODE (type0)),
 		   TYPE_PRECISION (type0))
       || !sanitize_flags_p (SANITIZE_SHIFT_BASE)
-      /* In C++20 and later, shifts are well defined except when
+      /* In C++2a and later, shifts are well defined except when
 	 the second operand is not within bounds.  */
-      || cxx_dialect >= cxx20)
+      || cxx_dialect >= cxx2a)
     ;
 
   /* For signed x << y, in C99/C11, the following:

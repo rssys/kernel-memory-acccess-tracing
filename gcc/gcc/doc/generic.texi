@@ -1,4 +1,4 @@
-@c Copyright (C) 2004-2021 Free Software Foundation, Inc.
+@c Copyright (C) 2004-2019 Free Software Foundation, Inc.
 @c This is part of the GCC manual.
 @c For copying conditions, see the file gcc.texi.
 
@@ -33,7 +33,7 @@ before handing off to @code{tree_rest_of_compilation}, but this
 seems inelegant.
 
 @menu
-* Deficiencies::                Topics not yet covered in this document.
+* Deficiencies::                Topics net yet covered in this document.
 * Tree overview::               All about @code{tree}s.
 * Types::                       Fundamental and aggregate types.
 * Declarations::                Type declarations and variables.
@@ -43,6 +43,7 @@ seems inelegant.
 * Functions::           	Function bodies, linkage, and other aspects.
 * Language-dependent trees::    Topics and trees specific to language front ends.
 * C and C++ Trees::     	Trees specific to C and C++.
+* Java Trees:: 	                Trees specific to Java.
 @end menu
 
 @c ---------------------------------------------------------------------
@@ -302,7 +303,6 @@ The elements are indexed from zero.
 @tindex ARRAY_TYPE
 @tindex RECORD_TYPE
 @tindex UNION_TYPE
-@tindex OPAQUE_TYPE
 @tindex UNKNOWN_TYPE
 @tindex OFFSET_TYPE
 @findex TYPE_UNQUALIFIED
@@ -487,13 +487,6 @@ an @code{IDENTIFIER_NODE} giving the name of the constant; the
 assigned to that constant.  These constants will appear in the order in
 which they were declared.  The @code{TREE_TYPE} of each of these
 constants will be the type of enumeration type itself.
-
-@item OPAQUE_TYPE
-Used for things that have a @code{MODE_OPAQUE} mode class in the
-backend. Opaque types have a size and precision, and can be held in
-memory or registers. They are used when we do not want the compiler to
-make assumptions about the availability of other operations as would
-happen with integer types.
 
 @item BOOLEAN_TYPE
 Used to represent the @code{bool} type.
@@ -894,7 +887,7 @@ This lookup table needs to be kept up to date with the tree structure
 hierarchy, or else checking and containment macros will fail
 inappropriately.
 
-For language specific @code{DECL} nodes, there is an @code{init_ts}
+For language specific @code{DECL} nodes, their is an @code{init_ts}
 function in an appropriate @file{.c} file, which initializes the lookup
 table.
 Code setting up the table for new @code{DECL} nodes should be added
@@ -1223,12 +1216,25 @@ meanings.  The type of these expressions must be an array whose component
 type is the same as that of the first operand.  The range of that array
 type determines the amount of data these expressions access.
 
-@item COMPONENT_REF
-These nodes represent non-static data member accesses.  The first
-operand is the object (rather than a pointer to it); the second operand
-is the @code{FIELD_DECL} for the data member.  The third operand represents
-the byte offset of the field, but should not be used directly; call
-@code{component_ref_field_offset} instead.
+@item TARGET_MEM_REF
+These nodes represent memory accesses whose address directly map to
+an addressing mode of the target architecture.  The first argument
+is @code{TMR_SYMBOL} and must be a @code{VAR_DECL} of an object with
+a fixed address.  The second argument is @code{TMR_BASE} and the
+third one is @code{TMR_INDEX}.  The fourth argument is
+@code{TMR_STEP} and must be an @code{INTEGER_CST}.  The fifth
+argument is @code{TMR_OFFSET} and must be an @code{INTEGER_CST}.
+Any of the arguments may be NULL if the appropriate component
+does not appear in the address.  Address of the @code{TARGET_MEM_REF}
+is determined in the following way.
+
+@smallexample
+&TMR_SYMBOL + TMR_BASE + TMR_INDEX * TMR_STEP + TMR_OFFSET
+@end smallexample
+
+The sixth argument is the reference to the original memory access, which
+is preserved for the purposes of the RTL alias analysis.  The seventh
+argument is a tag representing the results of tree level alias analysis.
 
 @item ADDR_EXPR
 These nodes are used to represent the address of an object.  (These
@@ -1251,33 +1257,16 @@ pointer or reference type.
 These nodes are used to represent the object pointed to by a pointer
 offset by a constant.
 The first operand is the pointer being dereferenced; it will always have
-pointer or reference type.  The second operand is a pointer constant
-serving as constant offset applied to the pointer being dereferenced
-with its type specifying the type to be used for type-based alias analysis.
-The type of the node specifies the alignment of the access.
+pointer or reference type.  The second operand is a pointer constant.
+Its type is specifying the type to be used for type-based alias analysis.
 
-@item TARGET_MEM_REF
-These nodes represent memory accesses whose address directly map to
-an addressing mode of the target architecture.  The first argument
-is @code{TMR_BASE} and is a pointer to the object being accessed.
-The second argument is @code{TMR_OFFSET} which is a pointer constant
-with dual purpose serving both as constant offset and holder of
-the type used for type-based alias analysis.  The first two operands
-have exactly the same semantics as @code{MEM_REF}.  The third
-and fourth operand are @code{TMR_INDEX} and @code{TMR_STEP} where
-the former is an integer and the latter an integer constant.  The
-fifth and last operand is @code{TMR_INDEX2} which is an alternate
-non-constant offset.  Any of the third to last operands may be
-@code{NULL} if the corresponding component does not appear in
-the address, but @code{TMR_INDEX} and @code{TMR_STEP} shall be
-always supplied in pair.  The Address of the @code{TARGET_MEM_REF}
-is determined in the following way.
+@item COMPONENT_REF
+These nodes represent non-static data member accesses.  The first
+operand is the object (rather than a pointer to it); the second operand
+is the @code{FIELD_DECL} for the data member.  The third operand represents
+the byte offset of the field, but should not be used directly; call
+@code{component_ref_field_offset} instead.
 
-@smallexample
-TMR_BASE + TMR_OFFSET + TMR_INDEX * TMR_STEP + TMR_INDEX2
-@end smallexample
-
-The type of the node specifies the alignment of the access.
 
 @end table
 
@@ -1385,8 +1374,8 @@ built-in functions.
 
 @item ABSU_EXPR
 These nodes represent the absolute value of the single operand in
-equivalent unsigned type such that @code{ABSU_EXPR} of @code{TYPE_MIN}
-is well defined.
+equivalent unsigned type such that @code{ABSU_EXPR} of TYPE_MIN is
+well defined.
 
 @item BIT_NOT_EXPR
 These nodes represent bitwise complement, and will always have integral
@@ -1576,23 +1565,21 @@ allows the backend to choose between the faster of @code{TRUNC_DIV_EXPR},
 @itemx LE_EXPR
 @itemx GT_EXPR
 @itemx GE_EXPR
-@itemx LTGT_EXPR
 @itemx EQ_EXPR
 @itemx NE_EXPR
-These nodes represent the less than, less than or equal to, greater than,
-greater than or equal to, less or greater than, equal, and not equal
-comparison operators.  The first and second operands will either be both
-of integral type, both of floating type or both of vector type, except for
-LTGT_EXPR where they will only be both of floating type.  The result type
-of these expressions will always be of integral, boolean or signed integral
-vector type.  These operations return the result type's zero value for false,
-the result type's one value for true, and a vector whose elements are zero
-(false) or minus one (true) for vectors.
+These nodes represent the less than, less than or equal to, greater
+than, greater than or equal to, equal, and not equal comparison
+operators.  The first and second operands will either be both of integral
+type, both of floating type or both of vector type.  The result type of
+these expressions will always be of integral, boolean or signed integral
+vector type.  These operations return the result type's zero value for
+false, the result type's one value for true, and a vector whose elements
+are zero (false) or minus one (true) for vectors.
 
 For floating point comparisons, if we honor IEEE NaNs and either operand
 is NaN, then @code{NE_EXPR} always returns true and the remaining operators
 always return false.  On some targets, comparisons against an IEEE NaN,
-other than equality and inequality, may generate a floating-point exception.
+other than equality and inequality, may generate a floating point exception.
 
 @item ORDERED_EXPR
 @itemx UNORDERED_EXPR
@@ -1610,13 +1597,15 @@ and the result type's one value for true.
 @itemx UNGT_EXPR
 @itemx UNGE_EXPR
 @itemx UNEQ_EXPR
+@itemx LTGT_EXPR
 These nodes represent the unordered comparison operators.
 These operations take two floating point operands and determine whether
 the operands are unordered or are less than, less than or equal to,
 greater than, greater than or equal to, or equal respectively.  For
 example, @code{UNLT_EXPR} returns true if either operand is an IEEE
-NaN or the first operand is less than the second.  All these operations
-are guaranteed not to generate a floating point exception.  The result
+NaN or the first operand is less than the second.  With the possible
+exception of @code{LTGT_EXPR}, all of these operations are guaranteed
+not to generate a floating point exception.  The result
 type of these expressions will always be of integral or boolean type.
 These operations return the result type's zero value for false,
 and the result type's one value for true.
@@ -1802,10 +1791,6 @@ a value from @code{enum annot_expr_kind}, the third is an @code{INTEGER_CST}.
 @tindex VEC_RSHIFT_EXPR
 @tindex VEC_WIDEN_MULT_HI_EXPR
 @tindex VEC_WIDEN_MULT_LO_EXPR
-@tindex VEC_WIDEN_PLUS_HI_EXPR
-@tindex VEC_WIDEN_PLUS_LO_EXPR
-@tindex VEC_WIDEN_MINUS_HI_EXPR
-@tindex VEC_WIDEN_MINUS_LO_EXPR
 @tindex VEC_UNPACK_HI_EXPR
 @tindex VEC_UNPACK_LO_EXPR
 @tindex VEC_UNPACK_FLOAT_HI_EXPR
@@ -1850,33 +1835,6 @@ whose size is twice as wide.  In the case of @code{VEC_WIDEN_MULT_HI_EXPR} the
 high @code{N/2} elements of the two vector are multiplied to produce the
 vector of @code{N/2} products. In the case of @code{VEC_WIDEN_MULT_LO_EXPR} the
 low @code{N/2} elements of the two vector are multiplied to produce the
-vector of @code{N/2} products.
-
-@item VEC_WIDEN_PLUS_HI_EXPR
-@itemx VEC_WIDEN_PLUS_LO_EXPR
-These nodes represent widening vector addition of the high and low parts of
-the two input vectors, respectively.  Their operands are vectors that contain
-the same number of elements (@code{N}) of the same integral type. The result
-is a vector that contains half as many elements, of an integral type whose size
-is twice as wide.  In the case of @code{VEC_WIDEN_PLUS_HI_EXPR} the high
-@code{N/2} elements of the two vectors are added to produce the vector of
-@code{N/2} products.  In the case of @code{VEC_WIDEN_PLUS_LO_EXPR} the low
-@code{N/2} elements of the two vectors are added to produce the vector of
-@code{N/2} products.
-
-@item VEC_WIDEN_MINUS_HI_EXPR
-@itemx VEC_WIDEN_MINUS_LO_EXPR
-These nodes represent widening vector subtraction of the high and low parts of
-the two input vectors, respectively.  Their operands are vectors that contain
-the same number of elements (@code{N}) of the same integral type. The high/low
-elements of the second vector are subtracted from the high/low elements of the
-first. The result is a vector that contains half as many elements, of an
-integral type whose size is twice as wide.  In the case of
-@code{VEC_WIDEN_MINUS_HI_EXPR} the high @code{N/2} elements of the second
-vector are subtracted from the high @code{N/2} of the first to produce the
-vector of @code{N/2} products.  In the case of
-@code{VEC_WIDEN_MINUS_LO_EXPR} the low @code{N/2} elements of the second
-vector are subtracted from the low @code{N/2} of the first to produce the
 vector of @code{N/2} products.
 
 @item VEC_UNPACK_HI_EXPR
@@ -2075,19 +2033,14 @@ These nodes represent conditional exits from the nearest enclosing
 nonzero, then the loop should be exited.  An @code{EXIT_EXPR} will only
 appear within a @code{LOOP_EXPR}.
 
-@item SWITCH_EXPR
+@item SWITCH_STMT
 
-Used to represent a @code{switch} statement.  The @code{SWITCH_COND}
-is the expression on which the switch is occurring.  The
-@code{SWITCH_BODY} is the body of the switch statement.
-@code{SWITCH_ALL_CASES_P} is true if the switch includes a default
-label or the case label ranges cover all possible values of the
-condition expression.
-
-Note that @code{TREE_TYPE} for a @code{SWITCH_EXPR} represents the
-original type of switch expression as given in the source, before any
-compiler conversions, instead of the type of the switch expression
-itself (which is not meaningful).
+Used to represent a @code{switch} statement.  The @code{SWITCH_STMT_COND}
+is the expression on which the switch is occurring.  See the documentation
+for an @code{IF_STMT} for more information on the representation used
+for the condition.  The @code{SWITCH_STMT_BODY} is the body of the switch
+statement.   The @code{SWITCH_STMT_TYPE} is the original type of switch
+expression as given in the source, before any compiler conversions.
 
 @item CASE_LABEL_EXPR
 
@@ -2227,11 +2180,6 @@ first sequence or not, so we assume that it doesn't).
 After the second sequence is executed, if it completes normally by
 falling off the end, execution continues wherever the first sequence
 would have continued, by falling off the end, or doing a goto, etc.
-
-If the second sequence is an @code{EH_ELSE_EXPR} selector, then the
-sequence in its first operand is used when the first sequence completes
-normally, and that in its second operand is used for exceptional
-cleanups, i.e., when an exception propagates out of the first sequence.
 
 @code{TRY_FINALLY_EXPR} complicates the flow graph, since the cleanup
 needs to appear on every edge out of the controlled block; this
@@ -2436,7 +2384,6 @@ compilation.
 @tindex OACC_KERNELS
 @tindex OACC_LOOP
 @tindex OACC_PARALLEL
-@tindex OACC_SERIAL
 @tindex OACC_UPDATE
 
 All the statements starting with @code{OACC_} represent directives and
@@ -2480,10 +2427,6 @@ See the description of the @code{OMP_FOR} code.
 @item OACC_PARALLEL
 
 Represents @code{#pragma acc parallel [clause1 @dots{} clauseN]}.
-
-@item OACC_SERIAL
-
-Represents @code{#pragma acc serial [clause1 @dots{} clauseN]}.
 
 @item OACC_UPDATE
 
@@ -2761,7 +2704,7 @@ should submit your patches for inclusion in GCC@.
 * Namespaces::                  Namespaces.
 * Classes::                     Classes.
 * Functions for C++::           Overloading and accessors for C++.
-* Statements for C and C++::    Statements specific to C and C++.
+* Statements for C++::          Statements specific to C and C++.
 * C++ Expressions::    From @code{typeid} to @code{throw}.
 @end menu
 
@@ -3304,8 +3247,8 @@ This predicate holds if the function an overloaded
 @c Function Bodies
 @c ---------------------------------------------------------------------
 
-@node Statements for C and C++
-@subsection Statements for C and C++
+@node Statements for C++
+@subsection Statements for C++
 @cindex statements
 @tindex BREAK_STMT
 @tindex CLEANUP_STMT
@@ -3347,12 +3290,14 @@ This predicate holds if the function an overloaded
 @findex WHILE_BODY
 @findex WHILE_COND
 
-A function that has a definition in the current translation unit has
-a non-@code{NULL} @code{DECL_INITIAL}.  However, back ends should not make
+A function that has a definition in the current translation unit will
+have a non-@code{NULL} @code{DECL_INITIAL}.  However, back ends should not make
 use of the particular value given by @code{DECL_INITIAL}.
 
-The @code{DECL_SAVED_TREE} gives the complete body of the
+The @code{DECL_SAVED_TREE} macro will give the complete body of the
 function.
+
+@subsubsection Statements
 
 There are tree nodes corresponding to all of the source-level
 statement constructs, used within the C and C++ frontends.  These are
@@ -3378,7 +3323,7 @@ In template functions, the same nodes are used, but sometimes in
 slightly different ways.
 
 Many of the statements have substatements.  For example, a @code{while}
-loop has a body, which is itself a statement.  If the substatement
+loop will have a body, which is itself a statement.  If the substatement
 is @code{NULL_TREE}, it is considered equivalent to a statement
 consisting of a single @code{;}, i.e., an expression statement in which
 the expression has been omitted.  A substatement may in fact be a list
@@ -3407,7 +3352,7 @@ void process_stmt (stmt)
 @end smallexample
 In other words, while the @code{then} clause of an @code{if} statement
 in C++ can be only one statement (although that one statement may be a
-compound statement), the intermediate representation sometimes uses
+compound statement), the intermediate representation will sometimes use
 several statements chained together.
 
 @table @code
@@ -3464,10 +3409,9 @@ the initialization statement for the loop.  The @code{FOR_COND} is the
 termination condition.  The @code{FOR_EXPR} is the expression executed
 right before the @code{FOR_COND} on each loop iteration; often, this
 expression increments a counter.  The body of the loop is given by
-@code{FOR_BODY}.  @code{FOR_SCOPE} holds the scope of the @code{for}
-statement (used in the C++ front end only).  Note that
-@code{FOR_INIT_STMT} and @code{FOR_BODY} return statements, while
-@code{FOR_COND} and @code{FOR_EXPR} return expressions.
+@code{FOR_BODY}.  Note that @code{FOR_INIT_STMT} and @code{FOR_BODY}
+return statements, while @code{FOR_COND} and @code{FOR_EXPR} return
+expressions.
 
 @item HANDLER
 
@@ -3488,6 +3432,8 @@ evaluated, the statement should be executed.  Then, the
 @code{TREE_VALUE} should be used as the conditional expression itself.
 This representation is used to handle C++ code like this:
 
+C++ distinguishes between this and @code{COND_EXPR} for handling templates.
+
 @smallexample
 if (int i = 7) @dots{}
 @end smallexample
@@ -3498,8 +3444,6 @@ condition.
 The @code{THEN_CLAUSE} represents the statement given by the @code{then}
 condition, while the @code{ELSE_CLAUSE} represents the statement given
 by the @code{else} condition.
-
-C++ distinguishes between this and @code{COND_EXPR} for handling templates.
 
 @item SUBOBJECT
 
@@ -3517,14 +3461,6 @@ for an @code{IF_STMT} for more information on the representation used
 for the condition.  The @code{SWITCH_STMT_BODY} is the body of the switch
 statement.   The @code{SWITCH_STMT_TYPE} is the original type of switch
 expression as given in the source, before any compiler conversions.
-The @code{SWITCH_STMT_SCOPE} is the statement scope (used in the
-C++ front end only).
-
-There are also two boolean flags used with @code{SWITCH_STMT}.
-@code{SWITCH_STMT_ALL_CASES_P} is true if the switch includes a default label
-or the case label ranges cover all possible values of the condition
-expression.  @code{SWITCH_STMT_NO_BREAK_P} is true if there are no
-@code{break} statements in the switch.
 
 @item TRY_BLOCK
 Used to represent a @code{try} block.  The body of the try block is
@@ -3608,3 +3544,7 @@ In either case, the expression is void.
 
 
 @end table
+
+
+@node Java Trees
+@section Java Trees

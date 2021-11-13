@@ -7,8 +7,8 @@ package modconv
 import (
 	"encoding/json"
 
-	"golang.org/x/mod/modfile"
-	"golang.org/x/mod/module"
+	"cmd/go/internal/modfile"
+	"cmd/go/internal/module"
 )
 
 func ParseGodepsJSON(file string, data []byte) (*modfile.File, error) {

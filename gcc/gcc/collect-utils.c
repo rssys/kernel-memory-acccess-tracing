@@ -1,5 +1,5 @@
 /* Utility functions used by tools like collect2 and lto-wrapper.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -34,7 +34,6 @@ static char *response_file;
 bool debug;
 bool verbose;
 bool save_temps;
-const char *dumppfx;
 
 
 /* Notify user of a non-error.  */
@@ -57,43 +56,6 @@ fatal_signal (int signum)
      so its normal effect occurs.  */
   kill (getpid (), signum);
 }
-
-/* Setup the signal handlers for the utils. */
-void
-setup_signals (void)
-{
-#ifdef SIGQUIT
-  if (signal (SIGQUIT, SIG_IGN) != SIG_IGN)
-    signal (SIGQUIT, fatal_signal);
-#endif
-  if (signal (SIGINT, SIG_IGN) != SIG_IGN)
-    signal (SIGINT, fatal_signal);
-#ifdef SIGALRM
-  if (signal (SIGALRM, SIG_IGN) != SIG_IGN)
-    signal (SIGALRM, fatal_signal);
-#endif
-#ifdef SIGHUP
-  if (signal (SIGHUP, SIG_IGN) != SIG_IGN)
-    signal (SIGHUP, fatal_signal);
-#endif
-  if (signal (SIGSEGV, SIG_IGN) != SIG_IGN)
-    signal (SIGSEGV, fatal_signal);
-  if (signal (SIGTERM, SIG_IGN) != SIG_IGN)
-    signal (SIGTERM, fatal_signal);
-#ifdef SIGPIPE
-  if (signal (SIGPIPE, SIG_IGN) != SIG_IGN)
-    signal (SIGPIPE, fatal_signal);
-#endif
-#ifdef SIGBUS
-  if (signal (SIGBUS, SIG_IGN) != SIG_IGN)
-    signal (SIGBUS, fatal_signal);
-#endif
-#ifdef SIGCHLD
-  /* We *MUST* set SIGCHLD to SIG_DFL so that the wait4() call will
-     receive the signal.  A different setting is inheritable */
-  signal (SIGCHLD, SIG_DFL);
-#endif
-}
 
 /* Wait for a process to finish, and exit if a nonzero status is found.  */
 
@@ -103,7 +65,7 @@ collect_wait (const char *prog, struct pex_obj *pex)
   int status;
 
   if (!pex_get_status (pex, 1, &status))
-    fatal_error (input_location, "cannot get program status: %m");
+    fatal_error (input_location, "can%'t get program status: %m");
   pex_free (pex);
 
   if (response_file && !save_temps)
@@ -141,8 +103,7 @@ do_wait (const char *prog, struct pex_obj *pex)
 
 struct pex_obj *
 collect_execute (const char *prog, char **argv, const char *outname,
-		 const char *errname, int flags, bool use_atfile,
-		 const char *atsuffix)
+		 const char *errname, int flags, bool use_atfile)
 {
   struct pex_obj *pex;
   const char *errmsg;
@@ -164,10 +125,7 @@ collect_execute (const char *prog, char **argv, const char *outname,
       /* Note: we assume argv contains at least one element; this is
          checked above.  */
 
-      if (!save_temps || !atsuffix || !dumppfx)
-	response_file = make_temp_file ("");
-      else
-	response_file = concat (dumppfx, atsuffix, NULL);
+      response_file = make_temp_file ("");
 
       f = fopen (response_file, "w");
 
@@ -222,7 +180,7 @@ collect_execute (const char *prog, char **argv, const char *outname,
 
   pex = pex_init (0, "collect2", NULL);
   if (pex == NULL)
-    fatal_error (input_location, "%<pex_init%> failed: %m");
+    fatal_error (input_location, "pex_init failed: %m");
 
   errmsg = pex_run (pex, flags, argv[0], argv, outname,
 		    errname, &err);
@@ -243,13 +201,12 @@ collect_execute (const char *prog, char **argv, const char *outname,
 }
 
 void
-fork_execute (const char *prog, char **argv, bool use_atfile,
-	      const char *atsuffix)
+fork_execute (const char *prog, char **argv, bool use_atfile)
 {
   struct pex_obj *pex;
 
   pex = collect_execute (prog, argv, NULL, NULL,
-			 PEX_LAST | PEX_SEARCH, use_atfile, atsuffix);
+			 PEX_LAST | PEX_SEARCH, use_atfile);
   do_wait (prog, pex);
 }
 

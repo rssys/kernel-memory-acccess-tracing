@@ -1,5 +1,5 @@
 /* Function splitting pass
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Contributed by Jan Hubicka  <jh@suse.cz>
 
 This file is part of GCC.
@@ -100,6 +100,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-into-ssa.h"
 #include "tree-dfa.h"
 #include "tree-inline.h"
+#include "params.h"
 #include "gimple-pretty-print.h"
 #include "ipa-fnsummary.h"
 #include "cfgloop.h"
@@ -107,9 +108,8 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Per basic block info.  */
 
-class split_bb_info
+struct split_bb_info
 {
-public:
   unsigned int size;
   sreal time;
 };
@@ -118,9 +118,8 @@ static vec<split_bb_info> bb_info_vec;
 
 /* Description of split point.  */
 
-class split_point
+struct split_point
 {
-public:
   /* Size of the partitions.  */
   sreal header_time, split_time;
   unsigned int header_size, split_size;
@@ -145,7 +144,7 @@ public:
 
 /* Best split point found.  */
 
-class split_point best_split_point;
+struct split_point best_split_point;
 
 /* Set of basic blocks that are not allowed to dominate a split point.  */
 
@@ -168,7 +167,7 @@ test_nonssa_use (gimple *, tree t, tree, void *data)
       || (VAR_P (t)
 	  && auto_var_in_fn_p (t, current_function_decl))
       || TREE_CODE (t) == RESULT_DECL
-	 /* Normal labels are part of CFG and will be handled gratefully.
+	 /* Normal labels are part of CFG and will be handled gratefuly.
 	    Forced labels however can be used directly by statements and
 	    need to stay in one partition along with their uses.  */
       || (TREE_CODE (t) == LABEL_DECL
@@ -192,7 +191,7 @@ test_nonssa_use (gimple *, tree t, tree, void *data)
 /* Dump split point CURRENT.  */
 
 static void
-dump_split_point (FILE * file, class split_point *current)
+dump_split_point (FILE * file, struct split_point *current)
 {
   fprintf (file,
 	   "Split point at BB %i\n"
@@ -211,7 +210,7 @@ dump_split_point (FILE * file, class split_point *current)
    Parameters are the same as for consider_split.  */
 
 static bool
-verify_non_ssa_vars (class split_point *current, bitmap non_ssa_vars,
+verify_non_ssa_vars (struct split_point *current, bitmap non_ssa_vars,
 		     basic_block return_bb)
 {
   bitmap seen = BITMAP_ALLOC (NULL);
@@ -405,7 +404,7 @@ dominated_by_forbidden (basic_block bb)
 /* For give split point CURRENT and return block RETURN_BB return 1
    if ssa name VAL is set by split part and 0 otherwise.  */
 static bool
-split_part_set_ssa_name_p (tree val, class split_point *current,
+split_part_set_ssa_name_p (tree val, struct split_point *current,
 			   basic_block return_bb)
 {
   if (TREE_CODE (val) != SSA_NAME)
@@ -422,7 +421,7 @@ split_part_set_ssa_name_p (tree val, class split_point *current,
    See if we can split function here.  */
 
 static void
-consider_split (class split_point *current, bitmap non_ssa_vars,
+consider_split (struct split_point *current, bitmap non_ssa_vars,
 		basic_block return_bb)
 {
   tree parm;
@@ -452,10 +451,10 @@ consider_split (class split_point *current, bitmap non_ssa_vars,
      is unknown.  */
   if (!(current->count
        < (ENTRY_BLOCK_PTR_FOR_FN (cfun)->count.apply_scale
-	   (param_partial_inlining_entry_probability, 100))))
+	   (PARAM_VALUE (PARAM_PARTIAL_INLINING_ENTRY_PROBABILITY), 100))))
     {
       /* When profile is guessed, we cannot expect it to give us
-	 realistic estimate on likeliness of function taking the
+	 realistic estimate on likelyness of function taking the
 	 complex path.  As a special case, when tail of the function is
 	 a loop, enable splitting since inlining code skipping the loop
 	 is likely noticeable win.  */
@@ -546,9 +545,8 @@ consider_split (class split_point *current, bitmap non_ssa_vars,
 	    }
 	}
     }
-  if (!VOID_TYPE_P (TREE_TYPE (TREE_TYPE (current_function_decl))))
-    call_overhead += estimate_move_cost (TREE_TYPE (TREE_TYPE
-						 (current_function_decl)),
+  if (!VOID_TYPE_P (TREE_TYPE (current_function_decl)))
+    call_overhead += estimate_move_cost (TREE_TYPE (current_function_decl),
 					 false);
 
   if (current->split_size <= call_overhead)
@@ -563,8 +561,8 @@ consider_split (class split_point *current, bitmap non_ssa_vars,
      that.  Next stage1 we should try to be more meaningful here.  */
   if (current->header_size + call_overhead
       >= (unsigned int)(DECL_DECLARED_INLINE_P (current_function_decl)
-			? param_max_inline_insns_single
-			: param_max_inline_insns_auto) + 10)
+			? MAX_INLINE_INSNS_SINGLE
+			: MAX_INLINE_INSNS_AUTO) + 10)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
@@ -577,7 +575,7 @@ consider_split (class split_point *current, bitmap non_ssa_vars,
      Limit this duplication.  This is consistent with limit in tree-sra.c  
      FIXME: with LTO we ought to be able to do better!  */
   if (DECL_ONE_ONLY (current_function_decl)
-      && current->split_size >= (unsigned int) param_max_inline_insns_auto + 10)
+      && current->split_size >= (unsigned int) MAX_INLINE_INSNS_AUTO + 10)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
@@ -589,7 +587,7 @@ consider_split (class split_point *current, bitmap non_ssa_vars,
      FIXME: with LTO we ought to be able to do better!  */
   if (DECL_ONE_ONLY (current_function_decl)
       && current->split_size
-	 <= (unsigned int) param_early_inlining_insns / 2)
+	 <= (unsigned int) PARAM_VALUE (PARAM_EARLY_INLINING_INSNS) / 2)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file,
@@ -981,9 +979,8 @@ visit_bb (basic_block bb, basic_block return_bb,
 
 /* Stack entry for recursive DFS walk in find_split_point.  */
 
-class stack_entry
+struct stack_entry
 {
-public:
   /* Basic block we are examining.  */
   basic_block bb;
 
@@ -1035,7 +1032,7 @@ find_split_points (basic_block return_bb, sreal overall_time, int overall_size)
   stack_entry first;
   vec<stack_entry> stack = vNULL;
   basic_block bb;
-  class split_point current;
+  struct split_point current;
 
   current.header_time = overall_time;
   current.header_size = overall_size;
@@ -1181,7 +1178,7 @@ find_split_points (basic_block return_bb, sreal overall_time, int overall_size)
 /* Split function at SPLIT_POINT.  */
 
 static void
-split_function (basic_block return_bb, class split_point *split_point,
+split_function (basic_block return_bb, struct split_point *split_point,
 		bool add_tsan_func_exit)
 {
   vec<tree> args_to_pass = vNULL;
@@ -1204,7 +1201,7 @@ split_function (basic_block return_bb, class split_point *split_point,
       dump_split_point (dump_file, split_point);
     }
 
-  if (cur_node->can_change_signature)
+  if (cur_node->local.can_change_signature)
     args_to_skip = BITMAP_ALLOC (NULL);
   else
     args_to_skip = NULL;
@@ -1326,58 +1323,35 @@ split_function (basic_block return_bb, class split_point *split_point,
 	  }
     }
 
-  ipa_param_adjustments *adjustments;
-  bool skip_return = (!split_part_return_p
-		      || !split_point->split_part_set_retval);
-  /* TODO: Perhaps get rid of args_to_skip entirely, after we make sure the
-     debug info generation and discrepancy avoiding works well too.  */
-  if ((args_to_skip && !bitmap_empty_p (args_to_skip))
-      || skip_return)
-    {
-      vec<ipa_adjusted_param, va_gc> *new_params = NULL;
-      unsigned j;
-      for (parm = DECL_ARGUMENTS (current_function_decl), j = 0;
-	   parm; parm = DECL_CHAIN (parm), j++)
-	if (!args_to_skip || !bitmap_bit_p (args_to_skip, j))
-	  {
-	    ipa_adjusted_param adj;
-	    memset (&adj, 0, sizeof (adj));
-	    adj.op = IPA_PARAM_OP_COPY;
-	    adj.base_index = j;
-	    adj.prev_clone_index = j;
-	    vec_safe_push (new_params, adj);
-	  }
-      adjustments = new ipa_param_adjustments (new_params, j, skip_return);
-    }
-  else
-    adjustments = NULL;
-
   /* Now create the actual clone.  */
   cgraph_edge::rebuild_edges ();
   node = cur_node->create_version_clone_with_body
-    (vNULL, NULL, adjustments,
+    (vNULL, NULL, args_to_skip,
+     !split_part_return_p || !split_point->split_part_set_retval,
      split_point->split_bbs, split_point->entry_bb, "part");
-  delete adjustments;
+
   node->split_part = true;
 
   if (cur_node->same_comdat_group)
     {
       /* TODO: call is versionable if we make sure that all
 	 callers are inside of a comdat group.  */
-      cur_node->calls_comdat_local = true;
+      cur_node->calls_comdat_local = 1;
       node->add_to_same_comdat_group (cur_node);
     }
 
 
   /* Let's take a time profile for splitted function.  */
-  if (cur_node->tp_first_run)
-    node->tp_first_run = cur_node->tp_first_run + 1;
+  node->tp_first_run = cur_node->tp_first_run + 1;
 
   /* For usual cloning it is enough to clear builtin only when signature
      changes.  For partial inlining we however cannot expect the part
      of builtin implementation to have same semantic as the whole.  */
   if (fndecl_built_in_p (node->decl))
-    set_decl_built_in_function (node->decl, NOT_BUILT_IN, 0);
+    {
+      DECL_BUILT_IN_CLASS (node->decl) = NOT_BUILT_IN;
+      DECL_FUNCTION_CODE (node->decl) = (enum built_in_function) 0;
+    }
 
   /* If return_bb contains any clobbers that refer to SSA_NAMEs
      set in the split part, remove them.  Also reset debug stmts that
@@ -1495,7 +1469,6 @@ split_function (basic_block return_bb, class split_point *split_point,
 	      = gimple_build_debug_bind (ddecl, unshare_expr (arg), call);
 	    gsi_insert_after (&gsi, def_temp, GSI_NEW_STMT);
 	  }
-      BITMAP_FREE (args_to_skip);
     }
 
   /* We avoid address being taken on any variable used by split part,
@@ -1758,7 +1731,7 @@ execute_split_functions (void)
      then inlining would still benefit.  */
   if ((!node->callers
        /* Local functions called once will be completely inlined most of time.  */
-       || (!node->callers->next_caller && node->local))
+       || (!node->callers->next_caller && node->local.local))
       && !node->address_taken
       && !node->has_aliases_p ()
       && (!flag_lto || !node->externally_visible))
@@ -1803,7 +1776,7 @@ execute_split_functions (void)
   calculate_dominance_info (CDI_DOMINATORS);
 
   /* Compute local info about basic blocks and determine function size/time.  */
-  bb_info_vec.safe_grow_cleared (last_basic_block_for_fn (cfun) + 1, true);
+  bb_info_vec.safe_grow_cleared (last_basic_block_for_fn (cfun) + 1);
   best_split_point.split_bbs = NULL;
   basic_block return_bb = find_return_bb ();
   int tsan_exit_found = -1;

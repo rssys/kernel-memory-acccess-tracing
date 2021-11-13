@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,14 +29,9 @@
 
 with Ada.Unchecked_Deallocation;
 
-with Ada.Containers.Stable_Sorting; use Ada.Containers.Stable_Sorting;
-
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Indefinite_Doubly_Linked_Lists with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Indefinite_Doubly_Linked_Lists is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -181,18 +176,10 @@ is
    procedure Append
      (Container : in out List;
       New_Item  : Element_Type;
-      Count     : Count_Type)
+      Count     : Count_Type := 1)
    is
    begin
       Insert (Container, No_Element, New_Item, Count);
-   end Append;
-
-   procedure Append
-     (Container : in out List;
-      New_Item  : Element_Type)
-   is
-   begin
-      Insert (Container, No_Element, New_Item, 1);
    end Append;
 
    ------------
@@ -293,7 +280,7 @@ is
            (Element => Position.Node.Element,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -333,8 +320,6 @@ is
       X : Node_Access;
 
    begin
-      TC_Check (Container.TC);
-
       if Checks and then Position.Node = null then
          raise Constraint_Error with
            "Position cursor has no element";
@@ -363,6 +348,8 @@ is
          Position := No_Element;  --  Post-York behavior
          return;
       end if;
+
+      TC_Check (Container.TC);
 
       for Index in 1 .. Count loop
          X := Position.Node;
@@ -680,9 +667,6 @@ is
             return;
          end if;
 
-         TC_Check (Target.TC);
-         TC_Check (Source.TC);
-
          if Checks and then Target'Address = Source'Address then
             raise Program_Error with
               "Target and Source denote same non-empty container";
@@ -692,6 +676,9 @@ is
          then
             raise Constraint_Error with "new length exceeds maximum";
          end if;
+
+         TC_Check (Target.TC);
+         TC_Check (Source.TC);
 
          declare
             Lock_Target : With_Lock (Target.TC'Unchecked_Access);
@@ -733,6 +720,73 @@ is
       ----------
 
       procedure Sort (Container : in out List) is
+         procedure Partition (Pivot : Node_Access; Back  : Node_Access);
+         --  Comment ???
+
+         procedure Sort (Front, Back : Node_Access);
+         --  Comment??? Confusing name??? change name???
+
+         ---------------
+         -- Partition --
+         ---------------
+
+         procedure Partition (Pivot : Node_Access; Back : Node_Access) is
+            Node : Node_Access;
+
+         begin
+            Node := Pivot.Next;
+            while Node /= Back loop
+               if Node.Element.all < Pivot.Element.all then
+                  declare
+                     Prev : constant Node_Access := Node.Prev;
+                     Next : constant Node_Access := Node.Next;
+
+                  begin
+                     Prev.Next := Next;
+
+                     if Next = null then
+                        Container.Last := Prev;
+                     else
+                        Next.Prev := Prev;
+                     end if;
+
+                     Node.Next := Pivot;
+                     Node.Prev := Pivot.Prev;
+
+                     Pivot.Prev := Node;
+
+                     if Node.Prev = null then
+                        Container.First := Node;
+                     else
+                        Node.Prev.Next := Node;
+                     end if;
+
+                     Node := Next;
+                  end;
+
+               else
+                  Node := Node.Next;
+               end if;
+            end loop;
+         end Partition;
+
+         ----------
+         -- Sort --
+         ----------
+
+         procedure Sort (Front, Back : Node_Access) is
+            Pivot : constant Node_Access :=
+              (if Front = null then Container.First else Front.Next);
+         begin
+            if Pivot /= Back then
+               Partition (Pivot, Back);
+               Sort (Front, Pivot);
+               Sort (Pivot, Back);
+            end if;
+         end Sort;
+
+      --  Start of processing for Sort
+
       begin
          if Container.Length <= 1 then
             return;
@@ -748,42 +802,8 @@ is
 
          declare
             Lock : With_Lock (Container.TC'Unchecked_Access);
-
-            package Descriptors is new List_Descriptors
-              (Node_Ref => Node_Access, Nil => null);
-            use Descriptors;
-
-            function Next (N : Node_Access) return Node_Access is (N.Next);
-            procedure Set_Next (N : Node_Access; Next : Node_Access)
-              with Inline;
-            procedure Set_Prev (N : Node_Access; Prev : Node_Access)
-              with Inline;
-            function "<" (L, R : Node_Access) return Boolean is
-              (L.Element.all < R.Element.all);
-            procedure Update_Container (List : List_Descriptor) with Inline;
-
-            procedure Set_Next (N : Node_Access; Next : Node_Access) is
-            begin
-               N.Next := Next;
-            end Set_Next;
-
-            procedure Set_Prev (N : Node_Access; Prev : Node_Access) is
-            begin
-               N.Prev := Prev;
-            end Set_Prev;
-
-            procedure Update_Container (List : List_Descriptor) is
-            begin
-               Container.First  := List.First;
-               Container.Last   := List.Last;
-               Container.Length := List.Length;
-            end Update_Container;
-
-            procedure Sort_List is new Doubly_Linked_List_Sort;
          begin
-            Sort_List (List_Descriptor'(First  => Container.First,
-                                        Last   => Container.Last,
-                                        Length => Container.Length));
+            Sort (Front => null, Back => null);
          end;
 
          pragma Assert (Container.First.Prev = null);
@@ -827,8 +847,6 @@ is
       New_Node   : Node_Access;
 
    begin
-      TC_Check (Container.TC);
-
       if Before.Container /= null then
          if Checks and then Before.Container /= Container'Unrestricted_Access
          then
@@ -854,6 +872,8 @@ is
       if Checks and then Container.Length > Count_Type'Last - Count then
          raise Constraint_Error with "new length exceeds maximum";
       end if;
+
+      TC_Check (Container.TC);
 
       declare
          --  The element allocator may need an accessibility check in the case
@@ -1243,7 +1263,7 @@ is
       TC : constant Tamper_Counts_Access := Container.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -1274,34 +1294,6 @@ is
          Process (Position.Node.Element.all);
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : List)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-
-      procedure Put_Elem (Position : Cursor);
-      procedure Put_Elem (Position : Cursor) is
-      begin
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Element_Type'Put_Image (S, Element (Position));
-      end Put_Elem;
-
-   begin
-      Array_Before (S);
-      Iterate (V, Put_Elem'Access);
-      Array_After (S);
-   end Put_Image;
 
    ----------
    -- Read --
@@ -1413,7 +1405,7 @@ is
            (Element => Position.Node.Element,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Reference;
@@ -1428,8 +1420,6 @@ is
       New_Item  : Element_Type)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks and then Position.Container = null then
          raise Constraint_Error with "Position cursor has no element";
       end if;
@@ -1438,6 +1428,8 @@ is
          raise Program_Error with
            "Position cursor designates wrong container";
       end if;
+
+      TE_Check (Container.TC);
 
       if Checks and then Position.Node.Element = null then
          raise Program_Error with
@@ -1620,9 +1612,6 @@ is
       Source : in out List)
    is
    begin
-      TC_Check (Target.TC);
-      TC_Check (Source.TC);
-
       if Before.Container /= null then
          if Checks and then Before.Container /= Target'Unrestricted_Access then
             raise Program_Error with
@@ -1647,6 +1636,9 @@ is
          raise Constraint_Error with "new length exceeds maximum";
       end if;
 
+      TC_Check (Target.TC);
+      TC_Check (Source.TC);
+
       Splice_Internal (Target, Before.Node, Source);
    end Splice;
 
@@ -1656,8 +1648,6 @@ is
       Position  : Cursor)
    is
    begin
-      TC_Check (Container.TC);
-
       if Before.Container /= null then
          if Checks and then Before.Container /= Container'Unchecked_Access then
             raise Program_Error with
@@ -1697,6 +1687,8 @@ is
       end if;
 
       pragma Assert (Container.Length >= 2);
+
+      TC_Check (Container.TC);
 
       if Before.Node = null then
          pragma Assert (Position.Node /= Container.Last);
@@ -1773,9 +1765,6 @@ is
          return;
       end if;
 
-      TC_Check (Target.TC);
-      TC_Check (Source.TC);
-
       if Before.Container /= null then
          if Checks and then Before.Container /= Target'Unrestricted_Access then
             raise Program_Error with
@@ -1811,6 +1800,9 @@ is
       if Checks and then Target.Length = Count_Type'Last then
          raise Constraint_Error with "Target is full";
       end if;
+
+      TC_Check (Target.TC);
+      TC_Check (Source.TC);
 
       Splice_Internal (Target, Before.Node, Source, Position.Node);
       Position.Container := Target'Unchecked_Access;
@@ -1968,8 +1960,6 @@ is
       I, J      : Cursor)
    is
    begin
-      TE_Check (Container.TC);
-
       if Checks and then I.Node = null then
          raise Constraint_Error with "I cursor has no element";
       end if;
@@ -1989,6 +1979,8 @@ is
       if I.Node = J.Node then
          return;
       end if;
+
+      TE_Check (Container.TC);
 
       pragma Assert (Vet (I), "bad I cursor in Swap");
       pragma Assert (Vet (J), "bad J cursor in Swap");
@@ -2011,8 +2003,6 @@ is
       I, J      : Cursor)
    is
    begin
-      TC_Check (Container.TC);
-
       if Checks and then I.Node = null then
          raise Constraint_Error with "I cursor has no element";
       end if;
@@ -2032,6 +2022,8 @@ is
       if I.Node = J.Node then
          return;
       end if;
+
+      TC_Check (Container.TC);
 
       pragma Assert (Vet (I), "bad I cursor in Swap_Links");
       pragma Assert (Vet (J), "bad J cursor in Swap_Links");

@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2004-2021 Free Software Foundation, Inc.
+// Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License as
@@ -22,17 +22,7 @@
 #include <stdexcept>
 #include <vector>
 #include <locale>
-#if __cplusplus >= 201103L
-# include <unordered_map>
-# ifdef _GLIBCXX_DEBUG
-namespace unord = std::_GLIBCXX_STD_C;
-# else
-namespace unord = std;
-# endif
-#else
-# include <tr1/unordered_map>
-namespace unord = std::tr1;
-#endif
+#include <tr1/unordered_map>
 #include <cxxabi.h>
 
 // Encapsulates symbol characteristics.
@@ -75,7 +65,7 @@ struct symbol
 };
 
 // Map type between symbol names and full symbol info.
-typedef unord::unordered_map<std::string, symbol> 	symbols;
+typedef std::tr1::unordered_map<std::string, symbol> 	symbols;
 
 
 // Check.

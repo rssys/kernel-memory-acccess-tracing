@@ -1,5 +1,5 @@
 /* Vector API for GNU compiler.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
    Contributed by Nathan Sidwell <nathan@codesourcery.com>
    Re-implemented in C++ by Diego Novillo <dnovillo@google.com>
 
@@ -38,10 +38,19 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic-core.h"
 #endif
 
+/* vNULL is an empty type with a template cast operation that returns
+   a zero-initialized vec<T, A, L> instance.  Use this when you want
+   to assign nil values to new vec instances or pass a nil vector as
+   a function call argument.
+
+   We use this technique because vec<T, A, L> must be PODs (they are
+   stored in unions and passed in vararg functions), this means that
+   they cannot have ctors/dtors.  */
+vnull vNULL;
+
 /* Vector memory usage.  */
-class vec_usage: public mem_usage
+struct vec_usage: public mem_usage
 {
-public:
   /* Default constructor.  */
   vec_usage (): m_items (0), m_items_peak (0), m_element_size (0) {}
 
@@ -182,23 +191,21 @@ dump_vec_loc_statistics (void)
 ATTRIBUTE_NORETURN ATTRIBUTE_COLD
 static void
 qsort_chk_error (const void *p1, const void *p2, const void *p3,
-		 sort_r_cmp_fn *cmp, void *data)
+		 int (*cmp) (const void *, const void *))
 {
   if (!p3)
     {
-      int r1 = cmp (p1, p2, data), r2 = cmp (p2, p1, data);
-      error ("qsort comparator not anti-symmetric: %d, %d", r1, r2);
+      int r1 = cmp (p1, p2), r2 = cmp (p2, p1);
+      error ("qsort comparator not anti-commutative: %d, %d", r1, r2);
     }
   else if (p1 == p2)
     {
-      int r = cmp (p1, p3, data);
+      int r = cmp (p1, p3);
       error ("qsort comparator non-negative on sorted output: %d", r);
     }
   else
     {
-      int r1 = cmp (p1, p2, data);
-      int r2 = cmp (p2, p3, data);
-      int r3 = cmp (p1, p3, data);
+      int r1 = cmp (p1, p2), r2 = cmp (p2, p3), r3 = cmp (p1, p3);
       error ("qsort comparator not transitive: %d, %d, %d", r1, r2, r3);
     }
   internal_error ("qsort checking failed");
@@ -207,7 +214,8 @@ qsort_chk_error (const void *p1, const void *p2, const void *p3,
 /* Verify anti-symmetry and transitivity for comparator CMP on sorted array
    of N SIZE-sized elements pointed to by BASE.  */
 void
-qsort_chk (void *base, size_t n, size_t size, sort_r_cmp_fn *cmp, void *data)
+qsort_chk (void *base, size_t n, size_t size,
+	   int (*cmp)(const void *, const void *))
 {
 #if 0
 #define LIM(n) (n)
@@ -216,9 +224,9 @@ qsort_chk (void *base, size_t n, size_t size, sort_r_cmp_fn *cmp, void *data)
 #define LIM(n) ((n) <= 16 ? (n) : 12 + floor_log2 (n))
 #endif
 #define ELT(i) ((const char *) base + (i) * size)
-#define CMP(i, j) cmp (ELT (i), ELT (j), data)
-#define ERR2(i, j) qsort_chk_error (ELT (i), ELT (j), NULL, cmp, data)
-#define ERR3(i, j, k) qsort_chk_error (ELT (i), ELT (j), ELT (k), cmp, data)
+#define CMP(i, j) cmp (ELT (i), ELT (j))
+#define ERR2(i, j) qsort_chk_error (ELT (i), ELT (j), NULL, cmp)
+#define ERR3(i, j, k) qsort_chk_error (ELT (i), ELT (j), ELT (k), cmp)
   size_t i1, i2, i, j;
   /* This outer loop iterates over maximum spans [i1, i2) such that
      elements within each span compare equal to each other.  */
@@ -270,42 +278,6 @@ safe_push_range (vec <int>&v, int start, int limit)
 {
   for (int i = start; i < limit; i++)
     v.safe_push (i);
-}
-
-/* Verify forms of initialization.  */
-
-static void
-test_init ()
-{
-  {
-    vec<int> v1{ };
-    ASSERT_EQ (0, v1.length ());
-
-    vec<int> v2 (v1);
-    ASSERT_EQ (0, v2.length ());
-  }
-
-  {
-    vec<int> v1 = vec<int>();
-    ASSERT_EQ (0, v1.length ());
-
-    vec<int> v2 = v1;
-    ASSERT_EQ (0, v2.length ());
-  }
-
-  {
-    vec<int> v1 (vNULL);
-    ASSERT_EQ (0, v1.length ());
-    v1.safe_push (1);
-
-    vec<int> v2 (v1);
-    ASSERT_EQ (1, v1.length ());
-    v2.safe_push (1);
-
-    ASSERT_EQ (2, v1.length ());
-    ASSERT_EQ (2, v2.length ());
-    v1.release ();
-  }
 }
 
 /* Verify that vec::quick_push works correctly.  */
@@ -364,7 +336,7 @@ test_safe_grow_cleared ()
 {
   auto_vec <int> v;
   ASSERT_EQ (0, v.length ());
-  v.safe_grow_cleared (50, true);
+  v.safe_grow_cleared (50);
   ASSERT_EQ (50, v.length ());
   ASSERT_EQ (0, v[0]);
   ASSERT_EQ (0, v[49]);
@@ -542,38 +514,11 @@ test_reverse ()
   }
 }
 
-/* A test class that increments a counter every time its dtor is called.  */
-
-class count_dtor
-{
- public:
-  count_dtor (int *counter) : m_counter (counter) {}
-  ~count_dtor () { (*m_counter)++; }
-
- private:
-  int *m_counter;
-};
-
-/* Verify that auto_delete_vec deletes the elements within it.  */
-
-static void
-test_auto_delete_vec ()
-{
-  int dtor_count = 0;
-  {
-    auto_delete_vec <count_dtor> v;
-    v.safe_push (new count_dtor (&dtor_count));
-    v.safe_push (new count_dtor (&dtor_count));
-  }
-  ASSERT_EQ (dtor_count, 2);
-}
-
 /* Run all of the selftests within this file.  */
 
 void
 vec_c_tests ()
 {
-  test_init ();
   test_quick_push ();
   test_safe_push ();
   test_truncate ();
@@ -586,7 +531,6 @@ vec_c_tests ()
   test_block_remove ();
   test_qsort ();
   test_reverse ();
-  test_auto_delete_vec ();
 }
 
 } // namespace selftest

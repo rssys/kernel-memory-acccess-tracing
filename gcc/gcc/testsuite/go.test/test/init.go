@@ -9,11 +9,13 @@
 
 package main
 
+import "runtime"
+
 func init() {
 }
 
 func main() {
 	init()         // ERROR "undefined.*init"
-	runtime.init() // ERROR "undefined.*runtime\.init|reference to undefined name"
+	runtime.init() // ERROR "unexported.*runtime\.init"
 	var _ = init   // ERROR "undefined.*init"
 }

@@ -2,5 +2,5 @@
 // { dg-options "" }
 
 struct X { 
-  void X::bar() {} // { dg-error "8:extra qualification" }
+  void X::bar() {} // { dg-error "" }
 }; 

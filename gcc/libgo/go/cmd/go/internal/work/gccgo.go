@@ -6,18 +6,16 @@ package work
 
 import (
 	"fmt"
-	exec "internal/execabs"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
-	"cmd/go/internal/fsys"
 	"cmd/go/internal/load"
 	"cmd/go/internal/str"
-	"cmd/internal/pkgpath"
 )
 
 // The Gccgo toolchain.
@@ -28,7 +26,7 @@ var GccgoName, GccgoBin string
 var gccgoErr error
 
 func init() {
-	GccgoName = cfg.Getenv("GCCGO")
+	GccgoName = os.Getenv("GCCGO")
 	if GccgoName == "" {
 		GccgoName = cfg.DefaultGCCGO(cfg.Goos, cfg.Goarch)
 	}
@@ -46,7 +44,7 @@ func (gccgoToolchain) linker() string {
 }
 
 func (gccgoToolchain) ar() string {
-	ar := cfg.Getenv("AR")
+	ar := os.Getenv("AR")
 	if ar == "" {
 		ar = "ar"
 	}
@@ -62,7 +60,7 @@ func checkGccgoBin() {
 	base.Exit()
 }
 
-func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
+func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
 	p := a.Package
 	objdir := a.Objdir
 	out := "_go_.o"
@@ -93,46 +91,12 @@ func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg,
 			args = append(args, "-I", root)
 		}
 	}
-	if embedcfg != nil && b.gccSupportsFlag(args[:1], "-fgo-embedcfg=/dev/null") {
-		if err := b.writeFile(objdir+"embedcfg", embedcfg); err != nil {
-			return "", nil, err
-		}
-		args = append(args, "-fgo-embedcfg="+objdir+"embedcfg")
-	}
-
-	if b.gccSupportsFlag(args[:1], "-ffile-prefix-map=a=b") {
-		if cfg.BuildTrimpath {
-			args = append(args, "-ffile-prefix-map="+base.Cwd()+"=.")
-			args = append(args, "-ffile-prefix-map="+b.WorkDir+"=/tmp/go-build")
-		}
-		if fsys.OverlayFile != "" {
-			for _, name := range gofiles {
-				absPath := mkAbs(p.Dir, name)
-				overlayPath, ok := fsys.OverlayPath(absPath)
-				if !ok {
-					continue
-				}
-				toPath := absPath
-				// gccgo only applies the last matching rule, so also handle the case where
-				// BuildTrimpath is true and the path is relative to base.Cwd().
-				if cfg.BuildTrimpath && str.HasFilePathPrefix(toPath, base.Cwd()) {
-					toPath = "." + toPath[len(base.Cwd()):]
-				}
-				args = append(args, "-ffile-prefix-map="+overlayPath+"="+toPath)
-			}
-		}
-	}
-
 	args = append(args, a.Package.Internal.Gccgoflags...)
 	for _, f := range gofiles {
-		f := mkAbs(p.Dir, f)
-		// Overlay files if necessary.
-		// See comment on gctoolchain.gc about overlay TODOs
-		f, _ = fsys.OverlayPath(f)
-		args = append(args, f)
+		args = append(args, mkAbs(p.Dir, f))
 	}
 
-	output, err = b.runOut(a, p.Dir, nil, args)
+	output, err = b.runOut(p.Dir, nil, args)
 	return ofile, output, err
 }
 
@@ -204,9 +168,9 @@ func (tools gccgoToolchain) asm(b *Builder, a *Action, sfiles []string) ([]strin
 		base := filepath.Base(sfile)
 		ofile := a.Objdir + base[:len(base)-len(".s")] + ".o"
 		ofiles = append(ofiles, ofile)
-		sfile, _ = fsys.OverlayPath(mkAbs(p.Dir, sfile))
+		sfile = mkAbs(p.Dir, sfile)
 		defs := []string{"-D", "GOOS_" + cfg.Goos, "-D", "GOARCH_" + cfg.Goarch}
-		if pkgpath := tools.gccgoCleanPkgpath(b, p); pkgpath != "" {
+		if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
 			defs = append(defs, `-D`, `GOPKGPATH=`+pkgpath)
 		}
 		defs = tools.maybePIC(defs)
@@ -245,16 +209,9 @@ func (tools gccgoToolchain) pack(b *Builder, a *Action, afile string, ofiles []s
 	}
 	absAfile := mkAbs(objdir, afile)
 	// Try with D modifier first, then without if that fails.
-	output, err := b.runOut(a, p.Dir, nil, tools.ar(), arArgs, "rcD", absAfile, absOfiles)
-	if err != nil {
+	if b.run(a, p.Dir, p.ImportPath, nil, tools.ar(), arArgs, "rcD", absAfile, absOfiles) != nil {
 		return b.run(a, p.Dir, p.ImportPath, nil, tools.ar(), arArgs, "rc", absAfile, absOfiles)
 	}
-
-	if len(output) > 0 {
-		// Show the output if there is any even without errors.
-		b.showOutput(a, p.Dir, p.ImportPath, b.processOutput(output))
-	}
-
 	return nil
 }
 
@@ -276,7 +233,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 	}
 
 	readCgoFlags := func(flagsFile string) error {
-		flags, err := os.ReadFile(flagsFile)
+		flags, err := ioutil.ReadFile(flagsFile)
 		if err != nil {
 			return err
 		}
@@ -390,7 +347,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		}
 
 		if haveShlib[filepath.Base(a.Target)] {
-			// This is a shared library we want to link against.
+			// This is a shared library we want to link againt.
 			if !addedShlib[a.Target] {
 				shlibs = append(shlibs, a.Target)
 				addedShlib[a.Target] = true
@@ -526,7 +483,6 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		ldflags = append(ldflags, "-shared", "-nostdlib")
 		ldflags = append(ldflags, goLibBegin...)
 		ldflags = append(ldflags, "-lgo", "-lgcc_s", "-lgcc", "-lc", "-lgcc")
-
 	case "shared":
 		if cfg.Goos != "aix" {
 			ldflags = append(ldflags, "-zdefs")
@@ -549,7 +505,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 			ldflags = append(ldflags, "-lobjc")
 		}
 		if fortran {
-			fc := cfg.Getenv("FC")
+			fc := os.Getenv("FC")
 			if fc == "" {
 				fc = "gfortran"
 			}
@@ -588,7 +544,7 @@ func (tools gccgoToolchain) cc(b *Builder, a *Action, ofile, cfile string) error
 	cfile = mkAbs(p.Dir, cfile)
 	defs := []string{"-D", "GOOS_" + cfg.Goos, "-D", "GOARCH_" + cfg.Goarch}
 	defs = append(defs, b.gccArchArgs()...)
-	if pkgpath := tools.gccgoCleanPkgpath(b, p); pkgpath != "" {
+	if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
 		defs = append(defs, `-D`, `GOPKGPATH="`+pkgpath+`"`)
 	}
 	compiler := envList("CC", cfg.DefaultCC(cfg.Goos, cfg.Goarch))
@@ -596,10 +552,7 @@ func (tools gccgoToolchain) cc(b *Builder, a *Action, ofile, cfile string) error
 		defs = append(defs, "-fsplit-stack")
 	}
 	defs = tools.maybePIC(defs)
-	if b.gccSupportsFlag(compiler, "-ffile-prefix-map=a=b") {
-		defs = append(defs, "-ffile-prefix-map="+base.Cwd()+"=.")
-		defs = append(defs, "-ffile-prefix-map="+b.WorkDir+"=/tmp/go-build")
-	} else if b.gccSupportsFlag(compiler, "-fdebug-prefix-map=a=b") {
+	if b.gccSupportsFlag(compiler, "-fdebug-prefix-map=a=b") {
 		defs = append(defs, "-fdebug-prefix-map="+b.WorkDir+"=/tmp/go-build")
 	}
 	if b.gccSupportsFlag(compiler, "-gno-record-gcc-switches") {
@@ -628,23 +581,14 @@ func gccgoPkgpath(p *load.Package) string {
 	return p.ImportPath
 }
 
-var gccgoToSymbolFuncOnce sync.Once
-var gccgoToSymbolFunc func(string) string
-
-func (tools gccgoToolchain) gccgoCleanPkgpath(b *Builder, p *load.Package) string {
-	gccgoToSymbolFuncOnce.Do(func() {
-		if cfg.BuildN {
-			gccgoToSymbolFunc = func(s string) string { return s }
-			return
+func gccgoCleanPkgpath(p *load.Package) string {
+	clean := func(r rune) rune {
+		switch {
+		case 'A' <= r && r <= 'Z', 'a' <= r && r <= 'z',
+			'0' <= r && r <= '9':
+			return r
 		}
-		fn, err := pkgpath.ToSymbolFunc(tools.compiler(), b.WorkDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "cmd/go: %v\n", err)
-			base.SetExitStatus(2)
-			base.Exit()
-		}
-		gccgoToSymbolFunc = fn
-	})
-
-	return gccgoToSymbolFunc(gccgoPkgpath(p))
+		return '_'
+	}
+	return strings.Map(clean, gccgoPkgpath(p))
 }

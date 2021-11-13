@@ -13,25 +13,25 @@ program test_exponent_fraction
   x = 0.
   call test_4(x)
 
-  i = int(o'00000000001')
+  i = o'00000000001'
   call test_4(x)
 
-  i = int(o'00010000000')
+  i = o'00010000000'
   call test_4(x)
 
-  i = int(o'17700000000')
+  i = o'17700000000'
   call test_4(x)
 
-  i = int(o'00004000001')
+  i = o'00004000001'
   call test_4(x)
 
-  i = int(o'17737777777')
+  i = o'17737777777'
   call test_4(x)
 
-  i = int(o'10000000000')
+  i = o'10000000000'
   call test_4(x)
 
-  i = int(o'0000010000')
+  i = o'0000010000'
   call test_4(x)
 
   y = 0.5
@@ -40,7 +40,7 @@ program test_exponent_fraction
   y = 0.
   call test_8(y)
 
-  j = int(o'00000000001',8)
+  j = o'00000000001'
   call test_8(y)
 
   y = 0.2938735877D-38
@@ -49,7 +49,7 @@ program test_exponent_fraction
   y = -1.469369D-39
   call test_8(y)
 
-  y = real(z'7fe00000',8)
+  y = z'7fe00000'
   call test_8(y)
 
   y = -5.739719D+42

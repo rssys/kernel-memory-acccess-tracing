@@ -14,13 +14,12 @@ foo (char *p, char *q)
   v = p > q;
 }
 
-char __attribute__((used)) global1[100] = {};
-char __attribute__((used)) global2[100] = {};
+char global1[100] = {}, global2[100] = {};
 char __attribute__((used)) smallest_global[5] = {};
-char __attribute__((used)) small_global[7] = {};
+char small_global[7] = {};
 char __attribute__((used)) little_global[10] = {};
 char __attribute__((used)) medium_global[4000] = {};
-char __attribute__((used)) large_global[5000] = {};
+char large_global[5000] = {};
 char __attribute__((used)) largest_global[6000] = {};
 
 int

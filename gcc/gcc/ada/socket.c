@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 2003-2021, Free Software Foundation, Inc.         *
+ *          Copyright (C) 2003-2019, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -34,9 +34,7 @@
 #define ATTRIBUTE_UNUSED __attribute__((unused))
 
 /* Ensure access to errno is thread safe.  */
-#ifndef _REENTRANT
 #define _REENTRANT
-#endif
 #define _THREAD_SAFE
 
 #include "gsocket.h"
@@ -314,7 +312,6 @@ __gnat_gethostbyaddr (const char *addr, int len, int type,
   ret->h_addrtype  = AF_INET;
   ret->h_length    = 4;
   ret->h_addr_list = &vxw_h_addr_list;
-  return 0;
 }
 
 int
@@ -334,8 +331,8 @@ __gnat_getservbyport (int port, const char *proto,
 }
 #else
 int
-__gnat_gethostbyname (const char *name, struct hostent *ret,
-  char *buf ATTRIBUTE_UNUSED, size_t buflen ATTRIBUTE_UNUSED,
+__gnat_gethostbyname (const char *name,
+  struct hostent *ret, char *buf, size_t buflen,
   int *h_errnop)
 {
   struct hostent *rh;
@@ -350,8 +347,8 @@ __gnat_gethostbyname (const char *name, struct hostent *ret,
 }
 
 int
-__gnat_gethostbyaddr (const char *addr, int len, int type, struct hostent *ret,
-  char *buf ATTRIBUTE_UNUSED, size_t buflen ATTRIBUTE_UNUSED,
+__gnat_gethostbyaddr (const char *addr, int len, int type,
+  struct hostent *ret, char *buf, size_t buflen,
   int *h_errnop)
 {
   struct hostent *rh;
@@ -366,8 +363,8 @@ __gnat_gethostbyaddr (const char *addr, int len, int type, struct hostent *ret,
 }
 
 int
-__gnat_getservbyname (const char *name, const char *proto, struct servent *ret,
-  char *buf ATTRIBUTE_UNUSED, size_t buflen ATTRIBUTE_UNUSED)
+__gnat_getservbyname (const char *name, const char *proto,
+  struct servent *ret, char *buf, size_t buflen)
 {
   struct servent *rh;
   rh = getservbyname (name, proto);
@@ -378,8 +375,8 @@ __gnat_getservbyname (const char *name, const char *proto, struct servent *ret,
 }
 
 int
-__gnat_getservbyport (int port, const char *proto, struct servent *ret,
-  char *buf ATTRIBUTE_UNUSED, size_t buflen ATTRIBUTE_UNUSED)
+__gnat_getservbyport (int port, const char *proto,
+  struct servent *ret, char *buf, size_t buflen)
 {
   struct servent *rh;
   rh = getservbyport (port, proto);
@@ -398,18 +395,19 @@ __gnat_getservbyport (int port, const char *proto, struct servent *ret,
 void
 __gnat_last_socket_in_set (fd_set *set, int *last)
 {
+  int s;
   int l;
   l = -1;
 
 #ifdef _WIN32
   /* More efficient method for NT. */
-  for (unsigned int s = 0; s < set->fd_count; s++)
+  for (s = 0; s < set->fd_count; s++)
     if ((int) set->fd_array[s] > l)
       l = set->fd_array[s];
 
 #else
 
-  for (int s = *last; s != -1; s--)
+  for (s = *last; s != -1; s--)
     if (FD_ISSET (s, set))
       {
 	l = s;
@@ -517,7 +515,7 @@ __gnat_get_h_errno (void) {
 int
 __gnat_socket_ioctl (int fd, IOCTL_Req_T req, int *arg) {
 #if defined (_WIN32)
-  return ioctlsocket (fd, req, (unsigned long *)arg);
+  return ioctlsocket (fd, req, arg);
 #elif defined (__APPLE__)
   /*
    * On Darwin, req is an unsigned long, and we want to convert without sign
@@ -553,8 +551,7 @@ __gnat_inet_pton (int af, const char *src, void *dst) {
   int rc;
 
   ss.ss_family = af;
-  rc = WSAStringToAddressA ((char *)src, af, NULL, (struct sockaddr *)&ss,
-                            &sslen);
+  rc = WSAStringToAddressA (src, af, NULL, (struct sockaddr *)&ss, &sslen);
   if (rc == 0) {
     switch (af) {
       case AF_INET:
@@ -588,9 +585,6 @@ __gnat_inet_pton (int af, const char *src, void *dst) {
     *(in_addr_t *)dst = addr;
   }
   return rc;
-
-#else
-  return -1;
 #endif
 }
 #endif
@@ -710,6 +704,12 @@ __gnat_servent_s_proto (struct servent * s)
 
 #if defined(AF_INET6) && !defined(__rtems__)
 
+#if defined (__vxworks)
+#define getaddrinfo ipcom_getaddrinfo
+#define getnameinfo ipcom_getnameinfo
+#define freeaddrinfo ipcom_freeaddrinfo
+#endif
+
 int __gnat_getaddrinfo(
   const char *node,
   const char *service,
@@ -802,28 +802,5 @@ const char * __gnat_gai_strerror(int errcode) {
 }
 
 #endif
-
-int __gnat_minus_500ms() {
-#if defined (_WIN32)
-  // Windows Server 2019 and Windows 8.0 do not need 500 millisecond socket
-  // timeout correction.
-  if (IsWindowsServer()) {
-    OSVERSIONINFO osvi;
-    ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    // Documentation proposes to use IsWindowsVersionOrGreater(10, 0, 17763)
-    // but it does not compare by the build number (last parameter).
-    GetVersionEx(&osvi);
-    return osvi.dwMajorVersion < 10
-        || (osvi.dwMajorVersion == 10
-            && osvi.dwMinorVersion == 0
-            && osvi.dwBuildNumber < 17763);
-  } else {
-    return !IsWindows8OrGreater();
-  }
-#else
-  return 0;
-#endif
-}
 
 #endif /* defined(HAVE_SOCKETS) */

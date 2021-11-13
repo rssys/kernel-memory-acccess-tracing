@@ -1,8 +1,7 @@
 //=-- lsan_thread.h -------------------------------------------------------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,38 +15,37 @@
 
 #include "sanitizer_common/sanitizer_thread_registry.h"
 
+namespace __sanitizer {
+struct DTLS;
+}
+
 namespace __lsan {
 
-class ThreadContextLsanBase : public ThreadContextBase {
+class ThreadContext : public ThreadContextBase {
  public:
-  explicit ThreadContextLsanBase(int tid);
+  explicit ThreadContext(int tid);
+  void OnStarted(void *arg) override;
   void OnFinished() override;
   uptr stack_begin() { return stack_begin_; }
   uptr stack_end() { return stack_end_; }
+  uptr tls_begin() { return tls_begin_; }
+  uptr tls_end() { return tls_end_; }
   uptr cache_begin() { return cache_begin_; }
   uptr cache_end() { return cache_end_; }
+  DTLS *dtls() { return dtls_; }
 
-  // The argument is passed on to the subclass's OnStarted member function.
-  static void ThreadStart(u32 tid, tid_t os_id, ThreadType thread_type,
-                          void *onstarted_arg);
-
- protected:
-  ~ThreadContextLsanBase() {}
-  uptr stack_begin_ = 0;
-  uptr stack_end_ = 0;
-  uptr cache_begin_ = 0;
-  uptr cache_end_ = 0;
+ private:
+  uptr stack_begin_, stack_end_,
+       cache_begin_, cache_end_,
+       tls_begin_, tls_end_;
+  DTLS *dtls_;
 };
 
-// This subclass of ThreadContextLsanBase is declared in an OS-specific header.
-class ThreadContext;
-
 void InitializeThreadRegistry();
-void InitializeMainThread();
 
-u32 ThreadCreate(u32 tid, uptr uid, bool detached, void *arg = nullptr);
+void ThreadStart(u32 tid, tid_t os_id, bool workerthread = false);
 void ThreadFinish();
-void ThreadDetach(u32 tid);
+u32 ThreadCreate(u32 tid, uptr uid, bool detached);
 void ThreadJoin(u32 tid);
 u32 ThreadTid(uptr uid);
 
@@ -55,7 +53,6 @@ u32 GetCurrentThread();
 void SetCurrentThread(u32 tid);
 ThreadContext *CurrentThreadContext();
 void EnsureMainThreadIDIsCorrect();
-
 }  // namespace __lsan
 
 #endif  // LSAN_THREAD_H

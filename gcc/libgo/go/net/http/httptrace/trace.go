@@ -127,14 +127,14 @@ type ClientTrace struct {
 
 	// ConnectDone is called when a new connection's Dial
 	// completes. The provided err indicates whether the
-	// connection completed successfully.
+	// connection completedly successfully.
 	// If net.Dialer.DualStack ("Happy Eyeballs") support is
 	// enabled, this may be called multiple times.
 	ConnectDone func(network, addr string, err error)
 
 	// TLSHandshakeStart is called when the TLS handshake is started. When
-	// connecting to an HTTPS site via an HTTP proxy, the handshake happens
-	// after the CONNECT request is processed by the proxy.
+	// connecting to a HTTPS site via a HTTP proxy, the handshake happens after
+	// the CONNECT request is processed by the proxy.
 	TLSHandshakeStart func()
 
 	// TLSHandshakeDone is called after the TLS handshake with either the

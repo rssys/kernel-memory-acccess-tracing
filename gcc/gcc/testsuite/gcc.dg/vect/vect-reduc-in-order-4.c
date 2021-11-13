@@ -41,4 +41,5 @@ main ()
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "VECT_PERM_EXPR" 0 "vect" } } */
+/* { dg-final { scan-tree-dump {in-order unchained SLP reductions not supported} "vect" } } */
+/* { dg-final { scan-tree-dump-not {vectorizing stmts using SLP} "vect" } } */

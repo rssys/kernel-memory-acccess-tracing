@@ -13,7 +13,7 @@ program main
   call dummy_array (a, n)
   
   do i = 1, n
-     if (a(i) .ne. i) stop 1
+     if (a(i) .ne. i) call abort
   end do
 end program main
 

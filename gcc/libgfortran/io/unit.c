@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -114,7 +114,7 @@ static char stdout_name[] = "stdout";
 static char stderr_name[] = "stderr";
 
 
-#ifdef HAVE_POSIX_2008_LOCALE
+#ifdef HAVE_NEWLOCALE
 locale_t c_locale;
 #else
 /* If we don't have POSIX 2008 per-thread locales, we need to use the
@@ -456,6 +456,7 @@ set_internal_unit (st_parameter_dt *dtp, gfc_unit *iunit, int kind)
 {
   gfc_offset start_record = 0;
 
+  iunit->unit_number = dtp->common.unit;
   iunit->recl = dtp->internal_unit_len;
   iunit->internal_unit = dtp->internal_unit;
   iunit->internal_unit_len = dtp->internal_unit_len;
@@ -585,7 +586,7 @@ init_units (void)
 {
   gfc_unit *u;
 
-#ifdef HAVE_POSIX_2008_LOCALE
+#ifdef HAVE_NEWLOCALE
   c_locale = newlocale (0, "C", 0);
 #else
 #ifndef __GTHREAD_MUTEX_INIT
@@ -766,12 +767,9 @@ close_unit_1 (gfc_unit *u, int locked)
 void
 unlock_unit (gfc_unit *u)
 {
-  if (u)
-    {
-      NOTE ("unlock_unit = %d", u->unit_number);
-      UNLOCK (&u->lock);
-      NOTE ("unlock_unit done");
-    }
+  NOTE ("unlock_unit = %d", u->unit_number);
+  UNLOCK (&u->lock);
+  NOTE ("unlock_unit done");
 }
 
 /* close_unit()-- Close a unit.  The stream is closed, and any memory
@@ -802,7 +800,7 @@ close_units (void)
 
   free (newunits);
 
-#ifdef HAVE_POSIX_2008_LOCALE
+#ifdef HAVE_FREELOCALE
   freelocale (c_locale);
 #endif
 }

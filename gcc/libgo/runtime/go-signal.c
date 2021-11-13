@@ -179,18 +179,6 @@ setSigactionHandler(struct sigaction* sa, uintptr handler)
 // C code to fetch values from the siginfo_t and ucontext_t pointers
 // passed to a signal handler.
 
-uintptr getSiginfoCode(siginfo_t *)
-	__attribute__ ((no_split_stack));
-
-uintptr getSiginfoCode(siginfo_t *)
-	__asm__ (GOSYM_PREFIX "runtime.getSiginfoCode");
-
-uintptr
-getSiginfoCode(siginfo_t *info)
-{
-	return (uintptr)(info->si_code);
-}
-
 struct getSiginfoRet {
 	uintptr sigaddr;
 	uintptr sigpc;
@@ -217,20 +205,28 @@ getSiginfo(siginfo_t *info, void *context __attribute__((unused)))
 	// Use unportable code to pull it from context, and if that fails
 	// try a stack backtrace across the signal handler.
 
-#if defined(__x86_64__) && defined(__linux__)
+#ifdef __x86_64__
+ #ifdef __linux__
 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.gregs[REG_RIP];
-#elif defined(__i386__) && defined(__linux__)
+ #endif
+#endif
+#ifdef __i386__
+  #ifdef __linux__
 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.gregs[REG_EIP];
-#elif defined(__alpha__) && defined(__linux__)
+  #endif
+#endif
+#ifdef __alpha__
+  #ifdef __linux__
 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.sc_pc;
-#elif defined(__PPC__) && defined(__linux__)
+  #endif
+#endif
+#ifdef __PPC__
+  #ifdef __linux__
 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.regs->nip;
-#elif defined(__PPC__) && defined(_AIX)
+  #endif
+  #ifdef _AIX
 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.jmp_context.iar;
-#elif defined(__aarch64__) && defined(__linux__)
-	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.pc;
-#elif defined(__NetBSD__)
-	ret.sigpc = _UC_MACHINE_PC(((ucontext_t*)(context)));
+  #endif
 #endif
 
 	if (ret.sigpc == 0) {
@@ -254,7 +250,8 @@ void dumpregs(siginfo_t *, void *)
 void
 dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((unused)))
 {
-#if defined(__x86_64__) && defined(__linux__)
+#ifdef __x86_64__
+ #ifdef __linux__
 	{
 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
 
@@ -280,7 +277,11 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
 		runtime_printf("fs     %X\n", (m->gregs[REG_CSGSFS] >> 16) & 0xffff);
 		runtime_printf("gs     %X\n", (m->gregs[REG_CSGSFS] >> 32) & 0xffff);
 	  }
-#elif defined(__i386__) && defined(__linux__)
+ #endif
+#endif
+
+#ifdef __i386__
+ #ifdef __linux__
 	{
 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
 
@@ -298,7 +299,11 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
 		runtime_printf("fs     %x\n", m->gregs[REG_FS]);
 		runtime_printf("gs     %x\n", m->gregs[REG_GS]);
 	  }
-#elif defined(__alpha__) && defined(__linux__)
+ #endif
+#endif
+
+#ifdef __alpha__
+  #ifdef __linux__
 	{
 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
 
@@ -335,7 +340,11 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
 		runtime_printf("sp  %X\n", m->sc_regs[30]);
 		runtime_printf("pc  %X\n", m->sc_pc);
 	  }
-#elif defined(__PPC__) && defined(__LITTLE_ENDIAN__) && defined(__linux__)
+  #endif
+#endif
+
+#if defined(__PPC__) && defined(__LITTLE_ENDIAN__)
+  #ifdef __linux__
 	  {
 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
 		int i;
@@ -349,7 +358,11 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
 		runtime_printf("ctr %X\n", m->regs->ctr);
 		runtime_printf("xer %X\n", m->regs->xer);
 	  }
-#elif defined(__PPC__) && defined(_AIX)
+  #endif
+#endif
+
+#ifdef __PPC__
+  #ifdef _AIX
 	  {
 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
 		int i;
@@ -363,16 +376,6 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
 		runtime_printf("ctr %p\n", m->jmp_context.ctr);
 		runtime_printf("xer %x\n", m->jmp_context.xer);
 	  }
-#elif defined(__aarch64__) && defined(__linux__)
-	  {
-		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
-		int i;
-
-		for (i = 0; i < 31; i++)
-			runtime_printf("x%d    %X\n", i, m->regs[i]);
-		runtime_printf("sp     %X\n", m->sp);
-		runtime_printf("pc     %X\n", m->pc);
-		runtime_printf("pstate %X\n", m->pstate);
-	  }
+  #endif
 #endif
 }

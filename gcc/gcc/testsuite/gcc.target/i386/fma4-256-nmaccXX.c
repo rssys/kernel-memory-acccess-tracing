@@ -55,7 +55,7 @@ check_nmaccps ()
 	if (dst.f[i + j] != res.f[i + j]) 
 	  check_fails++;
       }
-  return check_fails;
+  return check_fails++;
 }
 
 static int
@@ -69,7 +69,7 @@ check_nmaccpd ()
 	if (dst.d[i + j] != res.d[i + j]) 
 	  check_fails++;
       }
-  return check_fails;
+  return check_fails++;
 }
 
 static void
@@ -92,4 +92,5 @@ fma4_test (void)
   
   if (check_nmaccpd ()) 
     abort ();
+
 }

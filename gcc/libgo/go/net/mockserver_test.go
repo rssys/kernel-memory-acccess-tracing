@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js
 // +build !js
 
 package net
@@ -10,15 +9,16 @@ package net
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
-// testUnixAddr uses os.CreateTemp to get a name that is unique.
+// testUnixAddr uses ioutil.TempFile to get a name that is unique.
 func testUnixAddr() string {
-	f, err := os.CreateTemp("", "go-nettest")
+	f, err := ioutil.TempFile("", "go-nettest")
 	if err != nil {
 		panic(err)
 	}
@@ -88,7 +88,6 @@ type localServer struct {
 	lnmu sync.RWMutex
 	Listener
 	done chan bool // signal that indicates server stopped
-	cl   []Conn    // accepted connection list
 }
 
 func (ls *localServer) buildup(handler func(*localServer, Listener)) error {
@@ -101,16 +100,10 @@ func (ls *localServer) buildup(handler func(*localServer, Listener)) error {
 
 func (ls *localServer) teardown() error {
 	ls.lnmu.Lock()
-	defer ls.lnmu.Unlock()
 	if ls.Listener != nil {
 		network := ls.Listener.Addr().Network()
 		address := ls.Listener.Addr().String()
 		ls.Listener.Close()
-		for _, c := range ls.cl {
-			if err := c.Close(); err != nil {
-				return err
-			}
-		}
 		<-ls.done
 		ls.Listener = nil
 		switch network {
@@ -118,6 +111,7 @@ func (ls *localServer) teardown() error {
 			os.Remove(address)
 		}
 	}
+	ls.lnmu.Unlock()
 	return nil
 }
 
@@ -210,7 +204,7 @@ func newDualStackServer() (*dualStackServer, error) {
 	}, nil
 }
 
-func (ls *localServer) transponder(ln Listener, ch chan<- error) {
+func transponder(ln Listener, ch chan<- error) {
 	defer close(ch)
 
 	switch ln := ln.(type) {
@@ -227,7 +221,7 @@ func (ls *localServer) transponder(ln Listener, ch chan<- error) {
 		ch <- err
 		return
 	}
-	ls.cl = append(ls.cl, c)
+	defer c.Close()
 
 	network := ln.Addr().Network()
 	if c.LocalAddr().Network() != network || c.RemoteAddr().Network() != network {

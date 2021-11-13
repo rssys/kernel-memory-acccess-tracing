@@ -1,5 +1,5 @@
 !     { dg-do compile }
-!     { dg-options "-O2 -std=legacy" }
+!     { dg-options "-O2" }
 !     PR24823 Flow didn't handle a PARALLEL as destination of a SET properly.
       SUBROUTINE ZLATMR( M, N, DIST, ISEED, SYM, D, MODE, COND, DMAX,
      $     RSIGN, GRADE, DL, MODEL, CONDL, DR, MODER,
@@ -50,9 +50,9 @@
             IF( I.LT.1 ) THEN
                IF( ISYM.EQ.0 ) THEN
                   A( J-I+1, I ) = DCONJG( ZLATM2( M, N, I, J, KL,
-     $                 DR, IPVTNG, IWORK, SPARSE ) )  ! { dg-warning "Type mismatch" }
+     $                 DR, IPVTNG, IWORK, SPARSE ) )
                ELSE
-                  A( J-I+1, I ) = ZLATM2( M, N, I, J, KL, KU,  ! { dg-warning "Type mismatch" }
+                  A( J-I+1, I ) = ZLATM2( M, N, I, J, KL, KU,
      $                 IPVTNG, IWORK, SPARSE )
                END IF
             END IF
@@ -61,8 +61,8 @@
                   IF( ISYM.EQ.0 ) THEN
                   END IF
                END IF
-               A( I-J+KUU+1, J ) = ZLATM2( M, N, I, J, KL, KU,  ! { dg-warning "More actual than formal" }
-     $              DR, IPVTNG, IWORK, SPARSE )  ! { dg-warning "Type mismatch" }
+               A( I-J+KUU+1, J ) = ZLATM2( M, N, I, J, KL, KU,
+     $              DR, IPVTNG, IWORK, SPARSE )
             END IF
          END IF
       END IF

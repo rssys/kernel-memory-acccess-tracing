@@ -1,6 +1,6 @@
 /* { dg-do compile } */
 /* { dg-require-effective-target arm_vfp_ok }
-/* { dg-add-options arm_vfp } */
+/* { dg-options "-mfpu=vfp" } */
 
 int
 test_sisf (float x)

@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2009-2021 Free Software Foundation, Inc.
+// Copyright (C) 2009-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -168,7 +168,7 @@ namespace __gnu_test
   template<typename _Tp>
     struct reverse_members<_Tp, false>
     {
-      reverse_members(_Tp&) { }
+      reverse_members(_Tp& container) { }
     };
 
   template<typename _Iterator,
@@ -408,9 +408,8 @@ namespace __gnu_test
   void
   erase_external_iterators(std::multimap<int, int>& s);
 
-#if __cplusplus < 201103L
-# error "must be compiled with C++11 (or later)"
-#else
+// NB: "must be compiled with C++11"
+#if __cplusplus >= 201103L
 template<typename _Tp>
   void
   linkage_check_cxx98_cxx11_erase(_Tp& container)

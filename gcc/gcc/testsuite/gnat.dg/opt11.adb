@@ -6,7 +6,7 @@ package body Opt11 is
    procedure Proc is
       R : Rec;
    begin
-      R := (others => <>);  --  { dg-warning "aggregate not fully initialized" }
+      R := (others => <>);
    end;
 
 end Opt11;

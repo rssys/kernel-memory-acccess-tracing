@@ -457,7 +457,7 @@ func (s *ss) token(skipSpace bool, f func(rune) bool) []byte {
 			s.UnreadRune()
 			break
 		}
-		s.buf.writeRune(r)
+		s.buf.WriteRune(r)
 	}
 	return s.buf
 }
@@ -483,7 +483,7 @@ func (s *ss) consume(ok string, accept bool) bool {
 	}
 	if indexRune(ok, r) >= 0 {
 		if accept {
-			s.buf.writeRune(r)
+			s.buf.WriteRune(r)
 		}
 		return true
 	}
@@ -562,7 +562,7 @@ const (
 	hexadecimalDigits = "0123456789aAbBcCdDeEfF"
 	sign              = "+-"
 	period            = "."
-	exponent          = "eEpP"
+	exponent          = "eEp"
 )
 
 // getBase returns the numeric base represented by the verb and its digit string.
@@ -600,37 +600,31 @@ func (s *ss) scanNumber(digits string, haveDigits bool) string {
 // scanRune returns the next rune value in the input.
 func (s *ss) scanRune(bitSize int) int64 {
 	s.notEOF()
-	r := s.getRune()
+	r := int64(s.getRune())
 	n := uint(bitSize)
-	x := (int64(r) << (64 - n)) >> (64 - n)
-	if x != int64(r) {
+	x := (r << (64 - n)) >> (64 - n)
+	if x != r {
 		s.errorString("overflow on character value " + string(r))
 	}
-	return int64(r)
+	return r
 }
 
-// scanBasePrefix reports whether the integer begins with a base prefix
+// scanBasePrefix reports whether the integer begins with a 0 or 0x,
 // and returns the base, digit string, and whether a zero was found.
 // It is called only if the verb is %v.
-func (s *ss) scanBasePrefix() (base int, digits string, zeroFound bool) {
+func (s *ss) scanBasePrefix() (base int, digits string, found bool) {
 	if !s.peek("0") {
-		return 0, decimalDigits + "_", false
+		return 10, decimalDigits, false
 	}
 	s.accept("0")
-	// Special cases for 0, 0b, 0o, 0x.
-	switch {
-	case s.peek("bB"):
-		s.consume("bB", true)
-		return 0, binaryDigits + "_", true
-	case s.peek("oO"):
-		s.consume("oO", true)
-		return 0, octalDigits + "_", true
-	case s.peek("xX"):
-		s.consume("xX", true)
-		return 0, hexadecimalDigits + "_", true
-	default:
-		return 0, octalDigits + "_", true
+	found = true // We've put a digit into the token buffer.
+	// Special cases for '0' && '0x'
+	base, digits = 8, octalDigits
+	if s.peek("xX") {
+		s.consume("xX", false)
+		base, digits = 16, hexadecimalDigits
 	}
+	return
 }
 
 // scanInt returns the value of the integer represented by the next
@@ -711,27 +705,21 @@ func (s *ss) floatToken() string {
 	if s.accept("iI") && s.accept("nN") && s.accept("fF") {
 		return string(s.buf)
 	}
-	digits := decimalDigits + "_"
-	exp := exponent
-	if s.accept("0") && s.accept("xX") {
-		digits = hexadecimalDigits + "_"
-		exp = "pP"
-	}
 	// digits?
-	for s.accept(digits) {
+	for s.accept(decimalDigits) {
 	}
 	// decimal point?
 	if s.accept(period) {
 		// fraction?
-		for s.accept(digits) {
+		for s.accept(decimalDigits) {
 		}
 	}
 	// exponent?
-	if s.accept(exp) {
+	if s.accept(exponent) {
 		// leading sign?
 		s.accept(sign)
 		// digits?
-		for s.accept(decimalDigits + "_") {
+		for s.accept(decimalDigits) {
 		}
 	}
 	return string(s.buf)
@@ -761,21 +749,9 @@ func (s *ss) complexTokens() (real, imag string) {
 	return real, imagSign + imag
 }
 
-func hasX(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == 'x' || s[i] == 'X' {
-			return true
-		}
-	}
-	return false
-}
-
 // convertFloat converts the string to a float64value.
 func (s *ss) convertFloat(str string, n int) float64 {
-	// strconv.ParseFloat will handle "+0x1.fp+2",
-	// but we have to implement our non-standard
-	// decimal+binary exponent mix (1.2p4) ourselves.
-	if p := indexRune(str, 'p'); p >= 0 && !hasX(str) {
+	if p := indexRune(str, 'p'); p >= 0 {
 		// Atof doesn't handle power-of-2 exponents,
 		// but they're easy to evaluate.
 		f, err := strconv.ParseFloat(str[:p], n)
@@ -850,20 +826,20 @@ func (s *ss) quotedString() string {
 			if r == quote {
 				break
 			}
-			s.buf.writeRune(r)
+			s.buf.WriteRune(r)
 		}
 		return string(s.buf)
 	case '"':
 		// Double-quoted: Include the quotes and let strconv.Unquote do the backslash escapes.
-		s.buf.writeByte('"')
+		s.buf.WriteByte('"')
 		for {
 			r := s.mustReadRune()
-			s.buf.writeRune(r)
+			s.buf.WriteRune(r)
 			if r == '\\' {
 				// In a legal backslash escape, no matter how long, only the character
 				// immediately after the escape can itself be a backslash or quote.
 				// Thus we only need to protect the first character after the backslash.
-				s.buf.writeRune(s.mustReadRune())
+				s.buf.WriteRune(s.mustReadRune())
 			} else if r == '"' {
 				break
 			}
@@ -922,7 +898,7 @@ func (s *ss) hexString() string {
 		if !ok {
 			break
 		}
-		s.buf.writeByte(b)
+		s.buf.WriteByte(b)
 	}
 	if len(s.buf) == 0 {
 		s.errorString("no hex data for %x string")
@@ -939,15 +915,6 @@ const (
 	intBits     = 32 << (^uint(0) >> 63)
 	uintptrBits = 32 << (^uintptr(0) >> 63)
 )
-
-// scanPercent scans a literal percent character.
-func (s *ss) scanPercent() {
-	s.SkipSpace()
-	s.notEOF()
-	if !s.accept("%") {
-		s.errorString("missing literal %")
-	}
-}
 
 // scanOne scans a single value, deriving the scanner from the type of the argument.
 func (s *ss) scanOne(verb rune, arg interface{}) {
@@ -1211,10 +1178,6 @@ func (s *ss) doScanf(format string, a []interface{}) (numProcessed int, err erro
 
 		if c != 'c' {
 			s.SkipSpace()
-		}
-		if c == '%' {
-			s.scanPercent()
-			continue // Do not consume an argument.
 		}
 		s.argLimit = s.limit
 		if f := s.count + s.maxWid; f < s.argLimit {

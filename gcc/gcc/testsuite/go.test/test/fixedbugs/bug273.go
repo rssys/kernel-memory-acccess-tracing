@@ -14,7 +14,7 @@ var bug = false
 
 var minus1 = -1
 var five = 5
-var big int64 = 10 | 1<<46
+var big int64 = 10 | 1<<40
 
 type block [1 << 19]byte
 

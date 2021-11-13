@@ -1,6 +1,6 @@
 // Wrapper for underlying C-language localization -*- C++ -*-
 
-// Copyright (C) 2001-2021 Free Software Foundation, Inc.
+// Copyright (C) 2001-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -52,22 +52,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       ~_Save_errno() { if (errno == 0) errno = _M_errno; }
       int _M_errno;
     };
-
-    // calls setlocale(LC_ALL, "C") and returns a string containing the old
-    // locale name. Caller must delete[] the string. Returns NULL on error.
-    const char*
-    __set_C_locale()
-    {
-      char* __old = setlocale(LC_ALL, 0);
-      const size_t __len = strlen(__old) + 1;
-      char* __sav = new(nothrow) char[__len];
-      if (__sav)
-	{
-	  memcpy(__sav, __old, __len);
-	  setlocale(LC_ALL, "C");
-	}
-      return __sav;
-    }
   }
 
   template<>
@@ -76,12 +60,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		   const __c_locale&) throw()
     {
       // Assumes __s formatted for "C" locale.
-      const char* __sav = __set_C_locale();
-      if (!__sav)
-	{
-	  __err = ios_base::failbit;
-	  return;
-	}
+      char* __old = setlocale(LC_ALL, 0);
+      const size_t __len = strlen(__old) + 1;
+      char* __sav = new char[__len];
+      memcpy(__sav, __old, __len);
+      setlocale(LC_ALL, "C");
       char* __sanity;
       bool __overflow = false;
 
@@ -142,12 +125,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		   const __c_locale&) throw()
     {
       // Assumes __s formatted for "C" locale.
-      const char* __sav = __set_C_locale();
-      if (!__sav)
-	{
-	  __err = ios_base::failbit;
-	  return;
-	}
+      char* __old = setlocale(LC_ALL, 0);
+      const size_t __len = strlen(__old) + 1;
+      char* __sav = new char[__len];
+      memcpy(__sav, __old, __len);
+      setlocale(LC_ALL, "C");
       char* __sanity;
 
 #if !__DBL_HAS_INFINITY__
@@ -188,12 +170,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		   ios_base::iostate& __err, const __c_locale&) throw()
     {
       // Assumes __s formatted for "C" locale.
-      const char* __sav = __set_C_locale();
-      if (!__sav)
-	{
-	  __err = ios_base::failbit;
-	  return;
-	}
+      char* __old = setlocale(LC_ALL, 0);
+      const size_t __len = strlen(__old) + 1;
+      char* __sav = new char[__len];
+      memcpy(__sav, __old, __len);
+      setlocale(LC_ALL, "C");
 
 #if !__LDBL_HAS_INFINITY__
       const _Save_errno __save_errno;

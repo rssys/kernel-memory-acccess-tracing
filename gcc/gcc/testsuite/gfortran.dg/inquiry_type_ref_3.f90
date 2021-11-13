@@ -17,7 +17,7 @@ program main
    type(t) :: s
    b = "abcdefg"
    a%kind = 2        ! { dg-error "Assignment to a constant expression" }
-   b%len = 2         ! { dg-error "parameter inquiry" }
+   b%len = 2         ! { dg-error "Assignment to a LEN or KIND part_ref" }
    i = a%kind        ! OK
    i = b%len         ! OK
    print *, z%re     ! { dg-error "must be applied to a COMPLEX expression" }

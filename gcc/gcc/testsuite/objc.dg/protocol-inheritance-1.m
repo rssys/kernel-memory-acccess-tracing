@@ -1,7 +1,6 @@
 /* Contributed by Nicola Pero <nicola.pero@meta-innovation.com>, November 2010.  */
 /* { dg-do compile } */
 /* { dg-options "-Wno-protocol" } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
 
 #include <objc/objc.h>
 

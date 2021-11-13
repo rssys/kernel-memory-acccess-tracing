@@ -1,5 +1,5 @@
 -- { dg-do compile }
--- { dg-options "-gnatc" }
+-- { dg-options "-gnat12 -gnatct" }
 
 limited with Limited_With4;
 

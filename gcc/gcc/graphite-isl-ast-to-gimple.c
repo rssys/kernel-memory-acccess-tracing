@@ -1,5 +1,5 @@
 /* Translation of isl AST to Gimple.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Roman Gareev <gareevroman@gmail.com>.
 
 This file is part of GCC.
@@ -18,12 +18,13 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_ISL
+#define USES_ISL
 
 #include "config.h"
 
 #ifdef HAVE_isl
 
+#define INCLUDE_MAP
 #include "system.h"
 #include "coretypes.h"
 #include "backend.h"
@@ -31,6 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "gimple.h"
 #include "ssa.h"
+#include "params.h"
 #include "fold-const.h"
 #include "gimple-fold.h"
 #include "gimple-iterator.h"
@@ -68,14 +70,18 @@ struct ast_build_info
 /* IVS_PARAMS maps isl's scattering and parameter identifiers
    to corresponding trees.  */
 
-typedef hash_map<isl_id *, tree> ivs_params;
+typedef std::map<isl_id *, tree> ivs_params;
 
 /* Free all memory allocated for isl's identifiers.  */
 
 static void ivs_params_clear (ivs_params &ip)
 {
-  for (auto it = ip.begin (); it != ip.end (); ++it)
-    isl_id_free ((*it).first);
+  std::map<isl_id *, tree>::iterator it;
+  for (it = ip.begin ();
+       it != ip.end (); it++)
+    {
+      isl_id_free (it->first);
+    }
 }
 
 /* Set the "separate" option for the schedule node.  */
@@ -197,7 +203,7 @@ class translate_isl_ast_to_gimple
   {
     codegen_error = true;
     gcc_assert (! flag_checking
-		|| param_graphite_allow_codegen_errors);
+		|| PARAM_VALUE (PARAM_GRAPHITE_ALLOW_CODEGEN_ERRORS));
   }
 
   bool is_constant (tree op) const
@@ -251,16 +257,15 @@ gcc_expression_from_isl_ast_expr_id (tree type,
 {
   gcc_assert (isl_ast_expr_get_type (expr_id) == isl_ast_expr_id);
   isl_id *tmp_isl_id = isl_ast_expr_get_id (expr_id);
-  tree *tp = ip.get (tmp_isl_id);
+  std::map<isl_id *, tree>::iterator res;
+  res = ip.find (tmp_isl_id);
   isl_id_free (tmp_isl_id);
-  gcc_assert (tp && "Could not map isl_id to tree expression");
+  gcc_assert (res != ip.end () &&
+	      "Could not map isl_id to tree expression");
   isl_ast_expr_free (expr_id);
-  tree t = *tp;
+  tree t = res->second;
   if (useless_type_conversion_p (type, TREE_TYPE (t)))
     return t;
-  if (POINTER_TYPE_P (TREE_TYPE (t))
-      && !POINTER_TYPE_P (type) && !ptrofftype_p (type))
-    t = fold_convert (sizetype, t);
   return fold_convert (type, t);
 }
 
@@ -589,9 +594,11 @@ graphite_create_new_loop (edge entry_edge, __isl_keep isl_ast_node *node_for,
 
   isl_ast_expr *for_iterator = isl_ast_node_for_get_iterator (node_for);
   isl_id *id = isl_ast_expr_get_id (for_iterator);
-  bool existed_p = ip.put (id, iv);
-  if (existed_p)
-    isl_id_free (id);
+  std::map<isl_id *, tree>::iterator res;
+  res = ip.find (id);
+  if (ip.count (id))
+    isl_id_free (res->first);
+  ip[id] = iv;
   isl_ast_expr_free (for_iterator);
   return loop;
 }
@@ -808,7 +815,7 @@ translate_isl_ast_node_user (__isl_keep isl_ast_node *node,
   const int nb_loops = number_of_loops (cfun);
   vec<tree> iv_map;
   iv_map.create (nb_loops);
-  iv_map.safe_grow_cleared (nb_loops, true);
+  iv_map.safe_grow_cleared (nb_loops);
 
   build_iv_mapping (iv_map, gbb, user_expr, ip, pbb->scop->scop_info->region);
   isl_ast_expr_free (user_expr);
@@ -1338,8 +1345,7 @@ add_parameters_to_ivs_params (scop_p scop, ivs_params &ip)
     {
       isl_id *tmp_id = isl_set_get_dim_id (scop->param_context,
 					   isl_dim_param, i);
-      bool existed_p = ip.put (tmp_id, param);
-      gcc_assert (!existed_p);
+      ip[tmp_id] = param;
     }
 }
 
@@ -1377,7 +1383,7 @@ scop_to_isl_ast (scop_p scop)
 {
   int old_err = isl_options_get_on_error (scop->isl_context);
   int old_max_operations = isl_ctx_get_max_operations (scop->isl_context);
-  int max_operations = param_max_isl_operations;
+  int max_operations = PARAM_VALUE (PARAM_MAX_ISL_OPERATIONS);
   if (max_operations)
     isl_ctx_set_max_operations (scop->isl_context, max_operations);
   isl_options_set_on_error (scop->isl_context, ISL_ON_ERROR_CONTINUE);
@@ -1535,8 +1541,9 @@ graphite_regenerate_ast_isl (scop_p scop)
       if_region->false_region->region.entry->flags |= EDGE_FALLTHRU;
       /* remove_edge_and_dominated_blocks marks loops for removal but
 	 doesn't actually remove them (fix that...).  */
-      for (auto loop : loops_list (cfun, LI_FROM_INNERMOST))
-	if (!loop->header)
+      loop_p loop;
+      FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
+	if (! loop->header)
 	  delete_loop (loop);
     }
 

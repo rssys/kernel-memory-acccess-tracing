@@ -9,9 +9,8 @@
 // COMMENT: This file may be deprecated.
 module core.sys.windows.lmaudit;
 version (Windows):
-@system:
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 enum LOGFLAGS_FORWARD  = 0;
 enum LOGFLAGS_BACKWARD = 1;

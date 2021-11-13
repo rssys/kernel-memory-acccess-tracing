@@ -1,5 +1,5 @@
 /* Language independent return value optimizations
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -315,8 +315,8 @@ dest_safe_for_nrv_p (gcall *call)
   if (TREE_CODE (dest) == SSA_NAME)
     return true;
 
-  if (call_may_clobber_ref_p (call, dest, false)
-      || ref_maybe_used_by_stmt_p (call, dest, false))
+  if (call_may_clobber_ref_p (call, dest)
+      || ref_maybe_used_by_stmt_p (call, dest))
     return false;
 
   return true;
@@ -378,10 +378,12 @@ pass_return_slot::execute (function *fun)
 	  if (stmt
 	      && gimple_call_lhs (stmt)
 	      && !gimple_call_return_slot_opt_p (stmt)
-	      /* Ignore internal functions, those are expanded specially
-		 and aggregate_value_p on their result might result in
-		 undesirable warnings with some backends.  */
-	      && !gimple_call_internal_p (stmt)
+	      /* Ignore internal functions without direct optabs,
+		 those are expanded specially and aggregate_value_p
+		 on their result might result in undesirable warnings
+		 with some backends.  */
+	      && (!gimple_call_internal_p (stmt)
+		  || direct_internal_fn_p (gimple_call_internal_fn (stmt)))
 	      && aggregate_value_p (TREE_TYPE (gimple_call_lhs (stmt)),
 				    gimple_call_fndecl (stmt)))
 	    {

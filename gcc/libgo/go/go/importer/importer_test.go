@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"internal/testenv"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
@@ -51,7 +52,7 @@ func TestForCompiler(t *testing.T) {
 		mathBigInt := pkg.Scope().Lookup("Int")
 		posn := fset.Position(mathBigInt.Pos()) // "$GOROOT/src/math/big/int.go:25:1"
 		filename := strings.Replace(posn.Filename, "$GOROOT", runtime.GOROOT(), 1)
-		data, err := os.ReadFile(filename)
+		data, err := ioutil.ReadFile(filename)
 		if err != nil {
 			t.Fatalf("can't read file containing declaration of math/big.Int: %v", err)
 		}

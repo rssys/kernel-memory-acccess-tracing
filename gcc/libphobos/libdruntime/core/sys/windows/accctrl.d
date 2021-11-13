@@ -12,7 +12,7 @@ version (Windows):
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.basetyps, core.sys.windows.w32api, core.sys.windows.winbase, core.sys.windows.windef;
+private import core.sys.windows.basetyps, core.sys.windows.w32api, core.sys.windows.winbase, core.sys.windows.windef;
 
 // FIXME: check types and grouping of constants
 // FIXME: check Windows version support

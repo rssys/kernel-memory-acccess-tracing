@@ -10,7 +10,7 @@ package main
 // The test fails when the function is the first C function.
 // The exported functions are the first C functions, so we use that.
 
-// extern void CallGoNop();
+// extern void GoNop();
 import "C"
 
 import (
@@ -38,7 +38,7 @@ func CgoCCodeSIGPROF() {
 					break
 				}
 			}
-			C.CallGoNop()
+			C.GoNop()
 		}
 		c <- true
 	}()

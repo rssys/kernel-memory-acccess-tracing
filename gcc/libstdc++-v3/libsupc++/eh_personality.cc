@@ -1,5 +1,5 @@
 // -*- C++ -*- The GNU C++ exception personality routine.
-// Copyright (C) 2001-2021 Free Software Foundation, Inc.
+// Copyright (C) 2001-2019 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -93,15 +93,7 @@ get_ttype_entry (lsda_header_info *info, _uleb128_t i)
   _Unwind_Ptr ptr;
 
   i *= size_of_encoded_value (info->ttype_encoding);
-  read_encoded_value_with_base (
-#if __FDPIC__
-				/* Force these flags to nake sure to
-				   take the GOT into account.  */
-				(DW_EH_PE_pcrel | DW_EH_PE_indirect),
-#else
-				info->ttype_encoding,
-#endif
-				info->ttype_base,
+  read_encoded_value_with_base (info->ttype_encoding, info->ttype_base,
 				info->TType - i, &ptr);
 
   return reinterpret_cast<const std::type_info *>(ptr);
@@ -673,13 +665,10 @@ PERSONALITY_FUNCTION (int version,
 	std::terminate ();
       else if (handler_switch_value < 0)
 	{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-	  __try
-	    { std::unexpected (); }
-	  __catch(...)
+	  __try 
+	    { std::unexpected (); } 
+	  __catch(...) 
 	    { std::terminate (); }
-#pragma GCC diagnostic pop
 	}
     }
   else

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -40,11 +40,8 @@ with Ada.Containers.Helpers; use Ada.Containers.Helpers;
 with Ada.Containers.Prime_Numbers;
 
 with System; use type System.Address;
-with System.Put_Images;
 
-package body Ada.Containers.Hashed_Sets with
-  SPARK_Mode => Off
-is
+package body Ada.Containers.Hashed_Sets is
 
    pragma Warnings (Off, "variable ""Busy*"" is not referenced");
    pragma Warnings (Off, "variable ""Lock*"" is not referenced");
@@ -145,13 +142,6 @@ is
    -- "=" --
    ---------
 
-   function "=" (Left, Right : Cursor) return Boolean is
-   begin
-      return
-       Left.Container = Right.Container
-         and then Left.Node = Right.Node;
-   end "=";
-
    function "=" (Left, Right : Set) return Boolean is
    begin
       return Is_Equal (Left.HT, Right.HT);
@@ -233,7 +223,7 @@ is
            (Element => Position.Node.Element'Access,
             Control => (Controlled with TC))
          do
-            Busy (TC.all);
+            Lock (TC.all);
          end return;
       end;
    end Constant_Reference;
@@ -309,8 +299,6 @@ is
       Position  : in out Cursor)
    is
    begin
-      TC_Check (Container.HT.TC);
-
       if Checks and then Position.Node = null then
          raise Constraint_Error with "Position cursor equals No_Element";
       end if;
@@ -320,14 +308,14 @@ is
          raise Program_Error with "Position cursor designates wrong set";
       end if;
 
+      TC_Check (Container.HT.TC);
+
       pragma Assert (Vet (Position), "bad cursor in Delete");
 
       HT_Ops.Delete_Node_Sans_Free (Container.HT, Position.Node);
 
       Free (Position.Node);
       Position.Container := null;
-      Position.Position := No_Element.Position;
-      pragma Assert (Position = No_Element);
    end Delete;
 
    ----------------
@@ -477,17 +465,6 @@ is
       return Position.Node.Element;
    end Element;
 
-   -----------
-   -- Empty --
-   -----------
-
-   function Empty (Capacity : Count_Type := 1000) return Set is
-   begin
-      return Result : Set do
-         Reserve_Capacity (Result, Capacity);
-      end return;
-   end Empty;
-
    ---------------------
    -- Equivalent_Sets --
    ---------------------
@@ -612,13 +589,13 @@ is
    is
       HT   : Hash_Table_Type renames Container'Unrestricted_Access.HT;
       Node : constant Node_Access := Element_Keys.Find (HT, Item);
+
    begin
       if Node = null then
          return No_Element;
       end if;
 
-      return Cursor'
-        (Container'Unrestricted_Access, Node, HT_Ops.Index (HT, Node));
+      return Cursor'(Container'Unrestricted_Access, Node, Hash_Type'Last);
    end Find;
 
    --------------------
@@ -773,11 +750,6 @@ is
    begin
       Insert (Container.HT, New_Item, Position.Node, Inserted);
       Position.Container := Container'Unchecked_Access;
-
-      --  Note that we do not set the Position component of the cursor,
-      --  because it may become incorrect on subsequent insertions/deletions
-      --  from the container. This will lose some optimizations but prevents
-      --  anomalies when the underlying hash-table is expanded or shrunk.
    end Insert;
 
    procedure Insert
@@ -1147,7 +1119,7 @@ is
         Container.HT.TC'Unrestricted_Access;
    begin
       return R : constant Reference_Control_Type := (Controlled with TC) do
-         Busy (TC.all);
+         Lock (TC.all);
       end return;
    end Pseudo_Reference;
 
@@ -1174,31 +1146,6 @@ is
          Process (Position.Node.Element);
       end;
    end Query_Element;
-
-   ---------------
-   -- Put_Image --
-   ---------------
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Set)
-   is
-      First_Time : Boolean := True;
-      use System.Put_Images;
-   begin
-      Array_Before (S);
-
-      for X of V loop
-         if First_Time then
-            First_Time := False;
-         else
-            Simple_Array_Between (S);
-         end if;
-
-         Element_Type'Put_Image (S, X);
-      end loop;
-
-      Array_After (S);
-   end Put_Image;
 
    ----------
    -- Read --
@@ -1257,12 +1204,12 @@ is
         Element_Keys.Find (Container.HT, New_Item);
 
    begin
-      TE_Check (Container.HT.TC);
-
       if Checks and then Node = null then
          raise Constraint_Error with
            "attempt to replace element not in set";
       end if;
+
+      TE_Check (Container.HT.TC);
 
       Node.Element := New_Item;
    end Replace;
@@ -1892,7 +1839,7 @@ is
               (Element => Node.Element'Access,
                Control => (Controlled with TC))
             do
-               Busy (TC.all);
+               Lock (TC.all);
             end return;
          end;
       end Constant_Reference;
@@ -2010,7 +1957,7 @@ is
             return No_Element;
          else
             return Cursor'
-              (Container'Unrestricted_Access, Node, HT_Ops.Index (HT, Node));
+              (Container'Unrestricted_Access, Node, Hash_Type'Last);
          end if;
       end Find;
 
@@ -2078,7 +2025,7 @@ is
                               Old_Pos  => Position,
                               Old_Hash => Hash (Key (Position))))
             do
-               Busy (HT.TC);
+               Lock (HT.TC);
             end return;
          end;
       end Reference_Preserving_Key;
@@ -2108,7 +2055,7 @@ is
                               Old_Pos  => P,
                               Old_Hash => Hash (Key)))
             do
-               Busy (HT.TC);
+               Lock (HT.TC);
             end return;
          end;
       end Reference_Preserving_Key;

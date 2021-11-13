@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -10,9 +10,9 @@
 
 #pragma once
 
-#include "root/port.h"
+#include "root/root.h"
 #include "root/stringtable.h"
-#include "ast_node.h"
+
 #include "globals.h"
 #include "arraytypes.h"
 #include "visitor.h"
@@ -83,35 +83,33 @@ struct Ungag
     ~Ungag() { global.gag = oldgag; }
 };
 
-void dsymbolSemantic(Dsymbol *dsym, Scope *sc);
-void semantic2(Dsymbol *dsym, Scope* sc);
-void semantic3(Dsymbol *dsym, Scope* sc);
+enum PROTKIND
+{
+    PROTundefined,
+    PROTnone,           // no access
+    PROTprivate,
+    PROTpackage,
+    PROTprotected,
+    PROTpublic,
+    PROTexport
+};
 
 struct Prot
 {
-    enum Kind
-    {
-        undefined,
-        none,           // no access
-        private_,
-        package_,
-        protected_,
-        public_,
-        export_
-    };
-    Kind kind;
+    PROTKIND kind;
     Package *pkg;
 
     Prot();
-    Prot(Kind kind);
+    Prot(PROTKIND kind);
 
     bool isMoreRestrictiveThan(const Prot other) const;
     bool operator==(const Prot& other) const;
+    bool isSubsetOf(const Prot& other) const;
 };
 
 // in hdrgen.c
 void protectionToBuffer(OutBuffer *buf, Prot prot);
-const char *protectionToChars(Prot::Kind kind);
+const char *protectionToChars(PROTKIND kind);
 
 /* State of symbol in winding its way through the passes of the compiler
  */
@@ -148,7 +146,7 @@ enum
 
 typedef int (*Dsymbol_apply_ft_t)(Dsymbol *, void *);
 
-class Dsymbol : public ASTNode
+class Dsymbol : public RootObject
 {
 public:
     Identifier *ident;
@@ -178,7 +176,7 @@ public:
     void error(const char *format, ...);
     void deprecation(Loc loc, const char *format, ...);
     void deprecation(const char *format, ...);
-    bool checkDeprecated(Loc loc, Scope *sc);
+    void checkDeprecated(Loc loc, Scope *sc);
     Module *getModule();
     Module *getAccessModule();
     Dsymbol *pastMixin();
@@ -204,9 +202,12 @@ public:
     virtual void addMember(Scope *sc, ScopeDsymbol *sds);
     virtual void setScope(Scope *sc);
     virtual void importAll(Scope *sc);
+    virtual void semantic(Scope *sc);
+    virtual void semantic2(Scope *sc);
+    virtual void semantic3(Scope *sc);
     virtual Dsymbol *search(const Loc &loc, Identifier *ident, int flags = IgnoreNone);
     Dsymbol *search_correct(Identifier *id);
-    Dsymbol *searchX(Loc loc, Scope *sc, RootObject *id, int flags);
+    Dsymbol *searchX(Loc loc, Scope *sc, RootObject *id);
     virtual bool overloadInsert(Dsymbol *s);
     virtual d_uns64 size(Loc loc);
     virtual bool isforwardRef();
@@ -266,8 +267,6 @@ public:
     virtual UnitTestDeclaration *isUnitTestDeclaration() { return NULL; }
     virtual NewDeclaration *isNewDeclaration() { return NULL; }
     virtual VarDeclaration *isVarDeclaration() { return NULL; }
-    virtual VersionSymbol *isVersionSymbol() { return NULL; }
-    virtual DebugSymbol *isDebugSymbol() { return NULL; }
     virtual ClassDeclaration *isClassDeclaration() { return NULL; }
     virtual StructDeclaration *isStructDeclaration() { return NULL; }
     virtual UnionDeclaration *isUnionDeclaration() { return NULL; }
@@ -283,7 +282,7 @@ public:
     virtual AttribDeclaration *isAttribDeclaration() { return NULL; }
     virtual AnonDeclaration *isAnonDeclaration() { return NULL; }
     virtual OverloadSet *isOverloadSet() { return NULL; }
-    void accept(Visitor *v) { v->visit(this); }
+    virtual void accept(Visitor *v) { v->visit(this); }
 };
 
 // Dsymbol that generates a scope
@@ -297,7 +296,7 @@ public:
 
 private:
     Dsymbols *importedScopes;   // imported Dsymbol's
-    Prot::Kind *prots;            // array of PROTKIND, one for each import
+    PROTKIND *prots;            // array of PROTKIND, one for each import
 
     BitArray accessiblePackages, privateAccessiblePackages;
 
@@ -322,6 +321,7 @@ public:
     static Dsymbol *getNth(Dsymbols *members, size_t nth, size_t *pn = NULL);
 
     ScopeDsymbol *isScopeDsymbol() { return this; }
+    void semantic(Scope *sc);
     void accept(Visitor *v) { v->visit(this); }
 };
 
@@ -376,13 +376,12 @@ public:
 
 class ForwardingScopeDsymbol : public ScopeDsymbol
 {
-public:
     ScopeDsymbol *forward;
 
-    ForwardingScopeDsymbol(ScopeDsymbol *forward);
     Dsymbol *symtabInsert(Dsymbol *s);
     Dsymbol *symtabLookup(Dsymbol *s, Identifier *id);
     void importScope(Dsymbol *s, Prot protection);
+    void semantic(Scope *sc);
     const char *kind() const;
 
     ForwardingScopeDsymbol *isForwardingScopeDsymbol() { return this; }

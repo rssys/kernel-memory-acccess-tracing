@@ -1,5 +1,3 @@
-/* { dg-require-effective-target size20plus } */
-
 void bar ();
 
 int toto()

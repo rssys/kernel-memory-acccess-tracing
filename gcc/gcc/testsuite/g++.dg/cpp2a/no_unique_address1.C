@@ -1,4 +1,4 @@
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 [[no_unique_address]] struct B { }; // { dg-warning "attribute" }
 [[no_unique_address]] int i;	    // { dg-warning "attribute" }

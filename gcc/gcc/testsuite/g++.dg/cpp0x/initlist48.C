@@ -2,7 +2,6 @@
 // { dg-do compile { target c++11 } }
 
 #include <memory>
-#include <initializer_list>
 
 struct Foo{
     int i;

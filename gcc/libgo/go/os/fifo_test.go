@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
 // +build darwin dragonfly freebsd linux netbsd openbsd
 
 package os_test
@@ -12,6 +11,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,9 +26,17 @@ func TestFifoEOF(t *testing.T) {
 	switch runtime.GOOS {
 	case "android":
 		t.Skip("skipping on Android; mkfifo syscall not available")
+	case "openbsd":
+		// On OpenBSD 6.2 this test just hangs for some reason.
+		t.Skip("skipping on OpenBSD; issue 25877")
 	}
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestFifoEOF")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
 	fifoName := filepath.Join(dir, "fifo")
 	if err := syscall.Mkfifo(fifoName, 0600); err != nil {
 		t.Fatal(err)

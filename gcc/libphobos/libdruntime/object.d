@@ -16,41 +16,33 @@ private
     extern (C) void rt_finalize(void *data, bool det=true);
 }
 
-alias size_t = typeof(int.sizeof);
-alias ptrdiff_t = typeof(cast(void*)0 - cast(void*)0);
+// NOTE: For some reason, this declaration method doesn't work
+//       in this particular file (and this file only).  It must
+//       be a DMD thing.
+//alias typeof(int.sizeof)                    size_t;
+//alias typeof(cast(void*)0 - cast(void*)0)   ptrdiff_t;
 
-alias sizediff_t = ptrdiff_t; // For backwards compatibility only.
-alias noreturn = typeof(*null);  /// bottom type
+version (D_LP64)
+{
+    alias size_t = ulong;
+    alias ptrdiff_t = long;
+}
+else
+{
+    alias size_t = uint;
+    alias ptrdiff_t = int;
+}
 
-alias hash_t = size_t; // For backwards compatibility only.
-alias equals_t = bool; // For backwards compatibility only.
+alias sizediff_t = ptrdiff_t; //For backwards compatibility only.
+
+alias hash_t = size_t; //For backwards compatibility only.
+alias equals_t = bool; //For backwards compatibility only.
 
 alias string  = immutable(char)[];
 alias wstring = immutable(wchar)[];
 alias dstring = immutable(dchar)[];
 
 version (D_ObjectiveC) public import core.attribute : selector;
-
-// Some ABIs use a complex varargs implementation requiring TypeInfo.argTypes().
-version (GNU)
-{
-    // No TypeInfo-based core.vararg.va_arg().
-}
-else version (X86_64)
-{
-    version (DigitalMars) version = WithArgTypes;
-    else version (Windows) { /* no need for Win64 ABI */ }
-    else version = WithArgTypes;
-}
-else version (AArch64)
-{
-    // Apple uses a trivial varargs implementation
-    version (OSX) {}
-    else version (iOS) {}
-    else version (TVOS) {}
-    else version (WatchOS) {}
-    else version = WithArgTypes;
-}
 
 /**
  * All D class objects inherit from Object.
@@ -319,7 +311,7 @@ class TypeInfo
     /** Return internal info on arguments fitting into 8byte.
      * See X86-64 ABI 3.2.3
      */
-    version (WithArgTypes) int argTypes(out TypeInfo arg1, out TypeInfo arg2) @safe nothrow
+    version (X86_64) int argTypes(out TypeInfo arg1, out TypeInfo arg2) @safe nothrow
     {
         arg1 = this;
         return 0;
@@ -327,7 +319,7 @@ class TypeInfo
 
     /** Return info used by the garbage collector to do precise collection.
      */
-    @property immutable(void)* rtInfo() nothrow pure const @safe @nogc { return rtinfoHasPointers; } // better safe than sorry
+    @property immutable(void)* rtInfo() nothrow pure const @safe @nogc { return null; }
 }
 
 class TypeInfo_Enum : TypeInfo
@@ -359,7 +351,7 @@ class TypeInfo_Enum : TypeInfo
 
     override @property size_t talign() nothrow pure const { return base.talign; }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         return base.argTypes(arg1, arg2);
     }
@@ -517,14 +509,12 @@ class TypeInfo_Array : TypeInfo
         return (void[]).alignof;
     }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         arg1 = typeid(size_t);
         arg2 = typeid(void*);
         return 0;
     }
-
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(void[]); }
 }
 
 class TypeInfo_StaticArray : TypeInfo
@@ -646,14 +636,11 @@ class TypeInfo_StaticArray : TypeInfo
         return value.talign;
     }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         arg1 = typeid(void*);
         return 0;
     }
-
-    // just return the rtInfo of the element, we have no generic type T to run RTInfo!T on
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return value.rtInfo(); }
 }
 
 class TypeInfo_AssociativeArray : TypeInfo
@@ -705,7 +692,7 @@ class TypeInfo_AssociativeArray : TypeInfo
         return (char[int]).alignof;
     }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         arg1 = typeid(void*);
         return 0;
@@ -740,7 +727,7 @@ class TypeInfo_Vector : TypeInfo
 
     override @property size_t talign() nothrow pure const { return 16; }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         return base.argTypes(arg1, arg2);
     }
@@ -779,8 +766,6 @@ class TypeInfo_Function : TypeInfo
     {
         return null;
     }
-
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoNoPointers; }
 
     TypeInfo next;
 
@@ -867,14 +852,12 @@ class TypeInfo_Delegate : TypeInfo
         return dg.alignof;
     }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         arg1 = typeid(void*);
         arg2 = typeid(void*);
         return 0;
     }
-
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(int delegate()); }
 }
 
 /**
@@ -1245,9 +1228,9 @@ class TypeInfo_Struct : TypeInfo
 
     uint m_align;
 
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return m_RTInfo; }
+    override @property immutable(void)* rtInfo() const { return m_RTInfo; }
 
-    version (WithArgTypes)
+    version (X86_64)
     {
         override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
         {
@@ -1354,7 +1337,7 @@ class TypeInfo_Tuple : TypeInfo
         assert(0);
     }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         assert(0);
     }
@@ -1396,7 +1379,7 @@ class TypeInfo_Const : TypeInfo
 
     override @property size_t talign() nothrow pure const { return base.talign; }
 
-    version (WithArgTypes) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {
         return base.argTypes(arg1, arg2);
     }
@@ -3182,31 +3165,10 @@ void __ctfeWrite(const string s) @nogc @safe pure nothrow {}
  * Create RTInfo for type T
  */
 
-template RTInfoImpl(size_t[] pointerBitmap)
-{
-    immutable size_t[pointerBitmap.length] RTInfoImpl = pointerBitmap[];
-}
-
-template NoPointersBitmapPayload(size_t N)
-{
-    enum size_t[N] NoPointersBitmapPayload = 0;
-}
-
 template RTInfo(T)
 {
-    enum pointerBitmap = __traits(getPointerBitmap, T);
-    static if (pointerBitmap[1 .. $] == NoPointersBitmapPayload!(pointerBitmap.length - 1))
-        enum RTInfo = rtinfoNoPointers;
-    else
-        enum RTInfo = RTInfoImpl!(pointerBitmap).ptr;
+    enum RTInfo = null;
 }
-
-/**
-* shortcuts for the precise GC, also generated by the compiler
-* used instead of the actual pointer bitmap
-*/
-enum immutable(void)* rtinfoNoPointers  = null;
-enum immutable(void)* rtinfoHasPointers = cast(void*)1;
 
 // lhs == rhs lowers to __equals(lhs, rhs) for dynamic arrays
 bool __equals(T1, T2)(T1[] lhs, T2[] rhs)

@@ -1,5 +1,4 @@
 /* PR tree-optimization/54713 */
-/* { dg-skip-if "exceeds eBPF stack limit" { bpf-*-* } } */
 
 #define N 16
 #define ONE 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1

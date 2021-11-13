@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -40,7 +40,7 @@ is
    --  When growing a container, multiply current capacity by this. Doubling
    --  leads to amortized linear-time copying.
 
-   subtype Int is Long_Long_Integer;
+   type Int is range System.Min_Int .. System.Max_Int;
 
    procedure Free is
      new Ada.Unchecked_Deallocation (Elements_Array, Elements_Array_Ptr);
@@ -183,28 +183,6 @@ is
 
       Free (Container.Elements_Ptr);
    end Clear;
-
-   ------------------------
-   -- Constant_Reference --
-   ------------------------
-
-   function Constant_Reference
-     (Container : aliased Vector;
-      Index     : Index_Type) return not null access constant Element_Type
-   is
-   begin
-      if Index > Container.Last then
-         raise Constraint_Error with "Index is out of range";
-      end if;
-
-      declare
-         II : constant Int'Base := Int (Index) - Int (No_Index);
-         I  : constant Capacity_Range := Capacity_Range (II);
-
-      begin
-         return Constant_Reference (Elemsc (Container) (I));
-      end;
-   end Constant_Reference;
 
    --------------
    -- Contains --
@@ -479,8 +457,8 @@ is
       Item      : Element_Type;
       Index     : Index_Type := Index_Type'First) return Extended_Index
    is
-      K    : Count_Type;
-      Last : constant Extended_Index := Last_Index (Container);
+      K    : Capacity_Range;
+      Last : constant Index_Type := Last_Index (Container);
 
    begin
       K := Capacity_Range (Int (Index) - Int (No_Index));
@@ -1202,32 +1180,6 @@ is
       Insert (Container, Index_Type'First, New_Item, Count);
    end Prepend;
 
-   ---------------
-   -- Reference --
-   ---------------
-
-   function Reference
-     (Container : not null access Vector;
-      Index     : Index_Type) return not null access Element_Type
-   is
-   begin
-      if Index > Container.Last then
-         raise Constraint_Error with "Index is out of range";
-      end if;
-
-      declare
-         II : constant Int'Base := Int (Index) - Int (No_Index);
-         I  : constant Capacity_Range := Capacity_Range (II);
-
-      begin
-         if Container.Elements_Ptr = null then
-            return Reference (Container.Elements (I)'Access);
-         else
-            return Reference (Container.Elements_Ptr (I)'Access);
-         end if;
-      end;
-   end Reference;
-
    ---------------------
    -- Replace_Element --
    ---------------------
@@ -1325,7 +1277,7 @@ is
       Index     : Index_Type := Index_Type'Last) return Extended_Index
    is
       Last : Index_Type'Base;
-      K    : Count_Type'Base;
+      K    : Capacity_Range;
 
    begin
       if Index > Last_Index (Container) then

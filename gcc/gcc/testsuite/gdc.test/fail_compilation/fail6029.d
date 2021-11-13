@@ -1,9 +1,3 @@
-/*
-TEST_OUTPUT:
----
-fail_compilation/fail6029.d(10): Error: alias this is not reachable as `A` already converts to `A`
----
-*/
 struct A
 {
     static A a;

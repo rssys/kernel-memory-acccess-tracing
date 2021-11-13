@@ -1,5 +1,5 @@
 /* Decompose multiword subregs.
-   Copyright (C) 2007-2021 Free Software Foundation, Inc.
+   Copyright (C) 2007-2019 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>
 		  Ian Lance Taylor <iant@google.com>
 
@@ -383,10 +383,8 @@ simple_move (rtx_insn *insn, bool speed_p)
      non-integer mode for which there is no integer mode of the same
      size.  */
   mode = GET_MODE (SET_DEST (set));
-  scalar_int_mode int_mode;
   if (!SCALAR_INT_MODE_P (mode)
-      && (!int_mode_for_size (GET_MODE_BITSIZE (mode), 0).exists (&int_mode)
-	  || !targetm.modes_tieable_p (mode, int_mode)))
+      && !int_mode_for_size (GET_MODE_BITSIZE (mode), 0).exists ())
     return NULL_RTX;
 
   /* Reject PARTIAL_INT modes.  They are used for processor specific
@@ -1089,21 +1087,12 @@ resolve_simple_move (rtx set, rtx_insn *insn)
 	emit_clobber (dest);
 
       for (i = 0; i < words; ++i)
-	{
-	  rtx t = simplify_gen_subreg_concatn (word_mode, dest,
-					       dest_mode,
-					       i * UNITS_PER_WORD);
-	  /* simplify_gen_subreg_concatn can return (const_int 0) for
-	     some sub-objects of paradoxical subregs.  As a source operand,
-	     that's fine.  As a destination it must be avoided.  Those are
-	     supposed to be don't care bits, so we can just drop that store
-	     on the floor.  */
-	  if (t != CONST0_RTX (word_mode))
-	    emit_move_insn (t,
-			    simplify_gen_subreg_concatn (word_mode, src,
-							 orig_mode,
-							 i * UNITS_PER_WORD));
-	}
+	emit_move_insn (simplify_gen_subreg_concatn (word_mode, dest,
+						     dest_mode,
+						     i * UNITS_PER_WORD),
+			simplify_gen_subreg_concatn (word_mode, src,
+						     orig_mode,
+						     i * UNITS_PER_WORD));
     }
 
   if (real_dest != NULL_RTX)
@@ -1161,10 +1150,6 @@ resolve_clobber (rtx pat, rtx_insn *insn)
   int ret;
 
   reg = XEXP (pat, 0);
-  /* For clobbers we can look through paradoxical subregs which
-     we do not handle in simplify_gen_subreg_concatn.  */
-  if (paradoxical_subreg_p (reg))
-    reg = SUBREG_REG (reg);
   if (!resolve_reg_p (reg) && !resolve_subreg_p (reg))
     return false;
 
@@ -1528,7 +1513,7 @@ decompose_multiword_subregs (bool decompose_copies)
   subreg_context = BITMAP_ALLOC (NULL);
 
   reg_copy_graph.create (max);
-  reg_copy_graph.safe_grow_cleared (max, true);
+  reg_copy_graph.safe_grow_cleared (max);
   memset (reg_copy_graph.address (), 0, sizeof (bitmap) * max);
 
   speed_p = optimize_function_for_speed_p (cfun);
@@ -1733,9 +1718,14 @@ decompose_multiword_subregs (bool decompose_copies)
 	}
     }
 
-  for (bitmap b : reg_copy_graph)
-    if (b)
-      BITMAP_FREE (b);
+  {
+    unsigned int i;
+    bitmap b;
+
+    FOR_EACH_VEC_ELT (reg_copy_graph, i, b)
+      if (b)
+	BITMAP_FREE (b);
+  }
 
   reg_copy_graph.release ();
 
@@ -1811,8 +1801,7 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *) { return flag_split_wide_types
-					  && flag_split_wide_types_early; }
+  virtual bool gate (function *) { return flag_split_wide_types != 0; }
   virtual unsigned int execute (function *)
     {
       decompose_multiword_subregs (true);
@@ -1827,46 +1816,4 @@ rtl_opt_pass *
 make_pass_lower_subreg2 (gcc::context *ctxt)
 {
   return new pass_lower_subreg2 (ctxt);
-}
-
-/* Implement third lower subreg pass.  */
-
-namespace {
-
-const pass_data pass_data_lower_subreg3 =
-{
-  RTL_PASS, /* type */
-  "subreg3", /* name */
-  OPTGROUP_NONE, /* optinfo_flags */
-  TV_LOWER_SUBREG, /* tv_id */
-  0, /* properties_required */
-  0, /* properties_provided */
-  0, /* properties_destroyed */
-  0, /* todo_flags_start */
-  TODO_df_finish, /* todo_flags_finish */
-};
-
-class pass_lower_subreg3 : public rtl_opt_pass
-{
-public:
-  pass_lower_subreg3 (gcc::context *ctxt)
-    : rtl_opt_pass (pass_data_lower_subreg3, ctxt)
-  {}
-
-  /* opt_pass methods: */
-  virtual bool gate (function *) { return flag_split_wide_types; }
-  virtual unsigned int execute (function *)
-    {
-      decompose_multiword_subregs (true);
-      return 0;
-    }
-
-}; // class pass_lower_subreg3
-
-} // anon namespace
-
-rtl_opt_pass *
-make_pass_lower_subreg3 (gcc::context *ctxt)
-{
-  return new pass_lower_subreg3 (ctxt);
 }

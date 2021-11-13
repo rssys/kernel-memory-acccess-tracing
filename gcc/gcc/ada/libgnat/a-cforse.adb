@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -81,10 +81,6 @@ is
 
    --  Comments needed???
 
-   procedure Assign
-     (Target : in out Tree_Types.Tree_Type;
-      Source : Tree_Types.Tree_Type);
-
    generic
       with procedure Set_Element (Node : in out Node_Type);
    procedure Generic_Allocate
@@ -94,13 +90,13 @@ is
    procedure Free (Tree : in out Set; X : Count_Type);
 
    procedure Insert_Sans_Hint
-     (Container : in out Tree_Types.Tree_Type;
+     (Container : in out Set;
       New_Item  : Element_Type;
       Node      : out Count_Type;
       Inserted  : out Boolean);
 
    procedure Insert_With_Hint
-     (Dst_Set  : in out Tree_Types.Tree_Type;
+     (Dst_Set  : in out Set;
       Dst_Hint : Count_Type;
       Src_Node : Node_Type;
       Dst_Node : out Count_Type);
@@ -145,7 +141,7 @@ is
    package Set_Ops is
      new Red_Black_Trees.Generic_Bounded_Set_Operations
        (Tree_Operations  => Tree_Operations,
-        Set_Type         => Tree_Types.Tree_Type,
+        Set_Type         => Set,
         Assign           => Assign,
         Insert_With_Hint => Insert_With_Hint,
         Is_Less          => Is_Less_Node_Node);
@@ -168,19 +164,18 @@ is
          return True;
       end if;
 
-      Lst := Next (Left.Content, Last (Left).Node);
+      Lst := Next (Left, Last (Left).Node);
 
       Node := First (Left).Node;
       while Node /= Lst loop
-         ENode := Find (Right, Left.Content.Nodes (Node).Element).Node;
+         ENode := Find (Right, Left.Nodes (Node).Element).Node;
          if ENode = 0
-           or else Left.Content.Nodes (Node).Element /=
-           Right.Content.Nodes (ENode).Element
+           or else Left.Nodes (Node).Element /= Right.Nodes (ENode).Element
          then
             return False;
          end if;
 
-         Node := Next (Left.Content, Node);
+         Node := Next (Left, Node);
       end loop;
 
       return True;
@@ -190,10 +185,7 @@ is
    -- Assign --
    ------------
 
-   procedure Assign
-     (Target : in out Tree_Types.Tree_Type;
-      Source : Tree_Types.Tree_Type)
-   is
+   procedure Assign (Target : in out Set; Source : Set) is
       procedure Append_Element (Source_Node : Count_Type);
 
       procedure Append_Elements is
@@ -275,18 +267,12 @@ is
       Append_Elements (Source);
    end Assign;
 
-   procedure Assign (Target : in out Set; Source : Set) is
-   begin
-      Assign (Target.Content, Source.Content);
-   end Assign;
-
    -------------
    -- Ceiling --
    -------------
 
    function Ceiling (Container : Set; Item : Element_Type) return Cursor is
-      Node : constant Count_Type :=
-        Element_Keys.Ceiling (Container.Content, Item);
+      Node : constant Count_Type := Element_Keys.Ceiling (Container, Item);
 
    begin
       if Node = 0 then
@@ -302,7 +288,7 @@ is
 
    procedure Clear (Container : in out Set) is
    begin
-      Tree_Operations.Clear_Tree (Container.Content);
+      Tree_Operations.Clear_Tree (Container);
    end Clear;
 
    -----------
@@ -313,25 +299,6 @@ is
    begin
       return Node.Color;
    end Color;
-
-   ------------------------
-   -- Constant_Reference --
-   ------------------------
-
-   function Constant_Reference
-     (Container : aliased Set;
-      Position  : Cursor) return not null access constant Element_Type
-   is
-   begin
-      if not Has_Element (Container, Position) then
-         raise Constraint_Error with "Position cursor has no element";
-      end if;
-
-      pragma Assert (Vet (Container.Content, Position.Node),
-                     "bad cursor in Element");
-
-      return Container.Content.Nodes (Position.Node).Element'Access;
-   end Constant_Reference;
 
    --------------
    -- Contains --
@@ -360,32 +327,32 @@ is
       end if;
 
       if Length (Source) > 0 then
-         Target.Content.Length := Source.Content.Length;
-         Target.Content.Root   := Source.Content.Root;
-         Target.Content.First  := Source.Content.First;
-         Target.Content.Last   := Source.Content.Last;
-         Target.Content.Free   := Source.Content.Free;
+         Target.Length := Source.Length;
+         Target.Root   := Source.Root;
+         Target.First  := Source.First;
+         Target.Last   := Source.Last;
+         Target.Free   := Source.Free;
 
          Node := 1;
          while Node <= Source.Capacity loop
-            Target.Content.Nodes (Node).Element :=
-              Source.Content.Nodes (Node).Element;
-            Target.Content.Nodes (Node).Parent :=
-              Source.Content.Nodes (Node).Parent;
-            Target.Content.Nodes (Node).Left :=
-              Source.Content.Nodes (Node).Left;
-            Target.Content.Nodes (Node).Right :=
-              Source.Content.Nodes (Node).Right;
-            Target.Content.Nodes (Node).Color :=
-              Source.Content.Nodes (Node).Color;
-            Target.Content.Nodes (Node).Has_Element :=
-              Source.Content.Nodes (Node).Has_Element;
+            Target.Nodes (Node).Element :=
+              Source.Nodes (Node).Element;
+            Target.Nodes (Node).Parent :=
+              Source.Nodes (Node).Parent;
+            Target.Nodes (Node).Left :=
+              Source.Nodes (Node).Left;
+            Target.Nodes (Node).Right :=
+              Source.Nodes (Node).Right;
+            Target.Nodes (Node).Color :=
+              Source.Nodes (Node).Color;
+            Target.Nodes (Node).Has_Element :=
+              Source.Nodes (Node).Has_Element;
             Node := Node + 1;
          end loop;
 
          while Node <= Target.Capacity loop
             N := Node;
-            Free (Tree => Target, X => N);
+            Formal_Ordered_Sets.Free (Tree => Target, X => N);
             Node := Node + 1;
          end loop;
       end if;
@@ -403,25 +370,25 @@ is
          raise Constraint_Error with "Position cursor has no element";
       end if;
 
-      pragma Assert (Vet (Container.Content, Position.Node),
+      pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Delete");
 
-      Tree_Operations.Delete_Node_Sans_Free (Container.Content,
+      Tree_Operations.Delete_Node_Sans_Free (Container,
                                              Position.Node);
-      Free (Container, Position.Node);
+      Formal_Ordered_Sets.Free (Container, Position.Node);
       Position := No_Element;
    end Delete;
 
    procedure Delete (Container : in out Set; Item : Element_Type) is
-      X : constant Count_Type := Element_Keys.Find (Container.Content, Item);
+      X : constant Count_Type := Element_Keys.Find (Container, Item);
 
    begin
       if X = 0 then
          raise Constraint_Error with "attempt to delete element not in set";
       end if;
 
-      Tree_Operations.Delete_Node_Sans_Free (Container.Content, X);
-      Free (Container, X);
+      Tree_Operations.Delete_Node_Sans_Free (Container, X);
+      Formal_Ordered_Sets.Free (Container, X);
    end Delete;
 
    ------------------
@@ -429,11 +396,11 @@ is
    ------------------
 
    procedure Delete_First (Container : in out Set) is
-      X    : constant Count_Type := Container.Content.First;
+      X    : constant Count_Type := Container.First;
    begin
       if X /= 0 then
-         Tree_Operations.Delete_Node_Sans_Free (Container.Content, X);
-         Free (Container, X);
+         Tree_Operations.Delete_Node_Sans_Free (Container, X);
+         Formal_Ordered_Sets.Free (Container, X);
       end if;
    end Delete_First;
 
@@ -442,11 +409,11 @@ is
    -----------------
 
    procedure Delete_Last (Container : in out Set) is
-      X    : constant Count_Type := Container.Content.Last;
+      X    : constant Count_Type := Container.Last;
    begin
       if X /= 0 then
-         Tree_Operations.Delete_Node_Sans_Free (Container.Content, X);
-         Free (Container, X);
+         Tree_Operations.Delete_Node_Sans_Free (Container, X);
+         Formal_Ordered_Sets.Free (Container, X);
       end if;
    end Delete_Last;
 
@@ -456,7 +423,7 @@ is
 
    procedure Difference (Target : in out Set; Source : Set) is
    begin
-      Set_Ops.Set_Difference (Target.Content, Source.Content);
+      Set_Ops.Set_Difference (Target, Source);
    end Difference;
 
    function Difference (Left, Right : Set) return Set is
@@ -470,12 +437,11 @@ is
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       return S : Set (Length (Left)) do
-         Assign
-           (S.Content, Set_Ops.Set_Difference (Left.Content, Right.Content));
+            Assign (S, Set_Ops.Set_Difference (Left, Right));
       end return;
    end Difference;
 
@@ -489,10 +455,10 @@ is
          raise Constraint_Error with "Position cursor has no element";
       end if;
 
-      pragma Assert (Vet (Container.Content, Position.Node),
+      pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Element");
 
-      return Container.Content.Nodes (Position.Node).Element;
+      return Container.Nodes (Position.Node).Element;
    end Element;
 
    -------------------------
@@ -540,7 +506,7 @@ is
    --  Start of processing for Equivalent_Sets
 
    begin
-      return Is_Equivalent (Left.Content, Right.Content);
+      return Is_Equivalent (Left, Right);
    end Equivalent_Sets;
 
    -------------
@@ -548,11 +514,11 @@ is
    -------------
 
    procedure Exclude (Container : in out Set; Item : Element_Type) is
-      X : constant Count_Type := Element_Keys.Find (Container.Content, Item);
+      X : constant Count_Type := Element_Keys.Find (Container, Item);
    begin
       if X /= 0 then
-         Tree_Operations.Delete_Node_Sans_Free (Container.Content, X);
-         Free (Container, X);
+         Tree_Operations.Delete_Node_Sans_Free (Container, X);
+         Formal_Ordered_Sets.Free (Container, X);
       end if;
    end Exclude;
 
@@ -561,8 +527,7 @@ is
    ----------
 
    function Find (Container : Set; Item : Element_Type) return Cursor is
-      Node : constant Count_Type :=
-        Element_Keys.Find (Container.Content, Item);
+      Node : constant Count_Type := Element_Keys.Find (Container, Item);
 
    begin
       if Node = 0 then
@@ -582,7 +547,7 @@ is
          return No_Element;
       end if;
 
-      return (Node => Container.Content.First);
+      return (Node => Container.First);
    end First;
 
    -------------------
@@ -597,7 +562,7 @@ is
       end if;
 
       declare
-         N : Tree_Types.Nodes_Type renames Container.Content.Nodes;
+         N : Tree_Types.Nodes_Type renames Container.Nodes;
       begin
          return N (Fst).Element;
       end;
@@ -610,8 +575,7 @@ is
    function Floor (Container : Set; Item : Element_Type) return Cursor is
    begin
       declare
-         Node : constant Count_Type :=
-           Element_Keys.Floor (Container.Content, Item);
+         Node : constant Count_Type := Element_Keys.Floor (Container, Item);
 
       begin
          if Node = 0 then
@@ -784,7 +748,7 @@ is
       --------------
 
       function Elements (Container : Set) return E.Sequence is
-         Position : Count_Type := Container.Content.First;
+         Position : Count_Type := Container.First;
          R        : E.Sequence;
 
       begin
@@ -792,8 +756,8 @@ is
          --  for their postconditions.
 
          while Position /= 0 loop
-            R := E.Add (R, Container.Content.Nodes (Position).Element);
-            Position := Tree_Operations.Next (Container.Content, Position);
+            R := E.Add (R, Container.Nodes (Position).Element);
+            Position := Tree_Operations.Next (Container, Position);
          end loop;
 
          return R;
@@ -909,7 +873,7 @@ is
       -----------
 
       function Model (Container : Set) return M.Set is
-         Position : Count_Type := Container.Content.First;
+         Position : Count_Type := Container.First;
          R        : M.Set;
 
       begin
@@ -920,9 +884,9 @@ is
             R :=
               M.Add
                 (Container => R,
-                 Item      => Container.Content.Nodes (Position).Element);
+                 Item      => Container.Nodes (Position).Element);
 
-            Position := Tree_Operations.Next (Container.Content, Position);
+            Position := Tree_Operations.Next (Container, Position);
          end loop;
 
          return R;
@@ -934,7 +898,7 @@ is
 
       function Positions (Container : Set) return P.Map is
          I        : Count_Type := 1;
-         Position : Count_Type := Container.Content.First;
+         Position : Count_Type := Container.First;
          R        : P.Map;
 
       begin
@@ -944,7 +908,7 @@ is
          while Position /= 0 loop
             R := P.Add (R, (Node => Position), I);
             pragma Assert (P.Length (R) = I);
-            Position := Tree_Operations.Next (Container.Content, Position);
+            Position := Tree_Operations.Next (Container, Position);
             I := I + 1;
          end loop;
 
@@ -959,8 +923,8 @@ is
 
    procedure Free (Tree : in out Set; X : Count_Type) is
    begin
-      Tree.Content.Nodes (X).Has_Element := False;
-      Tree_Operations.Free (Tree.Content, X);
+      Tree.Nodes (X).Has_Element := False;
+      Tree_Operations.Free (Tree, X);
    end Free;
 
    ----------------------
@@ -1014,8 +978,7 @@ is
       -------------
 
       function Ceiling (Container : Set; Key : Key_Type) return Cursor is
-         Node : constant Count_Type :=
-           Key_Keys.Ceiling (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Ceiling (Container, Key);
 
       begin
          if Node = 0 then
@@ -1039,15 +1002,15 @@ is
       ------------
 
       procedure Delete (Container : in out Set; Key : Key_Type) is
-         X : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         X : constant Count_Type := Key_Keys.Find (Container, Key);
 
       begin
          if X = 0 then
             raise Constraint_Error with "attempt to delete key not in set";
          end if;
 
-         Delete_Node_Sans_Free (Container.Content, X);
-         Free (Container, X);
+         Delete_Node_Sans_Free (Container, X);
+         Formal_Ordered_Sets.Free (Container, X);
       end Delete;
 
       -------------
@@ -1055,7 +1018,7 @@ is
       -------------
 
       function Element (Container : Set; Key : Key_Type) return Element_Type is
-         Node : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
 
       begin
          if Node = 0 then
@@ -1063,7 +1026,7 @@ is
          end if;
 
          declare
-            N : Tree_Types.Nodes_Type renames Container.Content.Nodes;
+            N : Tree_Types.Nodes_Type renames Container.Nodes;
          begin
             return N (Node).Element;
          end;
@@ -1089,11 +1052,11 @@ is
       -------------
 
       procedure Exclude (Container : in out Set; Key : Key_Type) is
-         X : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         X : constant Count_Type := Key_Keys.Find (Container, Key);
       begin
          if X /= 0 then
-            Delete_Node_Sans_Free (Container.Content, X);
-            Free (Container, X);
+            Delete_Node_Sans_Free (Container, X);
+            Formal_Ordered_Sets.Free (Container, X);
          end if;
       end Exclude;
 
@@ -1102,7 +1065,7 @@ is
       ----------
 
       function Find (Container : Set; Key : Key_Type) return Cursor is
-         Node : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
       begin
          return (if Node = 0 then No_Element else (Node => Node));
       end Find;
@@ -1112,7 +1075,7 @@ is
       -----------
 
       function Floor (Container : Set; Key : Key_Type) return Cursor is
-         Node : constant Count_Type := Key_Keys.Floor (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Floor (Container, Key);
       begin
          return (if Node = 0 then No_Element else (Node => Node));
       end Floor;
@@ -1262,11 +1225,11 @@ is
               "Position cursor has no element";
          end if;
 
-         pragma Assert (Vet (Container.Content, Position.Node),
+         pragma Assert (Vet (Container, Position.Node),
                         "bad cursor in Key");
 
          declare
-            N : Tree_Types.Nodes_Type renames Container.Content.Nodes;
+            N : Tree_Types.Nodes_Type renames Container.Nodes;
          begin
             return Key (N (Position.Node).Element);
          end;
@@ -1281,7 +1244,7 @@ is
          Key       : Key_Type;
          New_Item  : Element_Type)
       is
-         Node : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
       begin
          if not Has_Element (Container, (Node => Node)) then
             raise Constraint_Error with
@@ -1302,7 +1265,7 @@ is
       if Position.Node = 0 then
          return False;
       else
-         return Container.Content.Nodes (Position.Node).Has_Element;
+         return Container.Nodes (Position.Node).Has_Element;
       end if;
    end Has_Element;
 
@@ -1319,7 +1282,7 @@ is
 
       if not Inserted then
          declare
-            N : Tree_Types.Nodes_Type renames Container.Content.Nodes;
+            N : Tree_Types.Nodes_Type renames Container.Nodes;
          begin
             N (Position.Node).Element := New_Item;
          end;
@@ -1337,7 +1300,7 @@ is
       Inserted  : out Boolean)
    is
    begin
-      Insert_Sans_Hint (Container.Content, New_Item, Position.Node, Inserted);
+      Insert_Sans_Hint (Container, New_Item, Position.Node, Inserted);
    end Insert;
 
    procedure Insert
@@ -1361,7 +1324,7 @@ is
    ----------------------
 
    procedure Insert_Sans_Hint
-     (Container : in out Tree_Types.Tree_Type;
+     (Container : in out Set;
       New_Item  : Element_Type;
       Node      : out Count_Type;
       Inserted  : out Boolean)
@@ -1414,7 +1377,7 @@ is
    ----------------------
 
    procedure Insert_With_Hint
-     (Dst_Set  : in out Tree_Types.Tree_Type;
+     (Dst_Set  : in out Set;
       Dst_Hint : Count_Type;
       Src_Node : Node_Type;
       Dst_Node : out Count_Type)
@@ -1476,18 +1439,17 @@ is
 
    procedure Intersection (Target : in out Set; Source : Set) is
    begin
-      Set_Ops.Set_Intersection (Target.Content, Source.Content);
+      Set_Ops.Set_Intersection (Target, Source);
    end Intersection;
 
    function Intersection (Left, Right : Set) return Set is
    begin
       if Left'Address = Right'Address then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       return S : Set (Count_Type'Min (Length (Left), Length (Right))) do
-            Assign (S.Content,
-                    Set_Ops.Set_Intersection (Left.Content, Right.Content));
+            Assign (S, Set_Ops.Set_Intersection (Left, Right));
       end return;
    end Intersection;
 
@@ -1541,7 +1503,7 @@ is
 
    function Is_Subset (Subset : Set; Of_Set : Set) return Boolean is
    begin
-      return Set_Ops.Set_Subset (Subset.Content, Of_Set => Of_Set.Content);
+      return Set_Ops.Set_Subset (Subset, Of_Set => Of_Set);
    end Is_Subset;
 
    ----------
@@ -1552,7 +1514,7 @@ is
    begin
       return (if Length (Container) = 0
               then No_Element
-              else (Node => Container.Content.Last));
+              else (Node => Container.Last));
    end Last;
 
    ------------------
@@ -1566,7 +1528,7 @@ is
       end if;
 
       declare
-         N : Tree_Types.Nodes_Type renames Container.Content.Nodes;
+         N : Tree_Types.Nodes_Type renames Container.Nodes;
       begin
          return N (Last (Container).Node).Element;
       end;
@@ -1587,7 +1549,7 @@ is
 
    function Length (Container : Set) return Count_Type is
    begin
-      return Container.Content.Length;
+      return Container.Length;
    end Length;
 
    ----------
@@ -1595,7 +1557,7 @@ is
    ----------
 
    procedure Move (Target : in out Set; Source : in out Set) is
-      N : Tree_Types.Nodes_Type renames Source.Content.Nodes;
+      N : Tree_Types.Nodes_Type renames Source.Nodes;
       X : Count_Type;
 
    begin
@@ -1611,13 +1573,13 @@ is
       Clear (Target);
 
       loop
-         X := Source.Content.First;
+         X := Source.First;
          exit when X = 0;
 
          Insert (Target, N (X).Element);  -- optimize???
 
-         Tree_Operations.Delete_Node_Sans_Free (Source.Content, X);
-         Free (Source, X);
+         Tree_Operations.Delete_Node_Sans_Free (Source, X);
+         Formal_Ordered_Sets.Free (Source, X);
       end loop;
    end Move;
 
@@ -1635,9 +1597,9 @@ is
          raise Constraint_Error;
       end if;
 
-      pragma Assert (Vet (Container.Content, Position.Node),
+      pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Next");
-      return (Node => Tree_Operations.Next (Container.Content, Position.Node));
+      return (Node => Tree_Operations.Next (Container, Position.Node));
    end Next;
 
    procedure Next (Container : Set; Position : in out Cursor) is
@@ -1651,7 +1613,7 @@ is
 
    function Overlap (Left, Right : Set) return Boolean is
    begin
-      return Set_Ops.Set_Overlap (Left.Content, Right.Content);
+      return Set_Ops.Set_Overlap (Left, Right);
    end Overlap;
 
    ------------
@@ -1677,12 +1639,12 @@ is
          raise Constraint_Error;
       end if;
 
-      pragma Assert (Vet (Container.Content, Position.Node),
+      pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Previous");
 
       declare
          Node : constant Count_Type :=
-           Tree_Operations.Previous (Container.Content, Position.Node);
+           Tree_Operations.Previous (Container, Position.Node);
       begin
          return (if Node = 0 then No_Element else (Node => Node));
       end;
@@ -1698,8 +1660,7 @@ is
    -------------
 
    procedure Replace (Container : in out Set; New_Item : Element_Type) is
-      Node : constant Count_Type :=
-        Element_Keys.Find (Container.Content, New_Item);
+      Node : constant Count_Type := Element_Keys.Find (Container, New_Item);
 
    begin
       if Node = 0 then
@@ -1707,7 +1668,7 @@ is
            "attempt to replace element not in set";
       end if;
 
-      Container.Content.Nodes (Node).Element := New_Item;
+      Container.Nodes (Node).Element := New_Item;
    end Replace;
 
    ---------------------
@@ -1735,7 +1696,7 @@ is
           (Local_Insert_Post,
            Local_Insert_Sans_Hint);
 
-      NN : Tree_Types.Nodes_Type renames Tree.Content.Nodes;
+      NN : Tree_Types.Nodes_Type renames Tree.Nodes;
 
       --------------
       -- New_Node --
@@ -1769,7 +1730,7 @@ is
          return;
       end if;
 
-      Hint := Element_Keys.Ceiling (Tree.Content, Item);
+      Hint := Element_Keys.Ceiling (Tree, Item);
 
       if Hint = 0 then
          null;
@@ -1785,10 +1746,10 @@ is
          raise Program_Error with "attempt to replace existing element";
       end if;
 
-      Tree_Operations.Delete_Node_Sans_Free (Tree.Content, Node);
+      Tree_Operations.Delete_Node_Sans_Free (Tree, Node);
 
       Local_Insert_With_Hint
-        (Tree     => Tree.Content,
+        (Tree     => Tree,
          Position => Hint,
          Key      => Item,
          Node     => Result,
@@ -1809,7 +1770,7 @@ is
            "Position cursor has no element";
       end if;
 
-      pragma Assert (Vet (Container.Content, Position.Node),
+      pragma Assert (Vet (Container, Position.Node),
                      "bad cursor in Replace_Element");
 
       Replace_Element (Container, Position.Node, New_Item);
@@ -1869,7 +1830,7 @@ is
 
    procedure Symmetric_Difference (Target : in out Set; Source : Set) is
    begin
-      Set_Ops.Set_Symmetric_Difference (Target.Content, Source.Content);
+      Set_Ops.Set_Symmetric_Difference (Target, Source);
    end Symmetric_Difference;
 
    function Symmetric_Difference (Left, Right : Set) return Set is
@@ -1879,17 +1840,15 @@ is
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       if Length (Left) = 0 then
-         return Copy (Right);
+         return Right.Copy;
       end if;
 
       return S : Set (Length (Left) + Length (Right)) do
-         Assign
-           (S.Content,
-            Set_Ops.Set_Symmetric_Difference (Left.Content, Right.Content));
+         Assign (S, Set_Ops.Set_Symmetric_Difference (Left, Right));
       end return;
    end Symmetric_Difference;
 
@@ -1902,7 +1861,7 @@ is
       Inserted : Boolean;
    begin
       return S : Set (Capacity => 1) do
-         Insert_Sans_Hint (S.Content, New_Item, Node, Inserted);
+         Insert_Sans_Hint (S, New_Item, Node, Inserted);
          pragma Assert (Inserted);
       end return;
    end To_Set;
@@ -1913,21 +1872,21 @@ is
 
    procedure Union (Target : in out Set; Source : Set) is
    begin
-      Set_Ops.Set_Union (Target.Content, Source.Content);
+      Set_Ops.Set_Union (Target, Source);
    end Union;
 
    function Union (Left, Right : Set) return Set is
    begin
       if Left'Address = Right'Address then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       if Length (Left) = 0 then
-         return Copy (Right);
+         return Right.Copy;
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       return S : Set (Length (Left) + Length (Right)) do

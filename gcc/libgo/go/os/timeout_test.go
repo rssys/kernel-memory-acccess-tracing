@@ -2,14 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !js && !plan9 && !windows
-// +build !js,!plan9,!windows
+// +build !nacl
+// +build !js
+// +build !plan9
+// +build !windows
 
 package os_test
 
 import (
 	"fmt"
+	"internal/poll"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -27,7 +31,7 @@ func TestNonpollableDeadline(t *testing.T) {
 		t.Skipf("skipping on %s", runtime.GOOS)
 	}
 
-	f, err := os.CreateTemp("", "ostest")
+	f, err := ioutil.TempFile("", "ostest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,9 +58,9 @@ var readTimeoutTests = []struct {
 }{
 	// Tests that read deadlines work, even if there's data ready
 	// to be read.
-	{-5 * time.Second, [2]error{os.ErrDeadlineExceeded, os.ErrDeadlineExceeded}},
+	{-5 * time.Second, [2]error{poll.ErrTimeout, poll.ErrTimeout}},
 
-	{50 * time.Millisecond, [2]error{nil, os.ErrDeadlineExceeded}},
+	{50 * time.Millisecond, [2]error{nil, poll.ErrTimeout}},
 }
 
 func TestReadTimeout(t *testing.T) {
@@ -82,7 +86,7 @@ func TestReadTimeout(t *testing.T) {
 			for {
 				n, err := r.Read(b[:])
 				if xerr != nil {
-					if !isDeadlineExceeded(err) {
+					if !os.IsTimeout(err) {
 						t.Fatalf("#%d/%d: %v", i, j, err)
 					}
 				}
@@ -145,9 +149,9 @@ var writeTimeoutTests = []struct {
 }{
 	// Tests that write deadlines work, even if there's buffer
 	// space available to write.
-	{-5 * time.Second, [2]error{os.ErrDeadlineExceeded, os.ErrDeadlineExceeded}},
+	{-5 * time.Second, [2]error{poll.ErrTimeout, poll.ErrTimeout}},
 
-	{10 * time.Millisecond, [2]error{nil, os.ErrDeadlineExceeded}},
+	{10 * time.Millisecond, [2]error{nil, poll.ErrTimeout}},
 }
 
 func TestWriteTimeout(t *testing.T) {
@@ -169,7 +173,7 @@ func TestWriteTimeout(t *testing.T) {
 				for {
 					n, err := w.Write([]byte("WRITE TIMEOUT TEST"))
 					if xerr != nil {
-						if !isDeadlineExceeded(err) {
+						if !os.IsTimeout(err) {
 							t.Fatalf("%d: %v", j, err)
 						}
 					}
@@ -243,7 +247,7 @@ func timeoutReader(r *os.File, d, min, max time.Duration, ch chan<- error) {
 	var n int
 	n, err = r.Read(b)
 	t1 := time.Now()
-	if n != 0 || err == nil || !isDeadlineExceeded(err) {
+	if n != 0 || err == nil || !os.IsTimeout(err) {
 		err = fmt.Errorf("Read did not return (0, timeout): (%d, %v)", n, err)
 		return
 	}
@@ -272,7 +276,7 @@ func TestReadTimeoutFluctuation(t *testing.T) {
 	case <-max.C:
 		t.Fatal("Read took over 1s; expected 0.1s")
 	case err := <-ch:
-		if !isDeadlineExceeded(err) {
+		if !os.IsTimeout(err) {
 			t.Fatal(err)
 		}
 	}
@@ -294,7 +298,7 @@ func timeoutWriter(w *os.File, d, min, max time.Duration, ch chan<- error) {
 		}
 	}
 	t1 := time.Now()
-	if err == nil || !isDeadlineExceeded(err) {
+	if err == nil || !os.IsTimeout(err) {
 		err = fmt.Errorf("Write did not return (any, timeout): (%d, %v)", n, err)
 		return
 	}
@@ -324,7 +328,7 @@ func TestWriteTimeoutFluctuation(t *testing.T) {
 	case <-max.C:
 		t.Fatalf("Write took over %v; expected 0.1s", d)
 	case err := <-ch:
-		if !isDeadlineExceeded(err) {
+		if !os.IsTimeout(err) {
 			t.Fatal(err)
 		}
 	}
@@ -427,7 +431,7 @@ func testVariousDeadlines(t *testing.T) {
 					if err := r.SetDeadline(t0.Add(timeout)); err != nil {
 						t.Error(err)
 					}
-					n, err := io.Copy(io.Discard, r)
+					n, err := io.Copy(ioutil.Discard, r)
 					dt := time.Since(t0)
 					r.Close()
 					actvch <- result{n, err, dt}
@@ -435,7 +439,7 @@ func testVariousDeadlines(t *testing.T) {
 
 				select {
 				case res := <-actvch:
-					if !isDeadlineExceeded(err) {
+					if os.IsTimeout(res.err) {
 						t.Logf("good client timeout after %v, reading %d bytes", res.d, res.n)
 					} else {
 						t.Fatalf("client Copy = %d, %v; want timeout", res.n, res.err)
@@ -491,7 +495,7 @@ func TestReadWriteDeadlineRace(t *testing.T) {
 		var b [1]byte
 		for i := 0; i < N; i++ {
 			_, err := r.Read(b[:])
-			if err != nil && !isDeadlineExceeded(err) {
+			if err != nil && !os.IsTimeout(err) {
 				t.Error("Read returned non-timeout error", err)
 			}
 		}
@@ -501,7 +505,7 @@ func TestReadWriteDeadlineRace(t *testing.T) {
 		var b [1]byte
 		for i := 0; i < N; i++ {
 			_, err := w.Write(b[:])
-			if err != nil && !isDeadlineExceeded(err) {
+			if err != nil && !os.IsTimeout(err) {
 				t.Error("Write returned non-timeout error", err)
 			}
 		}
@@ -510,7 +514,7 @@ func TestReadWriteDeadlineRace(t *testing.T) {
 }
 
 // TestRacyRead tests that it is safe to mutate the input Read buffer
-// immediately after cancellation has occurred.
+// immediately after cancelation has occurred.
 func TestRacyRead(t *testing.T) {
 	t.Parallel()
 
@@ -538,7 +542,7 @@ func TestRacyRead(t *testing.T) {
 				_, err := r.Read(b1)
 				copy(b1, b2) // Mutate b1 to trigger potential race
 				if err != nil {
-					if !isDeadlineExceeded(err) {
+					if !os.IsTimeout(err) {
 						t.Error(err)
 					}
 					r.SetReadDeadline(time.Now().Add(time.Millisecond))
@@ -549,7 +553,7 @@ func TestRacyRead(t *testing.T) {
 }
 
 // TestRacyWrite tests that it is safe to mutate the input Write buffer
-// immediately after cancellation has occurred.
+// immediately after cancelation has occurred.
 func TestRacyWrite(t *testing.T) {
 	t.Parallel()
 
@@ -563,7 +567,7 @@ func TestRacyWrite(t *testing.T) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	go io.Copy(io.Discard, r)
+	go io.Copy(ioutil.Discard, r)
 
 	w.SetWriteDeadline(time.Now().Add(time.Millisecond))
 	for i := 0; i < 10; i++ {
@@ -577,7 +581,7 @@ func TestRacyWrite(t *testing.T) {
 				_, err := w.Write(b1)
 				copy(b1, b2) // Mutate b1 to trigger potential race
 				if err != nil {
-					if !isDeadlineExceeded(err) {
+					if !os.IsTimeout(err) {
 						t.Error(err)
 					}
 					w.SetWriteDeadline(time.Now().Add(time.Millisecond))

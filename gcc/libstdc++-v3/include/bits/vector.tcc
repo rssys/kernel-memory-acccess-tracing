@@ -1,6 +1,6 @@
 // Vector implementation (out of line) -*- C++ -*-
 
-// Copyright (C) 2001-2021 Free Software Foundation, Inc.
+// Copyright (C) 2001-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -198,7 +198,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
     vector<_Tp, _Alloc>::
     operator=(const vector<_Tp, _Alloc>& __x)
     {
-      if (std::__addressof(__x) != this)
+      if (&__x != this)
 	{
 	  _GLIBCXX_ASAN_ANNOTATE_REINIT;
 #if __cplusplus >= 201103L
@@ -944,13 +944,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	return false;
       __try
 	{
-	  if (size_type __n = size())
-	    _M_reallocate(__n);
-	  else
-	    {
-	      this->_M_deallocate();
-	      this->_M_impl._M_reset();
-	    }
+	  _M_reallocate(size());
 	  return true;
 	}
       __catch(...)

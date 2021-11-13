@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -25,6 +25,9 @@
 #include "id.h"
 #include "tokens.h"
 
+Expression *semantic(Expression *e, Scope *sc);
+Initializer *semantic(Initializer *init, Scope *sc, Type *t, NeedInterpret needInterpret);
+
 /********************************** Initializer *******************************/
 
 Initializer::Initializer(Loc loc)
@@ -38,8 +41,8 @@ Initializers *Initializer::arraySyntaxCopy(Initializers *ai)
     if (ai)
     {
         a = new Initializers();
-        a->setDim(ai->length);
-        for (size_t i = 0; i < a->length; i++)
+        a->setDim(ai->dim);
+        for (size_t i = 0; i < a->dim; i++)
             (*a)[i] = (*ai)[i]->syntaxCopy();
     }
     return a;
@@ -50,7 +53,7 @@ const char *Initializer::toChars()
     OutBuffer buf;
     HdrGenState hgs;
     ::toCBuffer(this, &buf, &hgs);
-    return buf.extractChars();
+    return buf.extractString();
 }
 
 /********************************** ErrorInitializer ***************************/
@@ -88,10 +91,10 @@ StructInitializer::StructInitializer(Loc loc)
 Initializer *StructInitializer::syntaxCopy()
 {
     StructInitializer *ai = new StructInitializer(loc);
-    assert(field.length == value.length);
-    ai->field.setDim(field.length);
-    ai->value.setDim(value.length);
-    for (size_t i = 0; i < field.length; i++)
+    assert(field.dim == value.dim);
+    ai->field.setDim(field.dim);
+    ai->value.setDim(value.dim);
+    for (size_t i = 0; i < field.dim; i++)
     {
         ai->field[i] = field[i];
         ai->value[i] = value[i]->syntaxCopy();
@@ -120,10 +123,10 @@ Initializer *ArrayInitializer::syntaxCopy()
 {
     //printf("ArrayInitializer::syntaxCopy()\n");
     ArrayInitializer *ai = new ArrayInitializer(loc);
-    assert(index.length == value.length);
-    ai->index.setDim(index.length);
-    ai->value.setDim(value.length);
-    for (size_t i = 0; i < ai->value.length; i++)
+    assert(index.dim == value.dim);
+    ai->index.setDim(index.dim);
+    ai->value.setDim(value.dim);
+    for (size_t i = 0; i < ai->value.dim; i++)
     {
         ai->index[i] = index[i] ? index[i]->syntaxCopy() : NULL;
         ai->value[i] = value[i]->syntaxCopy();
@@ -141,7 +144,7 @@ void ArrayInitializer::addInit(Expression *index, Initializer *value)
 
 bool ArrayInitializer::isAssociativeArray()
 {
-    for (size_t i = 0; i < value.length; i++)
+    for (size_t i = 0; i < value.dim; i++)
     {
         if (index[i])
             return true;
@@ -160,11 +163,11 @@ Expression *ArrayInitializer::toAssocArrayLiteral()
     //printf("ArrayInitializer::toAssocArrayInitializer()\n");
     //static int i; if (++i == 2) halt();
     Expressions *keys = new Expressions();
-    keys->setDim(value.length);
+    keys->setDim(value.dim);
     Expressions *values = new Expressions();
-    values->setDim(value.length);
+    values->setDim(value.dim);
 
-    for (size_t i = 0; i < value.length; i++)
+    for (size_t i = 0; i < value.dim; i++)
     {
         e = index[i];
         if (!e)
@@ -235,7 +238,7 @@ bool hasNonConstPointers(Expression *e)
             return arrayHasNonConstPointers(ae->keys);
         return false;
     }
-    if (e->op == TOKaddress)
+    if(e->op == TOKaddress)
     {
         AddrExp *ae = (AddrExp *)e;
         if (ae->e1->op == TOKstructliteral)
@@ -271,7 +274,7 @@ bool hasNonConstPointers(Expression *e)
 
 bool arrayHasNonConstPointers(Expressions *elems)
 {
-    for (size_t i = 0; i < elems->length; i++)
+    for (size_t i = 0; i < elems->dim; i++)
     {
         Expression *e = (*elems)[i];
         if (e && hasNonConstPointers(e))

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	. "net/http"
@@ -52,7 +53,7 @@ func (t *clientServerTest) getURL(u string) string {
 		t.t.Fatal(err)
 	}
 	defer res.Body.Close()
-	slurp, err := io.ReadAll(res.Body)
+	slurp, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.t.Fatal(err)
 	}
@@ -75,16 +76,7 @@ var optQuietLog = func(ts *httptest.Server) {
 	ts.Config.ErrorLog = quietLog
 }
 
-func optWithServerLog(lg *log.Logger) func(*httptest.Server) {
-	return func(ts *httptest.Server) {
-		ts.Config.ErrorLog = lg
-	}
-}
-
 func newClientServerTest(t *testing.T, h2 bool, h Handler, opts ...interface{}) *clientServerTest {
-	if h2 {
-		CondSkipHTTP2(t)
-	}
 	cst := &clientServerTest{
 		t:  t,
 		h2: h2,
@@ -151,7 +143,7 @@ func TestChunkedResponseHeaders_h2(t *testing.T) { testChunkedResponseHeaders(t,
 
 func testChunkedResponseHeaders(t *testing.T, h2 bool) {
 	defer afterTest(t)
-	log.SetOutput(io.Discard) // is noisy otherwise
+	log.SetOutput(ioutil.Discard) // is noisy otherwise
 	defer log.SetOutput(os.Stderr)
 	cst := newClientServerTest(t, h2, HandlerFunc(func(w ResponseWriter, r *Request) {
 		w.Header().Set("Content-Length", "intentional gibberish") // we check that this is deleted
@@ -265,11 +257,11 @@ func (tt h12Compare) normalizeRes(t *testing.T, res *Response, wantProto string)
 	} else {
 		t.Errorf("got %q response; want %q", res.Proto, wantProto)
 	}
-	slurp, err := io.ReadAll(res.Body)
+	slurp, err := ioutil.ReadAll(res.Body)
 
 	res.Body.Close()
 	res.Body = slurpResult{
-		ReadCloser: io.NopCloser(bytes.NewReader(slurp)),
+		ReadCloser: ioutil.NopCloser(bytes.NewReader(slurp)),
 		body:       slurp,
 		err:        err,
 	}
@@ -476,7 +468,7 @@ func test304Responses(t *testing.T, h2 bool) {
 	if len(res.TransferEncoding) > 0 {
 		t.Errorf("expected no TransferEncoding; got %v", res.TransferEncoding)
 	}
-	body, err := io.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -563,12 +555,12 @@ func testCancelRequestMidBody(t *testing.T, h2 bool) {
 
 	close(cancel)
 
-	rest, err := io.ReadAll(res.Body)
+	rest, err := ioutil.ReadAll(res.Body)
 	all := string(firstRead) + string(rest)
 	if all != "Hello" {
 		t.Errorf("Read %q (%q + %q); want Hello", all, firstRead, rest)
 	}
-	if err != ExportErrRequestCanceled {
+	if !reflect.DeepEqual(err, ExportErrRequestCanceled) {
 		t.Errorf("ReadAll error = %v; want %v", err, ExportErrRequestCanceled)
 	}
 }
@@ -586,7 +578,7 @@ func testTrailersClientToServer(t *testing.T, h2 bool) {
 		}
 		sort.Strings(decl)
 
-		slurp, err := io.ReadAll(r.Body)
+		slurp, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("Server reading request body: %v", err)
 		}
@@ -720,7 +712,7 @@ func testResponseBodyReadAfterClose(t *testing.T, h2 bool) {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	data, err := io.ReadAll(res.Body)
+	data, err := ioutil.ReadAll(res.Body)
 	if len(data) != 0 || err == nil {
 		t.Fatalf("ReadAll returned %q, %v; want error", data, err)
 	}
@@ -739,7 +731,7 @@ func testConcurrentReadWriteReqBody(t *testing.T, h2 bool) {
 		// Read in one goroutine.
 		go func() {
 			defer wg.Done()
-			data, err := io.ReadAll(r.Body)
+			data, err := ioutil.ReadAll(r.Body)
 			if string(data) != reqBody {
 				t.Errorf("Handler read %q; want %q", data, reqBody)
 			}
@@ -769,7 +761,7 @@ func testConcurrentReadWriteReqBody(t *testing.T, h2 bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := io.ReadAll(res.Body)
+	data, err := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -886,7 +878,7 @@ func testTransportUserAgent(t *testing.T, h2 bool) {
 			t.Errorf("%d. RoundTrip = %v", i, err)
 			continue
 		}
-		slurp, err := io.ReadAll(res.Body)
+		slurp, err := ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil {
 			t.Errorf("%d. read body = %v", i, err)
@@ -1008,17 +1000,11 @@ func TestTransportDiscardsUnneededConns(t *testing.T) {
 			defer wg.Done()
 			resp, err := c.Get(cst.ts.URL)
 			if err != nil {
-				// Try to work around spurious connection reset on loaded system.
-				// See golang.org/issue/33585 and golang.org/issue/36797.
-				time.Sleep(10 * time.Millisecond)
-				resp, err = c.Get(cst.ts.URL)
-				if err != nil {
-					t.Errorf("Get: %v", err)
-					return
-				}
+				t.Errorf("Get: %v", err)
+				return
 			}
 			defer resp.Body.Close()
-			slurp, err := io.ReadAll(resp.Body)
+			slurp, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				t.Error(err)
 			}
@@ -1067,7 +1053,7 @@ func testTransportGCRequest(t *testing.T, h2, body bool) {
 	setParallel(t)
 	defer afterTest(t)
 	cst := newClientServerTest(t, h2, HandlerFunc(func(w ResponseWriter, r *Request) {
-		io.ReadAll(r.Body)
+		ioutil.ReadAll(r.Body)
 		if body {
 			io.WriteString(w, "Hello.")
 		}
@@ -1083,7 +1069,7 @@ func testTransportGCRequest(t *testing.T, h2, body bool) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := io.ReadAll(res.Body); err != nil {
+		if _, err := ioutil.ReadAll(res.Body); err != nil {
 			t.Fatal(err)
 		}
 		if err := res.Body.Close(); err != nil {
@@ -1144,7 +1130,7 @@ func testTransportRejectsInvalidHeaders(t *testing.T, h2 bool) {
 		res, err := cst.c.Do(req)
 		var body []byte
 		if err == nil {
-			body, _ = io.ReadAll(res.Body)
+			body, _ = ioutil.ReadAll(res.Body)
 			res.Body.Close()
 		}
 		var dialed bool
@@ -1201,7 +1187,7 @@ func testInterruptWithPanic(t *testing.T, h2 bool, panicValue interface{}) {
 	}
 	gotHeaders <- true
 	defer res.Body.Close()
-	slurp, err := io.ReadAll(res.Body)
+	slurp, err := ioutil.ReadAll(res.Body)
 	if string(slurp) != msg {
 		t.Errorf("client read %q; want %q", slurp, msg)
 	}
@@ -1366,7 +1352,7 @@ func testServerUndeclaredTrailers(t *testing.T, h2 bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := io.Copy(io.Discard, res.Body); err != nil {
+	if _, err := io.Copy(ioutil.Discard, res.Body); err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
@@ -1384,7 +1370,7 @@ func testServerUndeclaredTrailers(t *testing.T, h2 bool) {
 func TestBadResponseAfterReadingBody(t *testing.T) {
 	defer afterTest(t)
 	cst := newClientServerTest(t, false, HandlerFunc(func(w ResponseWriter, r *Request) {
-		_, err := io.Copy(io.Discard, r.Body)
+		_, err := io.Copy(ioutil.Discard, r.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1477,7 +1463,7 @@ func testWriteHeaderAfterWrite(t *testing.T, h2, hijack bool) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Fatal(err)
 	}

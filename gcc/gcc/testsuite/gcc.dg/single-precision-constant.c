@@ -4,6 +4,7 @@
 
 /* { dg-do run } */
 /* { dg-options "-fsingle-precision-constant" } */
+/* { dg-add-options c99_runtime } */
 
 #include <math.h>
 #include <float.h>

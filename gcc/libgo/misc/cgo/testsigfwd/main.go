@@ -25,7 +25,6 @@ static void sigsegv() {
 
 static void segvhandler(int signum) {
 	if (signum == SIGSEGV) {
-		fprintf(stdout, "ok\ttestsigfwd\n");
 		exit(0);  // success
 	}
 }

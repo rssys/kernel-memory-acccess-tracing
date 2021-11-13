@@ -9,12 +9,11 @@
  */
 module core.sys.windows.ddeml;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 pragma(lib, "user32");
 
-import core.sys.windows.basetsd, core.sys.windows.windef, core.sys.windows.winnt;
+private import core.sys.windows.basetsd, core.sys.windows.windef, core.sys.windows.winnt;
 
 enum : int {
     CP_WINANSI    = 1004,

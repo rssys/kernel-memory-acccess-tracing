@@ -1009,6 +1009,7 @@ pure @safe:
         F       // D
         U       // C
         W       // Windows
+        V       // Pascal
         R       // C++
 
     FuncAttrs:
@@ -1087,6 +1088,10 @@ pure @safe:
         case 'W': // Windows
             popFront();
             put( "extern (Windows) " );
+            break;
+        case 'V': // Pascal
+            popFront();
+            put( "extern (Pascal) " );
             break;
         case 'R': // C++
             popFront();
@@ -2375,14 +2380,15 @@ private template isExternCPP(FT) if (is(FT == function))
 private template hasPlainMangling(FT) if (is(FT == function))
 {
     enum lnk = __traits(getLinkage, FT);
-    // C || Windows
-    enum hasPlainMangling = lnk == "C" || lnk == "Windows";
+    // C || Pascal || Windows
+    enum hasPlainMangling = lnk == "C" || lnk == "Pascal" || lnk == "Windows";
 }
 
 @safe pure nothrow unittest
 {
     static extern(D) void fooD();
     static extern(C) void fooC();
+    static extern(Pascal) void fooP();
     static extern(Windows) void fooW();
     static extern(C++) void fooCPP();
 
@@ -2393,11 +2399,13 @@ private template hasPlainMangling(FT) if (is(FT == function))
     }
     static assert(check!(typeof(fooD))(true, false, false));
     static assert(check!(typeof(fooC))(false, false, true));
+    static assert(check!(typeof(fooP))(false, false, true));
     static assert(check!(typeof(fooW))(false, false, true));
     static assert(check!(typeof(fooCPP))(false, true, false));
 
     static assert(__traits(compiles, mangleFunc!(typeof(&fooD))("")));
     static assert(__traits(compiles, mangleFunc!(typeof(&fooC))("")));
+    static assert(__traits(compiles, mangleFunc!(typeof(&fooP))("")));
     static assert(__traits(compiles, mangleFunc!(typeof(&fooW))("")));
     static assert(!__traits(compiles, mangleFunc!(typeof(&fooCPP))("")));
 }
@@ -2497,8 +2505,7 @@ version (unittest)
          "pure @safe void testexpansion.s!(testexpansion.s!(int).s(int).Result).s(testexpansion.s!(int).s(int).Result).Result.foo()"],
         ["_D13testexpansion__T1sTSQw__TQjTiZQoFiZ6ResultZQBbFQBcZQq3fooMFNaNfZv",
          "pure @safe void testexpansion.s!(testexpansion.s!(int).s(int).Result).s(testexpansion.s!(int).s(int).Result).Result.foo()"],
-        // formerly ambiguous on 'V', template value argument or pascal function
-        // pascal functions have now been removed (in v2.095.0)
+        // ambiguity on 'V', template value argument or pascal function
         ["_D3std4conv__T7enumRepTyAaTEQBa12experimental9allocator15building_blocks15stats_collector7OptionsVQCti64ZQDnyQDh",
          "immutable(char[]) std.conv.enumRep!(immutable(char[]), std.experimental.allocator.building_blocks.stats_collector.Options, 64).enumRep"],
         // symbol back reference to location with symbol back reference

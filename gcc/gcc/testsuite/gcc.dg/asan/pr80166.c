@@ -1,6 +1,5 @@
 /* PR sanitizer/80166 */
 /* { dg-do run } */
-/* { dg-additional-options "-Wno-stringop-overflow" } */
 
 #include <sys/types.h>
 #include <unistd.h>

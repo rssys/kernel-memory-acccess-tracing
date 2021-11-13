@@ -1,5 +1,5 @@
 /* Command line option handling.
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -510,17 +510,6 @@ add_misspelling_candidates (auto_vec<char *> *candidates,
 	  candidates->safe_push (alternative);
 	}
     }
-
-  /* For all params (e.g. --param=key=value),
-     include also '--param key=value'.  */
-  const char *prefix = "--param=";
-  if (strstr (opt_text, prefix) == opt_text)
-    {
-      char *param = xstrdup (opt_text + 1);
-      gcc_assert (param[6] == '=');
-      param[6] = ' ';
-      candidates->safe_push (param);
-    }
 }
 
 /* Decode the switch beginning at ARGV for the language indicated by
@@ -529,7 +518,7 @@ add_misspelling_candidates (auto_vec<char *> *candidates,
    consumed.  */
 
 static unsigned int
-decode_cmdline_option (const char *const *argv, unsigned int lang_mask,
+decode_cmdline_option (const char **argv, unsigned int lang_mask,
 		       struct cl_decoded_option *decoded)
 {
   size_t opt_index;
@@ -678,7 +667,7 @@ decode_cmdline_option (const char *const *argv, unsigned int lang_mask,
       size_t new_opt_index = option->alias_target;
 
       if (new_opt_index == OPT_SPECIAL_ignore
-	  || new_opt_index == OPT_SPECIAL_warn_removed)
+	  || new_opt_index == OPT_SPECIAL_deprecated)
 	{
 	  gcc_assert (option->alias_arg == NULL);
 	  gcc_assert (option->neg_alias_arg == NULL);
@@ -766,7 +755,6 @@ decode_cmdline_option (const char *const *argv, unsigned int lang_mask,
       werror_arg[0] = 'W';
 
       size_t warning_index = find_opt (werror_arg, lang_mask);
-      free (werror_arg);
       if (warning_index != OPT_SPECIAL_unknown)
 	{
 	  const struct cl_option *warning_option
@@ -852,7 +840,7 @@ decode_cmdline_option (const char *const *argv, unsigned int lang_mask,
 	decoded->canonical_option[i] = NULL;
     }
   if (opt_index != OPT_SPECIAL_unknown && opt_index != OPT_SPECIAL_ignore
-      && opt_index != OPT_SPECIAL_warn_removed)
+      && opt_index != OPT_SPECIAL_deprecated)
     {
       generate_canonical_option (opt_index, arg, value, decoded);
       if (separate_args > 1)
@@ -945,8 +933,7 @@ decode_cmdline_options_to_array (unsigned int argc, const char **argv,
   struct cl_decoded_option *opt_array;
   unsigned int num_decoded_options;
 
-  int opt_array_len = argc;
-  opt_array = XNEWVEC (struct cl_decoded_option, opt_array_len);
+  opt_array = XNEWVEC (struct cl_decoded_option, argc);
 
   opt_array[0].opt_index = OPT_SPECIAL_program_name;
   opt_array[0].warn_message = NULL;
@@ -970,50 +957,6 @@ decode_cmdline_options_to_array (unsigned int argc, const char **argv,
 	{
 	  generate_option_input_file (opt, &opt_array[num_decoded_options]);
 	  num_decoded_options++;
-	  n = 1;
-	  continue;
-	}
-
-      /* Interpret "--param" "key=name" as "--param=key=name".  */
-      const char *needle = "--param";
-      if (i + 1 < argc && strcmp (opt, needle) == 0)
-	{
-	  const char *replacement
-	    = opts_concat (needle, "=", argv[i + 1], NULL);
-	  argv[++i] = replacement;
-	}
-
-      /* Expand -fdiagnostics-plain-output to its constituents.  This needs
-	 to happen here so that prune_options can handle -fdiagnostics-color
-	 specially.  */
-      if (!strcmp (opt, "-fdiagnostics-plain-output"))
-	{
-	  /* If you have changed the default diagnostics output, and this new
-	     output is not appropriately "plain" (e.g., the change needs to be
-	     undone in order for the testsuite to work properly), then please do
-	     the following:
-		 1.  Add the necessary option to undo the new behavior to
-		     the array below.
-		 2.  Update the documentation for -fdiagnostics-plain-output
-		     in invoke.texi.  */
-	  const char *const expanded_args[] = {
-	    "-fno-diagnostics-show-caret",
-	    "-fno-diagnostics-show-line-numbers",
-	    "-fdiagnostics-color=never",
-	    "-fdiagnostics-urls=never",
-	    "-fdiagnostics-path-format=separate-events",
-	  };
-	  const int num_expanded = ARRAY_SIZE (expanded_args);
-	  opt_array_len += num_expanded - 1;
-	  opt_array = XRESIZEVEC (struct cl_decoded_option,
-				  opt_array, opt_array_len);
-	  for (int j = 0, nj; j < num_expanded; j += nj)
-	    {
-	      nj = decode_cmdline_option (expanded_args + j, lang_mask,
-					  &opt_array[num_decoded_options]);
-	      num_decoded_options++;
-	    }
-
 	  n = 1;
 	  continue;
 	}
@@ -1075,7 +1018,7 @@ prune_options (struct cl_decoded_option **decoded_options,
 	{
 	case OPT_SPECIAL_unknown:
 	case OPT_SPECIAL_ignore:
-	case OPT_SPECIAL_warn_removed:
+	case OPT_SPECIAL_deprecated:
 	case OPT_SPECIAL_program_name:
 	case OPT_SPECIAL_input_file:
 	  goto keep;
@@ -1309,7 +1252,7 @@ cmdline_handle_error (location_t loc, const struct cl_option *option,
 {
   if (errors & CL_ERR_DISABLED)
     {
-      error_at (loc, "command-line option %qs"
+      error_at (loc, "command line option %qs"
 		     " is not supported by this configuration", opt);
       return true;
     }
@@ -1398,14 +1341,14 @@ read_cmdline_option (struct gcc_options *opts,
   if (decoded->opt_index == OPT_SPECIAL_unknown)
     {
       if (handlers->unknown_option_callback (decoded))
-	error_at (loc, "unrecognized command-line option %qs", decoded->arg);
+	error_at (loc, "unrecognized command line option %qs", decoded->arg);
       return;
     }
 
   if (decoded->opt_index == OPT_SPECIAL_ignore)
     return;
 
-  if (decoded->opt_index == OPT_SPECIAL_warn_removed)
+  if (decoded->opt_index == OPT_SPECIAL_deprecated)
     {
       /* Warn only about positive ignored options.  */
       if (decoded->value)
@@ -1430,7 +1373,7 @@ read_cmdline_option (struct gcc_options *opts,
 
   if (!handle_option (opts, opts_set, decoded, lang_mask, DK_UNSPECIFIED,
 		      loc, handlers, false, dc))
-    error_at (loc, "unrecognized command-line option %qs", opt);
+    error_at (loc, "unrecognized command line option %qs", opt);
 }
 
 /* Set any field in OPTS, and OPTS_SET if not NULL, for option
@@ -1467,15 +1410,9 @@ set_option (struct gcc_options *opts, struct gcc_options *opts_set,
 	  }
 	else
 	  {
-	    if (value > INT_MAX)
-	      error_at (loc, "argument to %qs is bigger than %d",
-			option->opt_text, INT_MAX);
-	    else
-	      {
-		*(int *) flag_var = value;
-		if (set_flag_var)
-		  *(int *) set_flag_var = 1;
-	      }
+	    *(int *) flag_var = value;
+	    if (set_flag_var)
+	      *(int *) set_flag_var = 1;
 	  }
 
 	break;
@@ -1589,17 +1526,9 @@ option_flag_var (int opt_index, struct gcc_options *opts)
    or -1 if it isn't a simple on-off switch.  */
 
 int
-option_enabled (int opt_idx, unsigned lang_mask, void *opts)
+option_enabled (int opt_idx, void *opts)
 {
   const struct cl_option *option = &(cl_options[opt_idx]);
-
-  /* A language-specific option can only be considered enabled when it's
-     valid for the current language.  */
-  if (!(option->flags & CL_COMMON)
-      && (option->flags & CL_LANG_ALL)
-      && !(option->flags & lang_mask))
-    return 0;
-
   struct gcc_options *optsg = (struct gcc_options *) opts;
   void *flag_var = option_flag_var (opt_idx, optsg);
 
@@ -1669,7 +1598,7 @@ get_option_state (struct gcc_options *opts, int option,
 
     case CLVC_BIT_CLEAR:
     case CLVC_BIT_SET:
-      state->ch = option_enabled (option, -1, opts);
+      state->ch = option_enabled (option, opts);
       state->data = &state->ch;
       state->size = 1;
       break;
@@ -1716,7 +1645,7 @@ control_warning_option (unsigned int opt_index, int kind, const char *arg,
 	arg = cl_options[opt_index].alias_arg;
       opt_index = cl_options[opt_index].alias_target;
     }
-  if (opt_index == OPT_SPECIAL_ignore || opt_index == OPT_SPECIAL_warn_removed)
+  if (opt_index == OPT_SPECIAL_ignore || opt_index == OPT_SPECIAL_deprecated)
     return;
   if (dc)
     diagnostic_classify_diagnostic (dc, opt_index, (diagnostic_t) kind, loc);
@@ -1780,71 +1709,5 @@ control_warning_option (unsigned int opt_index, int kind, const char *arg,
 				   opt_index, arg, value, lang_mask,
 				   kind, loc, handlers, false, dc);
 	}
-    }
-}
-
-/* Parse options in COLLECT_GCC_OPTIONS and push them on ARGV_OBSTACK.
-   Store number of arguments into ARGC_P.  */
-
-void
-parse_options_from_collect_gcc_options (const char *collect_gcc_options,
-					obstack *argv_obstack,
-					int *argc_p)
-{
-  char *argv_storage = xstrdup (collect_gcc_options);
-  int j, k;
-
-  for (j = 0, k = 0; argv_storage[j] != '\0'; ++j)
-    {
-      if (argv_storage[j] == '\'')
-	{
-	  obstack_ptr_grow (argv_obstack, &argv_storage[k]);
-	  ++j;
-	  do
-	    {
-	      if (argv_storage[j] == '\0')
-		fatal_error (input_location,
-			     "malformed %<COLLECT_GCC_OPTIONS%>");
-	      else if (startswith (&argv_storage[j], "'\\''"))
-		{
-		  argv_storage[k++] = '\'';
-		  j += 4;
-		}
-	      else if (argv_storage[j] == '\'')
-		break;
-	      else
-		argv_storage[k++] = argv_storage[j++];
-	    }
-	  while (1);
-	  argv_storage[k++] = '\0';
-	}
-    }
-
-  obstack_ptr_grow (argv_obstack, NULL);
-  *argc_p = obstack_object_size (argv_obstack) / sizeof (void *) - 1;
-}
-
-/* Prepend -Xassembler for each option in COLLECT_AS_OPTIONS,
-   and push on O.  */
-
-void prepend_xassembler_to_collect_as_options (const char *collect_as_options,
-					       obstack *o)
-{
-  obstack opts_obstack;
-  int opts_count;
-
-  obstack_init (&opts_obstack);
-  parse_options_from_collect_gcc_options (collect_as_options,
-					  &opts_obstack, &opts_count);
-  const char **assembler_opts = XOBFINISH (&opts_obstack, const char **);
-
-  for (int i = 0; i < opts_count; i++)
-    {
-      obstack_grow (o, " '-Xassembler' ",
-		    strlen (" '-Xassembler' "));
-      const char *opt = assembler_opts[i];
-      obstack_1grow (o, '\'');
-      obstack_grow (o, opt, strlen (opt));
-      obstack_1grow (o, '\'');
     }
 }

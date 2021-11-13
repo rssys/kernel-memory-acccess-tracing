@@ -9,9 +9,8 @@
  */
 module core.sys.windows.nb30;
 version (Windows):
-@system:
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum size_t
     NCBNAMSZ =  16,

@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *         Copyright (C) 1992-2021, Free Software Foundation, Inc.          *
+ *         Copyright (C) 1992-2019, Free Software Foundation, Inc.          *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -41,7 +41,6 @@
    minimal support for Ada.Command_Line.Command_Name */
 
 #include <sys/types.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -54,8 +53,8 @@ extern "C" {
    the binder-generated file so they need to be defined here */
 
 int gnat_argc = 0;
-char **gnat_argv = NULL;
-char **gnat_envp = NULL;
+const char **gnat_argv = (const char **) 0;
+const char **gnat_envp = (const char **) 0;
 
 int
 __gnat_len_arg (int arg_num)

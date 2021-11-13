@@ -1,5 +1,5 @@
 /* Functions dealing with attribute handling, used by most front ends.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -17,7 +17,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_STRING
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -26,7 +25,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "stringpool.h"
 #include "diagnostic-core.h"
 #include "attribs.h"
-#include "fold-const.h"
 #include "stor-layout.h"
 #include "langhooks.h"
 #include "plugin.h"
@@ -34,7 +32,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "hash-set.h"
 #include "diagnostic.h"
 #include "pretty-print.h"
-#include "tree-pretty-print.h"
 #include "intl.h"
 
 /* Table of the tables of attributes (common, language, format, machine)
@@ -87,8 +84,6 @@ struct scoped_attributes
   const char *ns;
   vec<attribute_spec> attributes;
   hash_table<attribute_hasher> *attribute_hash;
-  /* True if we should not warn about unknown attributes in this NS.  */
-  bool ignored_p;
 };
 
 /* The table of scope attributes.  */
@@ -97,8 +92,6 @@ static vec<scoped_attributes> attributes_table;
 static scoped_attributes* find_attribute_namespace (const char*);
 static void register_scoped_attribute (const struct attribute_spec *,
 				       scoped_attributes *);
-static const struct attribute_spec *lookup_scoped_attribute_spec (const_tree,
-								  const_tree);
 
 static bool attributes_initialized = false;
 
@@ -125,14 +118,12 @@ extract_attribute_substring (struct substring *str)
 
 /* Insert an array of attributes ATTRIBUTES into a namespace.  This
    array must be NULL terminated.  NS is the name of attribute
-   namespace.  IGNORED_P is true iff all unknown attributes in this
-   namespace should be ignored for the purposes of -Wattributes.  The
-   function returns the namespace into which the attributes have been
-   registered.  */
+   namespace.  The function returns the namespace into which the
+   attributes have been registered.  */
 
 scoped_attributes *
 register_scoped_attributes (const struct attribute_spec *attributes,
-			    const char *ns, bool ignored_p /*=false*/)
+			    const char *ns)
 {
   scoped_attributes *result = NULL;
 
@@ -150,12 +141,9 @@ register_scoped_attributes (const struct attribute_spec *attributes,
       memset (&sa, 0, sizeof (sa));
       sa.ns = ns;
       sa.attributes.create (64);
-      sa.ignored_p = ignored_p;
       result = attributes_table.safe_push (sa);
       result->attribute_hash = new hash_table<attribute_hasher> (200);
     }
-  else
-    result->ignored_p |= ignored_p;
 
   /* Really add the attributes to their namespace now.  */
   for (unsigned i = 0; attributes[i].name != NULL; ++i)
@@ -174,12 +162,15 @@ register_scoped_attributes (const struct attribute_spec *attributes,
 static scoped_attributes*
 find_attribute_namespace (const char* ns)
 {
-  for (scoped_attributes &iter : attributes_table)
-    if (ns == iter.ns
-	|| (iter.ns != NULL
+  unsigned ix;
+  scoped_attributes *iter;
+
+  FOR_EACH_VEC_ELT (attributes_table, ix, iter)
+    if (ns == iter->ns
+	|| (iter->ns != NULL
 	    && ns != NULL
-	    && !strcmp (iter.ns, ns)))
-      return &iter;
+	    && !strcmp (iter->ns, ns)))
+      return iter;
   return NULL;
 }
 
@@ -233,99 +224,6 @@ check_attribute_tables (void)
 				 attribute_tables[j][l].name));
 }
 
-/* Used to stash pointers to allocated memory so that we can free them at
-   the end of parsing of all TUs. */
-static vec<attribute_spec *> ignored_attributes_table;
-
-/* Parse arguments V of -Wno-attributes=.
-   Currently we accept:
-     vendor::attr
-     vendor::
-   This functions also registers the parsed attributes so that we don't
-   warn that we don't recognize them.  */
-
-void
-handle_ignored_attributes_option (vec<char *> *v)
-{
-  if (v == nullptr)
-    return;
-
-  for (auto opt : v)
-    {
-      char *cln = strstr (opt, "::");
-      /* We don't accept '::attr'.  */
-      if (cln == nullptr || cln == opt)
-	{
-	  error ("wrong argument to ignored attributes");
-	  inform (input_location, "valid format is %<ns::attr%> or %<ns::%>");
-	  continue;
-	}
-      const char *vendor_start = opt;
-      ptrdiff_t vendor_len = cln - opt;
-      const char *attr_start = cln + 2;
-      /* This could really use rawmemchr :(.  */
-      ptrdiff_t attr_len = strchr (attr_start, '\0') - attr_start;
-      /* Verify that they look valid.  */
-      auto valid_p = [](const char *const s, ptrdiff_t len) {
-	bool ok = false;
-
-	for (int i = 0; i < len; ++i)
-	  if (ISALNUM (s[i]))
-	    ok = true;
-	  else if (s[i] != '_')
-	    return false;
-
-	return ok;
-      };
-      if (!valid_p (vendor_start, vendor_len))
-	{
-	  error ("wrong argument to ignored attributes");
-	  continue;
-	}
-      canonicalize_attr_name (vendor_start, vendor_len);
-      /* We perform all this hijinks so that we don't have to copy OPT.  */
-      tree vendor_id = get_identifier_with_length (vendor_start, vendor_len);
-      const char *attr;
-      /* In the "vendor::" case, we should ignore *any* attribute coming
-	 from this attribute namespace.  */
-      if (attr_len > 0)
-	{
-	  if (!valid_p (attr_start, attr_len))
-	    {
-	      error ("wrong argument to ignored attributes");
-	      continue;
-	    }
-	  canonicalize_attr_name (attr_start, attr_len);
-	  tree attr_id = get_identifier_with_length (attr_start, attr_len);
-	  attr = IDENTIFIER_POINTER (attr_id);
-	  /* If we've already seen this vendor::attr, ignore it.  Attempting to
-	     register it twice would lead to a crash.  */
-	  if (lookup_scoped_attribute_spec (vendor_id, attr_id))
-	    continue;
-	}
-      else
-	attr = nullptr;
-      /* Create a table with extra attributes which we will register.
-	 We can't free it here, so squirrel away the pointers.  */
-      attribute_spec *table = new attribute_spec[2];
-      ignored_attributes_table.safe_push (table);
-      table[0] = { attr, 0, 0, false, false, false, false, nullptr, nullptr };
-      table[1] = { nullptr, 0, 0, false, false, false, false, nullptr,
-		   nullptr };
-      register_scoped_attributes (table, IDENTIFIER_POINTER (vendor_id), !attr);
-    }
-}
-
-/* Free data we might have allocated when adding extra attributes.  */
-
-void
-free_attr_data ()
-{
-  for (auto x : ignored_attributes_table)
-    delete[] x;
-  ignored_attributes_table.release ();
-}
-
 /* Initialize attribute tables, and make some sanity checks if checking is
    enabled.  */
 
@@ -353,9 +251,6 @@ init_attributes (void)
   for (i = 0; i < ARRAY_SIZE (attribute_tables); ++i)
     /* Put all the GNU attributes into the "gnu" namespace.  */
     register_scoped_attributes (attribute_tables[i], "gnu");
-
-  vec<char *> *ignored = (vec<char *> *) flag_ignored_attributes;
-  handle_ignored_attributes_option (ignored);
 
   invoke_plugin_callbacks (PLUGIN_ATTRIBUTES, NULL);
   attributes_initialized = true;
@@ -445,7 +340,7 @@ lookup_attribute_spec (const_tree name)
    Please read the comments of cxx11_attribute_p to understand the
    format of attributes.  */
 
-tree
+static tree
 get_attribute_namespace (const_tree attr)
 {
   if (cxx11_attribute_p (attr))
@@ -561,19 +456,6 @@ diag_attr_exclusions (tree last_decl, tree node, tree attrname,
   return found;
 }
 
-/* Return true iff we should not complain about unknown attributes
-   coming from the attribute namespace NS.  This is the case for
-   the -Wno-attributes=ns:: command-line option.  */
-
-static bool
-attr_namespace_ignored_p (tree ns)
-{
-  if (ns == NULL_TREE)
-    return false;
-  scoped_attributes *r = find_attribute_namespace (IDENTIFIER_POINTER (ns));
-  return r && r->ignored_p;
-}
-
 /* Process the attributes listed in ATTRIBUTES and install them in *NODE,
    which is either a DECL (including a TYPE_DECL) or a TYPE.  If a DECL,
    it should be modified in place; if a TYPE, a copy should be created
@@ -587,6 +469,7 @@ tree
 decl_attributes (tree *node, tree attributes, int flags,
 		 tree last_decl /* = NULL_TREE */)
 {
+  tree a;
   tree returned_attrs = NULL_TREE;
 
   if (TREE_TYPE (*node) == error_mark_node || attributes == error_mark_node)
@@ -635,9 +518,14 @@ decl_attributes (tree *node, tree attributes, int flags,
   if (TREE_CODE (*node) == FUNCTION_DECL
       && attributes
       && lookup_attribute ("naked", attributes) != NULL
-      && lookup_attribute_spec (get_identifier ("naked"))
-      && lookup_attribute ("noipa", attributes) == NULL)
-	attributes = tree_cons (get_identifier ("noipa"), NULL, attributes);
+      && lookup_attribute_spec (get_identifier ("naked")))
+    {
+      if (lookup_attribute ("noinline", attributes) == NULL)
+	attributes = tree_cons (get_identifier ("noinline"), NULL, attributes);
+
+      if (lookup_attribute ("noclone", attributes) == NULL)
+	attributes = tree_cons (get_identifier ("noclone"),  NULL, attributes);
+    }
 
   /* A "noipa" function attribute implies "noinline", "noclone" and "no_icf"
      for those targets that support it.  */
@@ -660,24 +548,22 @@ decl_attributes (tree *node, tree attributes, int flags,
 
   /* Note that attributes on the same declaration are not necessarily
      in the same order as in the source.  */
-  for (tree attr = attributes; attr; attr = TREE_CHAIN (attr))
+  for (a = attributes; a; a = TREE_CHAIN (a))
     {
-      tree ns = get_attribute_namespace (attr);
-      tree name = get_attribute_name (attr);
-      tree args = TREE_VALUE (attr);
+      tree ns = get_attribute_namespace (a);
+      tree name = get_attribute_name (a);
+      tree args = TREE_VALUE (a);
       tree *anode = node;
       const struct attribute_spec *spec
 	= lookup_scoped_attribute_spec (ns, name);
       int fn_ptr_quals = 0;
       tree fn_ptr_tmp = NULL_TREE;
-      const bool cxx11_attr_p = cxx11_attribute_p (attr);
 
       if (spec == NULL)
 	{
-	  if (!(flags & (int) ATTR_FLAG_BUILT_IN)
-	      && !attr_namespace_ignored_p (ns))
+	  if (!(flags & (int) ATTR_FLAG_BUILT_IN))
 	    {
-	      if (ns == NULL_TREE || !cxx11_attr_p)
+	      if (ns == NULL_TREE || !cxx11_attribute_p (a))
 		warning (OPT_Wattributes, "%qE attribute directive ignored",
 			 name);
 	      else
@@ -687,25 +573,30 @@ decl_attributes (tree *node, tree attributes, int flags,
 	    }
 	  continue;
 	}
-      else
+      else if (list_length (args) < spec->min_length
+	       || (spec->max_length >= 0
+		   && list_length (args) > spec->max_length))
 	{
-	  int nargs = list_length (args);
-	  if (nargs < spec->min_length
-	      || (spec->max_length >= 0
-		  && nargs > spec->max_length))
-	    {
-	      error ("wrong number of arguments specified for %qE attribute",
-		     name);
-	      if (spec->max_length < 0)
-		inform (input_location, "expected %i or more, found %i",
-			spec->min_length, nargs);
-	      else
-		inform (input_location, "expected between %i and %i, found %i",
-			spec->min_length, spec->max_length, nargs);
-	      continue;
-	    }
+	  error ("wrong number of arguments specified for %qE attribute",
+		 name);
+	  continue;
 	}
       gcc_assert (is_attribute_p (spec->name, name));
+
+      if (TYPE_P (*node)
+	  && cxx11_attribute_p (a)
+	  && !(flags & ATTR_FLAG_TYPE_IN_PLACE))
+	{
+	  /* This is a c++11 attribute that appertains to a
+	     type-specifier, outside of the definition of, a class
+	     type.  Ignore it.  */
+	  auto_diagnostic_group d;
+	  if (warning (OPT_Wattributes, "attribute ignored"))
+	    inform (input_location,
+		    "an attribute that appertains to a type-specifier "
+		    "is ignored");
+	  continue;
+	}
 
       if (spec->decl_required && !DECL_P (*anode))
 	{
@@ -791,8 +682,7 @@ decl_attributes (tree *node, tree attributes, int flags,
 	 reject incompatible attributes.  */
       bool built_in = flags & ATTR_FLAG_BUILT_IN;
       if (spec->exclude
-	  && (flag_checking || !built_in)
-	  && !error_operand_p (last_decl))
+	  && (flag_checking || !built_in))
 	{
 	  /* Always check attributes on user-defined functions.
 	     Check them on built-ins only when -fchecking is set.
@@ -801,7 +691,6 @@ decl_attributes (tree *node, tree attributes, int flags,
 
 	  if (!built_in
 	      || !DECL_P (*anode)
-	      || DECL_BUILT_IN_CLASS (*anode) != BUILT_IN_NORMAL
 	      || (DECL_FUNCTION_CODE (*anode) != BUILT_IN_UNREACHABLE
 		  && (DECL_FUNCTION_CODE (*anode)
 		      != BUILT_IN_UBSAN_HANDLE_BUILTIN_UNREACHABLE)))
@@ -818,19 +707,14 @@ decl_attributes (tree *node, tree attributes, int flags,
 
       if (spec->handler != NULL)
 	{
-	  int cxx11_flag = (cxx11_attr_p ? ATTR_FLAG_CXX11 : 0);
+	  int cxx11_flag =
+	    cxx11_attribute_p (a) ? ATTR_FLAG_CXX11 : 0;
 
 	  /* Pass in an array of the current declaration followed
-	     by the last pushed/merged declaration if one exists.
-	     For calls that modify the type attributes of a DECL
-	     and for which *ANODE is *NODE's type, also pass in
-	     the DECL as the third element to use in diagnostics.
+	     by the last pushed/merged declaration if  one exists.
 	     If the handler changes CUR_AND_LAST_DECL[0] replace
 	     *ANODE with its value.  */
-	  tree cur_and_last_decl[3] = { *anode, last_decl };
-	  if (anode != node && DECL_P (*node))
-	    cur_and_last_decl[2] = *node;
-
+	  tree cur_and_last_decl[] = { *anode, last_decl };
 	  tree ret = (spec->handler) (cur_and_last_decl, name, args,
 				      flags|cxx11_flag, &no_add_attrs);
 
@@ -872,23 +756,17 @@ decl_attributes (tree *node, tree attributes, int flags,
 	  if (a == NULL_TREE)
 	    {
 	      /* This attribute isn't already in the list.  */
-	      tree r;
-	      /* Preserve the C++11 form.  */
-	      if (cxx11_attr_p)
-		r = tree_cons (build_tree_list (ns, name), args, old_attrs);
-	      else
-		r = tree_cons (name, args, old_attrs);
-
 	      if (DECL_P (*anode))
-		DECL_ATTRIBUTES (*anode) = r;
+		DECL_ATTRIBUTES (*anode) = tree_cons (name, args, old_attrs);
 	      else if (flags & (int) ATTR_FLAG_TYPE_IN_PLACE)
 		{
-		  TYPE_ATTRIBUTES (*anode) = r;
+		  TYPE_ATTRIBUTES (*anode) = tree_cons (name, args, old_attrs);
 		  /* If this is the main variant, also push the attributes
 		     out to the other variants.  */
 		  if (*anode == TYPE_MAIN_VARIANT (*anode))
 		    {
-		      for (tree variant = *anode; variant;
+		      tree variant;
+		      for (variant = *anode; variant;
 			   variant = TYPE_NEXT_VARIANT (variant))
 			{
 			  if (TYPE_ATTRIBUTES (variant) == old_attrs)
@@ -902,7 +780,9 @@ decl_attributes (tree *node, tree attributes, int flags,
 		    }
 		}
 	      else
-		*anode = build_type_attribute_variant (*anode, r);
+		*anode = build_type_attribute_variant (*anode,
+						       tree_cons (name, args,
+								  old_attrs));
 	    }
 	}
 
@@ -1139,6 +1019,40 @@ common_function_versions (tree fn1, tree fn2)
   XDELETEVEC (target2);
 
   return result;
+}
+
+/* Return a new name by appending SUFFIX to the DECL name.  If make_unique
+   is true, append the full path name of the source file.  */
+
+char *
+make_unique_name (tree decl, const char *suffix, bool make_unique)
+{
+  char *global_var_name;
+  int name_len;
+  const char *name;
+  const char *unique_name = NULL;
+
+  name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
+
+  /* Get a unique name that can be used globally without any chances
+     of collision at link time.  */
+  if (make_unique)
+    unique_name = IDENTIFIER_POINTER (get_file_function_name ("\0"));
+
+  name_len = strlen (name) + strlen (suffix) + 2;
+
+  if (make_unique)
+    name_len += strlen (unique_name) + 1;
+  global_var_name = XNEWVEC (char, name_len);
+
+  /* Use '.' to concatenate names as it is demangler friendly.  */
+  if (make_unique)
+    snprintf (global_var_name, name_len, "%s.%s.%s", name, unique_name,
+	      suffix);
+  else
+    snprintf (global_var_name, name_len, "%s.%s", name, suffix);
+
+  return global_var_name;
 }
 
 /* Make a dispatcher declaration for the multi-versioned function DECL.
@@ -1441,83 +1355,6 @@ comp_type_attributes (const_tree type1, const_tree type2)
   /* As some type combinations - like default calling-convention - might
      be compatible, we have to call the target hook to get the final result.  */
   return targetm.comp_type_attributes (type1, type2);
-}
-
-/* PREDICATE acts as a function of type:
-
-     (const_tree attr, const attribute_spec *as) -> bool
-
-   where ATTR is an attribute and AS is its possibly-null specification.
-   Return a list of every attribute in attribute list ATTRS for which
-   PREDICATE is true.  Return ATTRS itself if PREDICATE returns true
-   for every attribute.  */
-
-template<typename Predicate>
-tree
-remove_attributes_matching (tree attrs, Predicate predicate)
-{
-  tree new_attrs = NULL_TREE;
-  tree *ptr = &new_attrs;
-  const_tree start = attrs;
-  for (const_tree attr = attrs; attr; attr = TREE_CHAIN (attr))
-    {
-      tree name = get_attribute_name (attr);
-      const attribute_spec *as = lookup_attribute_spec (name);
-      const_tree end;
-      if (!predicate (attr, as))
-	end = attr;
-      else if (start == attrs)
-	continue;
-      else
-	end = TREE_CHAIN (attr);
-
-      for (; start != end; start = TREE_CHAIN (start))
-	{
-	  *ptr = tree_cons (TREE_PURPOSE (start),
-			    TREE_VALUE (start), NULL_TREE);
-	  TREE_CHAIN (*ptr) = NULL_TREE;
-	  ptr = &TREE_CHAIN (*ptr);
-	}
-      start = TREE_CHAIN (attr);
-    }
-  gcc_assert (!start || start == attrs);
-  return start ? attrs : new_attrs;
-}
-
-/* If VALUE is true, return the subset of ATTRS that affect type identity,
-   otherwise return the subset of ATTRS that don't affect type identity.  */
-
-tree
-affects_type_identity_attributes (tree attrs, bool value)
-{
-  auto predicate = [value](const_tree, const attribute_spec *as) -> bool
-    {
-      return bool (as && as->affects_type_identity) == value;
-    };
-  return remove_attributes_matching (attrs, predicate);
-}
-
-/* Remove attributes that affect type identity from ATTRS unless the
-   same attributes occur in OK_ATTRS.  */
-
-tree
-restrict_type_identity_attributes_to (tree attrs, tree ok_attrs)
-{
-  auto predicate = [ok_attrs](const_tree attr,
-			      const attribute_spec *as) -> bool
-    {
-      if (!as || !as->affects_type_identity)
-	return true;
-
-      for (tree ok_attr = lookup_attribute (as->name, ok_attrs);
-	   ok_attr;
-	   ok_attr = lookup_attribute (as->name, TREE_CHAIN (ok_attr)))
-	if (simple_cst_equal (TREE_VALUE (ok_attr), TREE_VALUE (attr)) == 1)
-	  return true;
-
-      return false;
-    };
-  return remove_attributes_matching (attrs, predicate);
 }
 
 /* Return a type like TTYPE except that its TYPE_ATTRIBUTE
@@ -2091,19 +1928,15 @@ decls_mismatched_attributes (tree tmpl, tree decl, tree attrlist,
 	  if (!has_attribute (tmpls[j], tmpl_attrs[j], blacklist[i]))
 	    continue;
 
-	  bool found = false;
 	  unsigned kmax = 1 + !!decl_attrs[1];
 	  for (unsigned k = 0; k != kmax; ++k)
 	    {
 	      if (has_attribute (decls[k], decl_attrs[k], blacklist[i]))
-		{
-		  found = true;
-		  break;
-		}
-	    }
+		break;
 
-	  if (!found)
-	    {
+	      if (!k && kmax > 1)
+		continue;
+
 	      if (nattrs)
 		pp_string (attrstr, ", ");
 	      pp_begin_quote (attrstr, pp_show_color (global_dc->printer));
@@ -2111,8 +1944,6 @@ decls_mismatched_attributes (tree tmpl, tree decl, tree attrlist,
 	      pp_end_quote (attrstr, pp_show_color (global_dc->printer));
 	      ++nattrs;
 	    }
-
-	  break;
 	}
     }
 
@@ -2180,333 +2011,6 @@ maybe_diag_alias_attributes (tree alias, tree target)
     }
 }
 
-/* Initialize a mapping RWM for a call to a function declared with
-   attribute access in ATTRS.  Each attribute positional operand
-   inserts one entry into the mapping with the operand number as
-   the key.  */
-
-void
-init_attr_rdwr_indices (rdwr_map *rwm, tree attrs)
-{
-  if (!attrs)
-    return;
-
-  for (tree access = attrs;
-       (access = lookup_attribute ("access", access));
-       access = TREE_CHAIN (access))
-    {
-      /* The TREE_VALUE of an attribute is a TREE_LIST whose TREE_VALUE
-	 is the attribute argument's value.  */
-      tree mode = TREE_VALUE (access);
-      if (!mode)
-	return;
-
-      /* The (optional) list of VLA bounds.  */
-      tree vblist = TREE_CHAIN (mode);
-      mode = TREE_VALUE (mode);
-      if (TREE_CODE (mode) != STRING_CST)
-	continue;
-      gcc_assert (TREE_CODE (mode) == STRING_CST);
-
-      if (vblist)
-	vblist = nreverse (copy_list (TREE_VALUE (vblist)));
-
-      for (const char *m = TREE_STRING_POINTER (mode); *m; )
-	{
-	  attr_access acc = { };
-
-	  /* Skip the internal-only plus sign.  */
-	  if (*m == '+')
-	    ++m;
-
-	  acc.str = m;
-	  acc.mode = acc.from_mode_char (*m);
-	  acc.sizarg = UINT_MAX;
-
-	  const char *end;
-	  acc.ptrarg = strtoul (++m, const_cast<char**>(&end), 10);
-	  m = end;
-
-	  if (*m == '[')
-	    {
-	      /* Forms containing the square bracket are internal-only
-		 (not specified by an attribute declaration), and used
-		 for various forms of array and VLA parameters.  */
-	      acc.internal_p = true;
-
-	      /* Search to the closing bracket and look at the preceding
-		 code: it determines the form of the most significant
-		 bound of the array.  Others prior to it encode the form
-		 of interior VLA bounds.  They're not of interest here.  */
-	      end = strchr (m, ']');
-	      const char *p = end;
-	      gcc_assert (p);
-
-	      while (ISDIGIT (p[-1]))
-		--p;
-
-	      if (ISDIGIT (*p))
-		{
-		  /* A digit denotes a constant bound (as in T[3]).  */
-		  acc.static_p = p[-1] == 's';
-		  acc.minsize = strtoull (p, NULL, 10);
-		}
-	      else if (' ' == p[-1])
-		{
-		  /* A space denotes an ordinary array of unspecified bound
-		     (as in T[]).  */
-		  acc.minsize = 0;
-		}
-	      else if ('*' == p[-1] || '$' == p[-1])
-		{
-		  /* An asterisk denotes a VLA.  When the closing bracket
-		     is followed by a comma and a dollar sign its bound is
-		     on the list.  Otherwise it's a VLA with an unspecified
-		     bound.  */
-		  acc.static_p = p[-2] == 's';
-		  acc.minsize = HOST_WIDE_INT_M1U;
-		}
-
-	      m = end + 1;
-	    }
-
-	  if (*m == ',')
-	    {
-	      ++m;
-	      do
-		{
-		  if (*m == '$')
-		    {
-		      ++m;
-		      if (!acc.size && vblist)
-			{
-			  /* Extract the list of VLA bounds for the current
-			     parameter, store it in ACC.SIZE, and advance
-			     to the list of bounds for the next VLA parameter.
-			  */
-			  acc.size = TREE_VALUE (vblist);
-			  vblist = TREE_CHAIN (vblist);
-			}
-		    }
-
-		  if (ISDIGIT (*m))
-		    {
-		      /* Extract the positional argument.  It's absent
-			 for VLAs whose bound doesn't name a function
-			 parameter.  */
-		      unsigned pos = strtoul (m, const_cast<char**>(&end), 10);
-		      if (acc.sizarg == UINT_MAX)
-			acc.sizarg = pos;
-		      m = end;
-		    }
-		}
-	      while (*m == '$');
-	    }
-
-	  acc.end = m;
-
-	  bool existing;
-	  auto &ref = rwm->get_or_insert (acc.ptrarg, &existing);
-	  if (existing)
-	    {
-	      /* Merge the new spec with the existing.  */
-	      if (acc.minsize == HOST_WIDE_INT_M1U)
-		ref.minsize = HOST_WIDE_INT_M1U;
-
-	      if (acc.sizarg != UINT_MAX)
-		ref.sizarg = acc.sizarg;
-
-	      if (acc.mode)
-		ref.mode = acc.mode;
-	    }
-	  else
-	    ref = acc;
-
-	  /* Unconditionally add an entry for the required pointer
-	     operand of the attribute, and one for the optional size
-	     operand when it's specified.  */
-	  if (acc.sizarg != UINT_MAX)
-	    rwm->put (acc.sizarg, acc);
-	}
-    }
-}
-
-/* Return the access specification for a function parameter PARM
-   or null if the current function has no such specification.  */
-
-attr_access *
-get_parm_access (rdwr_map &rdwr_idx, tree parm,
-		 tree fndecl /* = current_function_decl */)
-{
-  tree fntype = TREE_TYPE (fndecl);
-  init_attr_rdwr_indices (&rdwr_idx, TYPE_ATTRIBUTES (fntype));
-
-  if (rdwr_idx.is_empty ())
-    return NULL;
-
-  unsigned argpos = 0;
-  tree fnargs = DECL_ARGUMENTS (fndecl);
-  for (tree arg = fnargs; arg; arg = TREE_CHAIN (arg), ++argpos)
-    if (arg == parm)
-      return rdwr_idx.get (argpos);
-
-  return NULL;
-}
-
-/* Return the internal representation as STRING_CST.  Internal positional
-   arguments are zero-based.  */
-
-tree
-attr_access::to_internal_string () const
-{
-  return build_string (end - str, str);
-}
-
-/* Return the human-readable representation of the external attribute
-   specification (as it might appear in the source code) as STRING_CST.
-   External positional arguments are one-based.  */
-
-tree
-attr_access::to_external_string () const
-{
-  char buf[80];
-  gcc_assert (mode != access_deferred);
-  int len = snprintf (buf, sizeof buf, "access (%s, %u",
-		      mode_names[mode], ptrarg + 1);
-  if (sizarg != UINT_MAX)
-    len += snprintf (buf + len, sizeof buf - len, ", %u", sizarg + 1);
-  strcpy (buf + len, ")");
-  return build_string (len + 2, buf);
-}
-
-/* Return the number of specified VLA bounds and set *nunspec to
-   the number of unspecified ones (those designated by [*]).  */
-
-unsigned
-attr_access::vla_bounds (unsigned *nunspec) const
-{
-  unsigned nbounds = 0;
-  *nunspec = 0;
-  /* STR points to the beginning of the specified string for the current
-     argument that may be followed by the string for the next argument.  */
-  for (const char* p = strchr (str, ']'); p && *p != '['; --p)
-    {
-      if (*p == '*')
-	++*nunspec;
-      else if (*p == '$')
-	++nbounds;
-    }
-  return nbounds;
-}
-
-/* Reset front end-specific attribute access data from ATTRS.
-   Called from the free_lang_data pass.  */
-
-/* static */ void
-attr_access::free_lang_data (tree attrs)
-{
-  for (tree acs = attrs; (acs = lookup_attribute ("access", acs));
-       acs = TREE_CHAIN (acs))
-    {
-      tree vblist = TREE_VALUE (acs);
-      vblist = TREE_CHAIN (vblist);
-      if (!vblist)
-	continue;
-
-      for (vblist = TREE_VALUE (vblist); vblist; vblist = TREE_CHAIN (vblist))
-	{
-	  tree *pvbnd = &TREE_VALUE (vblist);
-	  if (!*pvbnd || DECL_P (*pvbnd))
-	    continue;
-
-	  /* VLA bounds that are expressions as opposed to DECLs are
-	     only used in the front end.  Reset them to keep front end
-	     trees leaking into the middle end (see pr97172) and to
-	     free up memory.  */
-	  *pvbnd = NULL_TREE;
-	}
-    }
-
-  for (tree argspec = attrs; (argspec = lookup_attribute ("arg spec", argspec));
-       argspec = TREE_CHAIN (argspec))
-    {
-      /* Same as above.  */
-      tree *pvblist = &TREE_VALUE (argspec);
-      *pvblist = NULL_TREE;
-    }
-}
-
-/* Defined in attr_access.  */
-constexpr char attr_access::mode_chars[];
-constexpr char attr_access::mode_names[][11];
-
-/* Format an array, including a VLA, pointed to by TYPE and used as
-   a function parameter as a human-readable string.  ACC describes
-   an access to the parameter and is used to determine the outermost
-   form of the array including its bound which is otherwise obviated
-   by its decay to pointer.  Return the formatted string.  */
-
-std::string
-attr_access::array_as_string (tree type) const
-{
-  std::string typstr;
-
-  if (type == error_mark_node)
-    return std::string ();
-
-  if (this->str)
-    {
-      /* For array parameters (but not pointers) create a temporary array
-	 type that corresponds to the form of the parameter including its
-	 qualifiers even though they apply to the pointer, not the array
-	 type.  */
-      const bool vla_p = minsize == HOST_WIDE_INT_M1U;
-      tree eltype = TREE_TYPE (type);
-      tree index_type = NULL_TREE;
-
-      if (minsize == HOST_WIDE_INT_M1U)
-	{
-	  /* Determine if this is a VLA (an array whose most significant
-	     bound is nonconstant and whose access string has "$]" in it)
-	     extract the bound expression from SIZE.  */
-	  const char *p = end;
-	  for ( ; p != str && *p-- != ']'; );
-	  if (*p == '$')
-	    /* SIZE may have been cleared.  Use it with care.  */
-	    index_type = build_index_type (size ? TREE_VALUE (size) : size);
-	}
-      else if (minsize)
-	index_type = build_index_type (size_int (minsize - 1));
-
-      tree arat = NULL_TREE;
-      if (static_p || vla_p)
-	{
-	  tree flag = static_p ? integer_one_node : NULL_TREE;
-	  /* Hack: there's no language-independent way to encode
-	     the "static" specifier or the "*" notation in an array type.
-	     Add a "fake" attribute to have the pretty-printer add "static"
-	     or "*".  The "[static N]" notation is only valid in the most
-	     significant bound but [*] can be used for any bound.  Because
-	     [*] is represented the same as [0] this hack only works for
-	     the most significant bound like static and the others are
-	     rendered as [0].  */
-	  arat = build_tree_list (get_identifier ("array"), flag);
-	}
-
-      const int quals = TYPE_QUALS (type);
-      type = build_array_type (eltype, index_type);
-      type = build_type_attribute_qual_variant (type, arat, quals);
-    }
-
-  /* Format the type using the current pretty printer.  The generic tree
-     printer does a terrible job.  */
-  pretty_printer *pp = global_dc->printer->clone ();
-  pp_printf (pp, "%qT", type);
-  typstr = pp_formatted_text (pp);
-  delete pp;
-
-  return typstr;
-}
 
 #if CHECKING_P
 
@@ -2538,8 +2042,6 @@ struct excl_hash_traits: typed_noop_remove<excl_pair>
   {
     x = value_type (NULL, NULL);
   }
-
-  static const bool empty_zero_p = false;
 
   static void mark_empty (value_type &x)
   {

@@ -2,7 +2,7 @@
    adding them to the top of the file, given that there is no
    pre-existing #include.  */
 
-/* { dg-options "-fdiagnostics-show-caret -fdiagnostics-show-line-numbers -Wno-implicit-function-declaration" } */
+/* { dg-options "-fdiagnostics-show-caret -fdiagnostics-show-line-numbers" } */
 
 void test (int i, int j)
 {

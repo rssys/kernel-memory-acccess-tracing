@@ -1,7 +1,6 @@
-// +build !nacl,!js
 // run
 
-// Copyright 2011 The Go Authors. All rights reserved.
+// Copyright 2011 The Go Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -37,7 +36,7 @@ func main() {
 	}
 
 	runtime.ReadMemStats(memstats)
-	obj := int64(memstats.HeapObjects - st.HeapObjects)
+	obj := memstats.HeapObjects - st.HeapObjects
 	if obj > N/5 {
 		fmt.Println("too many objects left:", obj)
 		os.Exit(1)

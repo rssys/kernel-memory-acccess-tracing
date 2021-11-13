@@ -9,12 +9,11 @@
  */
 module core.sys.windows.wincrypt;
 version (Windows):
-@system:
 pragma(lib, "advapi32");
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.w32api, core.sys.windows.winbase, core.sys.windows.windef;
+private import core.sys.windows.w32api, core.sys.windows.winbase, core.sys.windows.windef;
 
 /* FIXME:
  *  Types of some constants

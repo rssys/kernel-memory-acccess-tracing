@@ -19,7 +19,6 @@ public import core.stdc.config;
 
 version (Posix):
 extern (C) nothrow @nogc:
-@system:
 
 enum _XOPEN_SOURCE     = 600;
 enum _POSIX_SOURCE     = true;
@@ -62,27 +61,21 @@ version (CRuntime_Glibc)
     enum __USE_REENTRANT     = _REENTRANT;
 
     version (D_LP64)
-        enum __WORDSIZE = 64;
+        enum __WORDSIZE=64;
     else
-        enum __WORDSIZE = 32;
+        enum __WORDSIZE=32;
 }
 else version (CRuntime_Musl)
 {
-    // off_t is always 64 bits on Musl
     enum _FILE_OFFSET_BITS   = 64;
 
-    // Not present in Musl sources
     enum __REDIRECT          = false;
 
-    // Those three are irrelevant for Musl as it always uses 64 bits off_t
     enum __USE_FILE_OFFSET64 = _FILE_OFFSET_BITS == 64;
     enum __USE_LARGEFILE     = __USE_FILE_OFFSET64 && !__REDIRECT;
     enum __USE_LARGEFILE64   = __USE_FILE_OFFSET64 && !__REDIRECT;
 
-    version (D_LP64)
-        enum __WORDSIZE = 64;
-    else
-        enum __WORDSIZE = 32;
+    enum __WORDSIZE=64;
 }
 else version (CRuntime_UClibc)
 {
@@ -110,73 +103,13 @@ else version (CRuntime_UClibc)
     enum __USE_REENTRANT     = _REENTRANT;
 
     version (D_LP64)
-        enum __WORDSIZE = 64;
+        enum __WORDSIZE=64;
     else
-        enum __WORDSIZE = 32;
+        enum __WORDSIZE=32;
 }
 else version (CRuntime_Bionic)
 {
-    enum _GNU_SOURCE         = false;
-    enum __USE_FILE_OFFSET64 = false; // see https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
-    enum __USE_GNU           = _GNU_SOURCE;
-
-    version (D_LP64)
-        enum __WORDSIZE = 64;
-    else
-        enum __WORDSIZE = 32;
-}
-else version (OpenBSD)
-{
-    version (Alpha)
-    {
-        enum _ALIGNBYTES = 7;
-        enum _STACKALIGNBYTES = 7;
-        enum _MAX_PAGE_SHIFT = 13;
-    }
-    else version (X86_64)
-    {
-        enum _ALIGNBYTES = c_long.sizeof - 1;
-        enum _STACKALIGNBYTES = 15;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (AArch64)
-    {
-        enum _ALIGNBYTES = c_long.sizeof - 1;
-        enum _STACKALIGNBYTES = 15;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (ARM)
-    {
-        enum _ALIGNBYTES = 7;
-        enum _STACKALIGNBYTES = 7;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (HPPA)
-    {
-        enum _ALIGNBYTES = 7;
-        enum _STACKALIGNBYTES = 7;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (X86)
-    {
-        enum _ALIGNBYTES = 3;
-        enum _STACKALIGNBYTES = 15;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (PPC)
-    {
-        enum _ALIGNBYTES = 7;
-        enum _STACKALIGNBYTES = 15;
-        enum _MAX_PAGE_SHIFT = 12;
-    }
-    else version (SPARC64)
-    {
-        enum _ALIGNBYTES = 15;
-        enum _STACKALIGNBYTES = 15;
-        enum _MAX_PAGE_SHIFT = 13;
-    }
-    else
-        static assert(false, "Architecture not supported.");
+    enum __USE_GNU           = false;
 }
 else version (Solaris)
 {

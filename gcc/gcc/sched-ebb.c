@@ -1,5 +1,5 @@
 /* Instruction scheduling pass.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
 
@@ -29,6 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "df.h"
 #include "profile.h"
 #include "insn-attr.h"
+#include "params.h"
 #include "cfgrtl.h"
 #include "cfgbuild.h"
 #include "sched-int.h"
@@ -471,7 +472,7 @@ basic_block
 schedule_ebb (rtx_insn *head, rtx_insn *tail, bool modulo_scheduling)
 {
   basic_block first_bb, target_bb;
-  class deps_desc tmp_deps;
+  struct deps_desc tmp_deps;
   bool success;
 
   /* Blah.  We should fix the rest of the code not to get confused by
@@ -619,9 +620,9 @@ schedule_ebbs (void)
     return;
 
   if (profile_info && profile_status_for_fn (cfun) == PROFILE_READ)
-    probability_cutoff = param_tracer_min_branch_probability_feedback;
+    probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY_FEEDBACK);
   else
-    probability_cutoff = param_tracer_min_branch_probability;
+    probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY);
   probability_cutoff = REG_BR_PROB_BASE / 100 * probability_cutoff;
 
   schedule_ebbs_init ();

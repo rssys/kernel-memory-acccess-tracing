@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -38,8 +38,6 @@
  * Contains implementations of cc_ht_map_'s debug-mode functions.
  */
 
-#ifdef PB_DS_CLASS_C_DEC
-
 #ifdef _GLIBCXX_DEBUG
 
 PB_DS_CLASS_T_DEC
@@ -54,4 +52,3 @@ assert_entry_pointer_valid(const entry_pointer p_e, true_type,
 }
 
 #endif 
-#endif

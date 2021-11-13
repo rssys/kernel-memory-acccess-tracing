@@ -1,4 +1,4 @@
-// { dg-do run { target c++20 } }
+// { dg-do run { target c++2a } }
 
 #include <new>
 

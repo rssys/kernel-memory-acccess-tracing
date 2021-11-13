@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *           Copyright (C) 2014-2021, Free Software Foundation, Inc.        *
+ *           Copyright (C) 2014-2019, Free Software Foundation, Inc.        *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -23,9 +23,8 @@
  *                                                                          *
  ****************************************************************************/
 
-/* This is the C header that corresponds to the Ada package specification for
-   Scos.  It was created manually from scos.ads and must be kept synchronized
-   with changes in this file.  */
+/* This is the C file that corresponds to the Ada package spec SCOs.  It was
+   created manually from the file scos.ads.  */
 
 #ifdef __cplusplus
 extern "C" {

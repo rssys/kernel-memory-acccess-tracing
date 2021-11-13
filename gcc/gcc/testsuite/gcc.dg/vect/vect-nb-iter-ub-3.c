@@ -1,4 +1,4 @@
-/* { dg-additional-options "-fdump-tree-cunroll-details --param vect-epilogues-nomask=0" } */
+/* { dg-additional-options "-fdump-tree-cunroll-details" } */
 
 #include "tree-vect.h"
 

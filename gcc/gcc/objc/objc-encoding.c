@@ -1,5 +1,5 @@
 /* Routines dealing with ObjC encoding of types
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -733,7 +733,7 @@ encode_type (tree type, int curtype, int format)
 	  char *enc = (char *) obstack_base (&util_obstack) + curtype;
 
 	  /* Rewrite "in const" from "nr" to "rn".  */
-	  if (curtype >= 1 && startswith (enc - 1, "nr"))
+	  if (curtype >= 1 && !strncmp (enc - 1, "nr", 2))
 	    memcpy (enc - 1, "rn", 2);
 	}
     }
@@ -801,7 +801,7 @@ encode_gnu_bitfield (int position, tree type, int size)
   else
     {
       /* Do not do any encoding, produce an error and keep going.  */
-      error ("trying to encode non-integer type as a bit-field");
+      error ("trying to encode non-integer type as a bitfield");
       return;
     }
 

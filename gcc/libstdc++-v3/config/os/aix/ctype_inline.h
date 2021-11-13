@@ -1,6 +1,6 @@
 // Locale support -*- C++ -*-
 
-// Copyright (C) 2000-2021 Free Software Foundation, Inc.
+// Copyright (C) 2000-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -45,11 +45,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     if(_M_table)
       return _M_table[static_cast<unsigned char>(__c)] & __m;
     else
-#ifdef _THREAD_SAFE
-      return __OBJ_DATA((*__lc_ctype_ptr))->mask[static_cast<unsigned char>(__c)] & __m;
-#else
-      return __OBJ_DATA(__lc_ctype)->mask[static_cast<unsigned char>(__c)] & __m;
-#endif
+      return __OBJ_DATA(__lc_ctype)->mask[__c] & __m;
   }
 
   const char*
@@ -61,11 +57,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	*__vec++ = _M_table[static_cast<unsigned char>(*__low++)];
     else
       while (__low < __high)
-#ifdef _THREAD_SAFE
-	*__vec++ = __OBJ_DATA((*__lc_ctype_ptr))->mask[static_cast<unsigned char>(*__low++)];
-#else
-        *__vec++ = __OBJ_DATA(__lc_ctype)->mask[static_cast<unsigned char>(*__low++)];
-#endif
+        *__vec++ = __OBJ_DATA(__lc_ctype)->mask[*__low++];
     return __high;
   }
 

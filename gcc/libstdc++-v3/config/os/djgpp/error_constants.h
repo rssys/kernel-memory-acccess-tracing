@@ -1,6 +1,6 @@
 // Specific definitions for DJGPP platform  -*- C++ -*-
 
-// Copyright (C) 2010-2021 Free Software Foundation, Inc.
+// Copyright (C) 2010-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -48,7 +48,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       bad_address = 				EFAULT,
       bad_file_descriptor = 			EBADF,
 
-#ifdef EBADMSG
+#ifdef _GLIBCXX_HAVE_EBADMSG
       bad_message = 				EBADMSG,
 #endif
 
@@ -68,7 +68,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       function_not_supported = 			ENOSYS,
 //    host_unreachable = 			EHOSTUNREACH,
 
-#ifdef EIDRM
+#ifdef _GLIBCXX_HAVE_EIDRM
       identifier_removed = 			EIDRM,
 #endif
 
@@ -86,13 +86,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 //    no_buffer_space = 			ENOBUFS,
       no_child_process = 			ECHILD,
 
-#ifdef ENOLINK
+#ifdef _GLIBCXX_HAVE_ENOLINK
       no_link = 				ENOLINK,
 #endif
 
       no_lock_available = 			ENOLCK,
 
-#ifdef ENODATA
+#ifdef _GLIBCXX_HAVE_ENODATA
       no_message_available = 			ENODATA,
 #endif
 
@@ -100,7 +100,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 //    no_protocol_option = 			ENOPROTOOPT,
       no_space_on_device = 			ENOSPC,
 
-#ifdef ENOSR
+#ifdef _GLIBCXX_HAVE_ENOSR
       no_stream_resources = 			ENOSR,
 #endif
 
@@ -111,18 +111,18 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       not_a_directory = 			ENOTDIR,
 //    not_a_socket = 				ENOTSOCK,
 
-#ifdef ENOSTR
+#ifdef _GLIBCXX_HAVE_ENOSTR
       not_a_stream = 				ENOSTR,
 #endif
 
 //    not_connected = 				ENOTCONN,
       not_enough_memory = 			ENOMEM,
 
-#ifdef ENOTSUP
+#ifdef _GLIBCXX_HAVE_ENOTSUP
       not_supported = 				ENOTSUP,
 #endif
 
-#ifdef ECANCELED
+#ifdef _GLIBCXX_HAVE_ECANCELED
       operation_canceled = 			ECANCELED,
 #endif
 
@@ -131,13 +131,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 //    operation_not_supported = 		EOPNOTSUPP,
 //    operation_would_block = 			EWOULDBLOCK,
 
-#ifdef EOWNERDEAD
+#ifdef _GLIBCXX_HAVE_EOWNERDEAD
       owner_dead = 				EOWNERDEAD,
 #endif
 
       permission_denied = 			EACCES,
 
-#ifdef EPROTO
+#ifdef _GLIBCXX_HAVE_EPROTO
       protocol_error = 				EPROTO,
 #endif
 
@@ -147,15 +147,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       resource_unavailable_try_again = 		EAGAIN,
       result_out_of_range = 			ERANGE,
 
-#ifdef ENOTRECOVERABLE
+#ifdef _GLIBCXX_HAVE_ENOTRECOVERABLE
       state_not_recoverable = 			ENOTRECOVERABLE,
 #endif
 
-#ifdef ETIME
+#ifdef _GLIBCXX_HAVE_ETIME
       stream_timeout = 				ETIME,
 #endif
 
-#ifdef ETXTBSY
+#ifdef _GLIBCXX_HAVE_ETXTBSY
       text_file_busy = 				ETXTBSY,
 #endif
 
@@ -165,7 +165,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       too_many_links = 				EMLINK,
       too_many_symbolic_link_levels = 		ELOOP,
 
-#ifdef EOVERFLOW
+#ifdef _GLIBCXX_HAVE_EOVERFLOW
       value_too_large = 			EOVERFLOW,
 #endif
 

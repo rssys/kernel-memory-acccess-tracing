@@ -74,7 +74,7 @@ program main
 
   do i = 1, m
      do j = 1, n
-        if (c(i,j) /= e(i,j)) stop 1
+        if (c(i,j) /= e(i,j)) call abort
      end do
   end do
 end program main

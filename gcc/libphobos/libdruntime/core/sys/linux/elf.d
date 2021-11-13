@@ -9,7 +9,6 @@ version (linux):
 extern (C):
 pure:
 nothrow:
-@system:
 
 import core.stdc.stdint;
 
@@ -832,6 +831,7 @@ enum AT_EXECFN =       31;
 enum AT_SYSINFO =      32;
 enum AT_SYSINFO_EHDR = 33;
 
+;
 enum AT_L1I_CACHESHAPE =       34;
 enum AT_L1D_CACHESHAPE =       35;
 enum AT_L2_CACHESHAPE =        36;

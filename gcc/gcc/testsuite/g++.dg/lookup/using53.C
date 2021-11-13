@@ -43,12 +43,11 @@ template class DT<int>;
 namespace N
 {
   int i;
-  enum bob {Q};
 }
 
 void
 f ()
 {
   using N::i;
-  using N::i;       // { dg-error "redeclaration" }
+  using N::i;       // { dg-error "declared" }
 }

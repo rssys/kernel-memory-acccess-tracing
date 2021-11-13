@@ -17,6 +17,7 @@ union
   double d[NUM * 2];
 } dst, res, src1, src2, src3;
 
+
 /* Note that in macc*,msub*,mnmacc* and mnsub* instructions, the intermdediate 
    product is not rounded, only the addition is rounded. */
 
@@ -55,7 +56,7 @@ check_maccps ()
 	if (dst.f[i + j] != res.f[i + j]) 
 	  check_fails++;
       }
-  return check_fails;
+  return check_fails++;
 }
 
 static int
@@ -69,7 +70,7 @@ check_maccpd ()
 	if (dst.d[i + j] != res.d[i + j]) 
 	  check_fails++;
       }
-  return check_fails;
+  return check_fails++;
 }
 
 
@@ -83,7 +84,7 @@ check_maccss ()
       if (dst.f[i] != res.f[i]) 
 	check_fails++;
     }	
-  return check_fails;
+  return check_fails++;
 }
 
 static int
@@ -96,7 +97,7 @@ check_maccsd ()
       if (dst.d[i] != res.d[i]) 
 	check_fails++;
     }
-  return check_fails;
+  return check_fails++;
 }
 
 static void
@@ -131,4 +132,5 @@ fma4_test (void)
   
   if (check_maccsd ()) 
     abort ();
+
 }

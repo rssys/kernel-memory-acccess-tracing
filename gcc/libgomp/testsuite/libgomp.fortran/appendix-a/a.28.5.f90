@@ -1,5 +1,5 @@
 ! { dg-do compile }
-! { dg-options "-w -std=legacy" }
+! { dg-options "-w" }
 !
 ! "-w" added as libgomp/testsuite seemingly cannot parse with
 ! dg-warning Fortran's output. Fortran warns for "call sub1(a)"

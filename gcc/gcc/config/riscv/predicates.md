@@ -1,5 +1,5 @@
 ;; Predicate description for RISC-V target.
-;; Copyright (C) 2011-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2019 Free Software Foundation, Inc.
 ;; Contributed by Andrew Waterman (andrew@sifive.com).
 ;; Based on MIPS target for GNU compiler.
 ;;
@@ -26,14 +26,6 @@
 (define_predicate "arith_operand"
   (ior (match_operand 0 "const_arith_operand")
        (match_operand 0 "register_operand")))
-
-(define_predicate "lui_operand"
-  (and (match_code "const_int")
-       (match_test "LUI_OPERAND (INTVAL (op))")))
-
-(define_predicate "sfb_alu_operand"
-  (ior (match_operand 0 "arith_operand")
-       (match_operand 0 "lui_operand")))
 
 (define_predicate "const_csr_operand"
   (and (match_code "const_int")
@@ -72,11 +64,6 @@
   /* Don't handle multi-word moves this way; we don't want to introduce
      the individual word-mode moves until after reload.  */
   if (GET_MODE_SIZE (mode) > UNITS_PER_WORD)
-    return false;
-
-  /* Check whether the constant can be loaded in a single
-     instruction with zbs extensions.  */
-  if (TARGET_64BIT && TARGET_ZBS && SINGLE_BIT_MASK_OPERAND (INTVAL (op)))
     return false;
 
   /* Otherwise check whether the constant can be loaded in a single
@@ -203,11 +190,6 @@
 (define_predicate "signed_order_operator"
   (match_code "eq,ne,lt,le,ge,gt"))
 
-(define_predicate "subreg_lowpart_operator"
-  (ior (match_code "truncate")
-       (and (match_code "subreg")
-            (match_test "subreg_lowpart_p (op)"))))
-
 (define_predicate "fp_native_comparison"
   (match_code "eq,lt,le,gt,ge"))
 
@@ -216,26 +198,3 @@
 
 (define_predicate "fp_branch_comparison"
   (match_code "unordered,ordered,unlt,unge,unle,ungt,uneq,ltgt,ne,eq,lt,le,gt,ge"))
-
-(define_special_predicate "gpr_save_operation"
-  (match_code "parallel")
-{
-  return riscv_gpr_save_operation_p (op);
-})
-
-;; Predicates for the ZBS extension.
-(define_predicate "single_bit_mask_operand"
-  (and (match_code "const_int")
-       (match_test "pow2p_hwi (INTVAL (op))")))
-
-(define_predicate "not_single_bit_mask_operand"
-  (and (match_code "const_int")
-       (match_test "pow2p_hwi (~INTVAL (op))")))
-
-(define_predicate "const31_operand"
-  (and (match_code "const_int")
-       (match_test "INTVAL (op) == 31")))
-
-(define_predicate "const63_operand"
-  (and (match_code "const_int")
-       (match_test "INTVAL (op) == 63")))

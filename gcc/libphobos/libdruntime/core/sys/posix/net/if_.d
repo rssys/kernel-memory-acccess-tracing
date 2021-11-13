@@ -14,7 +14,7 @@
  */
 module core.sys.posix.net.if_;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 
 version (OSX)
     version = Darwin;
@@ -40,7 +40,7 @@ struct if_nameindex // renamed to if_nameindex_t
 
 IF_NAMESIZE
 
-uint            if_nametoindex(const scope char*);
+uint            if_nametoindex(in char*);
 char*           if_indextoname(uint, char*);
 if_nameindex_t* if_nameindex();
 void            if_freenameindex(if_nameindex_t*);
@@ -56,7 +56,7 @@ version (CRuntime_Glibc)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);
@@ -71,7 +71,7 @@ else version (Darwin)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);
@@ -86,7 +86,7 @@ else version (FreeBSD)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);
@@ -101,22 +101,7 @@ else version (NetBSD)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
-    char*           if_indextoname(uint, char*);
-    if_nameindex_t* if_nameindex();
-    void            if_freenameindex(if_nameindex_t*);
-}
-else version (OpenBSD)
-{
-    struct if_nameindex_t
-    {
-        uint    if_index;
-        char*   if_name;
-    }
-
-    enum IF_NAMESIZE = 16;
-
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);
@@ -131,7 +116,7 @@ else version (DragonFlyBSD)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);
@@ -140,7 +125,7 @@ else version (CRuntime_Bionic)
 {
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
 }
 else version (CRuntime_UClibc)
@@ -153,7 +138,7 @@ else version (CRuntime_UClibc)
 
     enum IF_NAMESIZE = 16;
 
-    uint            if_nametoindex(const scope char*);
+    uint            if_nametoindex(in char*);
     char*           if_indextoname(uint, char*);
     if_nameindex_t* if_nameindex();
     void            if_freenameindex(if_nameindex_t*);

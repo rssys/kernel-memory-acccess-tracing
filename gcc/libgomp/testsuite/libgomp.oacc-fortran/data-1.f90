@@ -26,32 +26,32 @@ program main
   j = -2
 
   !$acc data copyin (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 1
-    if (is_mapped (j) .eqv. .FALSE.) stop 2
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 3
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 4
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 5
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data copyout (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 6
-    if (is_mapped (j) .eqv. .FALSE.) stop 7
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 8
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 9
+    if (i .ne. 2 .or. j .ne. 1) call abort
 
     !$acc parallel present (i, j)
       i = 4
@@ -59,55 +59,55 @@ program main
     !$acc end parallel
   !$acc end data
 
-  if (i .ne. 4 .or. j .ne. 2) stop 10
+  if (i .ne. 4 .or. j .ne. 2) call abort
 
   i = -1
   j = -2
 
   !$acc data create (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 11
-    if (is_mapped (j) .eqv. .FALSE.) stop 12
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 13
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 14
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 15
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data present_or_copyin (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 16
-    if (is_mapped (j) .eqv. .FALSE.) stop 17
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 18
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 19
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 20
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data present_or_copyout (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 21
-    if (is_mapped (j) .eqv. .FALSE.) stop 22
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 23
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 24
+    if (i .ne. 2 .or. j .ne. 1) call abort
 
     !$acc parallel present (i, j)
       i = 4
@@ -115,98 +115,98 @@ program main
     !$acc end parallel
   !$acc end data
 
-  if (i .ne. 4 .or. j .ne. 2) stop 25
+  if (i .ne. 4 .or. j .ne. 2) call abort
 
   i = -1
   j = -2
 
   !$acc data present_or_copy (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 26
-    if (is_mapped (j) .eqv. .FALSE.) stop 27
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
-    if (i .ne. -1 .or. j .ne. -2) stop 28
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 29
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
 #if ACC_MEM_SHARED
-  if (i .ne. 2 .or. j .ne. 1) stop 30
+  if (i .ne. 2 .or. j .ne. 1) call abort
 #else
-  if (i .ne. -1 .or. j .ne. -2) stop 31
+  if (i .ne. -1 .or. j .ne. -2) call abort
 #endif
 
   i = -1
   j = -2
 
   !$acc data present_or_create (i, j)
-    if (is_mapped (i) .eqv. .FALSE.) stop 32
-    if (is_mapped (j) .eqv. .FALSE.) stop 33
+    if (is_mapped (i) .eqv. .FALSE.) call abort
+    if (is_mapped (j) .eqv. .FALSE.) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 34
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 35
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data copyin (i, j)
     !$acc data present (i, j)
-      if (is_mapped (i) .eqv. .FALSE.) stop 36
-      if (is_mapped (j) .eqv. .FALSE.) stop 37
+      if (is_mapped (i) .eqv. .FALSE.) call abort
+      if (is_mapped (j) .eqv. .FALSE.) call abort
 
-      if (i .ne. -1 .or. j .ne. -2) stop 38
+      if (i .ne. -1 .or. j .ne. -2) call abort
 
       i = 2
       j = 1
 
-      if (i .ne. 2 .or. j .ne. 1) stop 39
+      if (i .ne. 2 .or. j .ne. 1) call abort
     !$acc end data
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 40
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data copyin (i, j)
     !$acc data present (i, j)
-      if (is_mapped (i) .eqv. .FALSE.) stop 41
-      if (is_mapped (j) .eqv. .FALSE.) stop 42
+      if (is_mapped (i) .eqv. .FALSE.) call abort
+      if (is_mapped (j) .eqv. .FALSE.) call abort
 
-      if (i .ne. -1 .or. j .ne. -2) stop 43
+      if (i .ne. -1 .or. j .ne. -2) call abort
 
       i = 2
       j = 1
 
-      if (i .ne. 2 .or. j .ne. 1) stop 44
+      if (i .ne. 2 .or. j .ne. 1) call abort
     !$acc end data
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 45
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
   i = -1
   j = -2
 
   !$acc data
 #if !ACC_MEM_SHARED
-    if (is_mapped (i) .eqv. .TRUE.) stop 46
-    if (is_mapped (j) .eqv. .TRUE.) stop 47
+    if (is_mapped (i) .eqv. .TRUE.) call abort
+    if (is_mapped (j) .eqv. .TRUE.) call abort
 #endif
-    if (i .ne. -1 .or. j .ne. -2) stop 48
+    if (i .ne. -1 .or. j .ne. -2) call abort
 
     i = 2
     j = 1
 
-    if (i .ne. 2 .or. j .ne. 1) stop 49
+    if (i .ne. 2 .or. j .ne. 1) call abort
   !$acc end data
 
-  if (i .ne. 2 .or. j .ne. 1) stop 50
+  if (i .ne. 2 .or. j .ne. 1) call abort
 
 end program main

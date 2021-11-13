@@ -53,6 +53,3 @@ int main()
 
   return 0;
 }
-
-/* The invalid function redeclarations might also trigger:
-   { dg-prune-output "-Warray-parameter" } */

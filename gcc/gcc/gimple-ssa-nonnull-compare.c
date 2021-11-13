@@ -1,5 +1,5 @@
 /* -Wnonnull-compare warning support.
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2019 Free Software Foundation, Inc.
    Contributed by Jakub Jelinek <jakub@redhat.com>
 
 This file is part of GCC.
@@ -97,9 +97,9 @@ do_warn_nonnull_compare (function *fun, tree arg)
       if (op
 	  && (POINTER_TYPE_P (TREE_TYPE (arg))
 	      ? integer_zerop (op) : integer_minus_onep (op))
-	  && !warning_suppressed_p (stmt, OPT_Wnonnull_compare))
+	  && !gimple_no_warning_p (stmt))
 	warning_at (loc, OPT_Wnonnull_compare,
-		    "%<nonnull%> argument %qD compared to NULL", arg);
+		    "nonnull argument %qD compared to NULL", arg);
     }
 }
 

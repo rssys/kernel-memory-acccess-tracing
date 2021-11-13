@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -136,16 +136,15 @@ is
             ENode :=
               Find
                 (Container => Right,
-                 Item      => Left.Content.Nodes (Node).Element).Node;
+                 Item      => Left.Nodes (Node).Element).Node;
 
             if ENode = 0
-              or else Right.Content.Nodes (ENode).Element /=
-              Left.Content.Nodes (Node).Element
+              or else Right.Nodes (ENode).Element /= Left.Nodes (Node).Element
             then
                return False;
             end if;
 
-            Node := HT_Ops.Next (Left.Content, Node);
+            Node := HT_Ops.Next (Left, Node);
          end loop;
 
          return True;
@@ -167,7 +166,7 @@ is
       --------------------
 
       procedure Insert_Element (Source_Node : Count_Type) is
-         N : Node_Type renames Source.Content.Nodes (Source_Node);
+         N : Node_Type renames Source.Nodes (Source_Node);
          X : Count_Type;
          B : Boolean;
 
@@ -187,8 +186,8 @@ is
          raise Storage_Error with "not enough capacity";  -- SE or CE? ???
       end if;
 
-      HT_Ops.Clear (Target.Content);
-      Insert_Elements (Source.Content);
+      HT_Ops.Clear (Target);
+      Insert_Elements (Source);
    end Assign;
 
    --------------
@@ -197,7 +196,7 @@ is
 
    function Capacity (Container : Set) return Count_Type is
    begin
-      return Container.Content.Nodes'Length;
+      return Container.Nodes'Length;
    end Capacity;
 
    -----------
@@ -206,27 +205,8 @@ is
 
    procedure Clear (Container : in out Set) is
    begin
-      HT_Ops.Clear (Container.Content);
+      HT_Ops.Clear (Container);
    end Clear;
-
-   ------------------------
-   -- Constant_Reference --
-   ------------------------
-
-   function Constant_Reference
-     (Container : aliased Set;
-      Position  : Cursor) return not null access constant Element_Type
-   is
-   begin
-      if not Has_Element (Container, Position) then
-         raise Constraint_Error with "Position cursor equals No_Element";
-      end if;
-
-      pragma Assert
-        (Vet (Container, Position), "bad cursor in function Element");
-
-      return Container.Content.Nodes (Position.Node).Element'Access;
-   end Constant_Reference;
 
    --------------
    -- Contains --
@@ -257,18 +237,18 @@ is
          raise Capacity_Error;
       end if;
 
-      Target.Content.Length := Source.Content.Length;
-      Target.Content.Free := Source.Content.Free;
+      Target.Length := Source.Length;
+      Target.Free := Source.Free;
 
       H := 1;
       while H <= Source.Modulus loop
-         Target.Content.Buckets (H) := Source.Content.Buckets (H);
+         Target.Buckets (H) := Source.Buckets (H);
          H := H + 1;
       end loop;
 
       N := 1;
       while N <= Source.Capacity loop
-         Target.Content.Nodes (N) := Source.Content.Nodes (N);
+         Target.Nodes (N) := Source.Nodes (N);
          N := N + 1;
       end loop;
 
@@ -298,7 +278,7 @@ is
       X : Count_Type;
 
    begin
-      Element_Keys.Delete_Key_Sans_Free (Container.Content, Item, X);
+      Element_Keys.Delete_Key_Sans_Free (Container, Item, X);
 
       if X = 0 then
          raise Constraint_Error with "attempt to delete element not in set";
@@ -315,7 +295,7 @@ is
 
       pragma Assert (Vet (Container, Position), "bad cursor in Delete");
 
-      HT_Ops.Delete_Node_Sans_Free (Container.Content, Position.Node);
+      HT_Ops.Delete_Node_Sans_Free (Container, Position.Node);
       Free (Container, Position.Node);
 
       Position := No_Element;
@@ -331,8 +311,8 @@ is
       Src_Node   : Count_Type;
       Tgt_Node   : Count_Type;
 
-      TN : Nodes_Type renames Target.Content.Nodes;
-      SN : Nodes_Type renames Source.Content.Nodes;
+      TN : Nodes_Type renames Target.Nodes;
+      SN : Nodes_Type renames Source.Nodes;
 
    begin
       if Target'Address = Source'Address then
@@ -340,45 +320,44 @@ is
          return;
       end if;
 
-      Src_Length := Source.Content.Length;
+      Src_Length := Source.Length;
 
       if Src_Length = 0 then
          return;
       end if;
 
-      if Src_Length >= Target.Content.Length then
-         Tgt_Node := HT_Ops.First (Target.Content);
+      if Src_Length >= Target.Length then
+         Tgt_Node := HT_Ops.First (Target);
          while Tgt_Node /= 0 loop
-            if Element_Keys.Find (Source.Content, TN (Tgt_Node).Element) /= 0
-            then
+            if Element_Keys.Find (Source, TN (Tgt_Node).Element) /= 0 then
                declare
                   X : constant Count_Type := Tgt_Node;
                begin
-                  Tgt_Node := HT_Ops.Next (Target.Content, Tgt_Node);
-                  HT_Ops.Delete_Node_Sans_Free (Target.Content, X);
+                  Tgt_Node := HT_Ops.Next (Target, Tgt_Node);
+                  HT_Ops.Delete_Node_Sans_Free (Target, X);
                   Free (Target, X);
                end;
 
             else
-               Tgt_Node := HT_Ops.Next (Target.Content, Tgt_Node);
+               Tgt_Node := HT_Ops.Next (Target, Tgt_Node);
             end if;
          end loop;
 
          return;
       else
-         Src_Node := HT_Ops.First (Source.Content);
+         Src_Node := HT_Ops.First (Source);
          Src_Last := 0;
       end if;
 
       while Src_Node /= Src_Last loop
-         Tgt_Node := Element_Keys.Find (Target.Content, SN (Src_Node).Element);
+         Tgt_Node := Element_Keys.Find (Target, SN (Src_Node).Element);
 
          if Tgt_Node /= 0 then
-            HT_Ops.Delete_Node_Sans_Free (Target.Content, Tgt_Node);
+            HT_Ops.Delete_Node_Sans_Free (Target, Tgt_Node);
             Free (Target, Tgt_Node);
          end if;
 
-         Src_Node := HT_Ops.Next (Source.Content, Src_Node);
+         Src_Node := HT_Ops.Next (Source, Src_Node);
       end loop;
    end Difference;
 
@@ -394,7 +373,7 @@ is
 
       procedure Process (L_Node : Count_Type) is
          B : Boolean;
-         E : Element_Type renames Left.Content.Nodes (L_Node).Element;
+         E : Element_Type renames Left.Nodes (L_Node).Element;
          X : Count_Type;
 
       begin
@@ -407,7 +386,7 @@ is
    --  Start of processing for Difference
 
    begin
-      Iterate (Left.Content);
+      Iterate (Left);
    end Difference;
 
    function Difference (Left : Set; Right : Set) return Set is
@@ -424,7 +403,7 @@ is
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       C := Length (Left);
@@ -451,7 +430,7 @@ is
       pragma Assert
         (Vet (Container, Position), "bad cursor in function Element");
 
-      return Container.Content.Nodes (Position.Node).Element;
+      return Container.Nodes (Position.Node).Element;
    end Element;
 
    ---------------------
@@ -500,7 +479,7 @@ is
    --  Start of processing for Equivalent_Sets
 
    begin
-      return Is_Equivalent (Left.Content, Right.Content);
+      return Is_Equivalent (Left, Right);
    end Equivalent_Sets;
 
    ---------------------
@@ -522,7 +501,7 @@ is
    procedure Exclude (Container : in out Set; Item : Element_Type) is
       X : Count_Type;
    begin
-      Element_Keys.Delete_Key_Sans_Free (Container.Content, Item, X);
+      Element_Keys.Delete_Key_Sans_Free (Container, Item, X);
       Free (Container, X);
    end Exclude;
 
@@ -534,8 +513,7 @@ is
      (Container : Set;
       Item      : Element_Type) return Cursor
    is
-      Node : constant Count_Type :=
-        Element_Keys.Find (Container.Content, Item);
+      Node : constant Count_Type := Element_Keys.Find (Container, Item);
 
    begin
       if Node = 0 then
@@ -550,7 +528,7 @@ is
    -----------
 
    function First (Container : Set) return Cursor is
-      Node : constant Count_Type := HT_Ops.First (Container.Content);
+      Node : constant Count_Type := HT_Ops.First (Container);
 
    begin
       if Node = 0 then
@@ -654,7 +632,7 @@ is
       --------------
 
       function Elements (Container : Set) return E.Sequence is
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : E.Sequence;
 
       begin
@@ -662,8 +640,8 @@ is
          --  for their postconditions.
 
          while Position /= 0 loop
-            R := E.Add (R, Container.Content.Nodes (Position).Element);
-            Position := HT_Ops.Next (Container.Content, Position);
+            R := E.Add (R, Container.Nodes (Position).Element);
+            Position := HT_Ops.Next (Container, Position);
          end loop;
 
          return R;
@@ -732,7 +710,7 @@ is
       -----------
 
       function Model (Container : Set) return M.Set is
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : M.Set;
 
       begin
@@ -743,9 +721,9 @@ is
             R :=
               M.Add
                 (Container => R,
-                 Item      => Container.Content.Nodes (Position).Element);
+                 Item      => Container.Nodes (Position).Element);
 
-            Position := HT_Ops.Next (Container.Content, Position);
+            Position := HT_Ops.Next (Container, Position);
          end loop;
 
          return R;
@@ -757,7 +735,7 @@ is
 
       function Positions (Container : Set) return P.Map is
          I        : Count_Type := 1;
-         Position : Count_Type := HT_Ops.First (Container.Content);
+         Position : Count_Type := HT_Ops.First (Container);
          R        : P.Map;
 
       begin
@@ -767,7 +745,7 @@ is
          while Position /= 0 loop
             R := P.Add (R, (Node => Position), I);
             pragma Assert (P.Length (R) = I);
-            Position := HT_Ops.Next (Container.Content, Position);
+            Position := HT_Ops.Next (Container, Position);
             I := I + 1;
          end loop;
 
@@ -782,11 +760,8 @@ is
 
    procedure Free (HT : in out Set; X : Count_Type) is
    begin
-      if X /= 0 then
-         pragma Assert (X <= HT.Capacity);
-         HT.Content.Nodes (X).Has_Element := False;
-         HT_Ops.Free (HT.Content, X);
-      end if;
+      HT.Nodes (X).Has_Element := False;
+      HT_Ops.Free (HT, X);
    end Free;
 
    ----------------------
@@ -796,8 +771,8 @@ is
    procedure Generic_Allocate (HT : in out Set; Node : out Count_Type) is
       procedure Allocate is new HT_Ops.Generic_Allocate (Set_Element);
    begin
-      Allocate (HT.Content, Node);
-      HT.Content.Nodes (Node).Has_Element := True;
+      Allocate (HT, Node);
+      HT.Nodes (Node).Has_Element := True;
    end Generic_Allocate;
 
    package body Generic_Keys with SPARK_Mode => Off is
@@ -843,7 +818,7 @@ is
          X : Count_Type;
 
       begin
-         Key_Keys.Delete_Key_Sans_Free (Container.Content, Key, X);
+         Key_Keys.Delete_Key_Sans_Free (Container, Key, X);
 
          if X = 0 then
             raise Constraint_Error with "attempt to delete key not in set";
@@ -867,7 +842,7 @@ is
             raise Constraint_Error with "key not in map";
          end if;
 
-         return Container.Content.Nodes (Node).Element;
+         return Container.Nodes (Node).Element;
       end Element;
 
       -------------------------
@@ -889,7 +864,7 @@ is
       procedure Exclude (Container : in out Set; Key : Key_Type) is
          X : Count_Type;
       begin
-         Key_Keys.Delete_Key_Sans_Free (Container.Content, Key, X);
+         Key_Keys.Delete_Key_Sans_Free (Container, Key, X);
          Free (Container, X);
       end Exclude;
 
@@ -901,7 +876,7 @@ is
         (Container : Set;
          Key       : Key_Type) return Cursor
       is
-         Node : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
       begin
          return (if Node = 0 then No_Element else (Node => Node));
       end Find;
@@ -949,7 +924,7 @@ is
            (Vet (Container, Position), "bad cursor in function Key");
 
          declare
-            N  : Node_Type renames Container.Content.Nodes (Position.Node);
+            N  : Node_Type renames Container.Nodes (Position.Node);
          begin
             return Key (N.Element);
          end;
@@ -964,14 +939,14 @@ is
          Key       : Key_Type;
          New_Item  : Element_Type)
       is
-         Node : constant Count_Type := Key_Keys.Find (Container.Content, Key);
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
 
       begin
          if Node = 0 then
             raise Constraint_Error with "attempt to replace key not in set";
          end if;
 
-         Replace_Element (Container.Content, Node, New_Item);
+         Replace_Element (Container, Node, New_Item);
       end Replace;
 
    end Generic_Keys;
@@ -983,7 +958,7 @@ is
    function Has_Element (Container : Set; Position : Cursor) return Boolean is
    begin
       if Position.Node = 0
-        or else not Container.Content.Nodes (Position.Node).Has_Element
+        or else not Container.Nodes (Position.Node).Has_Element
       then
          return False;
       end if;
@@ -1012,7 +987,7 @@ is
       Insert (Container, New_Item, Position, Inserted);
 
       if not Inserted then
-         Container.Content.Nodes (Position.Node).Element := New_Item;
+         Container.Nodes (Position.Node).Element := New_Item;
       end if;
    end Include;
 
@@ -1084,7 +1059,7 @@ is
    --  Start of processing for Insert
 
    begin
-      Local_Insert (Container.Content, New_Item, Node, Inserted);
+      Local_Insert (Container, New_Item, Node, Inserted);
    end Insert;
 
    ------------------
@@ -1093,29 +1068,29 @@ is
 
    procedure Intersection (Target : in out Set; Source : Set) is
       Tgt_Node : Count_Type;
-      TN       : Nodes_Type renames Target.Content.Nodes;
+      TN       : Nodes_Type renames Target.Nodes;
 
    begin
       if Target'Address = Source'Address then
          return;
       end if;
 
-      if Source.Content.Length = 0 then
+      if Source.Length = 0 then
          Clear (Target);
          return;
       end if;
 
-      Tgt_Node := HT_Ops.First (Target.Content);
+      Tgt_Node := HT_Ops.First (Target);
       while Tgt_Node /= 0 loop
          if Find (Source, TN (Tgt_Node).Element).Node /= 0 then
-            Tgt_Node := HT_Ops.Next (Target.Content, Tgt_Node);
+            Tgt_Node := HT_Ops.Next (Target, Tgt_Node);
 
          else
             declare
                X : constant Count_Type := Tgt_Node;
             begin
-               Tgt_Node := HT_Ops.Next (Target.Content, Tgt_Node);
-               HT_Ops.Delete_Node_Sans_Free (Target.Content, X);
+               Tgt_Node := HT_Ops.Next (Target, Tgt_Node);
+               HT_Ops.Delete_Node_Sans_Free (Target, X);
                Free (Target, X);
             end;
          end if;
@@ -1133,7 +1108,7 @@ is
       -------------
 
       procedure Process (L_Node : Count_Type) is
-         E : Element_Type renames Left.Content.Nodes (L_Node).Element;
+         E : Element_Type renames Left.Nodes (L_Node).Element;
          X : Count_Type;
          B : Boolean;
 
@@ -1147,7 +1122,7 @@ is
    --  Start of processing for Intersection
 
    begin
-      Iterate (Left.Content);
+      Iterate (Left);
    end Intersection;
 
    function Intersection (Left : Set; Right : Set) return Set is
@@ -1156,7 +1131,7 @@ is
 
    begin
       if Left'Address = Right'Address then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       C := Count_Type'Min (Length (Left), Length (Right));  -- ???
@@ -1184,7 +1159,7 @@ is
 
    function Is_In (HT : Set; Key : Node_Type) return Boolean is
    begin
-      return Element_Keys.Find (HT.Content, Key.Element) /= 0;
+      return Element_Keys.Find (HT, Key.Element) /= 0;
    end Is_In;
 
    ---------------
@@ -1193,7 +1168,7 @@ is
 
    function Is_Subset (Subset : Set; Of_Set : Set) return Boolean is
       Subset_Node  : Count_Type;
-      Subset_Nodes : Nodes_Type renames Subset.Content.Nodes;
+      Subset_Nodes : Nodes_Type renames Subset.Nodes;
 
    begin
       if Subset'Address = Of_Set'Address then
@@ -1216,7 +1191,7 @@ is
             end if;
          end;
 
-         Subset_Node := HT_Ops.Next (Subset.Content, Subset_Node);
+         Subset_Node := HT_Ops.Next (Subset, Subset_Node);
       end loop;
 
       return True;
@@ -1228,7 +1203,7 @@ is
 
    function Length (Container : Set) return Count_Type is
    begin
-      return Container.Content.Length;
+      return Container.Length;
    end Length;
 
    ----------
@@ -1238,7 +1213,7 @@ is
    --  Comments???
 
    procedure Move (Target : in out Set; Source : in out Set) is
-      NN   : HT_Types.Nodes_Type renames Source.Content.Nodes;
+      NN   : HT_Types.Nodes_Type renames Source.Nodes;
       X, Y : Count_Type;
 
    begin
@@ -1253,17 +1228,17 @@ is
 
       Clear (Target);
 
-      if Source.Content.Length = 0 then
+      if Source.Length = 0 then
          return;
       end if;
 
-      X := HT_Ops.First (Source.Content);
+      X := HT_Ops.First (Source);
       while X /= 0 loop
          Insert (Target, NN (X).Element);  -- optimize???
 
-         Y := HT_Ops.Next (Source.Content, X);
+         Y := HT_Ops.Next (Source, X);
 
-         HT_Ops.Delete_Node_Sans_Free (Source.Content, X);
+         HT_Ops.Delete_Node_Sans_Free (Source, X);
          Free (Source, X);
 
          X := Y;
@@ -1291,7 +1266,7 @@ is
 
       pragma Assert (Vet (Container, Position), "bad cursor in Next");
 
-      return (Node => HT_Ops.Next (Container.Content, Position.Node));
+      return (Node => HT_Ops.Next (Container, Position.Node));
    end Next;
 
    procedure Next (Container : Set; Position : in out Cursor) is
@@ -1305,7 +1280,7 @@ is
 
    function Overlap (Left, Right : Set) return Boolean is
       Left_Node  : Count_Type;
-      Left_Nodes : Nodes_Type renames Left.Content.Nodes;
+      Left_Nodes : Nodes_Type renames Left.Nodes;
 
    begin
       if Length (Right) = 0 or Length (Left) = 0 then
@@ -1327,7 +1302,7 @@ is
             end if;
          end;
 
-         Left_Node := HT_Ops.Next (Left.Content, Left_Node);
+         Left_Node := HT_Ops.Next (Left, Left_Node);
       end loop;
 
       return False;
@@ -1338,15 +1313,14 @@ is
    -------------
 
    procedure Replace (Container : in out Set; New_Item : Element_Type) is
-      Node : constant Count_Type :=
-        Element_Keys.Find (Container.Content, New_Item);
+      Node : constant Count_Type := Element_Keys.Find (Container, New_Item);
 
    begin
       if Node = 0 then
          raise Constraint_Error with "attempt to replace element not in set";
       end if;
 
-      Container.Content.Nodes (Node).Element := New_Item;
+      Container.Nodes (Node).Element := New_Item;
    end Replace;
 
    ---------------------
@@ -1366,7 +1340,7 @@ is
       pragma Assert
         (Vet (Container, Position), "bad cursor in Replace_Element");
 
-      Replace_Element (Container.Content, Position.Node, New_Item);
+      Replace_Element (Container, Position.Node, New_Item);
    end Replace_Element;
 
    ----------------------
@@ -1417,7 +1391,7 @@ is
 
       procedure Process (Source_Node : Count_Type) is
          B : Boolean;
-         N : Node_Type renames Source.Content.Nodes (Source_Node);
+         N : Node_Type renames Source.Nodes (Source_Node);
          X : Count_Type;
 
       begin
@@ -1442,7 +1416,7 @@ is
          return;
       end if;
 
-      Iterate (Source.Content);
+      Iterate (Source);
    end Symmetric_Difference;
 
    function Symmetric_Difference (Left : Set; Right : Set) return Set is
@@ -1455,11 +1429,11 @@ is
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       if Length (Left) = 0 then
-         return Copy (Right);
+         return Right.Copy;
       end if;
 
       C := Length (Left) + Length (Right);
@@ -1501,7 +1475,7 @@ is
       -------------
 
       procedure Process (Src_Node : Count_Type) is
-         N : Node_Type renames Source.Content.Nodes (Src_Node);
+         N : Node_Type renames Source.Nodes (Src_Node);
          E : Element_Type renames N.Element;
 
          X : Count_Type;
@@ -1518,7 +1492,7 @@ is
          return;
       end if;
 
-      Iterate (Source.Content);
+      Iterate (Source);
    end Union;
 
    function Union (Left : Set; Right : Set) return Set is
@@ -1527,15 +1501,15 @@ is
 
    begin
       if Left'Address = Right'Address then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       if Length (Right) = 0 then
-         return Copy (Left);
+         return Left.Copy;
       end if;
 
       if Length (Left) = 0 then
-         return Copy (Right);
+         return Right.Copy;
       end if;
 
       C := Length (Left) + Length (Right);
@@ -1558,11 +1532,11 @@ is
 
       declare
          S : Set renames Container;
-         N : Nodes_Type renames S.Content.Nodes;
+         N : Nodes_Type renames S.Nodes;
          X : Count_Type;
 
       begin
-         if S.Content.Length = 0 then
+         if S.Length = 0 then
             return False;
          end if;
 
@@ -1574,10 +1548,9 @@ is
             return False;
          end if;
 
-         X := S.Content.Buckets
-           (Element_Keys.Index (S.Content, N (Position.Node).Element));
+         X := S.Buckets (Element_Keys.Index (S, N (Position.Node).Element));
 
-         for J in 1 .. S.Content.Length loop
+         for J in 1 .. S.Length loop
             if X = Position.Node then
                return True;
             end if;

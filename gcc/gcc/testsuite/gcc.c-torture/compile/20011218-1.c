@@ -2,8 +2,6 @@
    for the indirect call was exposed too early and reload couldn't
    allocate it for multiplication and division.  */
 
-/* { dg-require-effective-target indirect_calls } */
-
 struct S {
   int a, b;
   void (*f) (long, int);

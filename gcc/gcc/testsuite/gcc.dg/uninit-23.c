@@ -18,7 +18,7 @@ ql (void)
         int *t4 = go; /* { dg-warning "is used uninitialized" } */
 
  l1:
-        *t4 = (*t4 != 0) ? 0 : 2; /* { dg-warning "is used uninitialized" } */
+        *t4 = (*t4 != 0) ? 0 : 2;
       }
 
     if (ij != 0)

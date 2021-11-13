@@ -1,5 +1,5 @@
 /* Internals of libgccjit: implementation of gcc_jit_result
-   Copyright (C) 2013-2021 Free Software Foundation, Inc.
+   Copyright (C) 2013-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -21,10 +21,6 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef JIT_RESULT_H
 #define JIT_RESULT_H
 
-#ifdef _WIN32
-#include <minwindef.h>
-#endif
-
 namespace gcc {
 
 namespace jit {
@@ -33,13 +29,7 @@ namespace jit {
 class result : public log_user
 {
 public:
-#ifdef _WIN32
-  typedef HMODULE handle;
-#else
-  typedef void* handle;
-#endif
-
-  result(logger *logger, handle dso_handle, tempdir *tempdir_);
+  result(logger *logger, void *dso_handle, tempdir *tempdir_);
 
   virtual ~result();
 
@@ -50,7 +40,7 @@ public:
   get_global (const char *name);
 
 private:
-  handle m_dso_handle;
+  void *m_dso_handle;
   tempdir *m_tempdir;
 };
 

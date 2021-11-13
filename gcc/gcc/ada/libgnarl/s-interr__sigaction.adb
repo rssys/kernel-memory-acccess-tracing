@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -42,9 +42,11 @@ with System.Tasking.Utilities;
 with System.Tasking.Rendezvous;
 with System.Tasking.Initialization;
 with System.Interrupt_Management;
+with System.Parameters;
 
 package body System.Interrupts is
 
+   use Parameters;
    use Tasking;
    use System.OS_Interface;
    use Interfaces.C;
@@ -291,7 +293,7 @@ package body System.Interrupts is
    ---------------------------------
 
    procedure Install_Restricted_Handlers
-      (Prio     : Interrupt_Priority;
+      (Prio     : Any_Priority;
        Handlers : New_Handler_Array)
    is
       pragma Unreferenced (Prio);
@@ -485,11 +487,9 @@ package body System.Interrupts is
    function Is_Registered (Handler : Parameterless_Handler) return Boolean is
       Ptr : R_Link := Registered_Handlers;
 
-      type Acc_Proc is access procedure;
-
       type Fat_Ptr is record
          Object_Addr  : System.Address;
-         Handler_Addr : Acc_Proc;
+         Handler_Addr : System.Address;
       end record;
 
       function To_Fat_Ptr is new Ada.Unchecked_Conversion
@@ -505,7 +505,7 @@ package body System.Interrupts is
       Fat := To_Fat_Ptr (Handler);
 
       while Ptr /= null loop
-         if Ptr.H = Fat.Handler_Addr.all'Address then
+         if Ptr.H = Fat.Handler_Addr then
             return True;
          end if;
 
@@ -642,11 +642,21 @@ package body System.Interrupts is
          end loop;
 
          Initialization.Defer_Abort (Self_Id);
+
+         if Single_Lock then
+            STPO.Lock_RTS;
+         end if;
+
          STPO.Write_Lock (Self_Id);
          Self_Id.Common.State := Interrupt_Server_Idle_Sleep;
          STPO.Sleep (Self_Id, Interrupt_Server_Idle_Sleep);
          Self_Id.Common.State := Runnable;
          STPO.Unlock (Self_Id);
+
+         if Single_Lock then
+            STPO.Unlock_RTS;
+         end if;
+
          Initialization.Undefer_Abort (Self_Id);
 
          --  Undefer abort here to allow a window for this task to be aborted

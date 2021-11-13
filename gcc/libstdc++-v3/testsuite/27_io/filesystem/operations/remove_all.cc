@@ -1,4 +1,4 @@
-// Copyright (C) 2016-2021 Free Software Foundation, Inc.
+// Copyright (C) 2016-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,6 +15,7 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
+// { dg-options "-std=gnu++17" }
 // { dg-do run { target c++17 } }
 // { dg-require-filesystem-ts "" }
 
@@ -142,9 +143,9 @@ test03()
 void
 test04()
 {
-  if (!__gnu_test::permissions_are_testable())
-    return;
-
+#if defined(__MINGW32__) || defined(__MINGW64__)
+  // no permissions
+#else
   // PR libstdc++/93201
   std::error_code ec;
   std::uintmax_t n;
@@ -155,7 +156,7 @@ test04()
   // remove write permission on the directory:
   fs::permissions(dir, fs::perms::owner_read|fs::perms::owner_exec);
   n = fs::remove_all(dir, ec);
-  VERIFY( n == std::uintmax_t(-1) );
+  VERIFY( n == -1 );
   VERIFY( ec == std::errc::permission_denied ); // not ENOTEMPTY
 
   try {
@@ -165,13 +166,10 @@ test04()
     VERIFY( e.code() == std::errc::permission_denied );
     // First path is the argument to remove_all
     VERIFY( e.path1() == dir );
-    // Second path is the first file that couldn't be removed
-    VERIFY( e.path2() == dir/"file" );
   }
 
   fs::permissions(dir, fs::perms::owner_write, fs::perm_options::add);
-  fs::remove_all(dir, ec);
-  f.path.clear();
+#endif
 }
 
 int

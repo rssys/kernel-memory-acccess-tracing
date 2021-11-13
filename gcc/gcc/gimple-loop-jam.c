@@ -1,5 +1,5 @@
 /* Loop unroll-and-jam.
-   Copyright (C) 2017-2021 Free Software Foundation, Inc.
+   Copyright (C) 2017-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -20,6 +20,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "params.h"
 #include "tree-pass.h"
 #include "backend.h"
 #include "tree.h"
@@ -38,7 +39,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-data-ref.h"
 #include "tree-ssa-loop-ivopts.h"
 #include "tree-vectorizer.h"
-#include "tree-ssa-sccvn.h"
 
 /* Unroll and Jam transformation
    
@@ -103,11 +103,11 @@ along with GCC; see the file COPYING3.  If not see
    to the OLD loop or the outer loop of OLD now is inside LOOP.  */
 
 static void
-merge_loop_tree (class loop *loop, class loop *old)
+merge_loop_tree (struct loop *loop, struct loop *old)
 {
   basic_block *bbs;
   int i, n;
-  class loop *subloop;
+  struct loop *subloop;
   edge e;
   edge_iterator ei;
 
@@ -186,11 +186,11 @@ bb_prevents_fusion_p (basic_block bb)
    If so return true, otherwise return false.  */
 
 static bool
-unroll_jam_possible_p (class loop *outer, class loop *loop)
+unroll_jam_possible_p (struct loop *outer, struct loop *loop)
 {
   basic_block *bbs;
   int i, n;
-  class tree_niter_desc niter;
+  struct tree_niter_desc niter;
 
   /* When fusing the loops we skip the latch block
      of the first one, so it mustn't have any effects to
@@ -301,9 +301,9 @@ unroll_jam_possible_p (class loop *outer, class loop *loop)
    be in appropriate form.  */
 
 static void
-fuse_loops (class loop *loop)
+fuse_loops (struct loop *loop)
 {
-  class loop *next = loop->next;
+  struct loop *next = loop->next;
 
   while (next)
     {
@@ -353,7 +353,7 @@ fuse_loops (class loop *loop)
 
       merge_loop_tree (loop, next);
       gcc_assert (!next->num_nodes);
-      class loop *ln = next->next;
+      struct loop *ln = next->next;
       delete_loop (next);
       next = ln;
     }
@@ -366,9 +366,11 @@ static bool
 any_access_function_variant_p (const struct data_reference *a,
 			       const class loop *loop_nest)
 {
+  unsigned int i;
   vec<tree> fns = DR_ACCESS_FNS (a);
+  tree t;
 
-  for (tree t : fns)
+  FOR_EACH_VEC_ELT (fns, i, t)
     if (!evolution_function_is_invariant_p (t, loop_nest->num))
       return true;
 
@@ -487,14 +489,15 @@ adjust_unroll_factor (class loop *inner, struct data_dependence_relation *ddr,
 static unsigned int
 tree_loop_unroll_and_jam (void)
 {
-  unsigned int todo = 0;
+  struct loop *loop;
+  bool changed = false;
 
   gcc_assert (scev_initialized_p ());
 
   /* Go through all innermost loops.  */
-  for (auto loop : loops_list (cfun, LI_ONLY_INNERMOST))
+  FOR_EACH_LOOP (loop, LI_ONLY_INNERMOST)
     {
-      class loop *outer = loop_outer (loop);
+      struct loop *outer = loop_outer (loop);
 
       if (loop_depth (loop) < 2
 	  || optimize_loop_nest_for_size_p (outer))
@@ -503,13 +506,15 @@ tree_loop_unroll_and_jam (void)
       if (!unroll_jam_possible_p (outer, loop))
 	continue;
 
-      vec<data_reference_p> datarefs = vNULL;
-      vec<ddr_p> dependences = vNULL;
+      vec<data_reference_p> datarefs;
+      vec<ddr_p> dependences;
       unsigned unroll_factor, profit_unroll, removed;
-      class tree_niter_desc desc;
+      struct tree_niter_desc desc;
       bool unroll = false;
 
       auto_vec<loop_p, 3> loop_nest;
+      dependences.create (10);
+      datarefs.create (10);
       if (!compute_data_dependences_for_loop (outer, true, &loop_nest,
 					      &datarefs, &dependences))
 	{
@@ -567,15 +572,15 @@ tree_loop_unroll_and_jam (void)
       /* We regard a user-specified minimum percentage of zero as a request
 	 to ignore all profitability concerns and apply the transformation
 	 always.  */
-      if (!param_unroll_jam_min_percent)
+      if (!PARAM_VALUE (PARAM_UNROLL_JAM_MIN_PERCENT))
 	profit_unroll = MAX(2, profit_unroll);
       else if (removed * 100 / datarefs.length ()
-	  < (unsigned)param_unroll_jam_min_percent)
+	  < (unsigned)PARAM_VALUE (PARAM_UNROLL_JAM_MIN_PERCENT))
 	profit_unroll = 1;
       if (unroll_factor > profit_unroll)
 	unroll_factor = profit_unroll;
-      if (unroll_factor > (unsigned)param_unroll_jam_max_unroll)
-	unroll_factor = param_unroll_jam_max_unroll;
+      if (unroll_factor > (unsigned)PARAM_VALUE (PARAM_UNROLL_JAM_MAX_UNROLL))
+	unroll_factor = PARAM_VALUE (PARAM_UNROLL_JAM_MAX_UNROLL);
       unroll = (unroll_factor > 1
 		&& can_unroll_loop_p (outer, unroll_factor, &desc));
 
@@ -587,14 +592,11 @@ tree_loop_unroll_and_jam (void)
 			     "applying unroll and jam with factor %d\n",
 			     unroll_factor);
 	  initialize_original_copy_tables ();
-	  tree_unroll_loop (outer, unroll_factor, &desc);
+	  tree_unroll_loop (outer, unroll_factor, single_dom_exit (outer),
+			    &desc);
 	  free_original_copy_tables ();
 	  fuse_loops (outer->inner);
-	  todo |= TODO_cleanup_cfg;
-
-	  auto_bitmap exit_bbs;
-	  bitmap_set_bit (exit_bbs, single_dom_exit (outer)->dest->index);
-	  todo |= do_rpo_vn (cfun, loop_preheader_edge (outer), exit_bbs);
+	  changed = true;
 	}
 
       loop_nest.release ();
@@ -602,12 +604,13 @@ tree_loop_unroll_and_jam (void)
       free_data_refs (datarefs);
     }
 
-  if (todo)
+  if (changed)
     {
       scev_reset ();
       free_dominance_info (CDI_DOMINATORS);
+      return TODO_cleanup_cfg;
     }
-  return todo;
+  return 0;
 }
 
 /* Pass boilerplate */

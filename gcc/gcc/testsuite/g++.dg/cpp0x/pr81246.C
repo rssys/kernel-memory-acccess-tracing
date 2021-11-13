@@ -4,7 +4,7 @@ namespace N
 { 
   template < typename T > class A
   { 
-    template < T > friend class B;  // { dg-error "not a valid type" "" { target c++17_down } }
+    template < T > friend class B;  // { dg-error "not a valid type" }
   };
 
   A < float > a;

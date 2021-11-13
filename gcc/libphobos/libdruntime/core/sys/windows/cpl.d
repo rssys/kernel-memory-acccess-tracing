@@ -9,11 +9,10 @@
  */
 module core.sys.windows.cpl;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.windef, core.sys.windows.winuser;
+private import core.sys.windows.windef, core.sys.windows.winuser;
 
 enum : uint {
     WM_CPL_LAUNCH = WM_USER + 1000,

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -302,7 +302,7 @@ package body Ch12 is
 
       elsif Token /= Tok_Left_Paren
         and then Token_Is_At_Start_Of_Line
-        and then Start_Column <= Scopes (Scope.Last).Ecol
+        and then Start_Column <= Scope.Table (Scope.Last).Ecol
       then
          return No_List;
 
@@ -349,19 +349,24 @@ package body Ch12 is
       --  Ada 2005: an association can be given by: others => <>
 
       if Token = Tok_Others then
-         Error_Msg_Ada_2005_Extension
-           ("partial parameterization of formal package");
+         if Ada_Version < Ada_2005 then
+            Error_Msg_SP
+              ("partial parameterization of formal packages"
+               & " is an Ada 2005 extension");
+            Error_Msg_SP
+              ("\unit must be compiled with -gnat05 switch");
+         end if;
 
          Scan;  --  past OTHERS
 
          if Token /= Tok_Arrow then
-            Error_Msg_BC  ("expect `='>` after OTHERS");
+            Error_Msg_BC  ("expect arrow after others");
          else
             Scan;  --  past arrow
          end if;
 
          if Token /= Tok_Box then
-            Error_Msg_BC ("expect `'<'>` after `='>`");
+            Error_Msg_BC ("expect Box after arrow");
          else
             Scan;  --  past box
          end if;
@@ -423,12 +428,12 @@ package body Ch12 is
 
    procedure P_Formal_Object_Declarations (Decls : List_Id) is
       Decl_Node        : Node_Id;
-      Ident            : Pos;
+      Ident            : Nat;
       Not_Null_Present : Boolean := False;
-      Num_Idents       : Pos;
+      Num_Idents       : Nat;
       Scan_State       : Saved_Scan_State;
 
-      Idents : array (Pos range 1 .. 4096) of Entity_Id;
+      Idents : array (Int range 1 .. 4096) of Entity_Id;
       --  This array holds the list of defining identifiers. The upper bound
       --  of 4096 is intended to be essentially infinite, and we do not even
       --  bother to check for it being exceeded.
@@ -473,8 +478,12 @@ package body Ch12 is
             Set_Access_Definition (Decl_Node,
               P_Access_Definition (Not_Null_Present));
 
-            Error_Msg_Ada_2005_Extension
-              ("access definition in formal object declaration");
+            if Ada_Version < Ada_2005 then
+               Error_Msg_SP
+                 ("access definition not allowed in formal object " &
+                  "declaration");
+               Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+            end if;
 
          --  Formal object with a subtype mark
 
@@ -559,20 +568,6 @@ package body Ch12 is
 
       if Def_Node /= Error then
          Set_Formal_Type_Definition (Decl_Node, Def_Node);
-
-         if Token = Tok_Or then
-            Error_Msg_Ada_2022_Feature
-              ("default for formal type", Sloc (Decl_Node));
-            Scan;   --  Past OR
-
-            if Token /= Tok_Use then
-               Error_Msg_SC ("missing USE for default subtype");
-            else
-               Scan;   -- Past USE
-               Set_Default_Subtype_Mark (Decl_Node, P_Name);
-            end if;
-         end if;
-
          P_Aspect_Specifications (Decl_Node);
 
       else
@@ -741,18 +736,11 @@ package body Ch12 is
                return Error;
             end if;
 
-         when Tok_Or =>
-            --  Ada_2022: incomplete type with default
-            return
-                 New_Node (N_Formal_Incomplete_Type_Definition, Token_Ptr);
-
          when Tok_Private =>
             return P_Formal_Private_Type_Definition;
 
          when Tok_Tagged =>
-            if Next_Token_Is (Tok_Semicolon)
-              or else Next_Token_Is (Tok_Or)
-            then
+            if Next_Token_Is (Tok_Semicolon) then
                Typedef_Node :=
                  New_Node (N_Formal_Incomplete_Type_Definition, Token_Ptr);
                Set_Tagged_Present (Typedef_Node);
@@ -935,13 +923,23 @@ package body Ch12 is
          Set_Limited_Present (Def_Node);
          Scan;  --  past LIMITED
 
-         Error_Msg_Ada_2005_Extension ("LIMITED in derived type");
+         if Ada_Version < Ada_2005 then
+            Error_Msg_SP
+              ("LIMITED in derived type is an Ada 2005 extension");
+            Error_Msg_SP
+              ("\unit must be compiled with -gnat05 switch");
+         end if;
 
       elsif Token = Tok_Synchronized then
          Set_Synchronized_Present (Def_Node);
          Scan;  --  past SYNCHRONIZED
 
-         Error_Msg_Ada_2005_Extension ("SYNCHRONIZED in derived type");
+         if Ada_Version < Ada_2005 then
+            Error_Msg_SP
+              ("SYNCHRONIZED in derived type is an Ada 2005 extension");
+            Error_Msg_SP
+              ("\unit must be compiled with -gnat05 switch");
+         end if;
       end if;
 
       if Token = Tok_Abstract then
@@ -957,7 +955,11 @@ package body Ch12 is
       if Token = Tok_And then
          Scan; -- past AND
 
-         Error_Msg_Ada_2005_Extension ("abstract interface");
+         if Ada_Version < Ada_2005 then
+            Error_Msg_SP
+              ("abstract interface is an Ada 2005 extension");
+            Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+         end if;
 
          Set_Interface_List (Def_Node, New_List);
 
@@ -969,23 +971,9 @@ package body Ch12 is
       end if;
 
       if Token = Tok_With then
-
-         if Next_Token_Is (Tok_Private) then
-            Scan; -- past WITH
-            Set_Private_Present (Def_Node, True);
-            T_Private;
-         else
-            --  Formal type has aspect specifications, parsed later.
-            --  Otherwise this is a formal derived type. Note that it may
-            --  also include later aspect specifications, as in:
-
-            --    type DT is new T with private with Atomic;
-
-            Error_Msg_Ada_2022_Feature
-              ("formal type with aspect specification", Token_Ptr);
-
-            return Def_Node;
-         end if;
+         Scan; -- past WITH
+         Set_Private_Present (Def_Node, True);
+         T_Private;
 
       elsif Token = Tok_Tagged then
          Scan;
@@ -1189,7 +1177,11 @@ package body Ch12 is
               New_Node (N_Formal_Abstract_Subprogram_Declaration, Prev_Sloc);
             Scan; -- past ABSTRACT
 
-            Error_Msg_Ada_2005_Extension ("formal abstract subprogram");
+            if Ada_Version < Ada_2005 then
+               Error_Msg_SP
+                 ("formal abstract subprograms are an Ada 2005 extension");
+               Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+            end if;
 
          else
             Def_Node :=
@@ -1209,7 +1201,11 @@ package body Ch12 is
             Scan; -- past <>
 
          elsif Token = Tok_Null then
-            Error_Msg_Ada_2005_Extension ("null default subprogram");
+            if Ada_Version < Ada_2005 then
+               Error_Msg_SP
+                 ("null default subprograms are an Ada 2005 extension");
+               Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+            end if;
 
             if Nkind (Spec_Node) = N_Procedure_Specification then
                Set_Null_Present (Spec_Node);

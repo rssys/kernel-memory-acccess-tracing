@@ -1,6 +1,6 @@
 ; libgcc1 routines for Synopsys DesignWare ARC cpu.
 
-/* Copyright (C) 1995-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2019 Free Software Foundation, Inc.
    Contributor: Joern Rennecke <joern.rennecke@embecosm.com>
 		on behalf of Synopsys Inc.
 
@@ -53,11 +53,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define ENDFUNC0(X)     .Lfe_##X: .size X,.Lfe_##X-X
 #define ENDFUNC(X)      ENDFUNC0(X)
 
-#ifdef __ARC_RF16__
-	/* Use object attributes to inform other tools this file is
-	safe for RF16 configuration.  */
-	.arc_attribute Tag_ARC_ABI_rf16, 1
-#endif
+
 
 #ifdef  L_mulsi3
 	.section .text
@@ -236,7 +232,6 @@ SYM(__umulsi3_highpart):
 #endif
 #endif /* L_umulsidi3 */
 
-#ifndef __ARC_RF16__
 #ifdef L_muldi3
 	.section .text
 	.align 4
@@ -290,7 +285,6 @@ SYM(__muldi3):
 #endif /* __LITTLE_ENDIAN__ */
 ENDFUNC(__muldi3)
 #endif /* L_muldi3 */
-#endif /* !__ARC_RF16__ */
 
 #ifdef  L_umulsi3_highpart
 #include "ieee-754/arc-ieee-754.h"
@@ -550,6 +544,12 @@ SYM(__udivmodsi4):
 SYM(__udivsi3):
 	b @SYM(__udivmodsi4)
 	ENDFUNC(__udivsi3)
+#if 0 /* interferes with linux loader */
+	.section .__arc_profile_forward, "a"
+	.long SYM(__udivsi3)
+	.long SYM(__udivmodsi4)
+	.long 65536
+#endif
 
 #endif /* L_udivsi3 */
 
@@ -948,6 +948,12 @@ SYM(__umodsi3):
 	j.d [r7]
 	mov r0,r1
 	ENDFUNC(__umodsi3)
+#if 0 /* interferes with linux loader */
+	.section .__arc_profile_forward, "a"
+	.long SYM(__umodsi3)
+	.long SYM(__udivmodsi4)
+	.long 65536
+#endif
 
 #endif /* L_umodsi3 */
 
@@ -1100,7 +1106,6 @@ SYM(__clzsi2):
 ;;
 ;#endif
 
-#ifndef __ARC_RF16__
 #ifdef L_millicodethunk_st
 	.section .text
 	.align 4
@@ -1310,7 +1315,9 @@ SYM(__ld_r13_to_r14_ret):
 
 #endif /* L_millicodethunk_ret */
 
-#if defined (__ARC700__) || defined (__ARC_FPX_QUARK__)
+#define ARC_OPTFPE (defined (__ARC700__) || defined (__ARC_FPX_QUARK__))
+
+#if ARC_OPTFPE
 #ifdef  L_adddf3
 #ifdef __ARC_NORM__
 #include "ieee-754/adddf3.S"
@@ -1475,5 +1482,3 @@ SYM(__ld_r13_to_r14_ret):
 #endif
 #endif
 #endif /* ARC_OPTFPE */
-
-#endif /* !__ARC_RF16__ */

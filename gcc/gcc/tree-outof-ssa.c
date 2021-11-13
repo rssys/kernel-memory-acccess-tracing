@@ -1,5 +1,5 @@
 /* Convert a program in SSA form into Normal form.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
    Contributed by Andrew Macleod <amacleod@redhat.com>
 
 This file is part of GCC.
@@ -87,7 +87,7 @@ ssa_is_replaceable_p (gimple *stmt)
 
   /* Float expressions must go through memory if float-store is on.  */
   if (flag_float_store
-      && FLOAT_TYPE_P (TREE_TYPE (def)))
+      && FLOAT_TYPE_P (gimple_expr_type (stmt)))
     return false;
 
   /* An assignment with a register variable on the RHS is not
@@ -129,9 +129,8 @@ ssa_is_replaceable_p (gimple *stmt)
    rarely more than 6, and in the bootstrap of gcc, the maximum number
    of nodes encountered was 12.  */
 
-class elim_graph
+struct elim_graph
 {
-public:
   elim_graph (var_map map);
 
   /* Size of the elimination vectors.  */
@@ -172,43 +171,14 @@ public:
    use its location.  Otherwise search instructions in predecessors
    of E for a location, and use that one.  That makes sense because
    we insert on edges for PHI nodes, and effects of PHIs happen on
-   the end of the predecessor conceptually.  An exception is made
-   for EH edges because we don't want to drag the source location
-   of unrelated statements at the beginning of handlers; they would
-   be further reused for various EH constructs, which would damage
-   the coverage information.  */
+   the end of the predecessor conceptually.  */
 
 static void
 set_location_for_edge (edge e)
 {
   if (e->goto_locus)
-    set_curr_insn_location (e->goto_locus);
-  else if (e->flags & EDGE_EH)
     {
-      basic_block bb = e->dest;
-      gimple_stmt_iterator gsi;
-
-      do
-	{
-	  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
-	    {
-	      gimple *stmt = gsi_stmt (gsi);
-	      if (is_gimple_debug (stmt))
-		continue;
-	      if (gimple_has_location (stmt) || gimple_block (stmt))
-		{
-		  set_curr_insn_location (gimple_location (stmt));
-		  return;
-		}
-	    }
-	  /* Nothing found in this basic block.  Make a half-assed attempt
-	     to continue with another block.  */
-	  if (single_succ_p (bb))
-	    bb = single_succ (bb);
-	  else
-	    bb = e->dest;
-	}
-      while (bb != e->dest);
+      set_curr_insn_location (e->goto_locus);
     }
   else
     {
@@ -594,11 +564,7 @@ eliminate_build (elim_graph *g)
 	continue;
 
       Ti = PHI_ARG_DEF (phi, g->e->dest_idx);
-      /* See set_location_for_edge for the rationale.  */
-      if (g->e->flags & EDGE_EH)
-	locus = UNKNOWN_LOCATION;
-      else
-	locus = gimple_phi_arg_location_from_edge (phi, g->e);
+      locus = gimple_phi_arg_location_from_edge (phi, g->e);
 
       /* If this argument is a constant, or a SSA_NAME which is being
 	 left in SSA form, just queue a copy to be emitted on this

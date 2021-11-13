@@ -1,5 +1,4 @@
-// { dg-do compile { target c++20 } }
-// { dg-additional-options "-fdelete-null-pointer-checks" }
+// { dg-do compile { target c++2a } }
 
 struct A
 {

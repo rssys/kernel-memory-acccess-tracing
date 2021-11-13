@@ -2,5 +2,5 @@
 
 program test
   ! only one directive-name may appear in directive
-  !$acc parallel kernels ! { dg-error "Failed to match clause" }
+  !$acc parallel kernels ! { dg-error "Unclassifiable OpenACC directive" }
 end

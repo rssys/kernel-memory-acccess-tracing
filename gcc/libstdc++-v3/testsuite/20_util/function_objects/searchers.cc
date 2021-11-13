@@ -1,4 +1,4 @@
-// Copyright (C) 2014-2021 Free Software Foundation, Inc.
+// Copyright (C) 2014-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,12 +15,13 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-do run { target c++17 } }
+// { dg-options "-std=gnu++17" }
 
 #include <functional>
-#include <string_view>
 #include <cstring>
-#include <cctype>
+#ifdef _GLIBCXX_USE_WCHAR_T
+# include <cwchar>
+#endif
 #include <algorithm>
 #include <testsuite_hooks.h>
 
@@ -82,6 +83,7 @@ test01()
 void
 test02()
 {
+#ifdef _GLIBCXX_USE_WCHAR_T
   const wchar_t s[] = { L'a', (wchar_t)-97, L'a', L'\0' };
   const wchar_t* needles[] = {
     s, L"", L"a", L"aa", L"aaa", L"ab", L"cd", L"abcd", L"abcdabcd", L"abcabcd"
@@ -93,14 +95,14 @@ test02()
 
   for (auto n : needles)
   {
-    auto nlen = std::char_traits<wchar_t>::length(n);
+    auto nlen = std::wcslen(n);
     auto ne = n + nlen;
     default_searcher d(n, ne);
     boyer_moore_searcher bm(n, ne);
     boyer_moore_horspool_searcher bmh(n, ne);
     for (auto h : haystacks)
     {
-      auto he = h + std::char_traits<wchar_t>::length(h);
+      auto he = h + std::wcslen(h);
       auto res = std::search(h, he, n, ne);
       auto d_res = d(h, he);
       VERIFY( d_res.first == res );
@@ -122,6 +124,7 @@ test02()
 	VERIFY( bmh_res.second == (bmh_res.first + nlen) );
     }
   }
+#endif
 }
 
 void

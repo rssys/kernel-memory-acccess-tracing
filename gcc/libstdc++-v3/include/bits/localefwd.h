@@ -1,6 +1,6 @@
 // <locale> Forward declarations -*- C++ -*-
 
-// Copyright (C) 1997-2021 Free Software Foundation, Inc.
+// Copyright (C) 1997-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -122,7 +122,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     tolower(_CharT, const locale&);
 
   // 22.2.1 and 22.2.1.3 ctype
-  struct ctype_base;
+  class ctype_base;
   template<typename _CharT>
     class ctype;
   template<> class ctype<char>;
@@ -200,7 +200,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
 _GLIBCXX_END_NAMESPACE_CXX11
 
   // 22.2.7 message retrieval
-  struct messages_base;
+  class messages_base;
 _GLIBCXX_BEGIN_NAMESPACE_CXX11
   template<typename _CharT>
     class messages;

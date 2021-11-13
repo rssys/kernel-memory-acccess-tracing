@@ -3,7 +3,6 @@
 /* { dg-do run { target *-*-darwin* } } */
 /* { dg-require-effective-target ilp32 } */
 /* { dg-skip-if "" { *-*-* } { "-fgnu-runtime" } { "" } } */
-// { dg-additional-options "-Wno-objc-root-class" }
 
 #include <stdio.h>
 #include <string.h>

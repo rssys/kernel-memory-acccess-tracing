@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -mno-long-calls" }  */
+/* { dg-options "-O2" }  */
 
 extern int bar (void *);
 

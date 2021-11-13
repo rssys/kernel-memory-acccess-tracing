@@ -372,21 +372,3 @@ version (Posix)
     static assert(T.boo.mangleof == "_ZN1T3booE");
 }
 
-/*****************************************/
-
-alias noreturn = typeof(*null);
-
-extern (C++)
-{
-    alias fpcpp = noreturn function();
-    int funccpp(fpcpp);
-
-    version (Posix)
-        static assert(funccpp.mangleof == "_Z7funccppPFvvE");
-
-    version (Win32)
-        static assert(funccpp.mangleof == "?funccpp@@YAHP6AXXZ@Z");
-
-    version (Win64)
-        static assert(funccpp.mangleof == "?funccpp@@YAHP6AXXZ@Z");
-}

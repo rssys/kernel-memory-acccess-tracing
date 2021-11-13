@@ -1,3 +1,4 @@
+/* { dg-do run } */
 /* { dg-require-effective-target vect_int } */
 /* { dg-require-effective-target vect_hw_misalign } */
 

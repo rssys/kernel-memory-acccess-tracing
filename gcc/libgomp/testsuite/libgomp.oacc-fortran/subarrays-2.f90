@@ -1,5 +1,3 @@
-! { dg-do run }
-!
 program subarrays
   integer, parameter     :: n = 20, c = 10, low = 5, high = 10
   integer                :: i, a(n), b(n)

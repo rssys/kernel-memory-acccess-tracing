@@ -11,13 +11,13 @@ program test_nearest
   s = 3.0
   call test_n (s, r)
 
-  i = int(z'00800000')
+  i = z'00800000'
   call test_n (s, r)
 
-  i = int(z'007fffff')
+  i = z'007fffff'
   call test_n (s, r)
 
-  i = int(z'00800100')
+  i = z'00800100'
   call test_n (s, r)
 
   s = 0
@@ -25,8 +25,9 @@ program test_nearest
   y = nearest(s, -r)
   if (.not. (x .gt. s .and. y .lt. s )) STOP 1
 
-  infi = int(z'7f800000')
-  maxi = int(z'7f7fffff')
+! ??? This is pretty sketchy, but passes on most targets.
+  infi = z'7f800000'
+  maxi = z'7f7fffff'
 
   call test_up(max, inf)
   call test_up(-inf, -max)

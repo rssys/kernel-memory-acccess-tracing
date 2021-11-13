@@ -14,7 +14,7 @@
  */
 module core.sys.posix.dlfcn;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 
 version (OSX)
     version = Darwin;
@@ -45,7 +45,6 @@ version (Posix):
 extern (C):
 nothrow:
 @nogc:
-@system:
 
 //
 // XOpen (XSI)
@@ -58,8 +57,8 @@ RTLD_LOCAL
 
 int   dlclose(void*);
 char* dlerror();
-void* dlopen(const scope char*, int);
-void* dlsym(void*, const scope char*);
+void* dlopen(in char*, int);
+void* dlsym(void*, in char*);
 */
 
 version (CRuntime_Glibc)
@@ -125,8 +124,22 @@ version (CRuntime_Glibc)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
+
+    deprecated("Please use core.sys.linux.dlfcn for non-POSIX extensions")
+    {
+        int   dladdr(in void* addr, Dl_info* info);
+        void* dlvsym(void* handle, in char* symbol, in char* version_);
+
+        struct Dl_info
+        {
+            const(char)* dli_fname;
+            void*        dli_fbase;
+            const(char)* dli_sname;
+            void*        dli_saddr;
+        }
+    }
 }
 else version (Darwin)
 {
@@ -137,9 +150,9 @@ else version (Darwin)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
-    int   dladdr(scope const void* addr, Dl_info* info);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
+    int   dladdr(void* addr, Dl_info* info);
 
     struct Dl_info
     {
@@ -158,8 +171,8 @@ else version (FreeBSD)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
 
     struct Dl_info
@@ -181,8 +194,8 @@ else version (NetBSD)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
 
     struct Dl_info
@@ -202,8 +215,8 @@ else version (OpenBSD)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
 
     struct Dl_info
@@ -223,8 +236,8 @@ else version (DragonFlyBSD)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
 
     struct Dl_info
@@ -244,8 +257,8 @@ else version (Solaris)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
 
     struct Dl_info
@@ -266,11 +279,11 @@ else version (CRuntime_Bionic)
         RTLD_GLOBAL = 2
     }
 
-    int          dladdr(const scope void*, Dl_info*);
+    int          dladdr(in void*, Dl_info*);
     int          dlclose(void*);
     const(char)* dlerror();
-    void*        dlopen(const scope char*, int);
-    void*        dlsym(void*, const scope char*);
+    void*        dlopen(in char*, int);
+    void*        dlsym(void*, in char*);
 
     struct Dl_info
     {
@@ -292,17 +305,8 @@ else version (CRuntime_Musl)
     }
     int          dlclose(void*);
     const(char)* dlerror();
-    void*        dlopen(const scope char*, int);
-    void*        dlsym(void*, const scope char*);
-
-    int dladdr(scope const void *addr, Dl_info *info);
-    struct Dl_info
-    {
-        const(char)* dli_fname;
-        void*        dli_fbase;
-        const(char)* dli_sname;
-        void*        dli_saddr;
-    }
+    void*        dlopen(in char*, int);
+    void*        dlsym(void*, in char*);
 }
 else version (CRuntime_UClibc)
 {
@@ -341,6 +345,6 @@ else version (CRuntime_UClibc)
 
     int   dlclose(void*);
     char* dlerror();
-    void* dlopen(const scope char*, int);
-    void* dlsym(void*, const scope char*);
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
 }

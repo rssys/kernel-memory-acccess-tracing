@@ -1,5 +1,5 @@
 /* Declarations for the parser for GIMPLE.
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -22,8 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Gimple parsing functions.  */
 extern void c_parser_parse_gimple_body (c_parser *, char *,
-					enum c_declspec_il,
-					profile_count);
+					enum c_declspec_il);
 extern void c_parser_gimple_or_rtl_pass_list (c_parser *, c_declspecs *);
 
 #endif

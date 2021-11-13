@@ -1,4 +1,4 @@
-import core.memory, core.thread, core.volatile;
+import core.memory, core.thread, core.bitop;
 
 /*
  * This test repeatedly performs operations on GC-allocated objects which

@@ -4,7 +4,7 @@
 
 void foo (void)
 {
-  register int r19 asm ("19");	/* { dg-error "register specified for 'r19' is an internal GCC implementation detail" } */
+  register int r19 asm ("19");
 
-  asm volatile ("# %0" : "=r"(r19));
-}
+  asm volatile ("# %0" : "=r"(r19));  /* { dg-error "invalid use of register" } */
+}  /* { dg-error "cannot be used in asm here" } */

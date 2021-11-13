@@ -2,7 +2,6 @@ package gzip
 
 import (
 	"internal/testenv"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,7 +30,7 @@ func TestGZIPFilesHaveZeroMTimes(t *testing.T) {
 		t.Fatal("error evaluating GOROOT: ", err)
 	}
 	var files []string
-	err = filepath.WalkDir(goroot, func(path string, info fs.DirEntry, err error) error {
+	err = filepath.Walk(goroot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

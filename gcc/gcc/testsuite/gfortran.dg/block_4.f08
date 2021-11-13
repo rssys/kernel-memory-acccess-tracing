@@ -15,4 +15,4 @@ PROGRAM main
   myname2: BLOCK
   END BLOCK ! { dg-error "Expected block name of 'myname2'" }
 END PROGRAM main ! { dg-error "Expecting END BLOCK" }
-! { dg-error "Unexpected end of file" "" { target "*-*-*" } 0 }
+! { dg-excess-errors "Unexpected end of file" }

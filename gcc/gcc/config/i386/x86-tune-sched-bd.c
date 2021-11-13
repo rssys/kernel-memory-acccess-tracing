@@ -1,5 +1,5 @@
 /* Scheduler hooks for IA-32 which implement bdver1-4 specific logic.
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -67,7 +67,7 @@ along with GCC; see the file COPYING3.  If not see
 #define BIG 100
 
 
-/* Dispatch groups.  Instructions that affect the mix in a dispatch window.  */
+/* Dispatch groups.  Istructions that affect the mix in a dispatch window.  */
 enum dispatch_group {
   disp_no_group = 0,
   disp_load,
@@ -800,9 +800,8 @@ bool
 ix86_bd_has_dispatch (rtx_insn *insn, int action)
 {
   /* Current implementation of dispatch scheduler models buldozer only.  */
-  if ((TARGET_CPU_P (BDVER1) || TARGET_CPU_P (BDVER2)
-       || TARGET_CPU_P (BDVER3) || TARGET_CPU_P (BDVER4))
-      && flag_dispatch_scheduler)
+  if ((TARGET_BDVER1 || TARGET_BDVER2 || TARGET_BDVER3
+      || TARGET_BDVER4) && flag_dispatch_scheduler)
     switch (action)
       {
       default:

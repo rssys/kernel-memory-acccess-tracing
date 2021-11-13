@@ -10,8 +10,7 @@ import (
 	"fmt"
 	"internal/testenv"
 	"io"
-	"math/rand"
-	"os"
+	"io/ioutil"
 	"reflect"
 	"runtime/debug"
 	"sync"
@@ -157,12 +156,12 @@ func TestVeryLongSparseChunk(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping sparse chunk during short test")
 	}
-	w, err := NewWriter(io.Discard, 1)
+	w, err := NewWriter(ioutil.Discard, 1)
 	if err != nil {
 		t.Errorf("NewWriter: %v", err)
 		return
 	}
-	if _, err = io.Copy(w, &sparseReader{l: 23e8}); err != nil {
+	if _, err = io.Copy(w, &sparseReader{l: 23E8}); err != nil {
 		t.Errorf("Compress failed: %v", err)
 		return
 	}
@@ -294,7 +293,7 @@ func testSync(t *testing.T, level int, input []byte, name string) {
 
 	// stream should work for ordinary reader too
 	r = NewReader(buf1)
-	out, err = io.ReadAll(r)
+	out, err = ioutil.ReadAll(r)
 	if err != nil {
 		t.Errorf("testSync: read: %s", err)
 		return
@@ -322,7 +321,7 @@ func testToFromWithLevelAndLimit(t *testing.T, level int, input []byte, name str
 		t.Logf("level: %d, size:%.2f%%, %d b\n", level, float64(buffer.Len()*100)/float64(limit), buffer.Len())
 	}
 	r := NewReader(&buffer)
-	out, err := io.ReadAll(r)
+	out, err := ioutil.ReadAll(r)
 	if err != nil {
 		t.Errorf("read: %s", err)
 		return
@@ -346,9 +345,6 @@ func testToFromWithLimit(t *testing.T, input []byte, name string, limit [11]int)
 func TestDeflateInflate(t *testing.T) {
 	t.Parallel()
 	for i, h := range deflateInflateTests {
-		if testing.Short() && len(h.in) > 10000 {
-			continue
-		}
 		testToFromWithLimit(t, h.in, fmt.Sprintf("#%d", i), [11]int{})
 	}
 }
@@ -387,7 +383,7 @@ func TestDeflateInflateString(t *testing.T) {
 		t.Skip("skipping in short mode")
 	}
 	for _, test := range deflateInflateStringTests {
-		gold, err := os.ReadFile(test.filename)
+		gold, err := ioutil.ReadFile(test.filename)
 		if err != nil {
 			t.Error(err)
 		}
@@ -415,7 +411,7 @@ func TestReaderDict(t *testing.T) {
 	w.Close()
 
 	r := NewReaderDict(&b, []byte(dict))
-	data, err := io.ReadAll(r)
+	data, err := ioutil.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +452,7 @@ func TestRegression2508(t *testing.T) {
 		t.Logf("test disabled with -short")
 		return
 	}
-	w, err := NewWriter(io.Discard, 1)
+	w, err := NewWriter(ioutil.Discard, 1)
 	if err != nil {
 		t.Fatalf("NewWriter: %v", err)
 	}
@@ -475,7 +471,7 @@ func TestWriterReset(t *testing.T) {
 		if testing.Short() && level > 1 {
 			break
 		}
-		w, err := NewWriter(io.Discard, level)
+		w, err := NewWriter(ioutil.Discard, level)
 		if err != nil {
 			t.Fatalf("NewWriter: %v", err)
 		}
@@ -487,9 +483,9 @@ func TestWriterReset(t *testing.T) {
 		for i := 0; i < n; i++ {
 			w.Write(buf)
 		}
-		w.Reset(io.Discard)
+		w.Reset(ioutil.Discard)
 
-		wref, err := NewWriter(io.Discard, level)
+		wref, err := NewWriter(ioutil.Discard, level)
 		if err != nil {
 			t.Fatalf("NewWriter: %v", err)
 		}
@@ -513,57 +509,33 @@ func TestWriterReset(t *testing.T) {
 			t.Errorf("level %d Writer not reset after Reset", level)
 		}
 	}
-
-	levels := []int{0, 1, 2, 5, 9}
-	for _, level := range levels {
-		t.Run(fmt.Sprint(level), func(t *testing.T) {
-			testResetOutput(t, level, nil)
-		})
-	}
-
-	t.Run("dict", func(t *testing.T) {
-		for _, level := range levels {
-			t.Run(fmt.Sprint(level), func(t *testing.T) {
-				testResetOutput(t, level, nil)
-			})
-		}
-	})
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriter(w, NoCompression) })
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriter(w, DefaultCompression) })
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriter(w, BestCompression) })
+	dict := []byte("we are the world")
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriterDict(w, NoCompression, dict) })
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriterDict(w, DefaultCompression, dict) })
+	testResetOutput(t, func(w io.Writer) (*Writer, error) { return NewWriterDict(w, BestCompression, dict) })
 }
 
-func testResetOutput(t *testing.T, level int, dict []byte) {
-	writeData := func(w *Writer) {
-		msg := []byte("now is the time for all good gophers")
-		w.Write(msg)
-		w.Flush()
-
-		hello := []byte("hello world")
-		for i := 0; i < 1024; i++ {
-			w.Write(hello)
-		}
-
-		fill := bytes.Repeat([]byte("x"), 65000)
-		w.Write(fill)
-	}
-
+func testResetOutput(t *testing.T, newWriter func(w io.Writer) (*Writer, error)) {
 	buf := new(bytes.Buffer)
-	var w *Writer
-	var err error
-	if dict == nil {
-		w, err = NewWriter(buf, level)
-	} else {
-		w, err = NewWriterDict(buf, level, dict)
-	}
+	w, err := newWriter(buf)
 	if err != nil {
 		t.Fatalf("NewWriter: %v", err)
 	}
-
-	writeData(w)
+	b := []byte("hello world")
+	for i := 0; i < 1024; i++ {
+		w.Write(b)
+	}
 	w.Close()
 	out1 := buf.Bytes()
 
 	buf2 := new(bytes.Buffer)
 	w.Reset(buf2)
-	writeData(w)
+	for i := 0; i < 1024; i++ {
+		w.Write(b)
+	}
 	w.Close()
 	out2 := buf2.Bytes()
 
@@ -619,9 +591,6 @@ func TestBestSpeed(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		if i >= 3 && testing.Short() {
-			break
-		}
 		for _, firstN := range []int{1, 65534, 65535, 65536, 65537, 131072} {
 			tc[0] = firstN
 		outer:
@@ -654,7 +623,7 @@ func TestBestSpeed(t *testing.T) {
 				}
 
 				r := NewReader(buf)
-				got, err := io.ReadAll(r)
+				got, err := ioutil.ReadAll(r)
 				if err != nil {
 					t.Errorf("i=%d, firstN=%d, flush=%t: ReadAll: %v", i, firstN, flush, err)
 					continue
@@ -685,7 +654,7 @@ func (w *failWriter) Write(b []byte) (int, error) {
 
 func TestWriterPersistentError(t *testing.T) {
 	t.Parallel()
-	d, err := os.ReadFile("testdata/Isaac.Newton-Opticks.txt")
+	d, err := ioutil.ReadFile("testdata/Isaac.Newton-Opticks.txt")
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -881,7 +850,7 @@ func TestBestSpeedMaxMatchOffset(t *testing.T) {
 				}
 
 				r := NewReader(buf)
-				dst, err := io.ReadAll(r)
+				dst, err := ioutil.ReadAll(r)
 				r.Close()
 				if err != nil {
 					report("ReadAll: ", err)
@@ -894,62 +863,6 @@ func TestBestSpeedMaxMatchOffset(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-func TestBestSpeedShiftOffsets(t *testing.T) {
-	// Test if shiftoffsets properly preserves matches and resets out-of-range matches
-	// seen in https://github.com/golang/go/issues/4142
-	enc := newDeflateFast()
-
-	// testData may not generate internal matches.
-	testData := make([]byte, 32)
-	rng := rand.New(rand.NewSource(0))
-	for i := range testData {
-		testData[i] = byte(rng.Uint32())
-	}
-
-	// Encode the testdata with clean state.
-	// Second part should pick up matches from the first block.
-	wantFirstTokens := len(enc.encode(nil, testData))
-	wantSecondTokens := len(enc.encode(nil, testData))
-
-	if wantFirstTokens <= wantSecondTokens {
-		t.Fatalf("test needs matches between inputs to be generated")
-	}
-	// Forward the current indicator to before wraparound.
-	enc.cur = bufferReset - int32(len(testData))
-
-	// Part 1 before wrap, should match clean state.
-	got := len(enc.encode(nil, testData))
-	if wantFirstTokens != got {
-		t.Errorf("got %d, want %d tokens", got, wantFirstTokens)
-	}
-
-	// Verify we are about to wrap.
-	if enc.cur != bufferReset {
-		t.Errorf("got %d, want e.cur to be at bufferReset (%d)", enc.cur, bufferReset)
-	}
-
-	// Part 2 should match clean state as well even if wrapped.
-	got = len(enc.encode(nil, testData))
-	if wantSecondTokens != got {
-		t.Errorf("got %d, want %d token", got, wantSecondTokens)
-	}
-
-	// Verify that we wrapped.
-	if enc.cur >= bufferReset {
-		t.Errorf("want e.cur to be < bufferReset (%d), got %d", bufferReset, enc.cur)
-	}
-
-	// Forward the current buffer, leaving the matches at the bottom.
-	enc.cur = bufferReset
-	enc.shiftOffsets()
-
-	// Ensure that no matches were picked up.
-	got = len(enc.encode(nil, testData))
-	if wantFirstTokens != got {
-		t.Errorf("got %d, want %d tokens", got, wantFirstTokens)
 	}
 }
 
@@ -968,7 +881,7 @@ func TestMaxStackSize(t *testing.T) {
 		wg.Add(1)
 		go func(level int) {
 			defer wg.Done()
-			zw, err := NewWriter(io.Discard, level)
+			zw, err := NewWriter(ioutil.Discard, level)
 			if err != nil {
 				t.Errorf("level %d, NewWriter() = %v, want nil", level, err)
 			}
@@ -978,7 +891,7 @@ func TestMaxStackSize(t *testing.T) {
 			if err := zw.Close(); err != nil {
 				t.Errorf("level %d, Close() = %v, want nil", level, err)
 			}
-			zw.Reset(io.Discard)
+			zw.Reset(ioutil.Discard)
 		}(level)
 	}
 }

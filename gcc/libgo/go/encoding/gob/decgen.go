@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // encgen writes the helper functions for encoding. Intended to be
@@ -186,10 +185,8 @@ func main() {
 		log.Fatal("source format error:", err)
 	}
 	fd, err := os.Create(*output)
+	_, err = fd.Write(source)
 	if err != nil {
-		log.Fatal(err)
-	}
-	if _, err := fd.Write(source); err != nil {
 		log.Fatal(err)
 	}
 }

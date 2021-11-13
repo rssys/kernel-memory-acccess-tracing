@@ -1,5 +1,5 @@
 /* Perform instruction reorganizations for delay slot filling.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu).
    Hacked by Michael Tiemann (tiemann@cygnus.com).
 
@@ -88,7 +88,17 @@ along with GCC; see the file COPYING3.  If not see
    making the various individual schedules work well together.  It is
    especially tuned to handle the control flow interactions of branch
    insns.  It does nothing for insns with delay slots that do not
-   branch.  */
+   branch.
+
+   On machines that use CC0, we are very conservative.  We will not make
+   a copy of an insn involving CC0 since we want to maintain a 1-1
+   correspondence between the insn that sets and uses CC0.  The insns are
+   allowed to be separated by placing an insn that sets CC0 (but not an insn
+   that uses CC0; we could do this, but it doesn't seem worthwhile) in a
+   delay slot.  In that case, we point each insn at the other with REG_CC_USER
+   and REG_CC_SETTER notes.  Note that these restrictions affect very few
+   machines because most RISC machines with delay slots will not use CC0
+   (the RT is the only known exception at this point).  */
 
 #include "config.h"
 #include "system.h"
@@ -106,6 +116,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "recog.h"
 #include "insn-attr.h"
 #include "resource.h"
+#include "params.h"
 #include "tree-pass.h"
 
 
@@ -129,9 +140,9 @@ skip_consecutive_labels (rtx label_or_return)
   /* __builtin_unreachable can create a CODE_LABEL followed by a BARRIER.
 
      Since reaching the CODE_LABEL is undefined behavior, we can return
-     any code label and we're OK at run time.
+     any code label and we're OK at runtime.
 
-     However, if we return a CODE_LABEL which leads to a shrink-wrapped
+     However, if we return a CODE_LABEL which leads to a shrinked wrapped
      epilogue, but the path does not have a prologue, then we will trip
      a sanity check in the dwarf2 cfi code which wants to verify that
      the CFIs are all the same on the traces leading to the epilogue.
@@ -144,6 +155,21 @@ skip_consecutive_labels (rtx label_or_return)
       label = insn;
 
   return label;
+}
+
+/* INSN uses CC0 and is being moved into a delay slot.  Set up REG_CC_SETTER
+   and REG_CC_USER notes so we can find it.  */
+
+static void
+link_cc0_insns (rtx_insn *insn)
+{
+  rtx user = next_nonnote_insn (insn);
+
+  if (NONJUMP_INSN_P (user) && GET_CODE (PATTERN (user)) == SEQUENCE)
+    user = XVECEXP (PATTERN (user), 0, 0);
+
+  add_reg_note (user, REG_CC_SETTER, insn);
+  add_reg_note (insn, REG_CC_USER, user);
 }
 
 /* Insns which have delay slots that have not yet been filled.  */
@@ -320,7 +346,8 @@ insn_references_resource_p (rtx insn, struct resources *res,
 
 /* Return TRUE if INSN modifies resources that are marked in RES.
    INCLUDE_DELAYED_EFFECTS is set if the actions of that routine should be
-   included.   */
+   included.   CC0 is only modified if it is explicitly set; see comments
+   in front of mark_set_resources for details.  */
 
 static int
 insn_sets_resource_p (rtx insn, struct resources *res,
@@ -383,7 +410,8 @@ find_end_label (rtx kind)
   while (NOTE_P (insn)
 	 || (NONJUMP_INSN_P (insn)
 	     && (GET_CODE (PATTERN (insn)) == USE
-		 || GET_CODE (PATTERN (insn)) == CLOBBER)))
+		 || GET_CODE (PATTERN (insn)) == CLOBBER
+		 || GET_CODE (PATTERN (insn)) == CLOBBER_HIGH)))
     insn = PREV_INSN (insn);
 
   /* When a target threads its epilogue we might already have a
@@ -549,9 +577,8 @@ add_to_delay_list (rtx_insn *insn, vec<rtx_insn *> *delay_list)
 {
   /* If INSN has its block number recorded, clear it since we may
      be moving the insn to a new block.  */
-  clear_hashed_info_for_insn (insn);
-
-  delay_list->safe_push (insn);
+      clear_hashed_info_for_insn (insn);
+      delay_list->safe_push (insn);
 }
 
 /* Delete INSN from the delay slot of the insn that it is in, which may
@@ -614,11 +641,49 @@ delete_from_delay_slot (rtx_insn *insn)
   return trial;
 }
 
-/* Delete INSN, a JUMP_INSN.  */
+/* Delete INSN, a JUMP_INSN.  If it is a conditional jump, we must track down
+   the insn that sets CC0 for it and delete it too.  */
 
 static void
 delete_scheduled_jump (rtx_insn *insn)
 {
+  /* Delete the insn that sets cc0 for us.  On machines without cc0, we could
+     delete the insn that sets the condition code, but it is hard to find it.
+     Since this case is rare anyway, don't bother trying; there would likely
+     be other insns that became dead anyway, which we wouldn't know to
+     delete.  */
+
+  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, insn))
+    {
+      rtx note = find_reg_note (insn, REG_CC_SETTER, NULL_RTX);
+
+      /* If a reg-note was found, it points to an insn to set CC0.  This
+	 insn is in the delay list of some other insn.  So delete it from
+	 the delay list it was in.  */
+      if (note)
+	{
+	  if (! FIND_REG_INC_NOTE (XEXP (note, 0), NULL_RTX)
+	      && sets_cc0_p (PATTERN (XEXP (note, 0))) == 1)
+	    delete_from_delay_slot (as_a <rtx_insn *> (XEXP (note, 0)));
+	}
+      else
+	{
+	  /* The insn setting CC0 is our previous insn, but it may be in
+	     a delay slot.  It will be the last insn in the delay slot, if
+	     it is.  */
+	  rtx_insn *trial = previous_insn (insn);
+	  if (NOTE_P (trial))
+	    trial = prev_nonnote_insn (trial);
+	  if (sets_cc0_p (PATTERN (trial)) != 1
+	      || FIND_REG_INC_NOTE (trial, NULL_RTX))
+	    return;
+	  if (PREV_INSN (NEXT_INSN (trial)) == trial)
+	    delete_related_insns (trial);
+	  else
+	    delete_from_delay_slot (trial);
+	}
+    }
+
   delete_related_insns (insn);
 }
 
@@ -1048,6 +1113,9 @@ steal_delay_list_from_target (rtx_insn *insn, rtx condition, rtx_sequence *seq,
       if (insn_references_resource_p (trial, sets, false)
 	  || insn_sets_resource_p (trial, needed, false)
 	  || insn_sets_resource_p (trial, sets, false)
+	  /* If TRIAL sets CC0, we can't copy it, so we can't steal this
+	     delay list.  */
+	  || (HAVE_cc0 && find_reg_note (trial, REG_CC_USER, NULL_RTX))
 	  /* If TRIAL is from the fallthrough code of an annulled branch insn
 	     in SEQ, we cannot use it.  */
 	  || (INSN_ANNULLED_BRANCH_P (seq->insn (0))
@@ -1152,9 +1220,13 @@ steal_delay_list_from_fallthrough (rtx_insn *insn, rtx condition,
       rtx_insn *trial = seq->insn (i);
       rtx_insn *prior_insn;
 
+      /* If TRIAL sets CC0, stealing it will move it too far from the use
+	 of CC0.  */
       if (insn_references_resource_p (trial, sets, false)
 	  || insn_sets_resource_p (trial, needed, false)
-	  || insn_sets_resource_p (trial, sets, false))
+	  || insn_sets_resource_p (trial, sets, false)
+	  || (HAVE_cc0 && sets_cc0_p (PATTERN (trial))))
+
 	break;
 
       /* If this insn was already done, we don't need it.  */
@@ -1239,10 +1311,13 @@ try_merge_delay_insns (rtx_insn *insn, rtx_insn *thread)
 
       /* TRIAL must be a CALL_INSN or INSN.  Skip USE and CLOBBER.  */
       if (NONJUMP_INSN_P (trial)
-	  && (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER))
+	  && (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+	      || GET_CODE (pat) == CLOBBER_HIGH))
 	continue;
 
       if (GET_CODE (next_to_match) == GET_CODE (trial)
+	  /* We can't share an insn that sets cc0.  */
+	  && (!HAVE_cc0 || ! sets_cc0_p (pat))
 	  && ! insn_references_resource_p (trial, &set, true)
 	  && ! insn_sets_resource_p (trial, &set, true)
 	  && ! insn_sets_resource_p (trial, &needed, true)
@@ -1312,6 +1387,7 @@ try_merge_delay_insns (rtx_insn *insn, rtx_insn *thread)
 	  if (! insn_references_resource_p (dtrial, &set, true)
 	      && ! insn_sets_resource_p (dtrial, &set, true)
 	      && ! insn_sets_resource_p (dtrial, &needed, true)
+	      && (!HAVE_cc0 || ! sets_cc0_p (PATTERN (dtrial)))
 	      && rtx_equal_p (PATTERN (next_to_match), PATTERN (dtrial))
 	      /* Check that DTRIAL and NEXT_TO_MATCH does not reference a 
 	         resource modified between them (only dtrial is checked because
@@ -1415,7 +1491,7 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
 
   /* Scan backwards looking for a match.  */
   for (trial = PREV_INSN (target),
-	 insns_to_search = param_max_delay_slot_insn_search;
+	 insns_to_search = MAX_DELAY_SLOT_INSN_SEARCH;
        trial && insns_to_search > 0;
        trial = PREV_INSN (trial))
     {
@@ -1430,7 +1506,8 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
       --insns_to_search;
 
       pat = PATTERN (trial);
-      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER)
+      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+	  || GET_CODE (pat) == CLOBBER_HIGH)
 	continue;
 
       if (GET_CODE (trial) == DEBUG_INSN)
@@ -1475,8 +1552,8 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
   if (trial == 0)
     return 0;
 
-  /* See what resources this insn sets and needs.  If they overlap, it
-     can't be redundant.  */
+  /* See what resources this insn sets and needs.  If they overlap, or
+     if this insn references CC0, it can't be redundant.  */
 
   CLEAR_RESOURCE (&needed);
   CLEAR_RESOURCE (&set);
@@ -1488,6 +1565,7 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
     target_main = XVECEXP (PATTERN (target), 0, 0);
 
   if (resource_conflicts_p (&needed, &set)
+      || (HAVE_cc0 && reg_mentioned_p (cc0_rtx, ipat))
       /* The insn requiring the delay may not set anything needed or set by
 	 INSN.  */
       || insn_sets_resource_p (target_main, &needed, true)
@@ -1497,7 +1575,7 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
   /* Insns we pass may not set either NEEDED or SET, so merge them for
      simpler tests.  */
   needed.memory |= set.memory;
-  needed.regs |= set.regs;
+  IOR_HARD_REG_SET (needed.regs, set.regs);
 
   /* This insn isn't redundant if it conflicts with an insn that either is
      or will be in a delay slot of TARGET.  */
@@ -1518,7 +1596,7 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
      INSN sets or sets something insn uses or sets.  */
 
   for (trial = PREV_INSN (target),
-	 insns_to_search = param_max_delay_slot_insn_search;
+	 insns_to_search = MAX_DELAY_SLOT_INSN_SEARCH;
        trial && !LABEL_P (trial) && insns_to_search > 0;
        trial = PREV_INSN (trial))
     {
@@ -1527,7 +1605,8 @@ redundant_insn (rtx insn, rtx_insn *target, const vec<rtx_insn *> &delay_list)
       --insns_to_search;
 
       pat = PATTERN (trial);
-      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER)
+      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+	  || GET_CODE (pat) == CLOBBER_HIGH)
 	continue;
 
       if (GET_CODE (trial) == DEBUG_INSN)
@@ -1639,7 +1718,8 @@ own_thread_p (rtx thread, rtx label, int allow_fallthrough)
 	|| LABEL_P (insn)
 	|| (NONJUMP_INSN_P (insn)
 	    && GET_CODE (PATTERN (insn)) != USE
-	    && GET_CODE (PATTERN (insn)) != CLOBBER))
+	    && GET_CODE (PATTERN (insn)) != CLOBBER
+	    && GET_CODE (PATTERN (insn)) != CLOBBER_HIGH))
       return 0;
 
   return 1;
@@ -1962,7 +2042,8 @@ fill_simple_delay_slots (int non_jumps_p)
 	      pat = PATTERN (trial);
 
 	      /* Stand-alone USE and CLOBBER are just for flow.  */
-	      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER)
+	      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+		  || GET_CODE (pat) == CLOBBER_HIGH)
 		continue;
 
 	      /* And DEBUG_INSNs never go into delay slots.  */
@@ -1976,6 +2057,8 @@ fill_simple_delay_slots (int non_jumps_p)
 					     filter_flags ? &fset : &set,
 					     true)
 		  && ! insn_sets_resource_p (trial, &needed, true)
+		  /* Can't separate set of cc0 from its use.  */
+		  && (!HAVE_cc0 || ! (reg_mentioned_p (cc0_rtx, pat) && ! sets_cc0_p (pat)))
 		  && ! can_throw_internal (trial))
 		{
 		  trial = try_split (pat, trial, 1);
@@ -2086,7 +2169,8 @@ fill_simple_delay_slots (int non_jumps_p)
 	      pat = PATTERN (trial);
 
 	      /* Stand-alone USE and CLOBBER are just for flow.  */
-	      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER)
+	      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+		  || GET_CODE (pat) == CLOBBER_HIGH)
 		continue;
 
 	      /* And DEBUG_INSNs do not go in delay slots.  */
@@ -2109,6 +2193,7 @@ fill_simple_delay_slots (int non_jumps_p)
 		  && ! insn_references_resource_p (trial, &set, true)
 		  && ! insn_sets_resource_p (trial, &set, true)
 		  && ! insn_sets_resource_p (trial, &needed, true)
+		  && (!HAVE_cc0 && ! (reg_mentioned_p (cc0_rtx, pat) && ! sets_cc0_p (pat)))
 		  && ! (maybe_never && may_trap_or_fault_p (pat))
 		  && (trial = try_split (pat, trial, 0))
 		  && eligible_for_delay (insn, slots_filled, trial, flags)
@@ -2116,6 +2201,8 @@ fill_simple_delay_slots (int non_jumps_p)
 		{
 		  next_trial = next_nonnote_insn (trial);
 		  add_to_delay_list (trial, &delay_list);
+		  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, pat))
+		    link_cc0_insns (trial);
 
 		  delete_related_insns (trial);
 		  if (slots_to_fill == ++slots_filled)
@@ -2152,6 +2239,7 @@ fill_simple_delay_slots (int non_jumps_p)
 	      && ! insn_references_resource_p (next_trial, &set, true)
 	      && ! insn_sets_resource_p (next_trial, &set, true)
 	      && ! insn_sets_resource_p (next_trial, &needed, true)
+	      && (!HAVE_cc0 || ! reg_mentioned_p (cc0_rtx, PATTERN (next_trial)))
 	      && ! (maybe_never && may_trap_or_fault_p (PATTERN (next_trial)))
 	      && (next_trial = try_split (PATTERN (next_trial), next_trial, 0))
 	      && eligible_for_delay (insn, slots_filled, next_trial, flags)
@@ -2331,21 +2419,6 @@ fill_slots_from_thread (rtx_jump_insn *insn, rtx condition,
   CLEAR_RESOURCE (&needed);
   CLEAR_RESOURCE (&set);
 
-  /* Handle the flags register specially, to be able to accept a
-     candidate that clobbers it.  See also fill_simple_delay_slots.  */
-  bool filter_flags
-    = (slots_to_fill == 1
-       && targetm.flags_regnum != INVALID_REGNUM
-       && find_regno_note (insn, REG_DEAD, targetm.flags_regnum));
-  struct resources fset;
-  struct resources flags_res;
-  if (filter_flags)
-    {
-      CLEAR_RESOURCE (&fset);
-      CLEAR_RESOURCE (&flags_res);
-      SET_HARD_REG_BIT (flags_res.regs, targetm.flags_regnum);
-    }
-
   /* If we do not own this thread, we must stop as soon as we find
      something that we can't put in a delay slot, since all we can do
      is branch into THREAD at a later point.  Therefore, labels stop
@@ -2365,26 +2438,20 @@ fill_slots_from_thread (rtx_jump_insn *insn, rtx condition,
 	}
 
       pat = PATTERN (trial);
-      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER)
+      if (GET_CODE (pat) == USE || GET_CODE (pat) == CLOBBER
+	  || GET_CODE (pat) == CLOBBER_HIGH)
 	continue;
 
       if (GET_CODE (trial) == DEBUG_INSN)
 	continue;
 
-      /* If TRIAL conflicts with the insns ahead of it, we lose.  */
+      /* If TRIAL conflicts with the insns ahead of it, we lose.  Also,
+	 don't separate or copy insns that set and use CC0.  */
       if (! insn_references_resource_p (trial, &set, true)
-	  && ! insn_sets_resource_p (trial, filter_flags ? &fset : &set, true)
+	  && ! insn_sets_resource_p (trial, &set, true)
 	  && ! insn_sets_resource_p (trial, &needed, true)
-	  /* If we're handling sets to the flags register specially, we
-	     only allow an insn into a delay-slot, if it either:
-	     - doesn't set the flags register,
-	     - the "set" of the flags register isn't used (clobbered),
-	     - insns between the delay-slot insn and the trial-insn
-	     as accounted in "set", have not affected the flags register.  */
-	  && (! filter_flags
-	      || ! insn_sets_resource_p (trial, &flags_res, true)
-	      || find_regno_note (trial, REG_UNUSED, targetm.flags_regnum)
-	      || ! TEST_HARD_REG_BIT (set.regs, targetm.flags_regnum))
+	  && (!HAVE_cc0 || (! (reg_mentioned_p (cc0_rtx, pat)
+			      && (! own_thread || ! sets_cc0_p (pat)))))
 	  && ! can_throw_internal (trial))
 	{
 	  rtx_insn *prior_insn;
@@ -2458,6 +2525,9 @@ fill_slots_from_thread (rtx_jump_insn *insn, rtx condition,
 
 		  must_annul = 1;
 		winner:
+
+		  if (HAVE_cc0 && reg_mentioned_p (cc0_rtx, pat))
+		    link_cc0_insns (trial);
 
 		  /* If we own this thread, delete the insn.  If this is the
 		     destination of a branch, show that a basic block status
@@ -2557,16 +2627,6 @@ fill_slots_from_thread (rtx_jump_insn *insn, rtx condition,
       lose = 1;
       mark_set_resources (trial, &set, 0, MARK_SRC_DEST_CALL);
       mark_referenced_resources (trial, &needed, true);
-      if (filter_flags)
-	{
-	  mark_set_resources (trial, &fset, 0, MARK_SRC_DEST_CALL);
-
-	  /* Groups of flags-register setters with users should not
-	     affect opportunities to move flags-register-setting insns
-	     (clobbers) into the delay-slot.  */
-	  CLEAR_HARD_REG_BIT (needed.regs, targetm.flags_regnum);
-	  CLEAR_HARD_REG_BIT (fset.regs, targetm.flags_regnum);
-	}
 
       /* Ensure we don't put insns between the setting of cc and the comparison
 	 by moving a setting of cc into an earlier delay slot since these insns
@@ -2648,13 +2708,14 @@ fill_slots_from_thread (rtx_jump_insn *insn, rtx condition,
       && GET_CODE (PATTERN (new_thread)) != ASM_INPUT
       && asm_noperands (PATTERN (new_thread)) < 0)
     {
+      rtx pat = PATTERN (new_thread);
       rtx dest;
       rtx src;
 
       /* We know "new_thread" is an insn due to NONJUMP_INSN_P (new_thread)
 	 above.  */
       trial = as_a <rtx_insn *> (new_thread);
-      rtx pat = PATTERN (trial);
+      pat = PATTERN (trial);
 
       if (!NONJUMP_INSN_P (trial)
 	  || GET_CODE (pat) != SET
@@ -2996,12 +3057,36 @@ delete_prior_computation (rtx note, rtx_insn *insn)
 
    Look at all our REG_DEAD notes.  If a previous insn does nothing other
    than set a register that dies in this insn, we can delete that insn
-   as well.  */
+   as well.
+
+   On machines with CC0, if CC0 is used in this insn, we may be able to
+   delete the insn that set it.  */
 
 static void
 delete_computation (rtx_insn *insn)
 {
   rtx note, next;
+
+  if (HAVE_cc0 && reg_referenced_p (cc0_rtx, PATTERN (insn)))
+    {
+      rtx_insn *prev = prev_nonnote_insn (insn);
+      /* We assume that at this stage
+	 CC's are always set explicitly
+	 and always immediately before the jump that
+	 will use them.  So if the previous insn
+	 exists to set the CC's, delete it
+	 (unless it performs auto-increments, etc.).  */
+      if (prev && NONJUMP_INSN_P (prev)
+	  && sets_cc0_p (PATTERN (prev)))
+	{
+	  if (sets_cc0_p (PATTERN (prev)) > 0
+	      && ! side_effects_p (PATTERN (prev)))
+	    delete_computation (prev);
+	  else
+	    /* Otherwise, show that cc0 won't be used.  */
+	    add_reg_note (prev, REG_UNUSED, cc0_rtx);
+	}
+    }
 
   for (note = REG_NOTES (insn); note; note = next)
     {
@@ -3099,23 +3184,6 @@ relax_delay_slots (rtx_insn *first)
 	      && ! condjump_in_parallel_p (jump_insn)
 	      && ! (next && switch_text_sections_between_p (jump_insn, next)))
 	    {
-	      rtx_insn *direct_label = as_a<rtx_insn *> (JUMP_LABEL (insn));
-	      rtx_insn *prev = prev_nonnote_insn (direct_label);
-
-	      /* If the insn jumps over a BARRIER and is the only way to reach
-		 its target, then we need to delete the BARRIER before the jump
-		 because, otherwise, the target may end up being considered as
-		 unreachable and thus also deleted.  */
-	      if (BARRIER_P (prev) && LABEL_NUSES (direct_label) == 1)
-		{
-		  delete_related_insns (prev);
-
-		  /* We have just removed a BARRIER, which means that the block
-		     number of the next insns has effectively been changed (see
-		     find_basic_block in resource.c), so clear it.  */
-		  clear_hashed_info_until_next_barrier (direct_label);
-		}
-
 	      delete_jump (jump_insn);
 	      continue;
 	    }
@@ -3153,14 +3221,7 @@ relax_delay_slots (rtx_insn *first)
 
 	      if (invert_jump (jump_insn, label, 1))
 		{
-		  rtx_insn *from = delete_related_insns (next);
-
-		  /* We have just removed a BARRIER, which means that the block
-		     number of the next insns has effectively been changed (see
-		     find_basic_block in resource.c), so clear it.  */
-		  if (from)
-		    clear_hashed_info_until_next_barrier (from);
-
+		  delete_related_insns (next);
 		  next = jump_insn;
 		}
 
@@ -3347,7 +3408,14 @@ relax_delay_slots (rtx_insn *first)
 	  && !INSN_ANNULLED_BRANCH_P (delay_jump_insn)
 	  && !condjump_in_parallel_p (delay_jump_insn)
 	  && prev_active_insn (as_a<rtx_insn *> (target_label)) == insn
-	  && !BARRIER_P (prev_nonnote_insn (as_a<rtx_insn *> (target_label))))
+	  && !BARRIER_P (prev_nonnote_insn (as_a<rtx_insn *> (target_label)))
+	  /* If the last insn in the delay slot sets CC0 for some insn,
+	     various code assumes that it is in a delay slot.  We could
+	     put it back where it belonged and delete the register notes,
+	     but it doesn't seem worthwhile in this uncommon case.  */
+	  && (!HAVE_cc0
+	      || ! find_reg_note (XVECEXP (pat, 0, XVECLEN (pat, 0) - 1),
+				  REG_CC_USER, NULL_RTX)))
 	{
 	  rtx_insn *after;
 	  int i;
@@ -3426,22 +3494,18 @@ relax_delay_slots (rtx_insn *first)
 
 	      if (invert_jump (delay_jump_insn, label, 1))
 		{
+		  int i;
+
 		  /* Must update the INSN_FROM_TARGET_P bits now that
 		     the branch is reversed, so that mark_target_live_regs
 		     will handle the delay slot insn correctly.  */
-		  for (int i = 1; i < XVECLEN (PATTERN (insn), 0); i++)
+		  for (i = 1; i < XVECLEN (PATTERN (insn), 0); i++)
 		    {
 		      rtx slot = XVECEXP (PATTERN (insn), 0, i);
 		      INSN_FROM_TARGET_P (slot) = ! INSN_FROM_TARGET_P (slot);
 		    }
 
-		  /* We have just removed a BARRIER, which means that the block
-		     number of the next insns has effectively been changed (see
-		     find_basic_block in resource.c), so clear it.  */
-		  rtx_insn *from = delete_related_insns (next);
-		  if (from)
-		    clear_hashed_info_until_next_barrier (from);
-
+		  delete_related_insns (next);
 		  next = insn;
 		}
 
@@ -3770,7 +3834,8 @@ dbr_schedule (rtx_insn *first)
 	  if (! insn->deleted ()
 	      && NONJUMP_INSN_P (insn)
 	      && GET_CODE (PATTERN (insn)) != USE
-	      && GET_CODE (PATTERN (insn)) != CLOBBER)
+	      && GET_CODE (PATTERN (insn)) != CLOBBER
+	      && GET_CODE (PATTERN (insn)) != CLOBBER_HIGH)
 	    {
 	      if (GET_CODE (PATTERN (insn)) == SEQUENCE)
 		{

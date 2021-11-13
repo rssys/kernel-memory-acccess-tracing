@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // The VxWorks kernel headers define their own UINT32
-#if defined __vxworks
+#if defined __vxworks && !defined __RTP__
 #define UINT32 my_UINT32
 #endif
 

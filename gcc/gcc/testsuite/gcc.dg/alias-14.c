@@ -1,4 +1,4 @@
-/* { dg-do run } */
+/* { dg-do compile } */
 /* { dg-options "-O2" } */
 #include <stddef.h>
 void *a;

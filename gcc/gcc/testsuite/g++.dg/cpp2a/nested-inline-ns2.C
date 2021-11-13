@@ -1,5 +1,5 @@
 // P1094R2
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 inline namespace A::B { // { dg-error "a nested namespace definition cannot be inline" }
   int i;

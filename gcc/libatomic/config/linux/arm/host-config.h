@@ -1,4 +1,4 @@
-/* Copyright (C) 2012-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>.
 
    This file is part of the GNU Atomic Library (libatomic).
@@ -39,14 +39,8 @@ typedef void (__kernel_dmb_t) (void);
 #define __kernel_dmb (*(__kernel_dmb_t *) 0xffff0fa0)
 
 /* Kernel helper page version number.  */
-static inline unsigned*
-__kernel_helper_version ()
-{
-  unsigned *volatile addr = (unsigned int *)0xffff0ffc;
-  return addr;
-}
+#define __kernel_helper_version (*(unsigned int *)0xffff0ffc)
 
-#define __kernel_helper_version (*__kernel_helper_version())
 
 #ifndef HAVE_STREX
 static inline bool

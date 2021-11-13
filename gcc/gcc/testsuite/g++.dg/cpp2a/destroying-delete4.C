@@ -1,5 +1,5 @@
 // PR c++/90171
-// { dg-do compile { target c++20 } }
+// { dg-do compile { target c++2a } }
 
 #include <new>
 

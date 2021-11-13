@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler. NEC V850 series
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2019 Free Software Foundation, Inc.
    Contributed by Jeff Law (law@cygnus.com).
 
    This file is part of GCC.
@@ -438,9 +438,8 @@ enum reg_class
 /* Base register for access to arguments of the function.  */
 #define ARG_POINTER_REGNUM 35
 
-/* Register in which static-chain is passed to a function.
-   This must be a call used register.  */
-#define STATIC_CHAIN_REGNUM 19
+/* Register in which static-chain is passed to a function.  */
+#define STATIC_CHAIN_REGNUM 20
 
 /* If defined, this macro specifies a table of register pairs used to
    eliminate unneeded registers that point into the stack frame.  If
@@ -694,10 +693,12 @@ typedef enum
   if ((LOG) != 0)			\
     fprintf (FILE, "\t.align %d\n", (LOG))
 
+/* We don't have to worry about dbx compatibility for the v850.  */
+#define DEFAULT_GDB_EXTENSIONS 1
+
 /* Use dwarf2 debugging info by default.  */
 #undef  PREFERRED_DEBUGGING_TYPE
 #define PREFERRED_DEBUGGING_TYPE   DWARF2_DEBUG
-#define DWARF2_DEBUGGING_INFO	   1
 
 #define DWARF2_FRAME_INFO          1
 #define DWARF2_UNWIND_INFO         0

@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2018-2019 Free Software Foundation, Inc.
    Contributed by Nicolas Koenig
 
    This file is part of the GNU Fortran runtime library (libgfortran).
@@ -117,13 +117,13 @@ async_io (void *arg)
 		{
 		case AIO_WRITE_DONE:
 		  NOTE ("Finalizing write");
-		  st_write_done_worker (au->pdt, false);
+		  st_write_done_worker (au->pdt);
 		  UNLOCK (&au->io_lock);
 		  break;
 
 		case AIO_READ_DONE:
 		  NOTE ("Finalizing read");
-		  st_read_done_worker (au->pdt, false);
+		  st_read_done_worker (au->pdt);
 		  UNLOCK (&au->io_lock);
 		  break;
 
@@ -424,13 +424,6 @@ async_wait_id (st_parameter_common *cmp, async_unit *au, int i)
     }
 
   LOCK (&au->lock);
-  if (i > au->id.high)
-    {
-      generate_error_common (cmp, LIBERROR_BAD_WAIT_ID, NULL);
-      UNLOCK (&au->lock);
-      return true;
-    }
-
   NOTE ("Waiting for id %d", i);
   if (au->id.waiting < i)
     au->id.waiting = i;

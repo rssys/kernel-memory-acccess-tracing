@@ -1,6 +1,6 @@
 // { dg-do run { target c++11 } }
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -37,7 +37,6 @@ test01()
   A * const a = new A;
   const std::shared_ptr<A> p(a);
   VERIFY( p.get() == a );
-  static_assert( noexcept(p.get()), "non-throwing" );
 }
 
 // operator*
@@ -47,7 +46,6 @@ test02()
   A * const a = new A;
   const std::shared_ptr<A> p(a);
   VERIFY( &*p == a );
-  static_assert( noexcept(*p), "non-throwing" );
 }
 
 // operator->
@@ -57,7 +55,6 @@ test03()
   A * const a = new A;
   const std::shared_ptr<A> p(a);
   VERIFY( &p->i == &a->i );
-  static_assert( noexcept(p->i), "non-throwing" );
 }
 
 void
@@ -70,7 +67,7 @@ test04()
 #endif
 }
 
-int
+int 
 main()
 {
   test01();

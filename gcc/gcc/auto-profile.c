@@ -1,5 +1,5 @@
 /* Read and annotate call graph profile from the auto profile data file.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2019 Free Software Foundation, Inc.
    Contributed by Dehao Chen (dehao@google.com)
 
 This file is part of GCC.
@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-into-ssa.h"
 #include "gimple-iterator.h"
 #include "value-prof.h"
+#include "params.h"
 #include "symbol-summary.h"
 #include "ipa-prop.h"
 #include "ipa-fnsummary.h"
@@ -95,7 +96,7 @@ along with GCC; see the file COPYING3.  If not see
 */
 
 #define DEFAULT_AUTO_PROFILE_FILE "fbdata.afdo"
-#define AUTO_PROFILE_VERSION 2
+#define AUTO_PROFILE_VERSION 1
 
 namespace autofdo
 {
@@ -103,7 +104,7 @@ namespace autofdo
 /* Intermediate edge info used when propagating AutoFDO profile information.
    We can't edge->count() directly since it's computed from edge's probability
    while probability is yet not decided during propagation.  */
-#define AFDO_EINFO(e)                     ((class edge_info *) e->aux)
+#define AFDO_EINFO(e)                     ((struct edge_info *) e->aux)
 class edge_info
 {
 public:
@@ -135,9 +136,8 @@ typedef std::map<unsigned, gcov_type> icall_target_map;
 typedef std::set<gimple *> stmt_set;
 
 /* Represent count info of an inline stack.  */
-class count_info
+struct count_info
 {
-public:
   /* Sampled count of the inline stack.  */
   gcov_type count;
 
@@ -605,6 +605,8 @@ function_instance::find_icall_target_map (gcall *stmt,
           get_identifier (afdo_string_table->get_name (callee)));
       if (node == NULL)
         continue;
+      if (!check_ic_target (stmt, node))
+        continue;
       (*map)[callee] = iter->second->total_count ();
       ret += iter->second->total_count ();
     }
@@ -939,7 +941,7 @@ read_profile (void)
   unsigned version = gcov_read_unsigned ();
   if (version != AUTO_PROFILE_VERSION)
     {
-      error ("AutoFDO profile version %u does not match %u",
+      error ("AutoFDO profile version %u does match %u",
 	     version, AUTO_PROFILE_VERSION);
       return;
     }
@@ -1009,18 +1011,13 @@ afdo_indirect_call (gimple_stmt_iterator *gsi, const icall_target_map &map,
 
   histogram_value hist = gimple_alloc_histogram_value (
       cfun, HIST_TYPE_INDIR_CALL, stmt, callee);
-  hist->n_counters = 4;
+  hist->n_counters = 3;
   hist->hvalue.counters = XNEWVEC (gcov_type, hist->n_counters);
   gimple_add_histogram_value (cfun, stmt, hist);
 
-  // Total counter
-  hist->hvalue.counters[0] = total;
-  // Number of value/counter pairs
-  hist->hvalue.counters[1] = 1;
-  // Value
-  hist->hvalue.counters[2] = direct_call->profile_id;
-  // Counter
-  hist->hvalue.counters[3] = max_iter->second;
+  hist->hvalue.counters[0] = direct_call->profile_id;
+  hist->hvalue.counters[1] = max_iter->second;
+  hist->hvalue.counters[2] = total;
 
   if (!transform)
     return;
@@ -1036,7 +1033,7 @@ afdo_indirect_call (gimple_stmt_iterator *gsi, const icall_target_map &map,
       print_generic_expr (dump_file, direct_call->decl, TDF_SLIM);
     }
 
-  if (direct_call == NULL)
+  if (direct_call == NULL || !check_ic_target (stmt, direct_call))
     {
       if (dump_file)
         fprintf (dump_file, " not transforming\n");
@@ -1060,7 +1057,7 @@ afdo_indirect_call (gimple_stmt_iterator *gsi, const icall_target_map &map,
   struct cgraph_edge *new_edge
       = indirect_edge->make_speculative (direct_call,
 					 profile_count::uninitialized ());
-  cgraph_edge::redirect_call_stmt_to_callee (new_edge);
+  new_edge->redirect_call_stmt_to_callee ();
   gimple_remove_histogram_value (cfun, stmt, hist);
   inline_call (new_edge, true, NULL, NULL, false);
 }
@@ -1160,10 +1157,15 @@ afdo_find_equiv_class (bb_set *annotated_bb)
 
   FOR_ALL_BB_FN (bb, cfun)
   {
+    vec<basic_block> dom_bbs;
+    basic_block bb1;
+    int i;
+
     if (bb->aux != NULL)
       continue;
     bb->aux = bb;
-    for (basic_block bb1 : get_dominated_by (CDI_DOMINATORS, bb))
+    dom_bbs = get_dominated_by (CDI_DOMINATORS, bb);
+    FOR_EACH_VEC_ELT (dom_bbs, i, bb1)
       if (bb1->aux == NULL && dominated_by_p (CDI_POST_DOMINATORS, bb, bb1)
 	  && bb1->loop_father == bb->loop_father)
 	{
@@ -1174,8 +1176,8 @@ afdo_find_equiv_class (bb_set *annotated_bb)
 	      set_bb_annotated (bb, annotated_bb);
 	    }
 	}
-
-    for (basic_block bb1 : get_dominated_by (CDI_POST_DOMINATORS, bb))
+    dom_bbs = get_dominated_by (CDI_POST_DOMINATORS, bb);
+    FOR_EACH_VEC_ELT (dom_bbs, i, bb1)
       if (bb1->aux == NULL && dominated_by_p (CDI_DOMINATORS, bb, bb1)
 	  && bb1->loop_father == bb->loop_father)
 	{
@@ -1628,8 +1630,7 @@ auto_profile (void)
        function before annotation, so the profile inside bar@loc_foo2
        will be useful.  */
     autofdo::stmt_set promoted_stmts;
-    for (int i = 0; i < opt_for_fn (node->decl,
-				    param_early_inliner_max_iterations); i++)
+    for (int i = 0; i < PARAM_VALUE (PARAM_EARLY_INLINER_MAX_ITERATIONS); i++)
       {
         if (!flag_value_profile_transformations
             || !autofdo::afdo_vpt_for_early_inline (&promoted_stmts))

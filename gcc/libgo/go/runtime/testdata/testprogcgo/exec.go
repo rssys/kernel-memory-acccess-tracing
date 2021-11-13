@@ -31,7 +31,6 @@ import "C"
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -99,7 +98,7 @@ func CgoExecSignalMask() {
 
 // isEAGAIN reports whether err is an EAGAIN error from a process execution.
 func isEAGAIN(err error) bool {
-	if p, ok := err.(*fs.PathError); ok {
+	if p, ok := err.(*os.PathError); ok {
 		err = p.Err
 	}
 	return err == syscall.EAGAIN

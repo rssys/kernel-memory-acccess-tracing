@@ -1,4 +1,3 @@
-/* { dg-additional-options "-fwrapv" } */
 int errflag;
 
 long long

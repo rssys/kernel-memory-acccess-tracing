@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-O2 --save-temps -fno-inline -fno-ipa-icf" } */
+/* { dg-options "-O2 --save-temps -fno-inline" } */
 
 #include <arm_neon.h>
 

@@ -24,7 +24,6 @@ type Builder struct {
 // USE CAREFULLY!
 // This was copied from the runtime; see issues 23382 and 7921.
 //go:nosplit
-//go:nocheckptr
 func noescape(p unsafe.Pointer) unsafe.Pointer {
 	x := uintptr(p)
 	return unsafe.Pointer(x ^ 0)
@@ -103,8 +102,7 @@ func (b *Builder) WriteByte(c byte) error {
 // It returns the length of r and a nil error.
 func (b *Builder) WriteRune(r rune) (int, error) {
 	b.copyCheck()
-	// Compare as uint32 to correctly handle negative runes.
-	if uint32(r) < utf8.RuneSelf {
+	if r < utf8.RuneSelf {
 		b.buf = append(b.buf, byte(r))
 		return 1, nil
 	}

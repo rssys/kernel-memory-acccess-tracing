@@ -1,5 +1,5 @@
 /* AVR MCUs.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -23,7 +23,8 @@
 
    This will regenerate / update the following source files:
 
-   -  $(srcdir)/doc/avr-mmcu.texi
+-  $(srcdir)/config/avr/t-multilib
+-  $(srcdir)/doc/avr-mmcu.texi
 
    After that, rebuild everything and check-in the new sources to the repo.
    The device list below should be kept in sync with AVR-LibC.
@@ -207,7 +208,6 @@ AVR_MCU ("atmega323",        ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega323__",      
 AVR_MCU ("atmega324a",       ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega324A__",        0x0100, 0x0, 0x8000, 0)
 AVR_MCU ("atmega324p",       ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega324P__",        0x0100, 0x0, 0x8000, 0)
 AVR_MCU ("atmega324pa",      ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega324PA__",       0x0100, 0x0, 0x8000, 0)
-AVR_MCU ("atmega324pb",      ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega324PB__",       0x0100, 0x0, 0x8000, 0)
 AVR_MCU ("atmega325",        ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega325__",         0x0100, 0x0, 0x8000, 0)
 AVR_MCU ("atmega325a",       ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega325A__",        0x0100, 0x0, 0x8000, 0)
 AVR_MCU ("atmega325p",       ARCH_AVR5, AVR_ISA_NONE, "__AVR_ATmega325P__",        0x0100, 0x0, 0x8000, 0)

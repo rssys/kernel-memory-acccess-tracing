@@ -1,4 +1,5 @@
 /* { dg-do run } */
+/* { dg-additional-options "-w" } */
 
 /* Test reductions on explicitly private variables.  */
 

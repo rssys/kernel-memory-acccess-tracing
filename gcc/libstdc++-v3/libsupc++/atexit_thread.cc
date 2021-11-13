@@ -1,4 +1,4 @@
-// Copyright (C) 2012-2021 Free Software Foundation, Inc.
+// Copyright (C) 2012-2019 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -30,21 +30,16 @@
 #include <windows.h>
 #endif
 
-// Simplify it a little for this file.
-#ifndef _GLIBCXX_CDTOR_CALLABI
-#  define _GLIBCXX_CDTOR_CALLABI
-#endif
-
 #if _GLIBCXX_HAVE___CXA_THREAD_ATEXIT
 
 // Libc provides __cxa_thread_atexit definition.
 
 #elif _GLIBCXX_HAVE___CXA_THREAD_ATEXIT_IMPL
 
-extern "C" int __cxa_thread_atexit_impl (void (_GLIBCXX_CDTOR_CALLABI *func) (void *),
+extern "C" int __cxa_thread_atexit_impl (void (*func) (void *),
 					 void *arg, void *d);
 extern "C" int
-__cxxabiv1::__cxa_thread_atexit (void (_GLIBCXX_CDTOR_CALLABI *dtor)(void *),
+__cxxabiv1::__cxa_thread_atexit (void (*dtor)(void *),
 				 void *obj, void *dso_handle)
   _GLIBCXX_NOTHROW
 {
@@ -57,7 +52,7 @@ namespace {
   // One element in a singly-linked stack of cleanups.
   struct elt
   {
-    void (_GLIBCXX_CDTOR_CALLABI *destructor)(void *);
+    void (*destructor)(void *);
     void *object;
     elt *next;
 #ifdef _GLIBCXX_THREAD_ATEXIT_WIN32
@@ -121,8 +116,7 @@ namespace {
 }
 
 extern "C" int
-__cxxabiv1::__cxa_thread_atexit (void (_GLIBCXX_CDTOR_CALLABI *dtor)(void *),
-				 void *obj, void */*dso_handle*/)
+__cxxabiv1::__cxa_thread_atexit (void (*dtor)(void *), void *obj, void */*dso_handle*/)
   _GLIBCXX_NOTHROW
 {
   // Do this initialization once.

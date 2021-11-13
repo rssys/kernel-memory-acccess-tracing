@@ -1,5 +1,4 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target fpic } */
 /* { dg-options "-O2 -fPIC" } */
 extern double ad[], bd[], cd[], dd[];
 extern long long all[], bll[], cll[], dll[];

@@ -19,8 +19,7 @@ type unit struct {
 	atable abbrevTable
 	asize  int
 	vers   int
-	utype  uint8 // DWARF 5 unit type
-	is64   bool  // True for 64-bit DWARF format
+	is64   bool // True for 64-bit DWARF format
 }
 
 // Implement the dataFormat interface.
@@ -48,9 +47,7 @@ func (d *Data) parseUnits() ([]unit, error) {
 			break
 		}
 		b.skip(int(len))
-		if len > 0 {
-			nunit++
-		}
+		nunit++
 	}
 	if b.err != nil {
 		return nil, b.err
@@ -63,20 +60,14 @@ func (d *Data) parseUnits() ([]unit, error) {
 		u := &units[i]
 		u.base = b.off
 		var n Offset
-		for n == 0 {
-			n, u.is64 = b.unitLength()
-		}
+		n, u.is64 = b.unitLength()
 		dataOff := b.off
 		vers := b.uint16()
-		if vers < 2 || vers > 5 {
+		if vers != 2 && vers != 3 && vers != 4 {
 			b.error("unsupported DWARF version " + strconv.Itoa(int(vers)))
 			break
 		}
 		u.vers = int(vers)
-		if vers >= 5 {
-			u.utype = b.uint8()
-			u.asize = int(b.uint8())
-		}
 		var abbrevOff uint64
 		if u.is64 {
 			abbrevOff = b.uint64()
@@ -91,22 +82,7 @@ func (d *Data) parseUnits() ([]unit, error) {
 			break
 		}
 		u.atable = atable
-		if vers < 5 {
-			u.asize = int(b.uint8())
-		}
-
-		switch u.utype {
-		case utSkeleton, utSplitCompile:
-			b.uint64() // unit ID
-		case utType, utSplitType:
-			b.uint64()  // type signature
-			if u.is64 { // type offset
-				b.uint64()
-			} else {
-				b.uint32()
-			}
-		}
-
+		u.asize = int(b.uint8())
 		u.off = b.off
 		u.data = b.bytes(int(n - (b.off - dataOff)))
 	}

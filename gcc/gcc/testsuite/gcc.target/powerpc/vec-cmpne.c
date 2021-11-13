@@ -1,4 +1,4 @@
-/* { dg-do run } */
+/* { dg-do run { target { powerpc64*-*-* } } } */
 /* { dg-require-effective-target powerpc_vsx_ok } */
 /* { dg-options "-mvsx -O3" } */
 

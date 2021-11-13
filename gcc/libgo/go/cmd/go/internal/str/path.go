@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// HasPathPrefix reports whether the slash-separated path s
+// HasPath reports whether the slash-separated path s
 // begins with the elements in prefix.
 func HasPathPrefix(s, prefix string) bool {
 	if len(s) == len(prefix) {

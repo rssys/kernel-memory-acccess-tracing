@@ -1,4 +1,4 @@
-/* { dg-do compile { target { nonpic || pie_enabled } } } */
+/* { dg-do compile { target nonpic } } */
 /* { dg-options "-O3 -fdump-tree-fnsplit -fdump-tree-optimized --param=builtin-expect-probability=100" } */
 
 struct a {int a,b;};

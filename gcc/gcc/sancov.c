@@ -1,5 +1,5 @@
 /* Code coverage instrumentation for fuzzing.
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2019 Free Software Foundation, Inc.
    Contributed by Dmitry Vyukov <dvyukov@google.com> and
    Wish Wu <wishwu007@gmail.com>
 
@@ -313,9 +313,9 @@ public:
     return new pass_sancov<O0> (m_ctxt);
   }
   virtual bool
-  gate (function *fun)
+  gate (function *)
   {
-    return sanitize_coverage_p (fun->decl) && (!O0 || !optimize);
+    return flag_sanitize_coverage && (!O0 || !optimize);
   }
   virtual unsigned int
   execute (function *fun)

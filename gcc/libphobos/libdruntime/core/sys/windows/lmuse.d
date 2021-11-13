@@ -8,11 +8,10 @@
  */
 module core.sys.windows.lmuse;
 version (Windows):
-@system:
 pragma(lib, "netapi32");
 
 import core.sys.windows.lmuseflg;
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 enum {
     USE_LOCAL_PARMNUM = 1,

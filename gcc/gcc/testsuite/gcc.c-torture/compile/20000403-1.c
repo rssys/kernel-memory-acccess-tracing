@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 struct utsname {
 	char	sysname[32 ];	 
 	char	version[32 ];	 

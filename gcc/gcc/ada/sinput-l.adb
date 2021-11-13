@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -24,29 +24,26 @@
 ------------------------------------------------------------------------------
 
 with Alloc;
-with Atree;          use Atree;
-with Debug;          use Debug;
-with Einfo;          use Einfo;
-with Einfo.Entities; use Einfo.Entities;
-with Einfo.Utils;    use Einfo.Utils;
-with Errout;         use Errout;
-with Fname;          use Fname;
-with Lib;            use Lib;
-with Opt;            use Opt;
-with Osint;          use Osint;
-with Output;         use Output;
-with Prep;           use Prep;
-with Prepcomp;       use Prepcomp;
-with Scans;          use Scans;
-with Scn;            use Scn;
-with Sem_Aux;        use Sem_Aux;
-with Sem_Util;       use Sem_Util;
-with Sinfo;          use Sinfo;
-with Sinfo.Nodes;    use Sinfo.Nodes;
-with Snames;         use Snames;
-with System;         use System;
+with Atree;    use Atree;
+with Debug;    use Debug;
+with Einfo;    use Einfo;
+with Errout;   use Errout;
+with Fname;    use Fname;
+with Lib;      use Lib;
+with Opt;      use Opt;
+with Osint;    use Osint;
+with Output;   use Output;
+with Prep;     use Prep;
+with Prepcomp; use Prepcomp;
+with Scans;    use Scans;
+with Scn;      use Scn;
+with Sem_Aux;  use Sem_Aux;
+with Sem_Util; use Sem_Util;
+with Sinfo;    use Sinfo;
+with Snames;   use Snames;
+with System;   use System;
 
-with System.OS_Lib;  use System.OS_Lib;
+with System.OS_Lib; use System.OS_Lib;
 
 package body Sinput.L is
 
@@ -551,10 +548,19 @@ package body Sinput.L is
             Set_Source_File_Index_Table (X);
 
             if Opt.List_Preprocessing_Symbols then
+               Get_Name_String (N);
+
                declare
-                  Foreword : constant String :=
-                    Foreword_Start & Get_Name_String (N) & Foreword_End;
+                  Foreword : String (1 .. Foreword_Start'Length +
+                                          Name_Len + Foreword_End'Length);
+
                begin
+                  Foreword (1 .. Foreword_Start'Length) := Foreword_Start;
+                  Foreword (Foreword_Start'Length + 1 ..
+                              Foreword_Start'Length + Name_Len) :=
+                    Name_Buffer (1 .. Name_Len);
+                  Foreword (Foreword'Last - Foreword_End'Length + 1 ..
+                              Foreword'Last) := Foreword_End;
                   Prep.List_Symbols (Foreword);
                end;
             end if;
@@ -645,13 +651,14 @@ package body Sinput.L is
                         NB     : Integer;
                         Status : Boolean;
 
-                        Prep_Filename : constant String :=
-                          Get_Name_String (N) & Prep_Suffix;
-
                      begin
-                        Delete_File (Prep_Filename, Status);
+                        Get_Name_String (N);
+                        Add_Str_To_Name_Buffer (Prep_Suffix);
 
-                        FD := Create_New_File (Prep_Filename, Text);
+                        Delete_File (Name_Buffer (1 .. Name_Len), Status);
+
+                        FD :=
+                          Create_New_File (Name_Buffer (1 .. Name_Len), Text);
 
                         Status := FD /= Invalid_FD;
 

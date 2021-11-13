@@ -1,5 +1,4 @@
 /* { dg-do run } */
-/* { dg-skip-if "r9 is reserved in FDPIC" { arm*-*-uclinuxfdpiceabi } "*" "" } */
 /* { dg-options "-O2" } */
 
 __attribute__ ((noinline, noclone)) void

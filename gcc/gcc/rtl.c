@@ -1,5 +1,5 @@
 /* RTL utility routines.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -106,7 +106,7 @@ const enum rtx_class rtx_class[NUM_RTX_CODE] = {
 #undef DEF_RTL_EXPR
 };
 
-/* Whether rtxs with the given code store data in the hwint field.  */
+/* Whether rtxs with the given code code store data in the hwint field.  */
 
 #define RTX_CODE_HWINT_P_1(ENUM)					\
     ((ENUM) == CONST_INT || (ENUM) == CONST_DOUBLE			\
@@ -158,12 +158,9 @@ static size_t rtvec_alloc_sizes;
    Store the length, and initialize all elements to zero.  */
 
 rtvec
-rtvec_alloc (size_t n)
+rtvec_alloc (int n)
 {
   rtvec rt;
-
-  /* rtvec_def.num_elem is an int.  */
-  gcc_assert (n < INT_MAX);
 
   rt = ggc_alloc_rtvec_sized (n);
   /* Clear out the vector.  */
@@ -222,7 +219,12 @@ rtx_alloc_stat_v (RTX_CODE code MEM_STAT_DECL, int extra)
   rtx rt = ggc_alloc_rtx_def_stat (RTX_CODE_SIZE (code) + extra
 				   PASS_MEM_STAT);
 
-  rtx_init (rt, code);
+  /* We want to clear everything up to the FLD array.  Normally, this
+     is one int, but we don't want to assume that and it isn't very
+     portable anyway; this is.  */
+
+  memset (rt, 0, RTX_HDR_SIZE);
+  PUT_CODE (rt, code);
 
   if (GATHER_STATISTICS)
     {
@@ -298,19 +300,24 @@ copy_rtx (rtx orig)
     case SYMBOL_REF:
     case CODE_LABEL:
     case PC:
+    case CC0:
     case RETURN:
     case SIMPLE_RETURN:
     case SCRATCH:
       /* SCRATCH must be shared because they represent distinct values.  */
       return orig;
     case CLOBBER:
-      /* Share clobbers of hard registers, but do not share pseudo reg
+      /* Share clobbers of hard registers (like cc0), but do not share pseudo reg
          clobbers or clobbers of hard registers that originated as pseudos.
          This is needed to allow safe register renaming.  */
       if (REG_P (XEXP (orig, 0)) && REGNO (XEXP (orig, 0)) < FIRST_PSEUDO_REGISTER
 	  && ORIGINAL_REGNO (XEXP (orig, 0)) == REGNO (XEXP (orig, 0)))
 	return orig;
       break;
+
+    case CLOBBER_HIGH:
+	gcc_assert (REG_P (XEXP (orig, 0)));
+	return orig;
 
     case CONST:
       if (shared_const_p (orig))
@@ -390,15 +397,14 @@ shallow_copy_rtx (const_rtx orig MEM_STAT_DECL)
     case SYMBOL_REF:
     case CODE_LABEL:
     case PC:
+    case CC0:
     case RETURN:
     case SIMPLE_RETURN:
     case SCRATCH:
       break;
     default:
-      /* For all other RTXes clear the used flag on the copy.
-	 CALL_INSN use "used" flag to indicate it's a fake call.  */
-      if (!INSN_P (orig))
-	RTX_FLAG (copy, used) = 0;
+      /* For all other RTXes clear the used flag on the copy.  */
+      RTX_FLAG (copy, used) = 0;
       break;
     }
   return copy;
@@ -468,11 +474,6 @@ rtx_equal_p_cb (const_rtx x, const_rtx y, rtx_equal_p_callback_function cb)
     case SCRATCH:
     CASE_CONST_UNIQUE:
       return 0;
-
-    case CONST_VECTOR:
-      if (!same_vector_encodings_p (x, y))
-	return false;
-      break;
 
     case DEBUG_IMPLICIT_PTR:
       return DEBUG_IMPLICIT_PTR_DECL (x)
@@ -616,11 +617,6 @@ rtx_equal_p (const_rtx x, const_rtx y)
     CASE_CONST_UNIQUE:
       return 0;
 
-    case CONST_VECTOR:
-      if (!same_vector_encodings_p (x, y))
-	return false;
-      break;
-
     case DEBUG_IMPLICIT_PTR:
       return DEBUG_IMPLICIT_PTR_DECL (x)
 	     == DEBUG_IMPLICIT_PTR_DECL (y);
@@ -734,21 +730,6 @@ rtvec_all_equal_p (const_rtvec vec)
 	  return false;
       return true;
     }
-}
-
-/* Return true if VEC contains a linear series of integers
-   { START, START+1, START+2, ... }.  */
-
-bool
-rtvec_series_p (rtvec vec, int start)
-{
-  for (int i = 0; i < GET_NUM_ELEM (vec); i++)
-    {
-      rtx x = RTVEC_ELT (vec, i);
-      if (!CONST_INT_P (x) || INTVAL (x) != i + start)
-	return false;
-    }
-  return true;
 }
 
 /* Return an indication of which type of insn should have X as a body.

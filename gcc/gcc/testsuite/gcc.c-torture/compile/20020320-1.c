@@ -2,8 +2,6 @@
    This testcase caused infinite loop in flow (several places),
    because flow assumes gen_jump generates simple_jump_p.  */
 
-/* { dg-require-effective-target indirect_calls } */
-
 typedef void (*T) (void);
 extern T x[];
 

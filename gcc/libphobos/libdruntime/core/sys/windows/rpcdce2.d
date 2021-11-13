@@ -8,12 +8,11 @@
  */
 module core.sys.windows.rpcdce2;
 version (Windows):
-@system:
 
 version (ANSI) {} else version = Unicode;
 
 import core.sys.windows.rpcdce;
-import core.sys.windows.basetyps;
+private import core.sys.windows.basetyps;
 
 // FIXME: deal with RPC_UNICODE_SUPPORTED
 // FIXME: check types of constants

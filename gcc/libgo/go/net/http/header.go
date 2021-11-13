@@ -7,7 +7,6 @@ package http
 import (
 	"io"
 	"net/http/httptrace"
-	"net/http/internal/ascii"
 	"net/textproto"
 	"sort"
 	"strings"
@@ -41,19 +40,11 @@ func (h Header) Set(key, value string) {
 // Get gets the first value associated with the given key. If
 // there are no values associated with the key, Get returns "".
 // It is case insensitive; textproto.CanonicalMIMEHeaderKey is
-// used to canonicalize the provided key. To use non-canonical keys,
-// access the map directly.
+// used to canonicalize the provided key. To access multiple
+// values of a key, or to use non-canonical keys, access the
+// map directly.
 func (h Header) Get(key string) string {
 	return textproto.MIMEHeader(h).Get(key)
-}
-
-// Values returns all values associated with the given key.
-// It is case insensitive; textproto.CanonicalMIMEHeaderKey is
-// used to canonicalize the provided key. To use non-canonical
-// keys, access the map directly.
-// The returned slice is not a copy.
-func (h Header) Values(key string) []string {
-	return textproto.MIMEHeader(h).Values(key)
 }
 
 // get is like Get, but key must already be in CanonicalHeaderKey form.
@@ -87,23 +78,12 @@ func (h Header) write(w io.Writer, trace *httptrace.ClientTrace) error {
 	return h.writeSubset(w, nil, trace)
 }
 
-// Clone returns a copy of h or nil if h is nil.
-func (h Header) Clone() Header {
-	if h == nil {
-		return nil
-	}
-
-	// Find total number of values.
-	nv := 0
-	for _, vv := range h {
-		nv += len(vv)
-	}
-	sv := make([]string, nv) // shared backing array for headers' values
+func (h Header) clone() Header {
 	h2 := make(Header, len(h))
 	for k, vv := range h {
-		n := copy(sv, vv)
-		h2[k] = sv[:n:n]
-		sv = sv[n:]
+		vv2 := make([]string, len(vv))
+		copy(vv2, vv)
+		h2[k] = vv2
 	}
 	return h2
 }
@@ -179,7 +159,6 @@ func (h Header) sortedKeyValues(exclude map[string]bool) (kvs []keyValues, hs *h
 
 // WriteSubset writes a header in wire format.
 // If exclude is not nil, keys where exclude[key] == true are not written.
-// Keys are not canonicalized before checking the exclude map.
 func (h Header) WriteSubset(w io.Writer, exclude map[string]bool) error {
 	return h.writeSubset(w, exclude, nil)
 }
@@ -252,7 +231,7 @@ func hasToken(v, token string) bool {
 		if endPos := sp + len(token); endPos != len(v) && !isTokenBoundary(v[endPos]) {
 			continue
 		}
-		if ascii.EqualFold(v[sp:sp+len(token)], token) {
+		if strings.EqualFold(v[sp:sp+len(token)], token) {
 			return true
 		}
 	}

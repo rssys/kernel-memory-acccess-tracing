@@ -17,4 +17,3 @@ f (double *restrict a, double *restrict b, double *restrict c,
 
 /* { dg-final { scan-assembler-times {\tfmla\tz[0-9]+\.d, p[0-7]/m, z[0-9]+\.d, z[0-9]+\.d\n} 2 } } */
 /* { dg-final { scan-assembler-not {\tfmad\t} } } */
-/* { dg-final { scan-assembler-times {\tst1d} 2 } } */

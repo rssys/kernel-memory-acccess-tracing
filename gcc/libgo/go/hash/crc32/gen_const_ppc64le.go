@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // Generate the constant table associated with the poly used by the
@@ -28,7 +27,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
+	"io/ioutil"
 )
 
 var blocking = 32 * 1024
@@ -104,7 +103,7 @@ func main() {
 	genCrc32ConstTable(w, 0xeb31d82e, "Koop")
 	b := w.Bytes()
 
-	err := os.WriteFile("crc32_table_ppc64le.s", b, 0666)
+	err := ioutil.WriteFile("crc32_table_ppc64le.s", b, 0666)
 	if err != nil {
 		fmt.Printf("can't write output: %s\n", err)
 	}

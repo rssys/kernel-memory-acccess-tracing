@@ -1,5 +1,4 @@
 /* Autopar with IF conditions.  */
-/* { dg-additional-options "-fno-thread-jumps" } */
 
 void abort();
 

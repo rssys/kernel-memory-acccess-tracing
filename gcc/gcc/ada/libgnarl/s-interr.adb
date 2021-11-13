@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2021, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -473,7 +473,7 @@ package body System.Interrupts is
    ---------------------------------
 
    procedure Install_Restricted_Handlers
-     (Prio     : Interrupt_Priority;
+     (Prio     : Any_Priority;
       Handlers : New_Handler_Array)
    is
       pragma Unreferenced (Prio);
@@ -545,11 +545,9 @@ package body System.Interrupts is
 
    function Is_Registered (Handler : Parameterless_Handler) return Boolean is
 
-      type Acc_Proc is access procedure;
-
       type Fat_Ptr is record
          Object_Addr  : System.Address;
-         Handler_Addr : Acc_Proc;
+         Handler_Addr : System.Address;
       end record;
 
       function To_Fat_Ptr is new Ada.Unchecked_Conversion
@@ -567,7 +565,7 @@ package body System.Interrupts is
 
       Ptr := Registered_Handler_Head;
       while Ptr /= null loop
-         if Ptr.H = Fat.Handler_Addr.all'Address then
+         if Ptr.H = Fat.Handler_Addr then
             return True;
          end if;
 
@@ -783,7 +781,7 @@ package body System.Interrupts is
                   null;
 
                when others =>
-                  pragma Assert (Standard.False);
+                  pragma Assert (False);
                   null;
             end case;
 
@@ -1228,7 +1226,7 @@ package body System.Interrupts is
             when X : others =>
                System.IO.Put_Line ("Exception in Interrupt_Manager");
                System.IO.Put_Line (Ada.Exceptions.Exception_Information (X));
-               pragma Assert (Standard.False);
+               pragma Assert (False);
          end;
       end loop;
    end Interrupt_Manager;
@@ -1288,6 +1286,11 @@ package body System.Interrupts is
 
       loop
          System.Tasking.Initialization.Defer_Abort (Self_ID);
+
+         if Single_Lock then
+            POP.Lock_RTS;
+         end if;
+
          POP.Write_Lock (Self_ID);
 
          if User_Handler (Interrupt).H = null
@@ -1322,6 +1325,10 @@ package body System.Interrupts is
             Self_ID.Common.State := Interrupt_Server_Blocked_On_Event_Flag;
             POP.Unlock (Self_ID);
 
+            if Single_Lock then
+               POP.Unlock_RTS;
+            end if;
+
             --  Avoid race condition when terminating application and
             --  System.Parameters.No_Abort is True.
 
@@ -1338,9 +1345,18 @@ package body System.Interrupts is
                --  Inform the Interrupt_Manager of wakeup from above sigwait
 
                POP.Abort_Task (Interrupt_Manager_ID);
+
+               if Single_Lock then
+                  POP.Lock_RTS;
+               end if;
+
                POP.Write_Lock (Self_ID);
 
             else
+               if Single_Lock then
+                  POP.Lock_RTS;
+               end if;
+
                POP.Write_Lock (Self_ID);
 
                if Ret_Interrupt /= Interrupt then
@@ -1365,7 +1381,17 @@ package body System.Interrupts is
                      --  RTS calls should not be made with self being locked
 
                      POP.Unlock (Self_ID);
+
+                     if Single_Lock then
+                        POP.Unlock_RTS;
+                     end if;
+
                      Tmp_Handler.all;
+
+                     if Single_Lock then
+                        POP.Lock_RTS;
+                     end if;
+
                      POP.Write_Lock (Self_ID);
 
                   elsif User_Entry (Interrupt).T /= Null_Task then
@@ -1374,12 +1400,20 @@ package body System.Interrupts is
 
                      --  RTS calls should not be made with self being locked
 
+                     if Single_Lock then
+                        POP.Unlock_RTS;
+                     end if;
+
                      POP.Unlock (Self_ID);
 
                      System.Tasking.Rendezvous.Call_Simple
                        (Tmp_ID, Tmp_Entry_Index, System.Null_Address);
 
                      POP.Write_Lock (Self_ID);
+
+                     if Single_Lock then
+                        POP.Lock_RTS;
+                     end if;
 
                   else
                      --  This is a situation that this task wakes up receiving
@@ -1396,6 +1430,11 @@ package body System.Interrupts is
          end if;
 
          POP.Unlock (Self_ID);
+
+         if Single_Lock then
+            POP.Unlock_RTS;
+         end if;
+
          System.Tasking.Initialization.Undefer_Abort (Self_ID);
 
          if Self_ID.Pending_Action then

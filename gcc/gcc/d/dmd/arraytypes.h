@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 2006-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 2006-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -10,8 +10,7 @@
 
 #pragma once
 
-#include "root/array.h"
-#include "root/bitarray.h"
+#include "root/root.h"
 
 typedef Array<class TemplateParameter *> TemplateParameters;
 
@@ -61,5 +60,3 @@ typedef Array<class ReturnStatement *> ReturnStatements;
 typedef Array<class GotoStatement *> GotoStatements;
 
 typedef Array<class TemplateInstance *> TemplateInstances;
-
-typedef Array<struct Ensure> Ensures;

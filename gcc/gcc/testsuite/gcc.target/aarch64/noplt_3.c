@@ -1,6 +1,5 @@
 /* { dg-do compile } */
 /* { dg-options "-O2 -fpic -fno-plt" } */
-/* { dg-require-effective-target fpic } */
 /* { dg-skip-if "-mcmodel=large, no support for -fpic" { aarch64-*-* }  { "-mcmodel=large" } { "" } } */
 
 int dec (int);

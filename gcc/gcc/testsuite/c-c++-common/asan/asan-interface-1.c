@@ -1,6 +1,6 @@
 /* Check that interface headers work. */
 
-/* { dg-do run { target { *-*-linux* *-*-freebsd* } } } */
+/* { dg-do run { target { *-*-linux* } } } */
 
 #include <sanitizer/asan_interface.h>
 

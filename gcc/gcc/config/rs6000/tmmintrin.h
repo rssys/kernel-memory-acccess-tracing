@@ -1,4 +1,4 @@
-/* Copyright (C) 2003-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2003-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -350,7 +350,6 @@ _mm_shuffle_pi8 (__m64 __A, __m64 __B)
   return (__m64) ((__v2du) (__C))[0];
 }
 
-#ifdef _ARCH_PWR8
 extern __inline __m128i
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_epi8 (__m128i __A, __m128i __B)
@@ -362,9 +361,7 @@ _mm_sign_epi8 (__m128i __A, __m128i __B)
   __v16qi __conv = vec_add (__selectneg, __selectpos);
   return (__m128i) vec_mul ((__v16qi) __A, (__v16qi) __conv);
 }
-#endif
 
-#ifdef _ARCH_PWR8
 extern __inline __m128i
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_epi16 (__m128i __A, __m128i __B)
@@ -376,9 +373,7 @@ _mm_sign_epi16 (__m128i __A, __m128i __B)
   __v8hi __conv = vec_add (__selectneg, __selectpos);
   return (__m128i) vec_mul ((__v8hi) __A, (__v8hi) __conv);
 }
-#endif
 
-#ifdef _ARCH_PWR8
 extern __inline __m128i
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_epi32 (__m128i __A, __m128i __B)
@@ -390,9 +385,7 @@ _mm_sign_epi32 (__m128i __A, __m128i __B)
   __v4si __conv = vec_add (__selectneg, __selectpos);
   return (__m128i) vec_mul ((__v4si) __A, (__v4si) __conv);
 }
-#endif
 
-#ifdef _ARCH_PWR8
 extern __inline __m64
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_pi8 (__m64 __A, __m64 __B)
@@ -403,9 +396,7 @@ _mm_sign_pi8 (__m64 __A, __m64 __B)
   __C = (__v16qi) _mm_sign_epi8 ((__m128i) __C, (__m128i) __D);
   return (__m64) ((__v2du) (__C))[0];
 }
-#endif
 
-#ifdef _ARCH_PWR8
 extern __inline __m64
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_pi16 (__m64 __A, __m64 __B)
@@ -416,9 +407,7 @@ _mm_sign_pi16 (__m64 __A, __m64 __B)
   __C = (__v8hi) _mm_sign_epi16 ((__m128i) __C, (__m128i) __D);
   return (__m64) ((__v2du) (__C))[0];
 }
-#endif
 
-#ifdef _ARCH_PWR8
 extern __inline __m64
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_sign_pi32 (__m64 __A, __m64 __B)
@@ -429,7 +418,6 @@ _mm_sign_pi32 (__m64 __A, __m64 __B)
   __C = (__v4si) _mm_sign_epi32 ((__m128i) __C, (__m128i) __D);
   return (__m64) ((__v2du) (__C))[0];
 }
-#endif
 
 extern __inline __m128i
 __attribute__((__gnu_inline__, __always_inline__, __artificial__))

@@ -1,8 +1,7 @@
 //===-- tsan_interface.h ----------------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -90,14 +89,9 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void __tsan_external_write(void *addr, void *caller_pc, void *tag);
 
 SANITIZER_INTERFACE_ATTRIBUTE
-void __tsan_read_range(void *addr, unsigned long size);
+void __tsan_read_range(void *addr, unsigned long size);  // NOLINT
 SANITIZER_INTERFACE_ATTRIBUTE
-void __tsan_write_range(void *addr, unsigned long size);
-
-SANITIZER_INTERFACE_ATTRIBUTE
-void __tsan_read_range_pc(void *addr, unsigned long size, void *pc);
-SANITIZER_INTERFACE_ATTRIBUTE
-void __tsan_write_range_pc(void *addr, unsigned long size, void *pc);
+void __tsan_write_range(void *addr, unsigned long size);  // NOLINT
 
 // User may provide function that would be called right when TSan detects
 // an error. The argument 'report' is an opaque pointer that can be used to
@@ -192,12 +186,11 @@ namespace __tsan {
 
 // These should match declarations from public tsan_interface_atomic.h header.
 typedef unsigned char      a8;
-typedef unsigned short a16;
+typedef unsigned short     a16;  // NOLINT
 typedef unsigned int       a32;
-typedef unsigned long long a64;
+typedef unsigned long long a64;  // NOLINT
 #if !SANITIZER_GO && (defined(__SIZEOF_INT128__) \
-    || (__clang_major__ * 100 + __clang_minor__ >= 302)) && \
-    !defined(__mips64) && !defined(__s390x__)
+    || (__clang_major__ * 100 + __clang_minor__ >= 302)) && !defined(__mips64)
 __extension__ typedef __int128 a128;
 # define __TSAN_HAS_INT128 1
 #else
@@ -205,7 +198,7 @@ __extension__ typedef __int128 a128;
 #endif
 
 // Part of ABI, do not change.
-// https://github.com/llvm/llvm-project/blob/main/libcxx/include/atomic
+// http://llvm.org/viewvc/llvm-project/libcxx/trunk/include/atomic?view=markup
 typedef enum {
   mo_relaxed,
   mo_consume,
@@ -416,7 +409,6 @@ void __tsan_go_atomic32_compare_exchange(ThreadState *thr, uptr cpc, uptr pc,
 SANITIZER_INTERFACE_ATTRIBUTE
 void __tsan_go_atomic64_compare_exchange(ThreadState *thr, uptr cpc, uptr pc,
                                          u8 *a);
-
 }  // extern "C"
 
 }  // namespace __tsan

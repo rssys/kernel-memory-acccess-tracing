@@ -8,10 +8,9 @@
  */
 module core.sys.windows.lmserver;
 version (Windows):
-@system:
 
 import core.sys.windows.winsvc;
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 struct SERVER_INFO_100 {
     DWORD  sv100_platform_id;

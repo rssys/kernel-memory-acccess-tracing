@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || netbsd || openbsd || solaris
 // +build aix darwin dragonfly freebsd hurd netbsd openbsd solaris
 
 package syscall
@@ -16,23 +15,12 @@ type SysProcAttr struct {
 	Credential *Credential // Credential.
 	Ptrace     bool        // Enable tracing.
 	Setsid     bool        // Create session.
-	// Setpgid sets the process group ID of the child to Pgid,
-	// or, if Pgid == 0, to the new child's process ID.
-	Setpgid bool
-	// Setctty sets the controlling terminal of the child to
-	// file descriptor Ctty. Ctty must be a descriptor number
-	// in the child process: an index into ProcAttr.Files.
-	// This is only meaningful if Setsid is true.
-	Setctty bool
-	Noctty  bool // Detach fd 0 from controlling terminal
-	Ctty    int  // Controlling TTY fd
-	// Foreground places the child process group in the foreground.
-	// This implies Setpgid. The Ctty field must be set to
-	// the descriptor of the controlling TTY.
-	// Unlike Setctty, in this case Ctty must be a descriptor
-	// number in the parent process.
-	Foreground bool
-	Pgid       int // Child's process group ID if Setpgid.
+	Setpgid    bool        // Set process group ID to Pgid, or, if Pgid == 0, to new pid.
+	Setctty    bool        // Set controlling terminal to fd Ctty
+	Noctty     bool        // Detach fd 0 from controlling terminal
+	Ctty       int         // Controlling TTY fd
+	Foreground bool        // Place child's process group in foreground. (Implies Setpgid. Uses Ctty as fd of controlling TTY)
+	Pgid       int         // Child's process group ID if Setpgid.
 }
 
 // Implemented in runtime package.
@@ -90,9 +78,11 @@ func forkAndExecInChild(argv0 *byte, argv, envv []*byte, chroot, dir *byte, attr
 
 	// Fork succeeded, now in child.
 
+	runtime_AfterForkInChild()
+
 	// Enable tracing if requested.
 	if sys.Ptrace {
-		err1 = raw_ptrace(_PTRACE_TRACEME, 0, 0, 0)
+		err1 = raw_ptrace(_PTRACE_TRACEME, 0, nil, nil)
 		if err1 != 0 {
 			goto childerror
 		}
@@ -127,10 +117,6 @@ func forkAndExecInChild(argv0 *byte, argv, envv []*byte, chroot, dir *byte, attr
 			goto childerror
 		}
 	}
-
-	// Restore the signal mask. We do this after TIOCSPGRP to avoid
-	// having the kernel send a SIGTTOU signal to the process group.
-	runtime_AfterForkInChild()
 
 	// Chroot
 	if chroot != nil {

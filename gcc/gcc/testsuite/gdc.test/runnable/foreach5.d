@@ -1,16 +1,3 @@
-/*
-TEST_OUTPUT:
----
-int
-double
-foobar7406(T)
-test7406()
-int
-foobar7406(T)
-int
-test7406()
----
-*/
 
 extern(C) int printf(const char* fmt, ...);
 

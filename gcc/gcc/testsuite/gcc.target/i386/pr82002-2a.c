@@ -10,5 +10,3 @@ b ()
   a (c);
   a (c);
 }
-
-/* { dg-prune-output "\\\[-Wstringop-overflow" }  */

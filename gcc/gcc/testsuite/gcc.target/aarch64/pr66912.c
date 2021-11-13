@@ -1,6 +1,5 @@
 /* { dg-do compile { target *-*-linux* } } */
 /* { dg-options "-O2 -fpic" } */
-/* { dg-require-effective-target fpic } */
 
 __attribute__((visibility("protected")))
 int n_common;

@@ -11,9 +11,7 @@
 #define NAME(X) X
 #endif
 
-#ifndef N
 #define N 1024
-#endif
 
 void __attribute__ ((noinline, noclone))
 NAME(f2) (TYPE *__restrict a, TYPE *__restrict b, TYPE *__restrict c)
@@ -85,9 +83,9 @@ NAME(g4) (TYPE *__restrict a, TYPE *__restrict b, TYPE *__restrict c,
     }
 }
 
-/* { dg-final { scan-assembler {\tld2b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7]/z, \[x[0-9]+, x[0-9]+\]\n} } } */
+/* { dg-final { scan-assembler {\tld2b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7]/z, \[x[0-9]+\]\n} } } */
 /* { dg-final { scan-assembler {\tld3b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7]/z, \[x[0-9]+\]\n} } } */
-/* { dg-final { scan-assembler {\tld4b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7]/z, \[x[0-9]+, x[0-9]+\]\n} } } */
-/* { dg-final { scan-assembler {\tst2b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7], \[x[0-9]+, x[0-9]+\]\n} } } */
+/* { dg-final { scan-assembler {\tld4b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7]/z, \[x[0-9]+\]\n} } } */
+/* { dg-final { scan-assembler {\tst2b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7], \[x[0-9]+\]\n} } } */
 /* { dg-final { scan-assembler {\tst3b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7], \[x[0-9]+\]\n} } } */
-/* { dg-final { scan-assembler {\tst4b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7], \[x[0-9]+, x[0-9]+\]\n} } } */
+/* { dg-final { scan-assembler {\tst4b\t{z[0-9]+.b - z[0-9]+.b}, p[0-7], \[x[0-9]+\]\n} } } */

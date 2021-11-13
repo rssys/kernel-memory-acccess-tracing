@@ -13,13 +13,11 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Ada.Task_Identification;
-
 package Ada.Dispatching is
    pragma Preelaborate (Dispatching);
 
    procedure Yield with
-     Global => (In_Out => Ada.Task_Identification.Tasking_State);
+     Global => null;
 
    Dispatching_Policy_Error : exception;
 end Ada.Dispatching;

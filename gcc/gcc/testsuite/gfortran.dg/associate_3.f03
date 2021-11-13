@@ -34,4 +34,4 @@ PROGRAM main
     INTEGER :: b ! { dg-error "Unexpected data declaration statement" }
   END ASSOCIATE
 END PROGRAM main ! { dg-error "Expecting END ASSOCIATE" }
-! { dg-error "Unexpected end of file" "" { target "*-*-*" } 0 }
+! { dg-excess-errors "Unexpected end of file" }

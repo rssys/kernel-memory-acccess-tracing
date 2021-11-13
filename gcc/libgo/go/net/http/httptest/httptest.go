@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 )
@@ -65,7 +66,7 @@ func NewRequest(method, target string, body io.Reader) *http.Request {
 		if rc, ok := body.(io.ReadCloser); ok {
 			req.Body = rc
 		} else {
-			req.Body = io.NopCloser(body)
+			req.Body = ioutil.NopCloser(body)
 		}
 	}
 

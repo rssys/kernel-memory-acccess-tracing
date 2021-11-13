@@ -1,5 +1,5 @@
 /* Configuration common to all targets running RTEMS. 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -22,25 +22,15 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-#ifndef RTEMS_STARTFILE_SPEC
-#define RTEMS_STARTFILE_SPEC "crti%O%s crtbegin%O%s"
-#endif
-
-#ifndef RTEMS_ENDFILE_SPEC
-#define RTEMS_ENDFILE_SPEC "crtend%O%s crtn%O%s"
-#endif
-
 /*
- * The crt0.o is a dummy start file to let the linker work as needed by
- * autoconf scripts using this compiler.
+ * Dummy start/end specification to let linker work as
+ * needed by autoconf scripts using this compiler.
  */
 #undef STARTFILE_SPEC
-#define STARTFILE_SPEC "%{!qrtems:crt0%O%s} " \
-"%{qrtems:" RTEMS_STARTFILE_SPEC "}"
+#define STARTFILE_SPEC "crt0.o%s"
 
 #undef ENDFILE_SPEC
-#define ENDFILE_SPEC \
-"%{qrtems:" RTEMS_ENDFILE_SPEC " %{!qnolinkcmds:-T linkcmds%s}}"
+#define ENDFILE_SPEC   ""
 
 /*
  * Some targets do not set up LIB_SPECS, override it, here.
@@ -48,8 +38,10 @@
 #define STD_LIB_SPEC "%{!shared:%{g*:-lg} %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"
 
 #undef LIB_SPEC
-#define LIB_SPEC "%{!qrtems:" STD_LIB_SPEC "} " \
-"%{qrtems:--start-group -lrtemsbsp -lrtemscpu -latomic -lc -lgcc --end-group}"
+#define LIB_SPEC "%{!qrtems: " STD_LIB_SPEC "} " \
+"%{!nostdlib: %{qrtems: --start-group \
+ -lrtemsbsp -lrtemscpu \
+ -latomic -lc -lgcc --end-group %{!qnolinkcmds: -T linkcmds%s}}}"
 
 #define TARGET_POSIX_IO
 

@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    Namelist transfer functions contributed by Paul Thomas
    F2003 I/O support contributed by Jerry DeLisle
@@ -193,8 +193,7 @@ static const st_option async_opt[] = {
 
 typedef enum
 { FORMATTED_SEQUENTIAL, UNFORMATTED_SEQUENTIAL,
-  FORMATTED_DIRECT, UNFORMATTED_DIRECT, FORMATTED_STREAM,
-  UNFORMATTED_STREAM, FORMATTED_UNSPECIFIED
+  FORMATTED_DIRECT, UNFORMATTED_DIRECT, FORMATTED_STREAM, UNFORMATTED_STREAM
 }
 file_mode;
 
@@ -204,7 +203,7 @@ current_mode (st_parameter_dt *dtp)
 {
   file_mode m;
 
-  m = FORMATTED_UNSPECIFIED;
+  m = FORM_UNSPECIFIED;
 
   if (dtp->u.p.current_unit->flags.access == ACCESS_DIRECT)
     {
@@ -491,7 +490,7 @@ read_sf (st_parameter_dt *dtp, size_t *length)
 
    If the read is short, then it is because the current record does not
    have enough data to satisfy the read request and the file was
-   opened with PAD=YES.  The caller must assume trailing spaces for
+   opened with PAD=YES.  The caller must assume tailing spaces for
    short reads.  */
 
 void *
@@ -1728,17 +1727,17 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 
 	case FMT_S:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_PROCDEFINED;
+	  dtp->u.p.sign_status = SIGN_S;
 	  break;
 
 	case FMT_SS:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SUPPRESS;
+	  dtp->u.p.sign_status = SIGN_SS;
 	  break;
 
 	case FMT_SP:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_PLUS;
+	  dtp->u.p.sign_status = SIGN_SP;
 	  break;
 
 	case FMT_BN:
@@ -2008,10 +2007,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  if (f->u.real.w == 0)
-	    write_real_w0 (dtp, p, kind, f);
-	  else
-	    write_d (dtp, f, p, kind);
+	  write_d (dtp, f, p, kind);
 	  break;
 
 	case FMT_DT:
@@ -2074,10 +2070,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  if (f->u.real.w == 0)
-	    write_real_w0 (dtp, p, kind, f);
-	  else
-	    write_e (dtp, f, p, kind);
+	  write_e (dtp, f, p, kind);
 	  break;
 
 	case FMT_EN:
@@ -2085,10 +2078,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  if (f->u.real.w == 0)
-	    write_real_w0 (dtp, p, kind, f);
-	  else
-	    write_en (dtp, f, p, kind);
+	  write_en (dtp, f, p, kind);
 	  break;
 
 	case FMT_ES:
@@ -2096,10 +2086,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  if (f->u.real.w == 0)
-	    write_real_w0 (dtp, p, kind, f);
-	  else
-	    write_es (dtp, f, p, kind);
+	  write_es (dtp, f, p, kind);
 	  break;
 
 	case FMT_F:
@@ -2129,7 +2116,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 		break;
 	      case BT_REAL:
 		if (f->u.real.w == 0)
-		  write_real_w0 (dtp, p, kind, f);
+                  write_real_g0 (dtp, p, kind, f->u.real.d);
 		else
 		  write_d (dtp, f, p, kind);
 		break;
@@ -2199,17 +2186,17 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 
 	case FMT_S:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_PROCDEFINED;
+	  dtp->u.p.sign_status = SIGN_S;
 	  break;
 
 	case FMT_SS:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SUPPRESS;
+	  dtp->u.p.sign_status = SIGN_SS;
 	  break;
 
 	case FMT_SP:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_PLUS;
+	  dtp->u.p.sign_status = SIGN_SP;
 	  break;
 
 	case FMT_BN:
@@ -2815,8 +2802,6 @@ pre_position (st_parameter_dt *dtp)
     case UNFORMATTED_DIRECT:
       dtp->u.p.current_unit->bytes_left = dtp->u.p.current_unit->recl;
       break;
-    case FORMATTED_UNSPECIFIED:
-      gcc_unreachable ();
     }
 
   dtp->u.p.current_unit->current_record = 1;
@@ -3309,9 +3294,9 @@ data_transfer_init_worker (st_parameter_dt *dtp, int read_flag)
 
           if (dtp->pos != dtp->u.p.current_unit->strm_pos)
             {
-	      fbuf_reset (dtp->u.p.current_unit);
-	      if (sseek (dtp->u.p.current_unit->s, dtp->pos - 1,
-			 SEEK_SET) < 0)
+              fbuf_reset (dtp->u.p.current_unit);
+              if (sseek (dtp->u.p.current_unit->s, dtp->pos - 1,
+		  SEEK_SET) < 0)
                 {
                   generate_error (&dtp->common, LIBERROR_OS, NULL);
                   return;
@@ -3410,7 +3395,7 @@ data_transfer_init_worker (st_parameter_dt *dtp, int read_flag)
 
   if (dtp->u.p.current_unit->flags.form == FORM_FORMATTED)
     {
-#ifdef HAVE_POSIX_2008_LOCALE
+#ifdef HAVE_USELOCALE
       dtp->u.p.old_locale = uselocale (c_locale);
 #else
       __gthread_mutex_lock (&old_locale_lock);
@@ -3689,8 +3674,6 @@ next_record_r (st_parameter_dt *dtp, int done)
 	  while (p != '\n');
 	}
       break;
-    case FORMATTED_UNSPECIFIED:
-      gcc_unreachable ();
     }
 }
 
@@ -4020,8 +4003,6 @@ next_record_w (st_parameter_dt *dtp, int done)
 		}
 	    }
 	}
-      else if (dtp->u.p.seen_dollar == 1)
-	break;
       /* Handle legacy CARRIAGECONTROL line endings.  */
       else if (dtp->u.p.current_unit->flags.cc == CC_FORTRAN)
 	next_record_cc (dtp);
@@ -4058,8 +4039,6 @@ next_record_w (st_parameter_dt *dtp, int done)
 	}
 
       break;
-    case FORMATTED_UNSPECIFIED:
-      gcc_unreachable ();
 
     io_error:
       generate_error (&dtp->common, LIBERROR_OS, NULL);
@@ -4125,14 +4104,6 @@ finalize_transfer (st_parameter_dt *dtp)
   if ((dtp->u.p.ionml != NULL)
       && (cf & IOPARM_DT_HAS_NAMELIST_NAME) != 0)
     {
-       if (dtp->u.p.current_unit->flags.form == FORM_UNFORMATTED)
-	 {
-	   generate_error (&dtp->common, LIBERROR_OPTION_CONFLICT,
-			   "Namelist formatting for unit connected "
-			   "with FORM='UNFORMATTED'");
-	   return;
-	 }
-
        dtp->u.p.namelist_mode = 1;
        if ((cf & IOPARM_DT_NAMELIST_READ_MODE) != 0)
 	 namelist_read (dtp);
@@ -4245,7 +4216,7 @@ finalize_transfer (st_parameter_dt *dtp)
 	}
     }
 
-#ifdef HAVE_POSIX_2008_LOCALE
+#ifdef HAVE_USELOCALE
   if (dtp->u.p.old_locale != (locale_t) 0)
     {
       uselocale (dtp->u.p.old_locale);
@@ -4337,9 +4308,8 @@ extern void st_read_done (st_parameter_dt *);
 export_proto(st_read_done);
 
 void
-st_read_done_worker (st_parameter_dt *dtp, bool unlock)
+st_read_done_worker (st_parameter_dt *dtp)
 {
-  bool free_newunit = false;
   finalize_transfer (dtp);
 
   free_ionml (dtp);
@@ -4359,7 +4329,7 @@ st_read_done_worker (st_parameter_dt *dtp, bool unlock)
 		free (dtp->u.p.current_unit->ls);
 	      dtp->u.p.current_unit->ls = NULL;
 	    }
-	  free_newunit = true;
+	  newunit_free (dtp->common.unit);
 	}
       if (dtp->u.p.unit_is_internal || dtp->u.p.format_not_saved)
 	{
@@ -4367,15 +4337,6 @@ st_read_done_worker (st_parameter_dt *dtp, bool unlock)
 	  free_format (dtp);
 	}
     }
-   if (unlock)
-     unlock_unit (dtp->u.p.current_unit);
-   if (free_newunit)
-     {
-       /* Avoid inverse lock issues by placing after unlock_unit.  */
-       LOCK (&unit_lock);
-       newunit_free (dtp->common.unit);
-       UNLOCK (&unit_lock);
-     }
 }
 
 void
@@ -4392,10 +4353,11 @@ st_read_done (st_parameter_dt *dtp)
 	      if (dtp->u.p.async)
 		enqueue_done (dtp->u.p.current_unit->au, AIO_READ_DONE);
 	    }
-	  unlock_unit (dtp->u.p.current_unit);
 	}
       else
-	st_read_done_worker (dtp, true);  /* Calls unlock_unit.  */
+	st_read_done_worker (dtp);
+
+      unlock_unit (dtp->u.p.current_unit);
     }
 
   library_end ();
@@ -4413,9 +4375,8 @@ st_write (st_parameter_dt *dtp)
 
 
 void
-st_write_done_worker (st_parameter_dt *dtp, bool unlock)
+st_write_done_worker (st_parameter_dt *dtp)
 {
-  bool free_newunit = false;
   finalize_transfer (dtp);
 
   if (dtp->u.p.current_unit != NULL
@@ -4456,7 +4417,7 @@ st_write_done_worker (st_parameter_dt *dtp, bool unlock)
 		free (dtp->u.p.current_unit->ls);
 	      dtp->u.p.current_unit->ls = NULL;
 	    }
-	  free_newunit = true;
+	  newunit_free (dtp->common.unit);
 	}
       if (dtp->u.p.unit_is_internal || dtp->u.p.format_not_saved)
 	{
@@ -4464,15 +4425,6 @@ st_write_done_worker (st_parameter_dt *dtp, bool unlock)
 	  free_format (dtp);
 	}
     }
-   if (unlock)
-     unlock_unit (dtp->u.p.current_unit);
-   if (free_newunit)
-     {
-       /* Avoid inverse lock issues by placing after unlock_unit.  */
-       LOCK (&unit_lock);
-       newunit_free (dtp->common.unit);
-       UNLOCK (&unit_lock);
-     }
 }
 
 extern void st_write_done (st_parameter_dt *);
@@ -4495,10 +4447,11 @@ st_write_done (st_parameter_dt *dtp)
 	      if (dtp->u.p.async)
 		enqueue_done (dtp->u.p.current_unit->au, AIO_WRITE_DONE);
 	    }
-	  unlock_unit (dtp->u.p.current_unit);
 	}
       else
-	st_write_done_worker (dtp, true);  /* Calls unlock_unit.  */
+	st_write_done_worker (dtp);
+
+      unlock_unit (dtp->u.p.current_unit);
     }
 
   library_end ();
@@ -4520,7 +4473,7 @@ void
 st_wait_async (st_parameter_wait *wtp)
 {
   gfc_unit *u = find_unit (wtp->common.unit);
-  if (ASYNC_IO && u && u->au)
+  if (ASYNC_IO && u->au)
     {
       if (wtp->common.flags & IOPARM_WAIT_HAS_ID)
 	async_wait_id (&(wtp->common), u->au, *wtp->id);

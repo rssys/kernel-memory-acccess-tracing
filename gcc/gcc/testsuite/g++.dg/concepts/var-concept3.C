@@ -1,4 +1,4 @@
-// { dg-do compile { target c++17_only } }
+// { dg-do compile { target c++17 } }
 // { dg-options "-fconcepts" }
 
 template<typename T>
@@ -12,19 +12,12 @@ template<typename T>
 
 
 template<typename U>
-  requires C1<U>() // { dg-error "cannot be used as a function" }
+  requires C1<U>() // { dg-error "" }
   void f1(U) { }
 
 template<typename U>
-  requires C2<U> // { dg-error "must be called" }
+  requires C2<U> // { dg-error "invalid reference" }
   void f2(U) { }
 
 template<C3 T>  // { dg-error "not a type" }
-  void f(T) { } // { dg-error "declared void|not declared" }
-
-void foo()
-{
-  struct S { } s;
-  f2(s);
-  // f2(0);
-}
+  void f(T) { } // { dg-error "" }

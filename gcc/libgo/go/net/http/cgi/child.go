@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,7 +32,7 @@ func Request() (*http.Request, error) {
 		return nil, err
 	}
 	if r.ContentLength > 0 {
-		r.Body = io.NopCloser(io.LimitReader(os.Stdin, r.ContentLength))
+		r.Body = ioutil.NopCloser(io.LimitReader(os.Stdin, r.ContentLength))
 	}
 	return r, nil
 }
@@ -88,6 +89,8 @@ func RequestFromMap(params map[string]string) (*http.Request, error) {
 		r.Header.Add(strings.ReplaceAll(k[5:], "_", "-"), v)
 	}
 
+	// TODO: cookies.  parsing them isn't exported, though.
+
 	uriStr := params["REQUEST_URI"]
 	if uriStr == "" {
 		// Fallback to SCRIPT_NAME, PATH_INFO and QUERY_STRING.
@@ -99,7 +102,7 @@ func RequestFromMap(params map[string]string) (*http.Request, error) {
 	}
 
 	// There's apparently a de-facto standard for this.
-	// https://web.archive.org/web/20170105004655/http://docstore.mik.ua/orelly/linux/cgi/ch03_02.htm#ch03-35636
+	// https://docstore.mik.ua/orelly/linux/cgi/ch03_02.htm#ch03-35636
 	if s := params["HTTPS"]; s == "on" || s == "ON" || s == "1" {
 		r.TLS = &tls.ConnectionState{HandshakeComplete: true}
 	}
@@ -145,9 +148,6 @@ func Serve(handler http.Handler) error {
 	if err != nil {
 		return err
 	}
-	if req.Body == nil {
-		req.Body = http.NoBody
-	}
 	if handler == nil {
 		handler = http.DefaultServeMux
 	}
@@ -165,12 +165,10 @@ func Serve(handler http.Handler) error {
 }
 
 type response struct {
-	req            *http.Request
-	header         http.Header
-	code           int
-	wroteHeader    bool
-	wroteCGIHeader bool
-	bufw           *bufio.Writer
+	req        *http.Request
+	header     http.Header
+	bufw       *bufio.Writer
+	headerSent bool
 }
 
 func (r *response) Flush() {
@@ -182,38 +180,26 @@ func (r *response) Header() http.Header {
 }
 
 func (r *response) Write(p []byte) (n int, err error) {
-	if !r.wroteHeader {
+	if !r.headerSent {
 		r.WriteHeader(http.StatusOK)
-	}
-	if !r.wroteCGIHeader {
-		r.writeCGIHeader(p)
 	}
 	return r.bufw.Write(p)
 }
 
 func (r *response) WriteHeader(code int) {
-	if r.wroteHeader {
+	if r.headerSent {
 		// Note: explicitly using Stderr, as Stdout is our HTTP output.
 		fmt.Fprintf(os.Stderr, "CGI attempted to write header twice on request for %s", r.req.URL)
 		return
 	}
-	r.wroteHeader = true
-	r.code = code
-}
+	r.headerSent = true
+	fmt.Fprintf(r.bufw, "Status: %d %s\r\n", code, http.StatusText(code))
 
-// writeCGIHeader finalizes the header sent to the client and writes it to the output.
-// p is not written by writeHeader, but is the first chunk of the body
-// that will be written. It is sniffed for a Content-Type if none is
-// set explicitly.
-func (r *response) writeCGIHeader(p []byte) {
-	if r.wroteCGIHeader {
-		return
-	}
-	r.wroteCGIHeader = true
-	fmt.Fprintf(r.bufw, "Status: %d %s\r\n", r.code, http.StatusText(r.code))
+	// Set a default Content-Type
 	if _, hasType := r.header["Content-Type"]; !hasType {
-		r.header.Set("Content-Type", http.DetectContentType(p))
+		r.header.Add("Content-Type", "text/html; charset=utf-8")
 	}
+
 	r.header.Write(r.bufw)
 	r.bufw.WriteString("\r\n")
 	r.bufw.Flush()

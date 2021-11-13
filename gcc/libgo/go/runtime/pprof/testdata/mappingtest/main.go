@@ -17,7 +17,8 @@ package main
 int cpuHogCSalt1 = 0;
 int cpuHogCSalt2 = 0;
 
-void CPUHogCFunction0(int foo) {
+void CPUHogCFunction() {
+	int foo = cpuHogCSalt1;
 	int i;
 	for (i = 0; i < 100000; i++) {
 		if (foo > 0) {
@@ -29,10 +30,6 @@ void CPUHogCFunction0(int foo) {
 	}
 }
 
-void CPUHogCFunction() {
-	CPUHogCFunction0(cpuHogCSalt1);
-}
-
 struct CgoTracebackArg {
 	uintptr_t context;
         uintptr_t sigContext;
@@ -42,9 +39,8 @@ struct CgoTracebackArg {
 
 void CollectCgoTraceback(void* parg) {
         struct CgoTracebackArg* arg = (struct CgoTracebackArg*)(parg);
-	arg->buf[0] = (uintptr_t)(CPUHogCFunction0);
-	arg->buf[1] = (uintptr_t)(CPUHogCFunction);
-	arg->buf[2] = 0;
+	arg->buf[0] = (uintptr_t)(CPUHogCFunction);
+	arg->buf[1] = 0;
 };
 */
 import "C"
@@ -73,7 +69,7 @@ func main() {
 	if err := pprof.StartCPUProfile(os.Stdout); err != nil {
 		log.Fatal("can't start CPU profile: ", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 	pprof.StopCPUProfile()
 
 	if err := os.Stdout.Close(); err != nil {
@@ -85,6 +81,7 @@ var salt1 int
 var salt2 int
 
 func cpuHogGoFunction() {
+	// Generates CPU profile samples including a Go call path.
 	for {
 		foo := salt1
 		for i := 0; i < 1e5; i++ {

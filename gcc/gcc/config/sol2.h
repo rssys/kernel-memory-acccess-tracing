@@ -1,6 +1,6 @@
 /* Operating system specific defines to be used when targeting GCC for any
    Solaris 2 system.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -260,9 +260,9 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Error out on -fsanitize=thread|leak.  */
 #define LIBTSAN_EARLY_SPEC "\
-  %e-fsanitize=thread is not supported in this configuration"
+  %e:-fsanitize=thread is not supported in this configuration"
 #define LIBLSAN_EARLY_SPEC "\
-  %e-fsanitize=leak is not supported in this configuration"
+  %e:-fsanitize=leak is not supported in this configuration"
 
 /* We don't use the standard svr4 STARTFILE_SPEC because it's wrong for us.  */
 #undef STARTFILE_SPEC
@@ -380,6 +380,9 @@ along with GCC; see the file COPYING3.  If not see
   { "endfile_crtend",		ENDFILE_CRTEND_SPEC },		\
   { "endfile_vtv",		ENDFILE_VTV_SPEC },		\
   SUBTARGET_CPU_EXTRA_SPECS
+
+/* C++11 programs need -lrt for nanosleep.  */
+#define TIME_LIBRARY "rt"
 
 #ifndef USE_GLD
 /* With Sun ld, -rdynamic is a no-op.  */

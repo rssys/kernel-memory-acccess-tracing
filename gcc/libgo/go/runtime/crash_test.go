@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"internal/testenv"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,16 +55,6 @@ func runTestProg(t *testing.T, binary, name string, env ...string) string {
 		t.Fatal(err)
 	}
 
-	return runBuiltTestProg(t, exe, name, env...)
-}
-
-func runBuiltTestProg(t *testing.T, exe, name string, env ...string) string {
-	if *flagQuick {
-		t.Skip("-quick")
-	}
-
-	testenv.MustHaveGoBuild(t)
-
 	cmd := testenv.CleanCmdEnv(exec.Command(exe, name))
 	cmd.Env = append(cmd.Env, env...)
 	if testing.Short() {
@@ -73,7 +64,7 @@ func runBuiltTestProg(t *testing.T, exe, name string, env ...string) string {
 	cmd.Stdout = &b
 	cmd.Stderr = &b
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("starting %s %s: %v", exe, name, err)
+		t.Fatalf("starting %s %s: %v", binary, name, err)
 	}
 
 	// If the process doesn't complete within 1 minute,
@@ -101,7 +92,7 @@ func runBuiltTestProg(t *testing.T, exe, name string, env ...string) string {
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		t.Logf("%s %s exit status: %v", exe, name, err)
+		t.Logf("%s %s exit status: %v", binary, name, err)
 	}
 	close(done)
 
@@ -113,10 +104,12 @@ func buildTestProg(t *testing.T, binary string, flags ...string) (string, error)
 		t.Skip("-quick")
 	}
 
+	checkStaleRuntime(t)
+
 	testprog.Lock()
 	defer testprog.Unlock()
 	if testprog.dir == "" {
-		dir, err := os.MkdirTemp("", "go-build")
+		dir, err := ioutil.TempDir("", "go-build")
 		if err != nil {
 			t.Fatalf("failed to create temp directory: %v", err)
 		}
@@ -150,12 +143,34 @@ func buildTestProg(t *testing.T, binary string, flags ...string) (string, error)
 	return exe, nil
 }
 
-func TestVDSO(t *testing.T) {
-	t.Parallel()
-	output := runTestProg(t, "testprog", "SignalInVDSO")
-	want := "success\n"
-	if output != want {
-		t.Fatalf("output:\n%s\n\nwanted:\n%s", output, want)
+var (
+	staleRuntimeOnce sync.Once // guards init of staleRuntimeErr
+	staleRuntimeErr  error
+)
+
+func checkStaleRuntime(t *testing.T) {
+	staleRuntimeOnce.Do(func() {
+		if runtime.Compiler == "gccgo" {
+			return
+		}
+		// 'go run' uses the installed copy of runtime.a, which may be out of date.
+		out, err := testenv.CleanCmdEnv(exec.Command(testenv.GoToolPath(t), "list", "-gcflags=all="+os.Getenv("GO_GCFLAGS"), "-f", "{{.Stale}}", "runtime")).CombinedOutput()
+		if err != nil {
+			staleRuntimeErr = fmt.Errorf("failed to execute 'go list': %v\n%v", err, string(out))
+			return
+		}
+		if string(out) != "false\n" {
+			t.Logf("go list -f {{.Stale}} runtime:\n%s", out)
+			out, err := testenv.CleanCmdEnv(exec.Command(testenv.GoToolPath(t), "list", "-gcflags=all="+os.Getenv("GO_GCFLAGS"), "-f", "{{.StaleReason}}", "runtime")).CombinedOutput()
+			if err != nil {
+				t.Logf("go list -f {{.StaleReason}} failed: %v", err)
+			}
+			t.Logf("go list -f {{.StaleReason}} runtime:\n%s", out)
+			staleRuntimeErr = fmt.Errorf("Stale runtime.a. Run 'go install runtime'.")
+		}
+	})
+	if staleRuntimeErr != nil {
+		t.Fatal(staleRuntimeErr)
 	}
 }
 
@@ -180,9 +195,6 @@ func TestCrashHandler(t *testing.T) {
 }
 
 func testDeadlock(t *testing.T, name string) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
 	output := runTestProg(t, "testprog", name)
 	want := "fatal error: all goroutines are asleep - deadlock!\n"
 	if !strings.HasPrefix(output, want) {
@@ -207,9 +219,6 @@ func TestLockedDeadlock2(t *testing.T) {
 }
 
 func TestGoexitDeadlock(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
 	output := runTestProg(t, "testprog", "GoexitDeadlock")
 	want := "no goroutines (main called runtime.Goexit) - deadlock!"
 	if !strings.Contains(output, want) {
@@ -222,23 +231,9 @@ func TestStackOverflow(t *testing.T) {
 		t.Skip("gccgo does not do stack overflow checking")
 	}
 	output := runTestProg(t, "testprog", "StackOverflow")
-	want := []string{
-		"runtime: goroutine stack exceeds 1474560-byte limit\n",
-		"fatal error: stack overflow",
-		// information about the current SP and stack bounds
-		"runtime: sp=",
-		"stack=[",
-	}
-	if !strings.HasPrefix(output, want[0]) {
-		t.Errorf("output does not start with %q", want[0])
-	}
-	for _, s := range want[1:] {
-		if !strings.Contains(output, s) {
-			t.Errorf("output does not contain %q", s)
-		}
-	}
-	if t.Failed() {
-		t.Logf("output:\n%s", output)
+	want := "runtime: goroutine stack exceeds 1474560-byte limit\nfatal error: stack overflow"
+	if !strings.HasPrefix(output, want) {
+		t.Fatalf("output does not start with %q:\n%s", want, output)
 	}
 }
 
@@ -262,57 +257,7 @@ panic: again
 
 }
 
-func TestRecursivePanic2(t *testing.T) {
-	output := runTestProg(t, "testprog", "RecursivePanic2")
-	want := `first panic
-second panic
-panic: third panic
-
-`
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
-
-}
-
-func TestRecursivePanic3(t *testing.T) {
-	output := runTestProg(t, "testprog", "RecursivePanic3")
-	want := `panic: first panic
-
-`
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
-
-}
-
-func TestRecursivePanic4(t *testing.T) {
-	output := runTestProg(t, "testprog", "RecursivePanic4")
-	want := `panic: first panic [recovered]
-	panic: second panic
-`
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
-
-}
-
-func TestRecursivePanic5(t *testing.T) {
-	output := runTestProg(t, "testprog", "RecursivePanic5")
-	want := `first panic
-second panic
-panic: third panic
-`
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
-
-}
-
 func TestGoexitCrash(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
 	output := runTestProg(t, "testprog", "GoexitExit")
 	want := "no goroutines (main called runtime.Goexit) - deadlock!"
 	if !strings.Contains(output, want) {
@@ -372,9 +317,6 @@ func TestBreakpoint(t *testing.T) {
 }
 
 func TestGoexitInPanic(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
 	// see issue 8774: this code used to trigger an infinite recursion
 	output := runTestProg(t, "testprog", "GoexitInPanic")
 	want := "fatal error: no goroutines (main called runtime.Goexit) - deadlock!"
@@ -439,9 +381,6 @@ func TestPanicAfterGoexit(t *testing.T) {
 }
 
 func TestRecoveredPanicAfterGoexit(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
 	output := runTestProg(t, "testprog", "RecoveredPanicAfterGoexit")
 	want := "fatal error: no goroutines (main called runtime.Goexit) - deadlock!"
 	if !strings.HasPrefix(output, want) {
@@ -450,27 +389,23 @@ func TestRecoveredPanicAfterGoexit(t *testing.T) {
 }
 
 func TestRecoverBeforePanicAfterGoexit(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
-	t.Parallel()
-	output := runTestProg(t, "testprog", "RecoverBeforePanicAfterGoexit")
-	want := "fatal error: no goroutines (main called runtime.Goexit) - deadlock!"
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
-}
-
-func TestRecoverBeforePanicAfterGoexit2(t *testing.T) {
-	// External linking brings in cgo, causing deadlock detection not working.
-	testenv.MustInternalLink(t)
-
-	t.Parallel()
-	output := runTestProg(t, "testprog", "RecoverBeforePanicAfterGoexit2")
-	want := "fatal error: no goroutines (main called runtime.Goexit) - deadlock!"
-	if !strings.HasPrefix(output, want) {
-		t.Fatalf("output does not start with %q:\n%s", want, output)
-	}
+	// 1. defer a function that recovers
+	// 2. defer a function that panics
+	// 3. call goexit
+	// Goexit should run the #2 defer. Its panic
+	// should be caught by the #1 defer, and execution
+	// should resume in the caller. Like the Goexit
+	// never happened!
+	defer func() {
+		r := recover()
+		if r == nil {
+			panic("bad recover")
+		}
+	}()
+	defer func() {
+		panic("hello")
+	}()
+	runtime.Goexit()
 }
 
 func TestNetpollDeadlock(t *testing.T) {
@@ -485,7 +420,7 @@ func TestNetpollDeadlock(t *testing.T) {
 func TestPanicTraceback(t *testing.T) {
 	t.Parallel()
 	output := runTestProg(t, "testprog", "PanicTraceback")
-	want := "panic: hello\n\tpanic: panic pt2\n\tpanic: panic pt1\n"
+	want := "panic: hello"
 	if !strings.HasPrefix(output, want) {
 		t.Fatalf("output does not start with %q:\n%s", want, output)
 	}
@@ -725,9 +660,7 @@ func TestTimePprof(t *testing.T) {
 	if runtime.GOOS == "aix" {
 		t.Skip("pprof not yet available on AIX (see golang.org/issue/28555)")
 	}
-	// Pass GOTRACEBACK for issue #41120 to try to get more
-	// information on timeout.
-	fn := runTestProg(t, "testprog", "TimeProf", "GOTRACEBACK=crash")
+	fn := runTestProg(t, "testprog", "TimeProf")
 	fn = strings.TrimSpace(fn)
 	defer os.Remove(fn)
 
@@ -744,10 +677,6 @@ func TestTimePprof(t *testing.T) {
 
 // Test that runtime.abort does so.
 func TestAbort(t *testing.T) {
-	if runtime.Compiler == "gccgo" && runtime.GOOS == "solaris" {
-		t.Skip("not supported by gofrontend on Solaris")
-	}
-
 	// Pass GOTRACEBACK to ensure we get runtime frames.
 	output := runTestProg(t, "testprog", "Abort", "GOTRACEBACK=system")
 	if want := "runtime.abort"; !strings.Contains(output, want) {
@@ -809,10 +738,6 @@ func TestRuntimePanic(t *testing.T) {
 
 // Test that g0 stack overflows are handled gracefully.
 func TestG0StackOverflow(t *testing.T) {
-	if runtime.Compiler == "gccgo" {
-		t.Skip("g0 stack overflow not supported by gofrontend")
-	}
-
 	testenv.MustHaveExec(t)
 
 	switch runtime.GOOS {

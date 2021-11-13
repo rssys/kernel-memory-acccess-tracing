@@ -1,5 +1,5 @@
 /* Instruction scheduling pass.
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2019 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
 
@@ -58,6 +58,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "profile.h"
 #include "insn-attr.h"
 #include "except.h"
+#include "params.h"
 #include "cfganal.h"
 #include "sched-int.h"
 #include "sel-sched.h"
@@ -65,13 +66,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "dbgcnt.h"
 #include "pretty-print.h"
 #include "print-rtl.h"
-
-/* Disable warnings about quoting issues in the pp_xxx calls below
-   that (intentionally) don't follow GCC diagnostic conventions.  */
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-diag"
-#endif
 
 #ifdef INSN_SCHEDULING
 
@@ -247,7 +241,7 @@ static void compute_block_dependences (int);
 static void schedule_region (int);
 static void concat_insn_mem_list (rtx_insn_list *, rtx_expr_list *,
 				  rtx_insn_list **, rtx_expr_list **);
-static void propagate_deps (int, class deps_desc *);
+static void propagate_deps (int, struct deps_desc *);
 static void free_pending_lists (void);
 
 /* Functions for construction of the control flow graph.  */
@@ -484,9 +478,9 @@ find_single_block_region (bool ebbs_p)
   if (ebbs_p) {
     int probability_cutoff;
     if (profile_info && profile_status_for_fn (cfun) == PROFILE_READ)
-      probability_cutoff = param_tracer_min_branch_probability_feedback;
+      probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY_FEEDBACK);
     else
-      probability_cutoff = param_tracer_min_branch_probability;
+      probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY);
     probability_cutoff = REG_BR_PROB_BASE / 100 * probability_cutoff;
 
     FOR_EACH_BB_FN (ebb_start, cfun)
@@ -568,8 +562,8 @@ too_large (int block, int *num_bbs, int *num_insns)
   (*num_insns) += (common_sched_info->estimate_number_of_insns
                    (BASIC_BLOCK_FOR_FN (cfun, block)));
 
-  return ((*num_bbs > param_max_sched_region_blocks)
-	  || (*num_insns > param_max_sched_region_insns));
+  return ((*num_bbs > PARAM_VALUE (PARAM_MAX_SCHED_REGION_BLOCKS))
+	  || (*num_insns > PARAM_VALUE (PARAM_MAX_SCHED_REGION_INSNS)));
 }
 
 /* Update_loop_relations(blk, hdr): Check if the loop headed by max_hdr[blk]
@@ -799,7 +793,7 @@ haifa_find_rgns (void)
 
       queue = XNEWVEC (int, n_basic_blocks_for_fn (cfun));
 
-      extend_regions_p = param_max_sched_extend_regions_iters > 0;
+      extend_regions_p = PARAM_VALUE (PARAM_MAX_SCHED_EXTEND_REGIONS_ITERS) > 0;
       if (extend_regions_p)
         {
           degree1 = XNEWVEC (int, last_basic_block_for_fn (cfun));
@@ -1160,7 +1154,7 @@ extend_rgns (int *degree, int *idxp, sbitmap header, int *loop_hdr)
   int *order, i, rescan = 0, idx = *idxp, iter = 0, max_iter, *max_hdr;
   int nblocks = n_basic_blocks_for_fn (cfun) - NUM_FIXED_BLOCKS;
 
-  max_iter = param_max_sched_extend_regions_iters;
+  max_iter = PARAM_VALUE (PARAM_MAX_SCHED_EXTEND_REGIONS_ITERS);
 
   max_hdr = XNEWVEC (int, last_basic_block_for_fn (cfun));
 
@@ -2223,7 +2217,7 @@ new_ready (rtx_insn *next, ds_t ts)
 	  || (IS_SPECULATIVE_INSN (next)
 	      && ((recog_memoized (next) >= 0
 		   && min_insn_conflict_delay (curr_state, next, next)
-		   > param_max_sched_insn_conflict_delay)
+                   > PARAM_VALUE (PARAM_MAX_SCHED_INSN_CONFLICT_DELAY))
                   || IS_SPECULATION_CHECK_P (next)
 		  || !check_live (next, INSN_BB (next))
 		  || (not_ex_free = !is_exception_free (next, INSN_BB (next),
@@ -2415,7 +2409,7 @@ static bool
 sets_likely_spilled (rtx pat)
 {
   bool ret = false;
-  note_pattern_stores (pat, sets_likely_spilled_1, &ret);
+  note_stores (pat, sets_likely_spilled_1, &ret);
   return ret;
 }
 
@@ -2442,7 +2436,7 @@ add_branch_dependences (rtx_insn *head, rtx_insn *tail)
 {
   rtx_insn *insn, *last;
 
-  /* For all branches, calls, uses, clobbers, and instructions
+  /* For all branches, calls, uses, clobbers, cc0 setters, and instructions
      that can throw exceptions, force them to remain in order at the end of
      the block by adding dependencies and giving the last a high priority.
      There may be notes present, and prev_head may also be a note.
@@ -2450,6 +2444,9 @@ add_branch_dependences (rtx_insn *head, rtx_insn *tail)
      Branches must obviously remain at the end.  Calls should remain at the
      end since moving them results in worse register allocation.  Uses remain
      at the end to ensure proper register allocation.
+
+     cc0 setters remain at the end because they can't be moved away from
+     their cc0 user.
 
      Predecessors of SCHED_GROUP_P instructions at the end remain at the end.
 
@@ -2470,6 +2467,7 @@ add_branch_dependences (rtx_insn *head, rtx_insn *tail)
 	     && (GET_CODE (PATTERN (insn)) == USE
 		 || GET_CODE (PATTERN (insn)) == CLOBBER
 		 || can_throw_internal (insn)
+		 || (HAVE_cc0 && sets_cc0_p (PATTERN (insn)))
 		 || (!reload_completed
 		     && sets_likely_spilled (PATTERN (insn)))))
 	 || NOTE_P (insn)
@@ -2578,7 +2576,7 @@ add_branch_dependences (rtx_insn *head, rtx_insn *tail)
    the variables of its predecessors.  When the analysis for a bb completes,
    we save the contents to the corresponding bb_deps[bb] variable.  */
 
-static class deps_desc *bb_deps;
+static struct deps_desc *bb_deps;
 
 static void
 concat_insn_mem_list (rtx_insn_list *copy_insns,
@@ -2603,7 +2601,7 @@ concat_insn_mem_list (rtx_insn_list *copy_insns,
 
 /* Join PRED_DEPS to the SUCC_DEPS.  */
 void
-deps_join (class deps_desc *succ_deps, class deps_desc *pred_deps)
+deps_join (struct deps_desc *succ_deps, struct deps_desc *pred_deps)
 {
   unsigned reg;
   reg_set_iterator rsi;
@@ -2665,7 +2663,7 @@ deps_join (class deps_desc *succ_deps, class deps_desc *pred_deps)
 /* After computing the dependencies for block BB, propagate the dependencies
    found in TMP_DEPS to the successors of the block.  */
 static void
-propagate_deps (int bb, class deps_desc *pred_deps)
+propagate_deps (int bb, struct deps_desc *pred_deps)
 {
   basic_block block = BASIC_BLOCK_FOR_FN (cfun, BB_TO_BLOCK (bb));
   edge_iterator ei;
@@ -2722,7 +2720,7 @@ static void
 compute_block_dependences (int bb)
 {
   rtx_insn *head, *tail;
-  class deps_desc tmp_deps;
+  struct deps_desc tmp_deps;
 
   tmp_deps = bb_deps[bb];
 
@@ -3183,9 +3181,8 @@ schedule_region (int rgn)
 	  f = find_fallthru_edge (last_bb->succs);
 	  if (f
 	      && (!f->probability.initialized_p ()
-		  || (f->probability.to_reg_br_prob_base () * 100
-		      / REG_BR_PROB_BASE
-		      >= param_sched_state_edge_prob_cutoff)))
+		  || f->probability.to_reg_br_prob_base () * 100 / REG_BR_PROB_BASE >=
+	             PARAM_VALUE (PARAM_SCHED_STATE_EDGE_PROB_CUTOFF)))
 	    {
 	      memcpy (bb_state[f->dest->index], curr_state,
 		      dfa_state_size);
@@ -3225,7 +3222,7 @@ schedule_region (int rgn)
 void
 sched_rgn_init (bool single_blocks_p)
 {
-  min_spec_prob = ((param_min_spec_prob * REG_BR_PROB_BASE)
+  min_spec_prob = ((PARAM_VALUE (PARAM_MIN_SPEC_PROB) * REG_BR_PROB_BASE)
 		    / 100);
 
   nr_inter = 0;
@@ -3347,7 +3344,7 @@ sched_rgn_compute_dependencies (int rgn)
       init_deps_global ();
 
       /* Initializations for region data dependence analysis.  */
-      bb_deps = XNEWVEC (class deps_desc, current_nr_blocks);
+      bb_deps = XNEWVEC (struct deps_desc, current_nr_blocks);
       for (bb = 0; bb < current_nr_blocks; bb++)
 	init_deps (bb_deps + bb, false);
 
@@ -3950,7 +3947,3 @@ make_pass_sched_fusion (gcc::context *ctxt)
 {
   return new pass_sched_fusion (ctxt);
 }
-
-#if __GNUC__ >= 10
-#  pragma GCC diagnostic pop
-#endif

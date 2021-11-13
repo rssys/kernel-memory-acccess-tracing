@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-tree-evrp -fdelete-null-pointer-checks" } */
+/* { dg-options "-O2 -fdump-tree-evrp" } */
 
 extern void link_error ();
 

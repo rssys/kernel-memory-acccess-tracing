@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build linux
 // +build linux
 
 package syscall_test
@@ -38,19 +37,16 @@ func TestSCMCredentials(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Socketpair: %v", err)
 		}
+		defer syscall.Close(fds[0])
+		defer syscall.Close(fds[1])
 
 		err = syscall.SetsockoptInt(fds[0], syscall.SOL_SOCKET, syscall.SO_PASSCRED, 1)
 		if err != nil {
-			syscall.Close(fds[0])
-			syscall.Close(fds[1])
 			t.Fatalf("SetsockoptInt: %v", err)
 		}
 
 		srvFile := os.NewFile(uintptr(fds[0]), "server")
-		cliFile := os.NewFile(uintptr(fds[1]), "client")
 		defer srvFile.Close()
-		defer cliFile.Close()
-
 		srv, err := net.FileConn(srvFile)
 		if err != nil {
 			t.Errorf("FileConn: %v", err)
@@ -58,6 +54,8 @@ func TestSCMCredentials(t *testing.T) {
 		}
 		defer srv.Close()
 
+		cliFile := os.NewFile(uintptr(fds[1]), "client")
+		defer cliFile.Close()
 		cli, err := net.FileConn(cliFile)
 		if err != nil {
 			t.Errorf("FileConn: %v", err)
@@ -105,8 +103,8 @@ func TestSCMCredentials(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadMsgUnix: %v", err)
 		}
-		if flags != syscall.MSG_CMSG_CLOEXEC {
-			t.Fatalf("ReadMsgUnix flags = %#x, want %#x (MSG_CMSG_CLOEXEC)", flags, syscall.MSG_CMSG_CLOEXEC)
+		if flags != 0 {
+			t.Fatalf("ReadMsgUnix flags = 0x%x, want 0", flags)
 		}
 		if n != tt.dataLen {
 			t.Fatalf("ReadMsgUnix n = %d, want %d", n, tt.dataLen)

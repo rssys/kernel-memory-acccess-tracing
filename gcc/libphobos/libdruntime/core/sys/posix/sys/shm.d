@@ -14,7 +14,7 @@
  */
 module core.sys.posix.sys.shm;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 public import core.sys.posix.sys.types; // for pid_t, time_t, key_t
 public import core.sys.posix.sys.ipc;
 
@@ -29,7 +29,6 @@ else version (WatchOS)
 
 version (Posix):
 extern (C) nothrow @nogc:
-@system:
 
 //
 // XOpen (XSI)
@@ -54,9 +53,9 @@ struct shmid_ds
     time_t      shm_ctime;
 }
 
-void* shmat(int, const scope void*, int);
+void* shmat(int, in void*, int);
 int   shmctl(int, int, shmid_ds*);
-int   shmdt(const scope void*);
+int   shmdt(in void*);
 int   shmget(key_t, size_t, int);
 */
 
@@ -88,9 +87,9 @@ version (CRuntime_Glibc)
         c_ulong     __unused5;
     }
 
-    void* shmat(int, const scope void*, int);
+    void* shmat(int, in void*, int);
     int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
+    int   shmdt(in void*);
     int   shmget(key_t, size_t, int);
 }
 else version (FreeBSD)
@@ -126,9 +125,9 @@ else version (FreeBSD)
          time_t      shm_ctime;
     }
 
-    void* shmat(int, const scope void*, int);
+    void* shmat(int, in void*, int);
     int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
+    int   shmdt(in void*);
     int   shmget(key_t, size_t, int);
 }
 else version (NetBSD)
@@ -152,38 +151,9 @@ else version (NetBSD)
         void*           shm_internal;
     }
 
-    void* shmat(int, const scope void*, int);
+    void* shmat(int, in void*, int);
     int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
-    int   shmget(key_t, size_t, int);
-}
-else version (OpenBSD)
-{
-    enum SHM_RDONLY     = 0x01000; // 010000
-    enum SHM_RND        = 0x02000; // 020000
-    enum SHMLBA         = 1 << _MAX_PAGE_SHIFT;
-
-    alias short shmatt_t;
-
-    struct shmid_ds
-    {
-        ipc_perm   shm_perm;
-        int        shm_segsz;
-        pid_t      shm_lpid;
-        pid_t      shm_cpid;
-        shmatt_t   shm_nattch;
-        time_t     shm_atime;
-        c_long   __shm_atimensec;
-        time_t     shm_dtime;
-        c_long   __shm_dtimensec;
-        time_t     shm_ctime;
-        c_long   __shm_ctimensec;
-        void*      shm_internal;
-    }
-
-    void* shmat(int, const scope void*, int);
-    int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
+    int   shmdt(in void*);
     int   shmget(key_t, size_t, int);
 }
 else version (DragonFlyBSD)
@@ -207,9 +177,9 @@ else version (DragonFlyBSD)
          private void*  shm_internal;
     }
 
-    void* shmat(int, const scope void*, int);
+    void* shmat(int, in void*, int);
     int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
+    int   shmdt(in void*);
     int   shmget(key_t, size_t, int);
 }
 else version (Darwin)
@@ -274,8 +244,8 @@ else version (CRuntime_UClibc)
         c_ulong swap_successes;
     }
 
-    void* shmat(int, const scope void*, int);
+    void* shmat(int, in void*, int);
     int   shmctl(int, int, shmid_ds*);
-    int   shmdt(const scope void*);
+    int   shmdt(in void*);
     int   shmget(key_t, size_t, int);
 }

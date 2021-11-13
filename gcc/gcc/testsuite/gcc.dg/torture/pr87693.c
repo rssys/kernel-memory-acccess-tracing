@@ -1,7 +1,5 @@
 /* { dg-do compile } */
-/* { dg-require-effective-target indirect_jumps } */
-/* { dg-additional-options "-w" { target avr-*-* } } */
-   
+
 void f (void);
 void g (void);
 void h (int a)

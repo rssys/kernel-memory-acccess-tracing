@@ -1,5 +1,5 @@
 /* Command line option handling.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -104,6 +104,8 @@ struct cl_option
   BOOL_BITFIELD cl_host_wide_int : 1;
   /* Argument should be converted to lowercase.  */
   BOOL_BITFIELD cl_tolower : 1;
+  /* Report argument with -fverbose-asm  */
+  BOOL_BITFIELD cl_report : 1;
   /* Argument is an unsigned integer with an optional byte suffix.  */
   BOOL_BITFIELD cl_byte_size: 1;
   /* Offset of field for this option in struct gcc_options, or
@@ -122,14 +124,6 @@ struct cl_option
   int range_max;
 };
 
-struct cl_var
-{
-  /* Name of the variable.  */
-  const char *var_name;
-  /* Offset of field for this var in struct gcc_options.  */
-  unsigned short var_offset;
-};
-
 /* Records that the state of an option consists of SIZE bytes starting
    at DATA.  DATA might point to CH in some cases.  */
 struct cl_option_state {
@@ -140,9 +134,6 @@ struct cl_option_state {
 
 extern const struct cl_option cl_options[];
 extern const unsigned int cl_options_count;
-#ifdef ENABLE_PLUGIN
-extern const struct cl_var cl_vars[];
-#endif
 extern const char *const lang_names[];
 extern const unsigned int cl_lang_count;
 
@@ -354,6 +345,7 @@ extern void init_options_once (void);
 extern void init_options_struct (struct gcc_options *opts,
 				 struct gcc_options *opts_set);
 extern void init_opts_obstack (void);
+extern void finalize_options_struct (struct gcc_options *opts);
 extern void decode_cmdline_options_to_array_default_mask (unsigned int argc,
 							  const char **argv, 
 							  struct cl_decoded_option **decoded_options,
@@ -367,8 +359,7 @@ extern void decode_options (struct gcc_options *opts,
 			    location_t loc,
 			    diagnostic_context *dc,
 			    void (*target_option_override_hook) (void));
-extern int option_enabled (int opt_idx, unsigned lang_mask, void *opts);
-
+extern int option_enabled (int opt_idx, void *opts);
 extern bool get_option_state (struct gcc_options *, int,
 			      struct cl_option_state *);
 extern void set_option (struct gcc_options *opts,
@@ -428,8 +419,6 @@ extern bool target_handle_option (struct gcc_options *opts,
 extern void finish_options (struct gcc_options *opts,
 			    struct gcc_options *opts_set,
 			    location_t loc);
-extern void print_help (struct gcc_options *opts, unsigned int lang_mask, const
-			char *help_option_argument);
 extern void default_options_optimization (struct gcc_options *opts,
 					  struct gcc_options *opts_set,
 					  struct cl_decoded_option *decoded_options,
@@ -453,14 +442,6 @@ extern const struct sanitizer_opts_s
   bool can_recover;
 } sanitizer_opts[];
 
-extern const struct zero_call_used_regs_opts_s
-{
-  const char *const name;
-  unsigned int flag;
-} zero_call_used_regs_opts[];
-
-extern vec<const char *> help_option_arguments;
-
 extern void add_misspelling_candidates (auto_vec<char *> *candidates,
 					const struct cl_option *option,
 					const char *base_option);
@@ -474,34 +455,5 @@ extern bool parse_and_check_align_values (const char *flag,
 					  auto_vec<unsigned> &result_values,
 					  bool report_error,
 					  location_t loc);
-
-extern void parse_and_check_patch_area (const char *arg, bool report_error,
-					HOST_WIDE_INT *patch_area_size,
-					HOST_WIDE_INT *patch_area_start);
-
-extern void parse_options_from_collect_gcc_options (const char *, obstack *,
-						    int *);
-
-extern void prepend_xassembler_to_collect_as_options (const char *, obstack *);
-
-extern char *gen_command_line_string (cl_decoded_option *options,
-				      unsigned int options_count);
-extern char *gen_producer_string (const char *language_string,
-				  cl_decoded_option *options,
-				  unsigned int options_count);
-
-/* Set OPTION in OPTS to VALUE if the option is not set in OPTS_SET.  */
-
-#define SET_OPTION_IF_UNSET(OPTS, OPTS_SET, OPTION, VALUE) \
-  do \
-  { \
-    if (!(OPTS_SET)->x_ ## OPTION) \
-      (OPTS)->x_ ## OPTION = VALUE; \
-  } \
-  while (false)
-
-/* Return true if OPTION is set by user in global options.  */
-
-#define OPTION_SET_P(OPTION) global_options_set.x_ ## OPTION
 
 #endif

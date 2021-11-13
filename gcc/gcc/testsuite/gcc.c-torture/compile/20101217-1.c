@@ -1,7 +1,5 @@
 /* Testcase provided by HUAWEI.  */
-
-extern int printf (const char * __format, ...);
-
+#include <stdio.h>
 int main()
 {
         int cur_k;

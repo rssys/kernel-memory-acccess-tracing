@@ -1,4 +1,4 @@
-/* Copyright (C) 2005-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2005-2019 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>.
 
    This file is part of the GNU Offloading and Multi Processing Library
@@ -23,7 +23,7 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-/* This file handles the maintenance of threads in response to team
+/* This file handles the maintainence of threads in response to team
    creation and termination.  */
 
 #include "libgomp.h"
@@ -78,6 +78,7 @@ gomp_thread_start (void *xdata)
 #else
   struct gomp_thread local_thr;
   thr = &local_thr;
+  pthread_setspecific (gomp_tls_key, thr);
 #endif
   gomp_sem_init (&thr->release, 0);
 
@@ -90,9 +91,6 @@ gomp_thread_start (void *xdata)
   thr->place = data->place;
 #ifdef GOMP_NEEDS_THREAD_HANDLE
   thr->handle = data->handle;
-#endif
-#if !(defined HAVE_TLS || defined USE_EMUTLS)
-  pthread_setspecific (gomp_tls_key, thr);
 #endif
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
@@ -173,7 +171,7 @@ gomp_new_team (unsigned nthreads)
     {
       size_t extra = sizeof (team->ordered_release[0])
 		     + sizeof (team->implicit_task[0]);
-      team = team_malloc (sizeof (*team) + nthreads * extra);
+      team = gomp_malloc (sizeof (*team) + nthreads * extra);
 
 #ifndef HAVE_SYNC_BUILTINS
       gomp_mutex_init (&team->work_share_list_free_lock);
@@ -208,8 +206,6 @@ gomp_new_team (unsigned nthreads)
   team->work_share_cancelled = 0;
   team->team_cancelled = 0;
 
-  team->task_detach_count = 0;
-
   return team;
 }
 
@@ -225,7 +221,7 @@ free_team (struct gomp_team *team)
   gomp_barrier_destroy (&team->barrier);
   gomp_mutex_destroy (&team->task_lock);
   priority_queue_free (&team->task_queue);
-  team_free (team);
+  free (team);
 }
 
 static void
@@ -243,9 +239,6 @@ gomp_free_pool_helper (void *thread_pool)
   pthread_exit (NULL);
 #elif defined(__nvptx__)
   asm ("exit;");
-#elif defined(__AMDGCN__)
-  asm ("s_dcache_wb\n\t"
-       "s_endpgm");
 #else
 #error gomp_free_pool_helper must terminate the thread
 #endif
@@ -289,8 +282,8 @@ gomp_free_thread (void *arg __attribute__((unused)))
       if (pool->last_team)
 	free_team (pool->last_team);
 #ifndef __nvptx__
-      team_free (pool->threads);
-      team_free (pool);
+      free (pool->threads);
+      free (pool);
 #endif
       thr->thread_pool = NULL;
     }
@@ -312,7 +305,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		 unsigned flags, struct gomp_team *team,
 		 struct gomp_taskgroup *taskgroup)
 {
-  struct gomp_thread_start_data *start_data = NULL;
+  struct gomp_thread_start_data *start_data;
   struct gomp_thread *thr, *nthr;
   struct gomp_task *task;
   struct gomp_task_icv *icv;
@@ -640,7 +633,6 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  nthr->ts.active_level = thr->ts.active_level;
 	  nthr->ts.place_partition_off = place_partition_off;
 	  nthr->ts.place_partition_len = place_partition_len;
-	  nthr->ts.def_allocator = thr->ts.def_allocator;
 #ifdef HAVE_SYNC_BUILTINS
 	  nthr->ts.single_count = 0;
 #endif
@@ -828,7 +820,6 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->ts.team_id = i;
       start_data->ts.level = team->prev_ts.level + 1;
       start_data->ts.active_level = thr->ts.active_level;
-      start_data->ts.def_allocator = thr->ts.def_allocator;
 #ifdef HAVE_SYNC_BUILTINS
       start_data->ts.single_count = 0;
 #endif
@@ -1088,8 +1079,8 @@ gomp_pause_host (void)
       if (pool->last_team)
 	free_team (pool->last_team);
 #ifndef __nvptx__
-      team_free (pool->threads);
-      team_free (pool);
+      free (pool->threads);
+      free (pool);
 #endif
       thr->thread_pool = NULL;
     }

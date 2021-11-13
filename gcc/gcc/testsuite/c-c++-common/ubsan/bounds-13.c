@@ -1,7 +1,6 @@
 /* PR sanitizer/71498 */
 /* { dg-do run } */
 /* { dg-options "-fsanitize=bounds -Wno-array-bounds" } */
-/* { dg-options "-fsanitize=bounds -Wno-array-bounds -Wno-volatile" { target c++ } } */
 
 struct S { int a[100]; int b, c; } s;
 

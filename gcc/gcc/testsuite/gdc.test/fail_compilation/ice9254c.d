@@ -1,14 +1,3 @@
-/*
-TEST_OUTPUT:
----
-fail_compilation/ice9254c.d(15): Error: Using the result of a comma expression is not allowed
-fail_compilation/ice9254c.d(15): Error: Using the result of a comma expression is not allowed
-fail_compilation/ice9254c.d(15): Error: Using the result of a comma expression is not allowed
-fail_compilation/ice9254c.d(15): Error: Using the result of a comma expression is not allowed
-fail_compilation/ice9254c.d(15): Error: Using the result of a comma expression is not allowed
-fail_compilation/ice9254c.d(15): Error: invalid `foreach` aggregate `false`
----
-*/
 
 void main()
 {

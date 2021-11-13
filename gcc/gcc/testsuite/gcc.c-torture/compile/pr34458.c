@@ -1,5 +1,4 @@
 /* Testcase by Martin Michlmayr <tbm@cyrius.com> */
-/* { dg-require-stack-size "1025*4" } */
 
 typedef struct
 {

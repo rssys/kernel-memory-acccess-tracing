@@ -14,7 +14,7 @@
  */
 module core.sys.posix.poll;
 
-import core.sys.posix.config;
+private import core.sys.posix.config;
 
 version (OSX)
     version = Darwin;
@@ -29,7 +29,6 @@ version (Posix):
 extern (C):
 nothrow:
 @nogc:
-@system:
 
 //
 // XOpen (XSI)
@@ -92,7 +91,7 @@ else version (Darwin)
         int     fd;
         short   events;
         short   revents;
-    }
+    };
 
     alias uint nfds_t;
 
@@ -128,7 +127,7 @@ else version (FreeBSD)
         int     fd;
         short   events;
         short   revents;
-    }
+    };
 
     enum
     {
@@ -162,7 +161,7 @@ else version (NetBSD)
         int     fd;
         short   events;
         short   revents;
-    }
+    };
 
     enum
     {
@@ -196,7 +195,7 @@ else version (OpenBSD)
         int     fd;
         short   events;
         short   revents;
-    }
+    };
 
     enum
     {
@@ -227,7 +226,7 @@ else version (DragonFlyBSD)
         int     fd;
         short   events;
         short   revents;
-    }
+    };
 
     enum
     {

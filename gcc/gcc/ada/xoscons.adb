@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2008-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2008-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -229,7 +229,8 @@ procedure XOSCons is
             case Lang is
                when Lang_Ada =>
                   Put ("   subtype " & Info.Constant_Name.all
-                       & " is " & Info.Text_Value.all & ";");
+                       & " is Interfaces.C."
+                       & Info.Text_Value.all & ";");
                when Lang_C =>
                   Put ("#define " & Info.Constant_Name.all & " "
                        & Info.Text_Value.all);
@@ -494,9 +495,6 @@ procedure XOSCons is
       Value1 := Get_Value (Slice (Sline, 2));
       Value2 := Get_Value (Slice (Sline, 4));
 
-      pragma Annotate (CodePeer, Modified, Value1);
-      pragma Annotate (CodePeer, Modified, Value2);
-
       if Slice (Sline, 3) = ">" then
          Res := Cond and (Value1 > Value2);
 
@@ -622,7 +620,7 @@ procedure XOSCons is
    Current_Line : Integer;
    Current_Info : Integer;
    In_Comment   : Boolean;
-   In_Template  : Boolean := False;
+   In_Template  : Boolean;
 
 --  Start of processing for XOSCons
 

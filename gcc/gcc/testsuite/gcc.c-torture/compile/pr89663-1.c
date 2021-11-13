@@ -1,5 +1,4 @@
 /* PR middle-end/89663 */
-/* { dg-require-effective-target non_strict_prototype } */
 
 int irint ();
 long lrint ();

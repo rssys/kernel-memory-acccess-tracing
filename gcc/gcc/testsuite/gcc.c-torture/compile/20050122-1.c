@@ -1,6 +1,4 @@
 /* From PR 19484.  */
-/* { dg-require-effective-target indirect_calls } */
-
 extern void foo (void) __attribute__((noreturn));
 int n;
 

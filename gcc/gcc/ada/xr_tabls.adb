@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -106,16 +106,10 @@ package body Xr_Tabls is
    --  when sorting the table.
 
    Longest_File_Name_In_Table : Natural := 0;
-   --  The length of the longest file name stored
-
-   Unvisited_Files : Unvisited_Files_Access := null;
-   --  Linked list of unvisited files
-
-   Directories : Project_File_Ptr;
-   --  Store the list of directories to visit
-
-   Default_Match : Boolean := False;
-   --  Default value for match in declarations
+   Unvisited_Files            : Unvisited_Files_Access := null;
+   Directories                : Project_File_Ptr;
+   Default_Match              : Boolean := False;
+   --  The above need commenting ???
 
    function Parse_Gnatls_Src return String;
    --  Return the standard source directories (taking into account the
@@ -488,8 +482,9 @@ package body Xr_Tabls is
    -------------------
 
    function ALI_File_Name (Ada_File_Name : String) return String is
-      --  Should ideally be based on the naming scheme defined in
-      --  project files but this is too late for an obsolescent feature.
+
+      --  ??? Should ideally be based on the naming scheme defined in
+      --  project files.
 
       Index : constant Natural :=
                 Ada.Strings.Fixed.Index
@@ -767,7 +762,7 @@ package body Xr_Tabls is
       Strip    : Natural    := 0) return String
    is
       pragma Annotate (CodePeer, Skip_Analysis);
-      --  Disable CodePeer false positives
+      --  ??? To disable false positives currently generated
 
       Tmp : GNAT.OS_Lib.String_Access;
 
@@ -1020,12 +1015,12 @@ package body Xr_Tabls is
       Decl         : Declaration_Reference := Entities_HTable.Get_First;
       Arr          : Reference_Array_Access;
       Index        : Natural;
-      End_Index    : Natural := 0;
+      End_Index    : Natural;
       Current_File : File_Reference;
       Current_Line : Cst_String_Access;
       Buffer       : GNAT.OS_Lib.String_Access;
       Ref          : Reference;
-      Line         : Natural := Natural'Last;
+      Line         : Natural;
 
    begin
       --  Create a temporary array, where all references will be
@@ -1390,8 +1385,8 @@ package body Xr_Tabls is
    begin
       File_Ref.Visited := False;
 
-      --  Do not add a source file to the list. This is true for gnatxref
-      --  gnatfind, so good enough.
+      --  ??? Do not add a source file to the list. This is true at
+      --  least for gnatxref, and probably for gnatfind as well
 
       if F'Length > 4
         and then F (F'Last - 3 .. F'Last) = "." & Osint.ALI_Suffix.all

@@ -1,5 +1,5 @@
 /* Subroutines for insn-output.c for NEC V850 series
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2019 Free Software Foundation, Inc.
    Contributed by Jeff Law (law@cygnus.com).
 
    This file is part of GCC.
@@ -110,29 +110,43 @@ v850_all_frame_related (rtx par)
    Specify whether to pass the argument by reference.  */
 
 static bool
-v850_pass_by_reference (cumulative_args_t, const function_arg_info &arg)
+v850_pass_by_reference (cumulative_args_t cum ATTRIBUTE_UNUSED,
+			machine_mode mode, const_tree type,
+			bool named ATTRIBUTE_UNUSED)
 {
+  unsigned HOST_WIDE_INT size;
+
   if (!TARGET_GCC_ABI)
     return 0;
 
-  unsigned HOST_WIDE_INT size = arg.type_size_in_bytes ();
+  if (type)
+    size = int_size_in_bytes (type);
+  else
+    size = GET_MODE_SIZE (mode);
+
   return size > 8;
 }
 
-/* Return an RTX to represent where argument ARG will be passed to a function.
-   If the result is NULL_RTX, the argument will be pushed.  */
+/* Return an RTX to represent where an argument with mode MODE
+   and type TYPE will be passed to a function.  If the result
+   is NULL_RTX, the argument will be pushed.  */
 
 static rtx
-v850_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
+v850_function_arg (cumulative_args_t cum_v, machine_mode mode,
+		   const_tree type, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   rtx result = NULL_RTX;
   int size, align;
 
-  if (!arg.named)
+  if (!named)
     return NULL_RTX;
 
-  size = arg.promoted_size_in_bytes ();
+  if (mode == BLKmode)
+    size = int_size_in_bytes (type);
+  else
+    size = GET_MODE_SIZE (mode);
+
   size = (size + UNITS_PER_WORD -1) & ~(UNITS_PER_WORD -1);
 
   if (size < 1)
@@ -144,8 +158,8 @@ v850_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
 
   if (!TARGET_GCC_ABI)
     align = UNITS_PER_WORD;
-  else if (size <= UNITS_PER_WORD && arg.type)
-    align = TYPE_ALIGN (arg.type) / BITS_PER_UNIT;
+  else if (size <= UNITS_PER_WORD && type)
+    align = TYPE_ALIGN (type) / BITS_PER_UNIT;
   else
     align = size;
 
@@ -154,23 +168,23 @@ v850_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
   if (cum->nbytes > 4 * UNITS_PER_WORD)
     return NULL_RTX;
 
-  if (arg.type == NULL_TREE
+  if (type == NULL_TREE
       && cum->nbytes + size > 4 * UNITS_PER_WORD)
     return NULL_RTX;
 
   switch (cum->nbytes / UNITS_PER_WORD)
     {
     case 0:
-      result = gen_rtx_REG (arg.mode, 6);
+      result = gen_rtx_REG (mode, 6);
       break;
     case 1:
-      result = gen_rtx_REG (arg.mode, 7);
+      result = gen_rtx_REG (mode, 7);
       break;
     case 2:
-      result = gen_rtx_REG (arg.mode, 8);
+      result = gen_rtx_REG (mode, 8);
       break;
     case 3:
-      result = gen_rtx_REG (arg.mode, 9);
+      result = gen_rtx_REG (mode, 9);
       break;
     default:
       result = NULL_RTX;
@@ -182,22 +196,27 @@ v850_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
 /* Return the number of bytes which must be put into registers
    for values which are part in registers and part in memory.  */
 static int
-v850_arg_partial_bytes (cumulative_args_t cum_v, const function_arg_info &arg)
+v850_arg_partial_bytes (cumulative_args_t cum_v, machine_mode mode,
+                        tree type, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   int size, align;
 
-  if (!arg.named)
+  if (!named)
     return 0;
 
-  size = arg.promoted_size_in_bytes ();
+  if (mode == BLKmode)
+    size = int_size_in_bytes (type);
+  else
+    size = GET_MODE_SIZE (mode);
+
   if (size < 1)
     size = 1;
   
   if (!TARGET_GCC_ABI)
     align = UNITS_PER_WORD;
-  else if (arg.type)
-    align = TYPE_ALIGN (arg.type) / BITS_PER_UNIT;
+  else if (type)
+    align = TYPE_ALIGN (type) / BITS_PER_UNIT;
   else
     align = size;
 
@@ -209,29 +228,34 @@ v850_arg_partial_bytes (cumulative_args_t cum_v, const function_arg_info &arg)
   if (cum->nbytes + size <= 4 * UNITS_PER_WORD)
     return 0;
 
-  if (arg.type == NULL_TREE
+  if (type == NULL_TREE
       && cum->nbytes + size > 4 * UNITS_PER_WORD)
     return 0;
 
   return 4 * UNITS_PER_WORD - cum->nbytes;
 }
 
-/* Update the data in CUM to advance over argument ARG.  */
+/* Update the data in CUM to advance over an argument
+   of mode MODE and data type TYPE.
+   (TYPE is null for libcalls where that information may not be available.)  */
 
 static void
-v850_function_arg_advance (cumulative_args_t cum_v,
-			   const function_arg_info &arg)
+v850_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
+			   const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
   if (!TARGET_GCC_ABI)
-    cum->nbytes += ((arg.promoted_size_in_bytes () + UNITS_PER_WORD - 1)
+    cum->nbytes += (((mode != BLKmode
+		      ? GET_MODE_SIZE (mode)
+		      : int_size_in_bytes (type)) + UNITS_PER_WORD - 1)
 		    & -UNITS_PER_WORD);
   else
-    cum->nbytes += (((arg.type && int_size_in_bytes (arg.type) > 8
+    cum->nbytes += (((type && int_size_in_bytes (type) > 8
 		      ? GET_MODE_SIZE (Pmode)
-		      : (HOST_WIDE_INT) arg.promoted_size_in_bytes ())
-		     + UNITS_PER_WORD - 1)
+		      : (mode != BLKmode
+			 ? GET_MODE_SIZE (mode)
+			 : int_size_in_bytes (type))) + UNITS_PER_WORD - 1)
 		    & -UNITS_PER_WORD);
 }
 
@@ -1461,7 +1485,7 @@ compute_register_save_size (long * p_reg_saved)
     {
       /* Find the first register that needs to be saved.  */
       for (i = 0; i <= 31; i++)
-	if (df_regs_ever_live_p (i) && ((! call_used_or_fixed_reg_p (i))
+	if (df_regs_ever_live_p (i) && ((! call_used_regs[i])
 				  || i == LINK_POINTER_REGNUM))
 	  break;
 
@@ -1502,7 +1526,7 @@ compute_register_save_size (long * p_reg_saved)
       else
 	{
 	  for (; i <= 31; i++)
-	    if (df_regs_ever_live_p (i) && ((! call_used_or_fixed_reg_p (i))
+	    if (df_regs_ever_live_p (i) && ((! call_used_regs[i])
 				      || i == LINK_POINTER_REGNUM))
 	      {
 		size += 4;
@@ -2181,7 +2205,7 @@ construct_restore_jr (rtx op)
   unsigned long int first;
   unsigned long int last;
   int i;
-  static char buff [256]; /* XXX */
+  static char buff [100]; /* XXX */
   
   if (count <= 2)
     {
@@ -2286,7 +2310,7 @@ construct_save_jarl (rtx op)
   unsigned long int first;
   unsigned long int last;
   int i;
-  static char buff [255]; /* XXX */
+  static char buff [100]; /* XXX */
   
   if (count <= (TARGET_LONG_CALLS ? 3 : 2)) 
     {
@@ -2583,7 +2607,7 @@ construct_dispose_instruction (rtx op)
   int                stack_bytes;
   unsigned long int  mask;
   int		     i;
-  static char        buff[ 120 ]; /* XXX */
+  static char        buff[ 100 ]; /* XXX */
   int                use_callt = 0;
   
   if (count <= 2)
@@ -2704,7 +2728,7 @@ construct_prepare_instruction (rtx op)
   int                stack_bytes;
   unsigned long int  mask;
   int		     i;
-  static char        buff[ 120 ]; /* XXX */
+  static char        buff[ 100 ]; /* XXX */
   int		     use_callt = 0;
   
   if (XVECLEN (op, 0) <= 1)
@@ -2961,7 +2985,7 @@ static void
 v850_asm_trampoline_template (FILE *f)
 {
   fprintf (f, "\tjarl .+4,r12\n");
-  fprintf (f, "\tld.w 12[r12],r19\n");
+  fprintf (f, "\tld.w 12[r12],r20\n");
   fprintf (f, "\tld.w 16[r12],r12\n");
   fprintf (f, "\tjmp [r12]\n");
   fprintf (f, "\tnop\n");
@@ -3140,11 +3164,6 @@ v850_option_override (void)
   /* The RH850 ABI does not (currently) support the use of the CALLT instruction.  */
   if (! TARGET_GCC_ABI)
     target_flags |= MASK_DISABLE_CALLT;
-
-  /* Save the initial options in case the user does function specific
-     options.  */
-  target_option_default_node = target_option_current_node
-    = build_target_option_node (&global_options, &global_options_set);
 }
 
 const char *
@@ -3197,29 +3216,6 @@ v850_modes_tieable_p (machine_mode mode1, machine_mode mode2)
   return (mode1 == mode2
 	  || (GET_MODE_SIZE (mode1) <= 4 && GET_MODE_SIZE (mode2) <= 4));
 }
-
-static bool
-v850_can_inline_p (tree caller, tree callee)
-{
-  tree caller_tree = DECL_FUNCTION_SPECIFIC_TARGET (caller);
-  tree callee_tree = DECL_FUNCTION_SPECIFIC_TARGET (callee);
-
-  const unsigned HOST_WIDE_INT safe_flags = MASK_PROLOG_FUNCTION;
-
-  if (!callee_tree)
-    callee_tree = target_option_default_node;
-  if (!caller_tree)
-    caller_tree = target_option_default_node;
-  if (callee_tree == caller_tree)
-    return true;
-
-  cl_target_option *caller_opts = TREE_TARGET_OPTION (caller_tree);
-  cl_target_option *callee_opts = TREE_TARGET_OPTION (callee_tree);
-
-  return ((caller_opts->x_target_flags & ~safe_flags)
-	  == (callee_opts->x_target_flags & ~safe_flags));
-}
-
 
 /* Initialize the GCC target structure.  */
 
@@ -3291,7 +3287,7 @@ v850_can_inline_p (tree caller, tree callee)
 #define TARGET_PASS_BY_REFERENCE v850_pass_by_reference
 
 #undef  TARGET_CALLEE_COPIES
-#define TARGET_CALLEE_COPIES hook_bool_CUMULATIVE_ARGS_arg_info_true
+#define TARGET_CALLEE_COPIES hook_bool_CUMULATIVE_ARGS_mode_tree_bool_true
 
 #undef  TARGET_ARG_PARTIAL_BYTES
 #define TARGET_ARG_PARTIAL_BYTES v850_arg_partial_bytes
@@ -3333,10 +3329,6 @@ v850_can_inline_p (tree caller, tree callee)
 
 #undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
-
-#undef TARGET_CAN_INLINE_P
-#define TARGET_CAN_INLINE_P v850_can_inline_p
-
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

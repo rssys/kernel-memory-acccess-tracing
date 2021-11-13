@@ -224,9 +224,7 @@ func (x *Float) Mode() RoundingMode {
 	return x.mode
 }
 
-// Acc returns the accuracy of x produced by the most recent
-// operation, unless explicitly documented otherwise by that
-// operation.
+// Acc returns the accuracy of x produced by the most recent operation.
 func (x *Float) Acc() Accuracy {
 	return x.acc
 }
@@ -322,11 +320,10 @@ func (z *Float) SetMantExp(mant *Float, exp int) *Float {
 		mant.validate()
 	}
 	z.Copy(mant)
-
-	if z.form == finite {
-		// 0 < |mant| < +Inf
-		z.setExpAndRound(int64(z.exp)+int64(exp), 0)
+	if z.form != finite {
+		return z
 	}
+	z.setExpAndRound(int64(z.exp)+int64(exp), 0)
 	return z
 }
 

@@ -6,15 +6,15 @@ struct A
   int i;
 };
 
-A a({1,2});			// { dg-error "no match|cannot convert" }
+A a({1,2});			// { dg-error "no match" }
 
 union U
 {
   int i,j;
 };
 
-U u({1,2});			// { dg-error "no match|cannot convert" }
+U u({1,2});			// { dg-error "no match" }
 
 union V {};
 
-V v({1});			// { dg-error "no match|too many initializers" }
+V v({1});			// { dg-error "no match" }

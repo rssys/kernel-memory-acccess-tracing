@@ -1,5 +1,3 @@
-/* { dg-require-stack-size "1004*4+2*8" } */
-
 int pid_count = 0;
 
 unsigned int getopt (int, const char**, const char*);

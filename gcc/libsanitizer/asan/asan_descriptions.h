@@ -1,14 +1,13 @@
 //===-- asan_descriptions.h -------------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
 // This file is a part of AddressSanitizer, an address sanity checker.
 //
-// ASan-private header for asan_descriptions.cpp.
+// ASan-private header for asan_descriptions.cc.
 // TODO(filcab): Most struct definitions should move to the interface headers.
 //===----------------------------------------------------------------------===//
 #ifndef ASAN_DESCRIPTIONS_H
@@ -146,13 +145,6 @@ struct StackAddressDescription {
 bool GetStackAddressInformation(uptr addr, uptr access_size,
                                 StackAddressDescription *descr);
 
-struct WildAddressDescription {
-  uptr addr;
-  uptr access_size;
-
-  void Print() const;
-};
-
 struct GlobalAddressDescription {
   uptr addr;
   // Assume address is close to at most four globals.
@@ -200,7 +192,7 @@ class AddressDescription {
       HeapAddressDescription heap;
       StackAddressDescription stack;
       GlobalAddressDescription global;
-      WildAddressDescription wild;
+      uptr addr;
     };
   };
 
@@ -210,7 +202,7 @@ class AddressDescription {
   AddressDescription() = default;
   // shouldLockThreadRegistry allows us to skip locking if we're sure we already
   // have done it.
-  explicit AddressDescription(uptr addr, bool shouldLockThreadRegistry = true)
+  AddressDescription(uptr addr, bool shouldLockThreadRegistry = true)
       : AddressDescription(addr, 1, shouldLockThreadRegistry) {}
   AddressDescription(uptr addr, uptr access_size,
                      bool shouldLockThreadRegistry = true);
@@ -218,7 +210,7 @@ class AddressDescription {
   uptr Address() const {
     switch (data.kind) {
       case kAddressKindWild:
-        return data.wild.addr;
+        return data.addr;
       case kAddressKindShadow:
         return data.shadow.addr;
       case kAddressKindHeap:
@@ -233,7 +225,7 @@ class AddressDescription {
   void Print(const char *bug_descr = nullptr) const {
     switch (data.kind) {
       case kAddressKindWild:
-        data.wild.Print();
+        Printf("Address %p is a wild pointer.\n", data.addr);
         return;
       case kAddressKindShadow:
         return data.shadow.Print();

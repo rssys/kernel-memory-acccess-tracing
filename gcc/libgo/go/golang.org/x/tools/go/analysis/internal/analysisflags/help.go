@@ -1,14 +1,9 @@
-// Copyright 2018 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package analysisflags
 
 import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"sort"
 	"strings"
 
@@ -52,7 +47,6 @@ func Help(progname string, analyzers []*analysis.Analyzer, args []string) {
 				fs.Var(f.Value, f.Name, f.Usage)
 			}
 		})
-		fs.SetOutput(os.Stdout)
 		fs.PrintDefaults()
 
 		fmt.Printf("\nTo see details and flags of a specific analyzer, run '%s help name'.\n", progname)
@@ -81,7 +75,6 @@ outer:
 					}
 					fs.Var(f.Value, a.Name+"."+f.Name, f.Usage)
 				})
-				fs.SetOutput(os.Stdout)
 				fs.PrintDefaults()
 
 				if len(paras) > 1 {

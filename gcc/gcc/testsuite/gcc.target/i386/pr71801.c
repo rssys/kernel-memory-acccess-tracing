@@ -16,7 +16,7 @@ static int get_label_uuid(char *p1) {
 }
 void uuidcache_addentry(char *p1) { __builtin_memcpy(&c, p1, sizeof(c)); }
 void uuidcache_init() {
-  char d[sizeof(a) + sizeof(c)];
+  char d[1];
   get_label_uuid(d);
   uuidcache_addentry(d);
 }

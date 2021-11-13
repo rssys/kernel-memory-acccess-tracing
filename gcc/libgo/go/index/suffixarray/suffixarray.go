@@ -19,70 +19,21 @@ package suffixarray
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"io"
-	"math"
 	"regexp"
 	"sort"
 )
 
-// Can change for testing
-var maxData32 int = realMaxData32
-
-const realMaxData32 = math.MaxInt32
-
 // Index implements a suffix array for fast substring search.
 type Index struct {
 	data []byte
-	sa   ints // suffix array for data; sa.len() == len(data)
-}
-
-// An ints is either an []int32 or an []int64.
-// That is, one of them is empty, and one is the real data.
-// The int64 form is used when len(data) > maxData32
-type ints struct {
-	int32 []int32
-	int64 []int64
-}
-
-func (a *ints) len() int {
-	return len(a.int32) + len(a.int64)
-}
-
-func (a *ints) get(i int) int64 {
-	if a.int32 != nil {
-		return int64(a.int32[i])
-	}
-	return a.int64[i]
-}
-
-func (a *ints) set(i int, v int64) {
-	if a.int32 != nil {
-		a.int32[i] = int32(v)
-	} else {
-		a.int64[i] = v
-	}
-}
-
-func (a *ints) slice(i, j int) ints {
-	if a.int32 != nil {
-		return ints{a.int32[i:j], nil}
-	}
-	return ints{nil, a.int64[i:j]}
+	sa   []int // suffix array for data; len(sa) == len(data)
 }
 
 // New creates a new Index for data.
-// Index creation time is O(N) for N = len(data).
+// Index creation time is O(N*log(N)) for N = len(data).
 func New(data []byte) *Index {
-	ix := &Index{data: data}
-	if len(data) <= maxData32 {
-		ix.sa.int32 = make([]int32, len(data))
-		text_32(data, ix.sa.int32)
-	} else {
-		ix.sa.int64 = make([]int64, len(data))
-		text_64(data, ix.sa.int64)
-	}
-	return ix
+	return &Index{data, qsufsort(data)}
 }
 
 // writeInt writes an int x to w using buf to buffer the write.
@@ -93,20 +44,19 @@ func writeInt(w io.Writer, buf []byte, x int) error {
 }
 
 // readInt reads an int x from r using buf to buffer the read and returns x.
-func readInt(r io.Reader, buf []byte) (int64, error) {
+func readInt(r io.Reader, buf []byte) (int, error) {
 	_, err := io.ReadFull(r, buf[0:binary.MaxVarintLen64]) // ok to continue with error
 	x, _ := binary.Varint(buf)
-	return x, err
+	return int(x), err
 }
 
 // writeSlice writes data[:n] to w and returns n.
 // It uses buf to buffer the write.
-func writeSlice(w io.Writer, buf []byte, data ints) (n int, err error) {
+func writeSlice(w io.Writer, buf []byte, data []int) (n int, err error) {
 	// encode as many elements as fit into buf
 	p := binary.MaxVarintLen64
-	m := data.len()
-	for ; n < m && p+binary.MaxVarintLen64 <= len(buf); n++ {
-		p += binary.PutUvarint(buf[p:], uint64(data.get(n)))
+	for ; n < len(data) && p+binary.MaxVarintLen64 <= len(buf); n++ {
+		p += binary.PutUvarint(buf[p:], uint64(data[n]))
 	}
 
 	// update buffer size
@@ -117,22 +67,15 @@ func writeSlice(w io.Writer, buf []byte, data ints) (n int, err error) {
 	return
 }
 
-var errTooBig = errors.New("suffixarray: data too large")
-
 // readSlice reads data[:n] from r and returns n.
 // It uses buf to buffer the read.
-func readSlice(r io.Reader, buf []byte, data ints) (n int, err error) {
+func readSlice(r io.Reader, buf []byte, data []int) (n int, err error) {
 	// read buffer size
-	var size64 int64
-	size64, err = readInt(r, buf)
+	var size int
+	size, err = readInt(r, buf)
 	if err != nil {
 		return
 	}
-	if int64(int(size64)) != size64 || int(size64) < 0 {
-		// We never write chunks this big anyway.
-		return 0, errTooBig
-	}
-	size := int(size64)
 
 	// read buffer w/o the size
 	if _, err = io.ReadFull(r, buf[binary.MaxVarintLen64:size]); err != nil {
@@ -142,7 +85,7 @@ func readSlice(r io.Reader, buf []byte, data ints) (n int, err error) {
 	// decode as many elements as present in buf
 	for p := binary.MaxVarintLen64; p < size; n++ {
 		x, w := binary.Uvarint(buf[p:])
-		data.set(n, int64(x))
+		data[n] = int(x)
 		p += w
 	}
 
@@ -157,31 +100,21 @@ func (x *Index) Read(r io.Reader) error {
 	buf := make([]byte, bufSize)
 
 	// read length
-	n64, err := readInt(r, buf)
+	n, err := readInt(r, buf)
 	if err != nil {
 		return err
 	}
-	if int64(int(n64)) != n64 || int(n64) < 0 {
-		return errTooBig
-	}
-	n := int(n64)
 
 	// allocate space
-	if 2*n < cap(x.data) || cap(x.data) < n || x.sa.int32 != nil && n > maxData32 || x.sa.int64 != nil && n <= maxData32 {
+	if 2*n < cap(x.data) || cap(x.data) < n {
 		// new data is significantly smaller or larger than
 		// existing buffers - allocate new ones
 		x.data = make([]byte, n)
-		x.sa.int32 = nil
-		x.sa.int64 = nil
-		if n <= maxData32 {
-			x.sa.int32 = make([]int32, n)
-		} else {
-			x.sa.int64 = make([]int64, n)
-		}
+		x.sa = make([]int, n)
 	} else {
 		// re-use existing buffers
 		x.data = x.data[0:n]
-		x.sa = x.sa.slice(0, n)
+		x.sa = x.sa[0:n]
 	}
 
 	// read data
@@ -190,13 +123,12 @@ func (x *Index) Read(r io.Reader) error {
 	}
 
 	// read index
-	sa := x.sa
-	for sa.len() > 0 {
+	for sa := x.sa; len(sa) > 0; {
 		n, err := readSlice(r, buf, sa)
 		if err != nil {
 			return err
 		}
-		sa = sa.slice(n, sa.len())
+		sa = sa[n:]
 	}
 	return nil
 }
@@ -217,13 +149,12 @@ func (x *Index) Write(w io.Writer) error {
 	}
 
 	// write index
-	sa := x.sa
-	for sa.len() > 0 {
+	for sa := x.sa; len(sa) > 0; {
 		n, err := writeSlice(w, buf, sa)
 		if err != nil {
 			return err
 		}
-		sa = sa.slice(n, sa.len())
+		sa = sa[n:]
 	}
 	return nil
 }
@@ -236,18 +167,18 @@ func (x *Index) Bytes() []byte {
 }
 
 func (x *Index) at(i int) []byte {
-	return x.data[x.sa.get(i):]
+	return x.data[x.sa[i]:]
 }
 
 // lookupAll returns a slice into the matching region of the index.
 // The runtime is O(log(N)*len(s)).
-func (x *Index) lookupAll(s []byte) ints {
+func (x *Index) lookupAll(s []byte) []int {
 	// find matching suffix index range [i:j]
 	// find the first index where s would be the prefix
-	i := sort.Search(x.sa.len(), func(i int) bool { return bytes.Compare(x.at(i), s) >= 0 })
+	i := sort.Search(len(x.sa), func(i int) bool { return bytes.Compare(x.at(i), s) >= 0 })
 	// starting at i, find the first index at which s is not a prefix
-	j := i + sort.Search(x.sa.len()-i, func(j int) bool { return !bytes.HasPrefix(x.at(j+i), s) })
-	return x.sa.slice(i, j)
+	j := i + sort.Search(len(x.sa)-i, func(j int) bool { return !bytes.HasPrefix(x.at(j+i), s) })
+	return x.sa[i:j]
 }
 
 // Lookup returns an unsorted list of at most n indices where the byte string s
@@ -259,22 +190,13 @@ func (x *Index) lookupAll(s []byte) ints {
 func (x *Index) Lookup(s []byte, n int) (result []int) {
 	if len(s) > 0 && n != 0 {
 		matches := x.lookupAll(s)
-		count := matches.len()
-		if n < 0 || count < n {
-			n = count
+		if n < 0 || len(matches) < n {
+			n = len(matches)
 		}
-		// 0 <= n <= count
+		// 0 <= n <= len(matches)
 		if n > 0 {
 			result = make([]int, n)
-			if matches.int32 != nil {
-				for i := range result {
-					result[i] = int(matches.int32[i])
-				}
-			} else {
-				for i := range result {
-					result[i] = int(matches.int64[i])
-				}
-			}
+			copy(result, matches)
 		}
 	}
 	return

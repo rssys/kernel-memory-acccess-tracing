@@ -1,5 +1,5 @@
 /* MD reader definitions.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -23,8 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "obstack.h"
 
 /* Records a position in the file.  */
-class file_location {
-public:
+struct file_location {
   file_location () {}
   file_location (const char *, int, int);
 
@@ -149,13 +148,6 @@ struct mapping;
 class md_reader
 {
  public:
-  /* Associates PTR (which can be a string, etc.) with the file location
-     specified by LOC.  */
-  struct ptr_loc {
-    const void *ptr;
-    file_location loc;
-  };
-
   md_reader (bool compact);
   virtual ~md_reader ();
 
@@ -190,7 +182,7 @@ class md_reader
   void require_word_ws (const char *expected);
   int peek_char (void);
 
-  void set_md_ptr_loc (const void *ptr, file_location);
+  void set_md_ptr_loc (const void *ptr, const char *filename, int lineno);
   const struct ptr_loc *get_md_ptr_loc (const void *ptr);
   void copy_md_ptr_loc (const void *new_ptr, const void *old_ptr);
   void fprint_md_ptr_loc (FILE *outf, const void *ptr);
@@ -212,8 +204,8 @@ class md_reader
   rtx copy_rtx_for_iterators (rtx original);
   void read_conditions ();
   void record_potential_iterator_use (struct iterator_group *group,
-				      file_location loc, rtx x,
-				      unsigned int index, const char *name);
+				      rtx x, unsigned int index,
+				      const char *name);
   struct mapping *read_mapping (struct iterator_group *group, htab_t table);
   overloaded_name *handle_overloaded_name (rtx, vec<mapping *> *);
 
@@ -345,7 +337,6 @@ class rtx_reader : public md_reader
   ~rtx_reader ();
 
   bool read_rtx (const char *rtx_name, vec<rtx> *rtxen);
-  rtx rtx_alloc_for_name (const char *);
   rtx read_rtx_code (const char *code_name);
   virtual rtx read_rtx_operand (rtx return_rtx, int idx);
   rtx read_nested_rtx ();

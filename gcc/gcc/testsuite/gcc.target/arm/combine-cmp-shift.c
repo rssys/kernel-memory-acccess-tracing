@@ -1,5 +1,4 @@
 /* { dg-skip-if "incompatible options" { arm*-*-* } { "-march=*" } { "-march=armv7-a" } } */
-/* { dg-skip-if "-mpure-code supports M-profile only" { *-*-* } { "-mpure-code" } } */
 /* { dg-options "-O2 -mcpu=cortex-a8" }  */
 /* { dg-final { scan-assembler "cmp\tr\[0-9\]*, r\[0-9\]*, asr #31" } } */
 

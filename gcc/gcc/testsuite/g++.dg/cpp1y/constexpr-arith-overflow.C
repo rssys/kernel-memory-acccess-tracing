@@ -90,10 +90,6 @@ template <>        struct ResType<unsigned short> { typedef unsigned type; };
   StaticAssert (vflow ? CAT (op, __LINE__)(x, y).v			\
 		: CAT (op, __LINE__)(x, y) == Res<T>(op (x, y), vflow))
 
-/* If short and int are the same size we will overflow in some additional cases
-   when testing short.  */
-#define INT_EQ_SHORT __SIZEOF_INT__ == __SIZEOF_SHORT__
-
 /* Signed int addition.  */
 TEST (sadd,   signed char,    0,         0,         0);
 TEST (sadd,   signed char,    0,         SCHAR_MAX, 0);
@@ -104,11 +100,11 @@ TEST (sadd,   signed char,   -1,         SCHAR_MIN, 0);
 
 TEST (sadd,   short,          0,         0,         0);
 TEST (sadd,   short,          0,         SHRT_MAX,  0);
-TEST (sadd,   short,          1,         SHRT_MAX,  INT_EQ_SHORT);
-TEST (sadd,   short,          SHRT_MAX,  SHRT_MAX,  INT_EQ_SHORT);
+TEST (sadd,   short,          1,         SHRT_MAX,  0);
+TEST (sadd,   short,          SHRT_MAX,  SHRT_MAX,  0);
 TEST (sadd,   short,          0,         SHRT_MIN,  0);
-TEST (sadd,   short,         -1,         SHRT_MIN,  INT_EQ_SHORT);
-TEST (sadd,   short,          SHRT_MIN,  SHRT_MIN,  INT_EQ_SHORT);
+TEST (sadd,   short,         -1,         SHRT_MIN,  0);
+TEST (sadd,   short,          SHRT_MIN,  SHRT_MIN,  0);
 
 TEST (sadd,   int,            0,         0,         0);
 TEST (sadd,   int,            0,         INT_MAX,   0);
@@ -143,8 +139,8 @@ TEST (uadd,   unsigned char,  UCHAR_MAX, UCHAR_MAX, 0);
 
 TEST (uadd,   unsigned short, 0U,        0U,         0);
 TEST (uadd,   unsigned short, 0U,        USHRT_MAX,  0);
-TEST (uadd,   unsigned short, 1U,        USHRT_MAX,  INT_EQ_SHORT);
-TEST (uadd,   unsigned short, USHRT_MAX, USHRT_MAX,  INT_EQ_SHORT);
+TEST (uadd,   unsigned short, 1U,        USHRT_MAX,  0);
+TEST (uadd,   unsigned short, USHRT_MAX, USHRT_MAX,  0);
 
 TEST (uadd,   unsigned,       0U,        0U,         0);
 TEST (uadd,   unsigned,       0U,        UINT_MAX,   0);
@@ -174,7 +170,7 @@ TEST (ssub,   short,          0,         0,          0);
 TEST (ssub,   short,          0,         SHRT_MAX,   0);
 TEST (ssub,   short,          1,         SHRT_MAX,   0);
 TEST (ssub,   short,          SHRT_MAX,  SHRT_MAX,   0);
-TEST (ssub,   short,          0,         SHRT_MIN,   INT_EQ_SHORT);
+TEST (ssub,   short,          0,         SHRT_MIN,   0);
 TEST (ssub,   short,         -1,         SHRT_MIN,   0);
 TEST (ssub,   short,          SHRT_MIN,  SHRT_MIN,   0);
 

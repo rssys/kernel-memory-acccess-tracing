@@ -9,9 +9,8 @@
  */
 module core.sys.windows.rassapi;
 version (Windows):
-@system:
 
-import core.sys.windows.lmcons, core.sys.windows.windef;
+private import core.sys.windows.lmcons, core.sys.windows.windef;
 
 // FIXME: check types of constants
 

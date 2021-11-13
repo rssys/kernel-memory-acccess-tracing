@@ -1,5 +1,5 @@
 /* Top level of GCC compilers (cc1, cc1plus, etc.)
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -87,8 +87,8 @@ opt_pass::clone ()
 void
 opt_pass::set_pass_param (unsigned int, bool)
 {
-  internal_error ("pass %s needs a %<set_pass_param%> implementation "
-		  "to handle the extra argument in %<NEXT_PASS%>", name);
+  internal_error ("pass %s needs a set_pass_param implementation to handle the"
+		  " extra argument in NEXT_PASS", name);
 }
 
 bool
@@ -731,54 +731,7 @@ make_pass_late_compilation (gcc::context *ctxt)
   return new pass_late_compilation (ctxt);
 }
 
-/* Pre-SLP scalar cleanup, it has several cleanup passes like FRE, DSE.  */
 
-namespace {
-
-const pass_data pass_data_pre_slp_scalar_cleanup =
-{
-  GIMPLE_PASS, /* type */
-  "*pre_slp_scalar_cleanup", /* name */
-  OPTGROUP_LOOP, /* optinfo_flags */
-  TV_SCALAR_CLEANUP, /* tv_id */
-  ( PROP_cfg | PROP_ssa ), /* properties_required */
-  0, /* properties_provided */
-  0, /* properties_destroyed */
-  0, /* todo_flags_start */
-  0, /* todo_flags_finish */
-};
-
-class pass_pre_slp_scalar_cleanup : public gimple_opt_pass
-{
-public:
-  pass_pre_slp_scalar_cleanup (gcc::context *ctxt)
-    : gimple_opt_pass (pass_data_pre_slp_scalar_cleanup, ctxt)
-  {
-  }
-
-  virtual bool
-  gate (function *fun)
-  {
-    return flag_tree_slp_vectorize
-	   && (fun->pending_TODOs & PENDING_TODO_force_next_scalar_cleanup);
-  }
-
-  virtual unsigned int
-  execute (function *fun)
-  {
-    fun->pending_TODOs &= ~PENDING_TODO_force_next_scalar_cleanup;
-    return 0;
-  }
-
-}; // class pass_pre_slp_scalar_cleanup
-
-} // anon namespace
-
-gimple_opt_pass *
-make_pass_pre_slp_scalar_cleanup (gcc::context *ctxt)
-{
-  return new pass_pre_slp_scalar_cleanup (ctxt);
-}
 
 /* Set the static pass number of pass PASS to ID and record that
    in the mapping from static pass number to pass.  */
@@ -939,7 +892,7 @@ pass_manager::create_pass_tab (void) const
   if (!flag_dump_passes)
     return;
 
-  pass_tab.safe_grow_cleared (passes_by_id_size + 1, true);
+  pass_tab.safe_grow_cleared (passes_by_id_size + 1);
   m_name_to_pass_map->traverse <void *, passes_pass_traverse> (NULL);
 }
 
@@ -997,7 +950,6 @@ void
 pass_manager::dump_passes () const
 {
   push_dummy_function (true);
-  cgraph_node *node = cgraph_node::get_create (current_function_decl);
 
   create_pass_tab ();
 
@@ -1007,7 +959,6 @@ pass_manager::dump_passes () const
   dump_pass_list (all_late_ipa_passes, 1);
   dump_pass_list (all_passes, 1);
 
-  node->remove ();
   pop_dummy_function ();
 }
 
@@ -1093,7 +1044,7 @@ enable_disable_pass (const char *arg, bool is_enable)
     tab = &disabled_pass_uid_range_tab;
 
   if ((unsigned) pass->static_pass_number >= tab->length ())
-    tab->safe_grow_cleared (pass->static_pass_number + 1, true);
+    tab->safe_grow_cleared (pass->static_pass_number + 1);
 
   if (!range_str)
     {
@@ -1793,7 +1744,7 @@ execute_function_dump (function *fn, void *data)
     {
       push_cfun (fn);
 
-      if (fn->curr_properties & PROP_gimple)
+      if (fn->curr_properties & PROP_trees)
         dump_function_to_file (fn->decl, dump_file, dump_flags);
       else
 	print_rtl_with_bb (dump_file, get_insns (), dump_flags);
@@ -1837,9 +1788,6 @@ emergency_dump_function ()
   fnotice (stderr, "dump file: %s\n", dump_file_name);
   fprintf (dump_file, "\n\n\nEMERGENCY DUMP:\n\n");
   execute_function_dump (cfun, current_pass);
-
-  if (symtab && current_pass->type == IPA_PASS)
-    symtab->dump (dump_file);
 }
 
 static struct profile_record *profile_record;
@@ -1900,15 +1848,10 @@ pass_manager::dump_profile_report () const
 
   if (!profile_record)
     return;
-
-  FILE *dump_file = dump_begin (TDI_profile_report, NULL);
-  if (dump_file == NULL)
-    dump_file = stderr;
-
-  fprintf (dump_file, "Profile consistency report:\n\n");
-  fprintf (dump_file, "                                 |mismatch     |mismatch     |                     |\n");
-  fprintf (dump_file, "Pass name                        |IN    |IN    |OUT   |OUT   |overall              |\n");
-  fprintf (dump_file, "                                 |freq  |count |freq  |count |size      |time      |\n");
+  fprintf (stderr, "\nProfile consistency report:\n\n");
+  fprintf (stderr, "                                 |mismatch     |mismatch     |                     |\n");
+  fprintf (stderr, "Pass name                        |IN    |IN    |OUT   |OUT   |overall              |\n");
+  fprintf (stderr, "                                 |freq  |count |freq  |count |size      |time      |\n");
 	   
   for (int i = 1; i < passes_by_id_size; i++)
     if (profile_record[i].run)
@@ -1931,47 +1874,47 @@ pass_manager::dump_profile_report () const
 	    || rel_time_change || rel_size_change)
 	  {
 	    last_reported = i;
-	    fprintf (dump_file, "%-33s", passes_by_id[i]->name);
+	    fprintf (stderr, "%-33s", passes_by_id[i]->name);
 	    if (profile_record[i].num_mismatched_freq_in != last_freq_in)
-	      fprintf (dump_file, "| %+5i",
+	      fprintf (stderr, "| %+5i",
 		       profile_record[i].num_mismatched_freq_in
 		       - last_freq_in);
 	    else
-	      fprintf (dump_file, "|      ");
+	      fprintf (stderr, "|      ");
 	    if (profile_record[i].num_mismatched_count_in != last_count_in)
-	      fprintf (dump_file, "| %+5i",
+	      fprintf (stderr, "| %+5i",
 		       profile_record[i].num_mismatched_count_in
 		       - last_count_in);
 	    else
-	      fprintf (dump_file, "|      ");
+	      fprintf (stderr, "|      ");
 	    if (profile_record[i].num_mismatched_freq_out != last_freq_out)
-	      fprintf (dump_file, "| %+5i",
+	      fprintf (stderr, "| %+5i",
 		       profile_record[i].num_mismatched_freq_out
 		       - last_freq_out);
 	    else
-	      fprintf (dump_file, "|      ");
+	      fprintf (stderr, "|      ");
 	    if (profile_record[i].num_mismatched_count_out != last_count_out)
-	      fprintf (dump_file, "| %+5i",
+	      fprintf (stderr, "| %+5i",
 		       profile_record[i].num_mismatched_count_out
 		       - last_count_out);
 	    else
-	      fprintf (dump_file, "|      ");
+	      fprintf (stderr, "|      ");
 
 	    /* Size/time units change across gimple and RTL.  */
 	    if (i == pass_expand_1->static_pass_number)
-	      fprintf (dump_file, "|----------|----------");
+	      fprintf (stderr, "|----------|----------");
 	    else
 	      {
 		if (rel_size_change)
-		  fprintf (dump_file, "| %+8.1f%%", rel_size_change);
+		  fprintf (stderr, "| %+8.1f%%", rel_size_change);
 		else
-		  fprintf (dump_file, "|          ");
+		  fprintf (stderr, "|          ");
 		if (rel_time_change)
-		  fprintf (dump_file, "| %+8.1f%%", rel_time_change);
+		  fprintf (stderr, "| %+8.1f%%", rel_time_change);
 		else
-		  fprintf (dump_file, "|          ");
+		  fprintf (stderr, "|          ");
 	      }
-	    fprintf (dump_file, "|\n");
+	    fprintf (stderr, "|\n");
 	    last_freq_in = profile_record[i].num_mismatched_freq_in;
 	    last_freq_out = profile_record[i].num_mismatched_freq_out;
 	    last_count_in = profile_record[i].num_mismatched_count_in;
@@ -1980,14 +1923,12 @@ pass_manager::dump_profile_report () const
 	else if (last_reported != i)
 	  {
 	    last_reported = i;
-	    fprintf (dump_file, "%-20s ------------|      |      |      |      |          |          |\n",
+	    fprintf (stderr, "%-20s ------------|      |      |      |      |          |          |\n",
 		     passes_by_id[i]->name);
 	  }
 	last_time = profile_record[i].time;
 	last_size = profile_record[i].size;
       }
-
-  dump_end (TDI_profile_report, dump_file);
 }
 
 /* Perform all TODO actions that ought to be done on each function.  */
@@ -2003,12 +1944,26 @@ execute_function_todo (function *fn, void *data)
 
   push_cfun (fn);
 
-  /* If we need to cleanup the CFG let it perform a needed SSA update.  */
+  /* Always cleanup the CFG before trying to update SSA.  */
   if (flags & TODO_cleanup_cfg)
-    cleanup_tree_cfg (flags & TODO_update_ssa_any);
-  else if (flags & TODO_update_ssa_any)
-    update_ssa (flags & TODO_update_ssa_any);
-  gcc_assert (!need_ssa_update_p (fn));
+    {
+      cleanup_tree_cfg (flags & TODO_update_ssa_any);
+
+      /* When cleanup_tree_cfg merges consecutive blocks, it may
+	 perform some simplistic propagation when removing single
+	 valued PHI nodes.  This propagation may, in turn, cause the
+	 SSA form to become out-of-date (see PR 22037).  So, even
+	 if the parent pass had not scheduled an SSA update, we may
+	 still need to do one.  */
+      if (!(flags & TODO_update_ssa_any) && need_ssa_update_p (cfun))
+	flags |= TODO_update_ssa;
+    }
+
+  if (flags & TODO_update_ssa_any)
+    {
+      unsigned update_flags = flags & TODO_update_ssa_any;
+      update_ssa (update_flags);
+    }
 
   if (flag_tree_pta && (flags & TODO_rebuild_alias))
     compute_may_aliases ();
@@ -2034,7 +1989,7 @@ execute_function_todo (function *fn, void *data)
 
       if (flags & TODO_verify_il)
 	{
-	  if (cfun->curr_properties & PROP_gimple)
+	  if (cfun->curr_properties & PROP_trees)
 	    {
 	      if (cfun->curr_properties & PROP_cfg)
 		/* IPA passes leave stmts to be fixed up, so make sure to
@@ -2272,7 +2227,7 @@ execute_one_ipa_transform_pass (struct cgraph_node *node,
 
   /* Note that the folders should only create gimple expressions.
      This is a hack until the new folder is ready.  */
-  in_gimple_form = (cfun && (cfun->curr_properties & PROP_gimple)) != 0;
+  in_gimple_form = (cfun && (cfun->curr_properties & PROP_trees)) != 0;
 
   pass_init_dump_file (pass);
 
@@ -2320,14 +2275,6 @@ execute_all_ipa_transforms (bool do_not_collect)
   if (!cfun)
     return;
   node = cgraph_node::get (current_function_decl);
-
-  cgraph_node *next_clone;
-  for (cgraph_node *n = node->clones; n; n = next_clone)
-    {
-      next_clone = n->next_sibling_clone;
-      if (n->decl != node->decl)
-	n->materialize_clone ();
-    }
 
   if (node->ipa_transforms_to_apply.exists ())
     {
@@ -2442,8 +2389,7 @@ should_skip_pass_p (opt_pass *pass)
     return false;
 
   /* Don't skip df init; later RTL passes need it.  */
-  if (strstr (pass->name, "dfinit") != NULL
-      || strstr (pass->name, "dfinish") != NULL)
+  if (strstr (pass->name, "dfinit") != NULL)
     return false;
 
   if (!quiet_flag)
@@ -2466,11 +2412,6 @@ skip_pass (opt_pass *pass)
      things depend on this (e.g. instructions in .md files).  */
   if (strcmp (pass->name, "reload") == 0)
     reload_completed = 1;
-
-  /* Similar for pass "pro_and_epilogue" and the "epilogue_completed" global
-     variable.  */
-  if (strcmp (pass->name, "pro_and_epilogue") == 0)
-    epilogue_completed = 1;
 
   /* The INSN_ADDRESSES vec is normally set up by
      shorten_branches; set it up for the benefit of passes that
@@ -2545,7 +2486,7 @@ execute_one_pass (opt_pass *pass)
 
   /* Note that the folders should only create gimple expressions.
      This is a hack until the new folder is ready.  */
-  in_gimple_form = (cfun && (cfun->curr_properties & PROP_gimple)) != 0;
+  in_gimple_form = (cfun && (cfun->curr_properties & PROP_trees)) != 0;
 
   pass_init_dump_file (pass);
 
@@ -2616,8 +2557,7 @@ execute_one_pass (opt_pass *pass)
     {
       struct cgraph_node *node;
       FOR_EACH_FUNCTION_WITH_GIMPLE_BODY (node)
-	if (!node->inlined_to)
-	  node->ipa_transforms_to_apply.safe_push ((ipa_opt_pass_d *)pass);
+	node->ipa_transforms_to_apply.safe_push ((ipa_opt_pass_d *)pass);
     }
   else if (dump_file)
     do_per_function (execute_function_dump, pass);
@@ -2628,7 +2568,7 @@ execute_one_pass (opt_pass *pass)
   pass_fini_dump_file (pass);
 
   if (pass->type != SIMPLE_IPA_PASS && pass->type != IPA_PASS)
-    gcc_assert (!(cfun->curr_properties & PROP_gimple)
+    gcc_assert (!(cfun->curr_properties & PROP_trees)
 		|| pass->type != RTL_PASS);
 
   current_pass = NULL;
@@ -2638,8 +2578,6 @@ execute_one_pass (opt_pass *pass)
   if (!((todo_after | pass->todo_flags_finish) & TODO_do_not_ggc_collect))
     ggc_collect ();
 
-  if (pass->type == SIMPLE_IPA_PASS || pass->type == IPA_PASS)
-    report_heap_memory_use ();
   return true;
 }
 
@@ -2781,8 +2719,7 @@ ipa_write_summaries (void)
     {
       struct cgraph_node *node = order[i];
 
-      if ((node->definition || node->declare_variant_alt)
-	  && node->need_lto_streaming)
+      if (node->definition && node->need_lto_streaming)
 	{
 	  if (gimple_has_body_p (node->decl))
 	    lto_prepare_function_for_streaming (node);
@@ -2895,8 +2832,6 @@ ipa_read_summaries_1 (opt_pass *pass)
 	      /* If a timevar is present, start it.  */
 	      if (pass->tv_id)
 		timevar_push (pass->tv_id);
-	      if (!quiet_flag)
-		fprintf (stderr, " <%s>", pass->name ? pass->name : "");
 
 	      pass_init_dump_file (pass);
 
@@ -2908,8 +2843,6 @@ ipa_read_summaries_1 (opt_pass *pass)
 	      /* Stop timevar.  */
 	      if (pass->tv_id)
 		timevar_pop (pass->tv_id);
-	      ggc_grow ();
-	      report_heap_memory_use ();
 	    }
 
 	  if (pass->sub && pass->sub->type != GIMPLE_PASS)
@@ -2950,8 +2883,6 @@ ipa_read_optimization_summaries_1 (opt_pass *pass)
 	      /* If a timevar is present, start it.  */
 	      if (pass->tv_id)
 		timevar_push (pass->tv_id);
-	      if (!quiet_flag)
-		fprintf (stderr, " <%s>", pass->name ? pass->name : "");
 
 	      pass_init_dump_file (pass);
 
@@ -2967,8 +2898,6 @@ ipa_read_optimization_summaries_1 (opt_pass *pass)
 
 	  if (pass->sub && pass->sub->type != GIMPLE_PASS)
 	    ipa_read_optimization_summaries_1 (pass->sub);
-	  ggc_grow ();
-	  report_heap_memory_use ();
 	}
       pass = pass->next;
     }
@@ -3118,7 +3047,7 @@ function_called_by_processed_nodes_p (void)
         continue;
       if (TREE_ASM_WRITTEN (e->caller->decl))
         continue;
-      if (!e->caller->process && !e->caller->inlined_to)
+      if (!e->caller->process && !e->caller->global.inlined_to)
       	break;
     }
   if (dump_file && e)

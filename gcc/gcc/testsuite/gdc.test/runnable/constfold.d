@@ -1,5 +1,5 @@
 #! blah
-// RUNNABLE_PHOBOS_TEST
+
 static assert(__LINE__ == 3); // fails as __LINE__ is 2
 
 import std.stdio;
@@ -252,15 +252,15 @@ void test2()
     // This test only tests undefined, architecture-dependant behavior.
     // E.g. the result of converting a float whose value doesn't fit into the integer
     // leads to an undefined result.
-    version (DigitalMars)
-    {
-        float f = float.infinity;
-        int i = cast(int) f;
-        writeln(i);
-        writeln(cast(int)float.max);
-        assert(i == cast(int)float.max);
-        assert(i == 0x80000000);
-    }
+    version(GNU)
+       return;
+
+    float f = float.infinity;
+    int i = cast(int) f;
+    writeln(i);
+    writeln(cast(int)float.max);
+    assert(i == cast(int)float.max);
+    assert(i == 0x80000000);
 }
 
 /************************************/
@@ -302,6 +302,7 @@ static assert(is(typeof( (){ C4 g = 7; C4 h = g;})));
 alias uint DWORD;
 MY_API_FUNCTION lpStartAddress;
 extern (Windows) alias DWORD function(void*) MY_API_FUNCTION;
+pragma(msg, MY_API_FUNCTION.stringof);
 static assert(MY_API_FUNCTION.stringof == "extern (Windows) uint function(void*)");
 
 /************************************/
@@ -564,8 +565,7 @@ void test13977()
     Object.init && check();
     assert(x == 0);
 
-    check(2);
-    false && check();
+    (check(2), false) && check();
     assert(x == 2); x = 0;
 }
 
@@ -594,8 +594,7 @@ void test13978()
     Object.init || check();
     assert(x == 1); x = 0;
 
-    check(2);
-    true || check();
+    (check(2), true) || check();
     assert(x == 2); x = 0;
 }
 

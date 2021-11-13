@@ -2,7 +2,6 @@ dnl Process this file with autoconf to produce a configure script.
 
 sinclude(../config/enable.m4)
 sinclude(../config/tls.m4)
-sinclude(../config/toolexeclibdir.m4)
 sinclude(../config/acx.m4)
 sinclude(../config/no-executables.m4)
 sinclude(../config/lib-ld.m4)
@@ -114,25 +113,16 @@ AC_ARG_ENABLE(version-specific-runtime-libs,
 [version_specific_libs=no])
 AC_MSG_RESULT($version_specific_libs)
 
-GCC_WITH_TOOLEXECLIBDIR
-
 AC_ARG_WITH(slibdir,
 [  --with-slibdir=DIR      shared libraries in DIR [LIBDIR]],
 slibdir="$with_slibdir",
-[if test "${version_specific_libs}" = yes; then
+if test "${version_specific_libs}" = yes; then
   slibdir='$(libsubdir)'
 elif test -n "$with_cross_host" && test x"$with_cross_host" != x"no"; then
-  case ${with_toolexeclibdir} in
-    no)
-      slibdir='$(exec_prefix)/$(host_noncanonical)/lib'
-      ;;
-    *)
-      slibdir=${with_toolexeclibdir}
-      ;;
-  esac
+  slibdir='$(exec_prefix)/$(host_noncanonical)/lib'
 else
   slibdir='$(libdir)'
-fi])
+fi)
 AC_SUBST(slibdir)
 
 # Command-line options.
@@ -178,14 +168,7 @@ case ${version_specific_libs} in
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_noncanonical)'
-      case ${with_toolexeclibdir} in
-	no)
-	  toolexeclibdir='$(toolexecdir)/lib'
-	  ;;
-	*)
-	  toolexeclibdir=${with_toolexeclibdir}
-	  ;;
-      esac
+      toolexeclibdir='$(toolexecdir)/lib'
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_noncanonical)'
       toolexeclibdir='$(libdir)'
@@ -224,7 +207,7 @@ AC_SUBST(long_double_type_size)
 
 AC_CHECK_HEADERS(inttypes.h stdint.h stdlib.h ftw.h \
 	unistd.h sys/stat.h sys/types.h \
-	string.h strings.h memory.h sys/auxv.h sys/mman.h)
+	string.h strings.h memory.h)
 AC_HEADER_STDC
 
 # Check for decimal float support.
@@ -277,24 +260,6 @@ if test "$enable_explicit_exception_frame_registration" = yes; then
 fi
 ])
 AC_SUBST([force_explicit_eh_registry])
-
-AC_ARG_ENABLE([tm-clone-registry],
-[  --disable-tm-clone-registry    disable TM clone registry],
-[
-use_tm_clone_registry=
-if test "$enable_tm_clone_registry" = no; then
-  use_tm_clone_registry=-DUSE_TM_CLONE_REGISTRY=0
-fi
-],
-[
-use_tm_clone_registry=
-case $target in
-  msp430*elfbare)
-   use_tm_clone_registry=-DUSE_TM_CLONE_REGISTRY=0
-   ;;
-esac
-])
-AC_SUBST([use_tm_clone_registry])
 
 AC_LIB_PROG_LD_GNU
 
@@ -383,11 +348,11 @@ AC_COMPUTE_INT([glibc_version_minor], [__GLIBC_MINOR__],
 				      [glibc_version_minor=0])])
 AC_MSG_RESULT([$glibc_version_major.$glibc_version_minor])
 
-# Determine floating-point type for powerpc*-*-linux* or vxworks7*.
+# Determine floating-point type for powerpc*-*-linux*.
 # Single-precision-only FPRs are not a supported configuration for
 # this target, so are not allowed for in this test.
 case ${host} in
-powerpc*-*-linux* | powerpc*-*-vxworks7*)
+powerpc*-*-linux*)
   cat > conftest.c <<EOF
 #ifdef __powerpc64__
 ppc_fp_type=64
@@ -458,31 +423,6 @@ powerpc*-*-linux*)
     [libgcc_cv_powerpc_float128_hw=yes],
     [libgcc_cv_powerpc_float128_hw=no])])
   CFLAGS="$saved_CFLAGS"
-
-  saved_CFLAGS="$CFLAGS"
-  CFLAGS="$CFLAGS -mcpu=power10 -mfloat128-hardware"
-  AC_CACHE_CHECK([for PowerPC ISA 3.1 to build hardware __float128 libraries],
-		 [libgcc_cv_powerpc_3_1_float128_hw],
-		 [AC_COMPILE_IFELSE(
-    [AC_LANG_SOURCE([#include <sys/auxv.h>
-     #ifndef AT_PLATFORM
-     #error "AT_PLATFORM is not defined"
-     #endif
-     #ifndef __BUILTIN_CPU_SUPPORTS__
-     #error "__builtin_cpu_supports is not available"
-     #endif
-     vector unsigned char conv (vector unsigned char qs)
-     {
-       vector unsigned char ret;
-       __asm__ ("xscvsqqp %0,%1" : "=v" (ret) : "v" (qs));
-       return ret;
-     }
-     void *conv_resolver (void) { return (void *) conv; }
-     __float128 conv_ifunc (__float128)
-	__attribute__ ((__ifunc__ ("conv_resolver")));])],
-    [libgcc_cv_powerpc_3_1_float128_hw=yes],
-    [libgcc_cv_powerpc_3_1_float128_hw=no])])
-  CFLAGS="$saved_CFLAGS"
 esac
 
 # Collect host-machine-specific information.
@@ -507,7 +447,7 @@ fi
 # Link with -nostartfiles -nodefaultlibs since neither are present while
 # building libgcc.
 case ${host} in
-i?86-*-solaris2* | x86_64-*-solaris2*)
+i?86-*-solaris2* | x86_64-*-solaris2.1[[0-9]]*)
   cat > conftest.s <<EOF
 	.section	.eh_frame,"a",@unwind
 	.zero	4
@@ -540,12 +480,14 @@ AC_SUBST(solaris_ld_v2_maps)
 # This is after config.host so we can augment tmake_file.
 case ${host} in
 xtensa*-*)
-  AC_COMPILE_IFELSE([AC_LANG_SOURCE(
-		     [#ifdef __XTENSA_CALL0_ABI__
-		      #error
-		      #endif
-		      ])],
-		      [tmake_file="${tmake_file} xtensa/t-windowed"])
+  cat > conftest.c <<EOF
+	#ifdef __XTENSA_CALL0_ABI__
+	#error
+	#endif
+EOF
+  if AC_TRY_COMMAND(${CC-cc} -E -o conftest.i conftest.c 1>&AS_MESSAGE_LOG_FD); then
+      tmake_file="${tmake_file} xtensa/t-windowed"
+  fi
   ;;
 esac
 
@@ -621,25 +563,6 @@ i[[34567]]86-*-* | x86_64-*-*)
   ;;
 esac])
 LIBGCC_CHECK_AS_AVX
-
-dnl Check if as supports LSE instructions.
-AC_DEFUN([LIBGCC_CHECK_AS_LSE], [
-case "${target}" in
-aarch64*-*-*)
-  AC_CACHE_CHECK([if the assembler supports LSE], libgcc_cv_as_lse, [
-    AC_TRY_COMPILE([],
-changequote(,)dnl
-			asm(".arch armv8-a+lse\n\tcas w0, w1, [x2]");
-changequote([,])dnl
-		       ,
-		   [libgcc_cv_as_lse=yes], [libgcc_cv_as_lse=no])
-  ])
-  if test x$libgcc_cv_as_lse = xyes; then
-    AC_DEFINE(HAVE_AS_LSE, 1, [Define to 1 if the assembler supports LSE.])
-  fi
-  ;;
-esac])
-LIBGCC_CHECK_AS_LSE
 
 dnl Check if as supports RTM instructions.
 AC_CACHE_CHECK(for init priority support, libgcc_cv_init_priority, [

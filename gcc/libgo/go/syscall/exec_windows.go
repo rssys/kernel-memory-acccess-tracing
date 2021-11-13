@@ -7,7 +7,6 @@
 package syscall
 
 import (
-	"runtime"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
@@ -26,89 +25,73 @@ var ForkLock sync.RWMutex
 //   but only if there is space or tab inside s.
 func EscapeArg(s string) string {
 	if len(s) == 0 {
-		return `""`
+		return "\"\""
 	}
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '"', '\\', ' ', '\t':
-			// Some escaping required.
-			b := make([]byte, 0, len(s)+2)
-			b = appendEscapeArg(b, s)
-			return string(b)
-		}
-	}
-	return s
-}
-
-// appendEscapeArg escapes the string s, as per escapeArg,
-// appends the result to b, and returns the updated slice.
-func appendEscapeArg(b []byte, s string) []byte {
-	if len(s) == 0 {
-		return append(b, `""`...)
-	}
-
-	needsBackslash := false
+	n := len(s)
 	hasSpace := false
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '"', '\\':
-			needsBackslash = true
+			n++
 		case ' ', '\t':
 			hasSpace = true
 		}
 	}
-
-	if !needsBackslash && !hasSpace {
-		// No special handling required; normal case.
-		return append(b, s...)
-	}
-	if !needsBackslash {
-		// hasSpace is true, so we need to quote the string.
-		b = append(b, '"')
-		b = append(b, s...)
-		return append(b, '"')
-	}
-
 	if hasSpace {
-		b = append(b, '"')
+		n += 2
+	}
+	if n == len(s) {
+		return s
+	}
+
+	qs := make([]byte, n)
+	j := 0
+	if hasSpace {
+		qs[j] = '"'
+		j++
 	}
 	slashes := 0
 	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch c {
+		switch s[i] {
 		default:
 			slashes = 0
+			qs[j] = s[i]
 		case '\\':
 			slashes++
+			qs[j] = s[i]
 		case '"':
 			for ; slashes > 0; slashes-- {
-				b = append(b, '\\')
+				qs[j] = '\\'
+				j++
 			}
-			b = append(b, '\\')
+			qs[j] = '\\'
+			j++
+			qs[j] = s[i]
 		}
-		b = append(b, c)
+		j++
 	}
 	if hasSpace {
 		for ; slashes > 0; slashes-- {
-			b = append(b, '\\')
+			qs[j] = '\\'
+			j++
 		}
-		b = append(b, '"')
+		qs[j] = '"'
+		j++
 	}
-
-	return b
+	return string(qs[:j])
 }
 
 // makeCmdLine builds a command line out of args by escaping "special"
 // characters and joining the arguments with spaces.
 func makeCmdLine(args []string) string {
-	var b []byte
+	var s string
 	for _, v := range args {
-		if len(b) > 0 {
-			b = append(b, ' ')
+		if s != "" {
+			s += " "
 		}
-		b = appendEscapeArg(b, v)
+		s += EscapeArg(v)
 	}
-	return string(b)
+	return s
 }
 
 // createEnvBlock converts an array of environment strings into
@@ -236,15 +219,10 @@ type ProcAttr struct {
 }
 
 type SysProcAttr struct {
-	HideWindow                 bool
-	CmdLine                    string // used if non-empty, else the windows command line is built by escaping the arguments passed to StartProcess
-	CreationFlags              uint32
-	Token                      Token               // if set, runs new process in the security context represented by the token
-	ProcessAttributes          *SecurityAttributes // if set, applies these security attributes as the descriptor for the new process
-	ThreadAttributes           *SecurityAttributes // if set, applies these security attributes as the descriptor for the main thread of the new process
-	NoInheritHandles           bool                // if set, each inheritable handle in the calling process is not inherited by the new process
-	AdditionalInheritedHandles []Handle            // a list of additional handles, already marked as inheritable, that will be inherited by the new process
-	ParentProcess              Handle              // if non-zero, the new process regards the process given by this handle as its parent process, and AdditionalInheritedHandles, if set, should exist in this parent process
+	HideWindow    bool
+	CmdLine       string // used if non-empty, else the windows command line is built by escaping the arguments passed to StartProcess
+	CreationFlags uint32
+	Token         Token // if set, runs new process in the security context represented by the token
 }
 
 var zeroProcAttr ProcAttr
@@ -313,104 +291,46 @@ func StartProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, handle 
 		}
 	}
 
-	var maj, min, build uint32
-	rtlGetNtVersionNumbers(&maj, &min, &build)
-	isWin7 := maj < 6 || (maj == 6 && min <= 1)
-	// NT kernel handles are divisible by 4, with the bottom 3 bits left as
-	// a tag. The fully set tag correlates with the types of handles we're
-	// concerned about here.  Except, the kernel will interpret some
-	// special handle values, like -1, -2, and so forth, so kernelbase.dll
-	// checks to see that those bottom three bits are checked, but that top
-	// bit is not checked.
-	isLegacyWin7ConsoleHandle := func(handle Handle) bool { return isWin7 && handle&0x10000003 == 3 }
+	// Acquire the fork lock so that no other threads
+	// create new fds that are not yet close-on-exec
+	// before we fork.
+	ForkLock.Lock()
+	defer ForkLock.Unlock()
 
 	p, _ := GetCurrentProcess()
-	parentProcess := p
-	if sys.ParentProcess != 0 {
-		parentProcess = sys.ParentProcess
-	}
 	fd := make([]Handle, len(attr.Files))
 	for i := range attr.Files {
 		if attr.Files[i] > 0 {
-			destinationProcessHandle := parentProcess
-
-			// On Windows 7, console handles aren't real handles, and can only be duplicated
-			// into the current process, not a parent one, which amounts to the same thing.
-			if parentProcess != p && isLegacyWin7ConsoleHandle(Handle(attr.Files[i])) {
-				destinationProcessHandle = p
-			}
-
-			err := DuplicateHandle(p, Handle(attr.Files[i]), destinationProcessHandle, &fd[i], 0, true, DUPLICATE_SAME_ACCESS)
+			err := DuplicateHandle(p, Handle(attr.Files[i]), p, &fd[i], 0, true, DUPLICATE_SAME_ACCESS)
 			if err != nil {
 				return 0, 0, err
 			}
-			defer DuplicateHandle(parentProcess, fd[i], 0, nil, 0, false, DUPLICATE_CLOSE_SOURCE)
+			defer CloseHandle(Handle(fd[i]))
 		}
 	}
-	si := new(_STARTUPINFOEXW)
-	si.ProcThreadAttributeList, err = newProcThreadAttributeList(2)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer deleteProcThreadAttributeList(si.ProcThreadAttributeList)
+	si := new(StartupInfo)
 	si.Cb = uint32(unsafe.Sizeof(*si))
 	si.Flags = STARTF_USESTDHANDLES
 	if sys.HideWindow {
 		si.Flags |= STARTF_USESHOWWINDOW
 		si.ShowWindow = SW_HIDE
 	}
-	if sys.ParentProcess != 0 {
-		err = updateProcThreadAttribute(si.ProcThreadAttributeList, 0, _PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, unsafe.Pointer(&sys.ParentProcess), unsafe.Sizeof(sys.ParentProcess), nil, nil)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
 	si.StdInput = fd[0]
 	si.StdOutput = fd[1]
 	si.StdErr = fd[2]
 
-	fd = append(fd, sys.AdditionalInheritedHandles...)
-
-	// On Windows 7, console handles aren't real handles, so don't pass them
-	// through to PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
-	for i := range fd {
-		if isLegacyWin7ConsoleHandle(fd[i]) {
-			fd[i] = 0
-		}
-	}
-
-	// The presence of a NULL handle in the list is enough to cause PROC_THREAD_ATTRIBUTE_HANDLE_LIST
-	// to treat the entire list as empty, so remove NULL handles.
-	j := 0
-	for i := range fd {
-		if fd[i] != 0 {
-			fd[j] = fd[i]
-			j++
-		}
-	}
-	fd = fd[:j]
-
-	// Do not accidentally inherit more than these handles.
-	if len(fd) > 0 {
-		err = updateProcThreadAttribute(si.ProcThreadAttributeList, 0, _PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&fd[0]), uintptr(len(fd))*unsafe.Sizeof(fd[0]), nil, nil)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
 	pi := new(ProcessInformation)
-	flags := sys.CreationFlags | CREATE_UNICODE_ENVIRONMENT | _EXTENDED_STARTUPINFO_PRESENT
+
+	flags := sys.CreationFlags | CREATE_UNICODE_ENVIRONMENT
 	if sys.Token != 0 {
-		err = CreateProcessAsUser(sys.Token, argv0p, argvp, sys.ProcessAttributes, sys.ThreadAttributes, len(fd) > 0 && !sys.NoInheritHandles, flags, createEnvBlock(attr.Env), dirp, &si.StartupInfo, pi)
+		err = CreateProcessAsUser(sys.Token, argv0p, argvp, nil, nil, true, flags, createEnvBlock(attr.Env), dirp, si, pi)
 	} else {
-		err = CreateProcess(argv0p, argvp, sys.ProcessAttributes, sys.ThreadAttributes, len(fd) > 0 && !sys.NoInheritHandles, flags, createEnvBlock(attr.Env), dirp, &si.StartupInfo, pi)
+		err = CreateProcess(argv0p, argvp, nil, nil, true, flags, createEnvBlock(attr.Env), dirp, si, pi)
 	}
 	if err != nil {
 		return 0, 0, err
 	}
 	defer CloseHandle(Handle(pi.Thread))
-	runtime.KeepAlive(fd)
-	runtime.KeepAlive(sys)
 
 	return int(pi.ProcessId), uintptr(pi.Process), nil
 }

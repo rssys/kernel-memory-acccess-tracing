@@ -1,7 +1,6 @@
 // -*- C++ -*-
-// { dg-options "-ltbb" }
+// { dg-options "-std=gnu++17 -ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-timeout-factor 3 }
 // { dg-require-effective-target tbb-backend }
 
 //===-- partial_sort.pass.cpp ---------------------------------------------===//
@@ -91,7 +90,7 @@ struct test_brick_partial_sort
             if (m1 - first > 1)
             {
                 auto complex = std::ceil(n * std::log(float32_t(m1 - first)));
-#if _PSTL_USE_PAR_POLICIES
+#if __PSTL_USE_PAR_POLICIES
                 auto p = tbb::this_task_arena::max_concurrency();
 #else
                 auto p = 1;

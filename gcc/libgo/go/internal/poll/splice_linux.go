@@ -5,8 +5,6 @@
 package poll
 
 import (
-	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -24,23 +22,23 @@ const (
 // Splice transfers at most remain bytes of data from src to dst, using the
 // splice system call to minimize copies of data from and to userspace.
 //
-// Splice gets a pipe buffer from the pool or creates a new one if needed, to serve as a buffer for the data transfer.
+// Splice creates a temporary pipe, to serve as a buffer for the data transfer.
 // src and dst must both be stream-oriented sockets.
 //
 // If err != nil, sc is the system call which caused the error.
 func Splice(dst, src *FD, remain int64) (written int64, handled bool, sc string, err error) {
-	p, sc, err := getPipe()
+	prfd, pwfd, sc, err := newTempPipe()
 	if err != nil {
 		return 0, false, sc, err
 	}
-	defer putPipe(p)
+	defer destroyTempPipe(prfd, pwfd)
 	var inPipe, n int
 	for err == nil && remain > 0 {
 		max := maxSpliceSize
 		if int64(max) > remain {
 			max = int(remain)
 		}
-		inPipe, err = spliceDrain(p.wfd, src, max)
+		inPipe, err = spliceDrain(pwfd, src, max)
 		// The operation is considered handled if splice returns no
 		// error, or an error other than EINVAL. An EINVAL means the
 		// kernel does not support splice for the socket type of src.
@@ -53,16 +51,13 @@ func Splice(dst, src *FD, remain int64) (written int64, handled bool, sc string,
 		// If inPipe == 0 && err == nil, src is at EOF, and the
 		// transfer is complete.
 		handled = handled || (err != syscall.EINVAL)
-		if err != nil || inPipe == 0 {
+		if err != nil || (inPipe == 0 && err == nil) {
 			break
 		}
-		p.data += inPipe
-
-		n, err = splicePump(dst, p.rfd, inPipe)
+		n, err = splicePump(dst, prfd, inPipe)
 		if n > 0 {
 			written += int64(n)
 			remain -= int64(n)
-			p.data -= n
 		}
 	}
 	if err != nil {
@@ -91,9 +86,6 @@ func spliceDrain(pipefd int, sock *FD, max int) (int, error) {
 	}
 	for {
 		n, err := splice(pipefd, sock.Sysfd, max, spliceNonblock)
-		if err == syscall.EINTR {
-			continue
-		}
 		if err != syscall.EAGAIN {
 			return n, err
 		}
@@ -153,58 +145,13 @@ func splice(out int, in int, max int, flags int) (int, error) {
 	return int(n), err
 }
 
-type splicePipe struct {
-	rfd  int
-	wfd  int
-	data int
-}
-
-// splicePipePool caches pipes to avoid high-frequency construction and destruction of pipe buffers.
-// The garbage collector will free all pipes in the sync.Pool periodically, thus we need to set up
-// a finalizer for each pipe to close its file descriptors before the actual GC.
-var splicePipePool = sync.Pool{New: newPoolPipe}
-
-func newPoolPipe() interface{} {
-	// Discard the error which occurred during the creation of pipe buffer,
-	// redirecting the data transmission to the conventional way utilizing read() + write() as a fallback.
-	p := newPipe()
-	if p == nil {
-		return nil
-	}
-	runtime.SetFinalizer(p, destroyPipe)
-	return p
-}
-
-// getPipe tries to acquire a pipe buffer from the pool or create a new one with newPipe() if it gets nil from the cache.
-//
-// Note that it may fail to create a new pipe buffer by newPipe(), in which case getPipe() will return a generic error
-// and system call name splice in a string as the indication.
-func getPipe() (*splicePipe, string, error) {
-	v := splicePipePool.Get()
-	if v == nil {
-		return nil, "splice", syscall.EINVAL
-	}
-	return v.(*splicePipe), "", nil
-}
-
-func putPipe(p *splicePipe) {
-	// If there is still data left in the pipe,
-	// then close and discard it instead of putting it back into the pool.
-	if p.data != 0 {
-		runtime.SetFinalizer(p, nil)
-		destroyPipe(p)
-		return
-	}
-	splicePipePool.Put(p)
-}
-
 var disableSplice unsafe.Pointer
 
-// newPipe sets up a pipe for a splice operation.
-func newPipe() (sp *splicePipe) {
+// newTempPipe sets up a temporary pipe for a splice operation.
+func newTempPipe() (prfd, pwfd int, sc string, err error) {
 	p := (*bool)(atomic.LoadPointer(&disableSplice))
 	if p != nil && *p {
-		return nil
+		return -1, -1, "splice", syscall.EINVAL
 	}
 
 	var fds [2]int
@@ -214,10 +161,8 @@ func newPipe() (sp *splicePipe) {
 	// closed.
 	const flags = syscall.O_CLOEXEC | syscall.O_NONBLOCK
 	if err := syscall.Pipe2(fds[:], flags); err != nil {
-		return nil
+		return -1, -1, "pipe2", err
 	}
-
-	sp = &splicePipe{rfd: fds[0], wfd: fds[1]}
 
 	if p == nil {
 		p = new(bool)
@@ -226,21 +171,25 @@ func newPipe() (sp *splicePipe) {
 		// F_GETPIPE_SZ was added in 2.6.35, which does not have the -EAGAIN bug.
 		if syscall.F_GETPIPE_SZ == 0 {
 			*p = true
-			destroyPipe(sp)
-			return nil
+			destroyTempPipe(fds[0], fds[1])
+			return -1, -1, "fcntl", syscall.EINVAL
 		}
 		if _, err := fcntl(fds[0], syscall.F_GETPIPE_SZ, 0); err != nil {
 			*p = true
-			destroyPipe(sp)
-			return nil
+			destroyTempPipe(fds[0], fds[1])
+			return -1, -1, "fcntl", err
 		}
 	}
 
-	return
+	return fds[0], fds[1], "", nil
 }
 
-// destroyPipe destroys a pipe.
-func destroyPipe(p *splicePipe) {
-	CloseFunc(p.rfd)
-	CloseFunc(p.wfd)
+// destroyTempPipe destroys a temporary pipe.
+func destroyTempPipe(prfd, pwfd int) error {
+	err := CloseFunc(prfd)
+	err1 := CloseFunc(pwfd)
+	if err == nil {
+		return err1
+	}
+	return err
 }

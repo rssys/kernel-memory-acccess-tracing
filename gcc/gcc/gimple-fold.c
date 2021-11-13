@@ -1,5 +1,5 @@
 /* Statement simplification on GIMPLE.
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Split out from tree-ssa-ccp.c.
 
 This file is part of GCC.
@@ -30,7 +30,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "ssa.h"
 #include "cgraph.h"
 #include "gimple-pretty-print.h"
-#include "gimple-ssa-warn-access.h"
 #include "gimple-ssa-warn-restrict.h"
 #include "fold-const.h"
 #include "stmt.h"
@@ -66,9 +65,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "calls.h"
 #include "tree-vector-builder.h"
 #include "tree-ssa-strlen.h"
-#include "varasm.h"
-#include "memmodel.h"
-#include "optabs.h"
 
 enum strlen_range_kind {
   /* Compute the exact constant string length.  */
@@ -139,7 +135,7 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
       if (!snode || !snode->definition)
 	return false;
       node = dyn_cast <cgraph_node *> (snode);
-      return !node || !node->inlined_to;
+      return !node || !node->global.inlined_to;
     }
 
   /* We will later output the initializer, so we can refer to it.
@@ -188,7 +184,7 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
 	      || (!snode->forced_by_abi && !snode->force_output))))
     return false;
   node = dyn_cast <cgraph_node *> (snode);
-  return !node || !node->inlined_to;
+  return !node || !node->global.inlined_to;
 }
 
 /* Create a temporary for TYPE for a statement STMT.  If the current function
@@ -211,9 +207,6 @@ create_tmp_reg_or_ssa_name (tree type, gimple *stmt)
 tree
 canonicalize_constructor_val (tree cval, tree from_decl)
 {
-  if (CONSTANT_CLASS_P (cval))
-    return cval;
-
   tree orig_cval = cval;
   STRIP_NOPS (cval);
   if (TREE_CODE (cval) == POINTER_PLUS_EXPR
@@ -248,9 +241,7 @@ canonicalize_constructor_val (tree cval, tree from_decl)
       if (TREE_TYPE (base) == error_mark_node)
 	return NULL_TREE;
       if (VAR_P (base))
-	/* ???  We should be able to assert that TREE_ADDRESSABLE is set,
-	   but since the use can be in a debug stmt we can't.  */
-	;
+	TREE_ADDRESSABLE (base) = 1;
       else if (TREE_CODE (base) == FUNCTION_DECL)
 	{
 	  /* Make sure we create a cgraph node for functions we'll reference.
@@ -266,15 +257,8 @@ canonicalize_constructor_val (tree cval, tree from_decl)
 	cval = fold_convert (TREE_TYPE (orig_cval), cval);
       return cval;
     }
-  /* In CONSTRUCTORs we may see unfolded constants like (int (*) ()) 0.  */
-  if (TREE_CODE (cval) == INTEGER_CST)
-    {
-      if (TREE_OVERFLOW_P (cval))
-	cval = drop_tree_overflow (cval);
-      if (!useless_type_conversion_p (TREE_TYPE (orig_cval), TREE_TYPE (cval)))
-	cval = fold_convert (TREE_TYPE (orig_cval), cval);
-      return cval;
-    }
+  if (TREE_OVERFLOW_P (cval))
+    return drop_tree_overflow (cval);
   return orig_cval;
 }
 
@@ -308,154 +292,39 @@ get_symbol_constant_value (tree sym)
 
 
 
-/* Subroutine of fold_stmt.  We perform constant folding of the
-   memory reference tree EXPR.  */
+/* Subroutine of fold_stmt.  We perform several simplifications of the
+   memory reference tree EXPR and make sure to re-gimplify them properly
+   after propagation of constant addresses.  IS_LHS is true if the
+   reference is supposed to be an lvalue.  */
 
 static tree
-maybe_fold_reference (tree expr)
+maybe_fold_reference (tree expr, bool is_lhs)
 {
-  tree result = NULL_TREE;
+  tree result;
 
   if ((TREE_CODE (expr) == VIEW_CONVERT_EXPR
        || TREE_CODE (expr) == REALPART_EXPR
        || TREE_CODE (expr) == IMAGPART_EXPR)
       && CONSTANT_CLASS_P (TREE_OPERAND (expr, 0)))
-    result = fold_unary_loc (EXPR_LOCATION (expr),
-			     TREE_CODE (expr),
-			     TREE_TYPE (expr),
-			     TREE_OPERAND (expr, 0));
+    return fold_unary_loc (EXPR_LOCATION (expr),
+			   TREE_CODE (expr),
+			   TREE_TYPE (expr),
+			   TREE_OPERAND (expr, 0));
   else if (TREE_CODE (expr) == BIT_FIELD_REF
 	   && CONSTANT_CLASS_P (TREE_OPERAND (expr, 0)))
-    result = fold_ternary_loc (EXPR_LOCATION (expr),
-			       TREE_CODE (expr),
-			       TREE_TYPE (expr),
-			       TREE_OPERAND (expr, 0),
-			       TREE_OPERAND (expr, 1),
-			       TREE_OPERAND (expr, 2));
-  else
-    result = fold_const_aggregate_ref (expr);
+    return fold_ternary_loc (EXPR_LOCATION (expr),
+			     TREE_CODE (expr),
+			     TREE_TYPE (expr),
+			     TREE_OPERAND (expr, 0),
+			     TREE_OPERAND (expr, 1),
+			     TREE_OPERAND (expr, 2));
 
-  if (result && is_gimple_min_invariant (result))
+  if (!is_lhs
+      && (result = fold_const_aggregate_ref (expr))
+      && is_gimple_min_invariant (result))
     return result;
 
   return NULL_TREE;
-}
-
-/* Return true if EXPR is an acceptable right-hand-side for a
-   GIMPLE assignment.  We validate the entire tree, not just
-   the root node, thus catching expressions that embed complex
-   operands that are not permitted in GIMPLE.  This function
-   is needed because the folding routines in fold-const.c
-   may return such expressions in some cases, e.g., an array
-   access with an embedded index addition.  It may make more
-   sense to have folding routines that are sensitive to the
-   constraints on GIMPLE operands, rather than abandoning any
-   any attempt to fold if the usual folding turns out to be too
-   aggressive.  */
-
-bool
-valid_gimple_rhs_p (tree expr)
-{
-  enum tree_code code = TREE_CODE (expr);
-
-  switch (TREE_CODE_CLASS (code))
-    {
-    case tcc_declaration:
-      if (!is_gimple_variable (expr))
-	return false;
-      break;
-
-    case tcc_constant:
-      /* All constants are ok.  */
-      break;
-
-    case tcc_comparison:
-      /* GENERIC allows comparisons with non-boolean types, reject
-	 those for GIMPLE.  Let vector-typed comparisons pass - rules
-	 for GENERIC and GIMPLE are the same here.  */
-      if (!(INTEGRAL_TYPE_P (TREE_TYPE (expr))
-	    && (TREE_CODE (TREE_TYPE (expr)) == BOOLEAN_TYPE
-		|| TYPE_PRECISION (TREE_TYPE (expr)) == 1))
-	  && ! VECTOR_TYPE_P (TREE_TYPE (expr)))
-	return false;
-
-      /* Fallthru.  */
-    case tcc_binary:
-      if (!is_gimple_val (TREE_OPERAND (expr, 0))
-	  || !is_gimple_val (TREE_OPERAND (expr, 1)))
-	return false;
-      break;
-
-    case tcc_unary:
-      if (!is_gimple_val (TREE_OPERAND (expr, 0)))
-	return false;
-      break;
-
-    case tcc_expression:
-      switch (code)
-	{
-	case ADDR_EXPR:
-	  {
-	    tree t;
-	    if (is_gimple_min_invariant (expr))
-	      return true;
-	    t = TREE_OPERAND (expr, 0);
-	    while (handled_component_p (t))
-	      {
-		/* ??? More checks needed, see the GIMPLE verifier.  */
-		if ((TREE_CODE (t) == ARRAY_REF
-		     || TREE_CODE (t) == ARRAY_RANGE_REF)
-		    && !is_gimple_val (TREE_OPERAND (t, 1)))
-		  return false;
-		t = TREE_OPERAND (t, 0);
-	      }
-	    if (!is_gimple_id (t))
-	      return false;
-	  }
-	  break;
-
-	default:
-	  if (get_gimple_rhs_class (code) == GIMPLE_TERNARY_RHS)
-	    {
-	      if ((code == COND_EXPR
-		   ? !is_gimple_condexpr (TREE_OPERAND (expr, 0))
-		   : !is_gimple_val (TREE_OPERAND (expr, 0)))
-		  || !is_gimple_val (TREE_OPERAND (expr, 1))
-		  || !is_gimple_val (TREE_OPERAND (expr, 2)))
-		return false;
-	      break;
-	    }
-	  return false;
-	}
-      break;
-
-    case tcc_vl_exp:
-      return false;
-
-    case tcc_exceptional:
-      if (code == CONSTRUCTOR)
-	{
-	  unsigned i;
-	  tree elt;
-	  FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (expr), i, elt)
-	    if (!is_gimple_val (elt))
-	      return false;
-	  return true;
-	}
-      if (code != SSA_NAME)
-	return false;
-      break;
-
-    case tcc_reference:
-      if (code == BIT_FIELD_REF)
-	return is_gimple_val (TREE_OPERAND (expr, 0));
-      return false;
-
-    default:
-      return false;
-    }
-
-  return true;
 }
 
 
@@ -483,7 +352,7 @@ fold_gimple_assign (gimple_stmt_iterator *si)
 	  return NULL_TREE;
 
 	if (REFERENCE_CLASS_P (rhs))
-	  return maybe_fold_reference (rhs);
+	  return maybe_fold_reference (rhs, false);
 
 	else if (TREE_CODE (rhs) == OBJ_TYPE_REF)
 	  {
@@ -525,14 +394,28 @@ fold_gimple_assign (gimple_stmt_iterator *si)
 	else if (TREE_CODE (rhs) == ADDR_EXPR)
 	  {
 	    tree ref = TREE_OPERAND (rhs, 0);
-	    if (TREE_CODE (ref) == MEM_REF
-		&& integer_zerop (TREE_OPERAND (ref, 1)))
+	    tree tem = maybe_fold_reference (ref, true);
+	    if (tem
+		&& TREE_CODE (tem) == MEM_REF
+		&& integer_zerop (TREE_OPERAND (tem, 1)))
+	      result = fold_convert (TREE_TYPE (rhs), TREE_OPERAND (tem, 0));
+	    else if (tem)
+	      result = fold_convert (TREE_TYPE (rhs),
+				     build_fold_addr_expr_loc (loc, tem));
+	    else if (TREE_CODE (ref) == MEM_REF
+		     && integer_zerop (TREE_OPERAND (ref, 1)))
+	      result = fold_convert (TREE_TYPE (rhs), TREE_OPERAND (ref, 0));
+
+	    if (result)
 	      {
-		result = TREE_OPERAND (ref, 0);
-		if (!useless_type_conversion_p (TREE_TYPE (rhs),
-						TREE_TYPE (result)))
-		  result = build1 (NOP_EXPR, TREE_TYPE (rhs), result);
-		return result;
+		/* Strip away useless type conversions.  Both the
+		   NON_LVALUE_EXPR that may have been added by fold, and
+		   "useless" type conversions that might now be apparent
+		   due to propagation.  */
+		STRIP_USELESS_TYPE_CONVERSION (result);
+
+		if (result != rhs && valid_gimple_rhs_p (result))
+		  return result;
 	      }
 	  }
 
@@ -551,8 +434,7 @@ fold_gimple_assign (gimple_stmt_iterator *si)
 					   CONSTRUCTOR_ELTS (rhs));
 	  }
 
-	else if (DECL_P (rhs)
-		 && is_gimple_reg_type (TREE_TYPE (rhs)))
+	else if (DECL_P (rhs))
 	  return get_symbol_constant_value (rhs);
       }
       break;
@@ -658,72 +540,6 @@ gsi_replace_with_seq_vops (gimple_stmt_iterator *si_p, gimple_seq stmts)
   gsi_replace_with_seq (si_p, stmts, false);
 }
 
-/* Helper function for update_gimple_call and
-   gimplify_and_update_call_from_tree.  A GIMPLE_CALL STMT is being replaced
-   with GIMPLE_CALL NEW_STMT.  */
-
-static void
-finish_update_gimple_call (gimple_stmt_iterator *si_p, gimple *new_stmt,
-			   gimple *stmt)
-{
-  tree lhs = gimple_call_lhs (stmt);
-  gimple_call_set_lhs (new_stmt, lhs);
-  if (lhs && TREE_CODE (lhs) == SSA_NAME)
-    SSA_NAME_DEF_STMT (lhs) = new_stmt;
-  gimple_move_vops (new_stmt, stmt);
-  gimple_set_location (new_stmt, gimple_location (stmt));
-  if (gimple_block (new_stmt) == NULL_TREE)
-    gimple_set_block (new_stmt, gimple_block (stmt));
-  gsi_replace (si_p, new_stmt, false);
-}
-
-/* Update a GIMPLE_CALL statement at iterator *SI_P to call to FN
-   with number of arguments NARGS, where the arguments in GIMPLE form
-   follow NARGS argument.  */
-
-bool
-update_gimple_call (gimple_stmt_iterator *si_p, tree fn, int nargs, ...)
-{
-  va_list ap;
-  gcall *new_stmt, *stmt = as_a <gcall *> (gsi_stmt (*si_p));
-
-  gcc_assert (is_gimple_call (stmt));
-  va_start (ap, nargs);
-  new_stmt = gimple_build_call_valist (fn, nargs, ap);
-  finish_update_gimple_call (si_p, new_stmt, stmt);
-  va_end (ap);
-  return true;
-}
-
-/* Return true if EXPR is a CALL_EXPR suitable for representation
-   as a single GIMPLE_CALL statement.  If the arguments require
-   further gimplification, return false.  */
-
-static bool
-valid_gimple_call_p (tree expr)
-{
-  unsigned i, nargs;
-
-  if (TREE_CODE (expr) != CALL_EXPR)
-    return false;
-
-  nargs = call_expr_nargs (expr);
-  for (i = 0; i < nargs; i++)
-    {
-      tree arg = CALL_EXPR_ARG (expr, i);
-      if (is_gimple_reg_type (TREE_TYPE (arg)))
-	{
-	  if (!is_gimple_val (arg))
-	    return false;
-	}
-      else
-	if (!is_gimple_lvalue (arg))
-	  return false;
-    }
-
-  return true;
-}
-
 /* Convert EXPR into a GIMPLE value suitable for substitution on the
    RHS of an assignment.  Insert the necessary statements before
    iterator *SI_P.  The statement at *SI_P, which must be a GIMPLE_CALL
@@ -746,41 +562,17 @@ gimplify_and_update_call_from_tree (gimple_stmt_iterator *si_p, tree expr)
 
   gcc_assert (is_gimple_call (stmt));
 
-  if (valid_gimple_call_p (expr))
-    {
-      /* The call has simplified to another call.  */
-      tree fn = CALL_EXPR_FN (expr);
-      unsigned i;
-      unsigned nargs = call_expr_nargs (expr);
-      vec<tree> args = vNULL;
-      gcall *new_stmt;
-
-      if (nargs > 0)
-	{
-	  args.create (nargs);
-	  args.safe_grow_cleared (nargs, true);
-
-	  for (i = 0; i < nargs; i++)
-	    args[i] = CALL_EXPR_ARG (expr, i);
-	}
-
-      new_stmt = gimple_build_call_vec (fn, args);
-      finish_update_gimple_call (si_p, new_stmt, stmt);
-      args.release ();
-      return;
-    }
+  push_gimplify_context (gimple_in_ssa_p (cfun));
 
   lhs = gimple_call_lhs (stmt);
   if (lhs == NULL_TREE)
     {
-      push_gimplify_context (gimple_in_ssa_p (cfun));
       gimplify_and_add (expr, &stmts);
-      pop_gimplify_context (NULL);
-
       /* We can end up with folding a memcpy of an empty class assignment
 	 which gets optimized away by C++ gimplification.  */
       if (gimple_seq_empty_p (stmts))
 	{
+	  pop_gimplify_context (NULL);
 	  if (gimple_in_ssa_p (cfun))
 	    {
 	      unlink_stmt_vdef (stmt);
@@ -798,6 +590,8 @@ gimplify_and_update_call_from_tree (gimple_stmt_iterator *si_p, tree expr)
       gsi_insert_after_without_update (&i, new_stmt,
 				       GSI_CONTINUE_LINKING);
     }
+
+  pop_gimplify_context (NULL);
 
   gsi_replace_with_seq_vops (si_p, stmts);
 }
@@ -837,7 +631,14 @@ replace_call_with_call_and_fold (gimple_stmt_iterator *gsi, gimple *repl)
   gimple *stmt = gsi_stmt (*gsi);
   gimple_call_set_lhs (repl, gimple_call_lhs (stmt));
   gimple_set_location (repl, gimple_location (stmt));
-  gimple_move_vops (repl, stmt);
+  if (gimple_vdef (stmt)
+      && TREE_CODE (gimple_vdef (stmt)) == SSA_NAME)
+    {
+      gimple_set_vdef (repl, gimple_vdef (stmt));
+      SSA_NAME_DEF_STMT (gimple_vdef (repl)) = repl;
+    }
+  if (gimple_vuse (stmt))
+    gimple_set_vuse (repl, gimple_vuse (stmt));
   gsi_replace (gsi, repl, false);
   fold_stmt (gsi);
 }
@@ -873,15 +674,11 @@ size_must_be_zero_p (tree size)
   /* Compute the value of SSIZE_MAX, the largest positive value that
      can be stored in ssize_t, the signed counterpart of size_t.  */
   wide_int ssize_max = wi::lshift (wi::one (prec), prec - 1) - 1;
-  value_range valid_range (build_int_cst (type, 0),
+  value_range valid_range (VR_RANGE,
+			   build_int_cst (type, 0),
 			   wide_int_to_tree (type, ssize_max));
   value_range vr;
-  if (cfun)
-    get_range_query (cfun)->range_of_expr (vr, size);
-  else
-    get_global_range_query ()->range_of_expr (vr, size);
-  if (vr.undefined_p ())
-    vr.set_varying (TREE_TYPE (size));
+  get_range_info (size, vr);
   vr.intersect (&valid_range);
   return vr.zero_p ();
 }
@@ -895,11 +692,12 @@ size_must_be_zero_p (tree size)
 
 static bool
 gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
-			       tree dest, tree src, enum built_in_function code)
+			       tree dest, tree src, int endp)
 {
   gimple *stmt = gsi_stmt (*gsi);
   tree lhs = gimple_call_lhs (stmt);
   tree len = gimple_call_arg (stmt, 2);
+  tree destvar, srcvar;
   location_t loc = gimple_location (stmt);
 
   /* If the LEN parameter is a constant zero or in range where
@@ -940,51 +738,31 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
     }
   else
     {
-      /* We cannot (easily) change the type of the copy if it is a storage
-	 order barrier, i.e. is equivalent to a VIEW_CONVERT_EXPR that can
-	 modify the storage order of objects (see storage_order_barrier_p).  */
-      tree srctype
-	= POINTER_TYPE_P (TREE_TYPE (src))
-	  ? TREE_TYPE (TREE_TYPE (src)) : NULL_TREE;
-      tree desttype
-	= POINTER_TYPE_P (TREE_TYPE (dest))
-	  ? TREE_TYPE (TREE_TYPE (dest)) : NULL_TREE;
-      tree destvar, srcvar, srcoff;
+      tree srctype, desttype;
       unsigned int src_align, dest_align;
-      unsigned HOST_WIDE_INT tmp_len;
+      tree off0;
       const char *tmp_str;
+      unsigned HOST_WIDE_INT tmp_len;
 
       /* Build accesses at offset zero with a ref-all character type.  */
-      tree off0
-	= build_int_cst (build_pointer_type_for_mode (char_type_node,
-						      ptr_mode, true), 0);
+      off0 = build_int_cst (build_pointer_type_for_mode (char_type_node,
+							 ptr_mode, true), 0);
 
-      /* If we can perform the copy efficiently with first doing all loads and
-	 then all stores inline it that way.  Currently efficiently means that
-	 we can load all the memory with a single set operation and that the
-	 total size is less than MOVE_MAX * MOVE_RATIO.  */
+      /* If we can perform the copy efficiently with first doing all loads
+         and then all stores inline it that way.  Currently efficiently
+	 means that we can load all the memory into a single integer
+	 register which is what MOVE_MAX gives us.  */
       src_align = get_pointer_alignment (src);
       dest_align = get_pointer_alignment (dest);
       if (tree_fits_uhwi_p (len)
-	  && (compare_tree_int
-	      (len, (MOVE_MAX
-		     * MOVE_RATIO (optimize_function_for_size_p (cfun))))
-	      <= 0)
-	  /* FIXME: Don't transform copies from strings with known length.
-	     Until GCC 9 this prevented a case in gcc.dg/strlenopt-8.c
-	     from being handled, and the case was XFAILed for that reason.
-	     Now that it is handled and the XFAIL removed, as soon as other
-	     strlenopt tests that rely on it for passing are adjusted, this
-	     hack can be removed.  */
-	  && !c_strlen (src, 1)
-	  && !((tmp_str = getbyterep (src, &tmp_len)) != NULL
-	       && memchr (tmp_str, 0, tmp_len) == NULL)
-	  && !(srctype
-	       && AGGREGATE_TYPE_P (srctype)
-	       && TYPE_REVERSE_STORAGE_ORDER (srctype))
-	  && !(desttype
-	       && AGGREGATE_TYPE_P (desttype)
-	       && TYPE_REVERSE_STORAGE_ORDER (desttype)))
+	  && compare_tree_int (len, MOVE_MAX) <= 0
+	  /* ???  Don't transform copies from strings with known length this
+	     confuses the tree-ssa-strlen.c.  This doesn't handle
+	     the case in gcc.dg/strlenopt-8.c which is XFAILed for that
+	     reason.  */
+	  && !c_strlen (src, 2)
+	  && !((tmp_str = c_getstr (src, &tmp_len)) != NULL
+	       && memchr (tmp_str, 0, tmp_len) == NULL))
 	{
 	  unsigned ilen = tree_to_uhwi (len);
 	  if (pow2p_hwi (ilen))
@@ -1001,9 +779,10 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 		  return false;
 
 	      scalar_int_mode mode;
-	      if (int_mode_for_size (ilen * 8, 0).exists (&mode)
+	      tree type = lang_hooks.types.type_for_size (ilen * 8, 1);
+	      if (type
+		  && is_a <scalar_int_mode> (TYPE_MODE (type), &mode)
 		  && GET_MODE_SIZE (mode) * BITS_PER_UNIT == ilen * 8
-		  && have_insn_for (SET, mode)
 		  /* If the destination pointer is not aligned we must be able
 		     to emit an unaligned store.  */
 		  && (dest_align >= GET_MODE_ALIGNMENT (mode)
@@ -1011,7 +790,6 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 		      || (optab_handler (movmisalign_optab, mode)
 			  != CODE_FOR_nothing)))
 		{
-		  tree type = build_nonstandard_integer_type (ilen * 8, 1);
 		  tree srctype = type;
 		  tree desttype = type;
 		  if (src_align < GET_MODE_ALIGNMENT (mode))
@@ -1044,7 +822,11 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 			= gimple_build_assign (fold_build2 (MEM_REF, desttype,
 							    dest, off0),
 					       srcmem);
-		      gimple_move_vops (new_stmt, stmt);
+		      gimple_set_vuse (new_stmt, gimple_vuse (stmt));
+		      gimple_set_vdef (new_stmt, gimple_vdef (stmt));
+		      if (gimple_vdef (new_stmt)
+			  && TREE_CODE (gimple_vdef (new_stmt)) == SSA_NAME)
+			SSA_NAME_DEF_STMT (gimple_vdef (new_stmt)) = new_stmt;
 		      if (!lhs)
 			{
 			  gsi_replace (gsi, new_stmt, false);
@@ -1057,7 +839,7 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 	    }
 	}
 
-      if (code == BUILT_IN_MEMMOVE)
+      if (endp == 3)
 	{
 	  /* Both DEST and SRC must be pointer types.
 	     ??? This is what old code did.  Is the testing for pointer types
@@ -1164,13 +946,8 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 
       if (!tree_fits_shwi_p (len))
 	return false;
-      if (!srctype
-	  || (AGGREGATE_TYPE_P (srctype)
-	      && TYPE_REVERSE_STORAGE_ORDER (srctype)))
-	return false;
-      if (!desttype
-	  || (AGGREGATE_TYPE_P (desttype)
-	      && TYPE_REVERSE_STORAGE_ORDER (desttype)))
+      if (!POINTER_TYPE_P (TREE_TYPE (src))
+	  || !POINTER_TYPE_P (TREE_TYPE (dest)))
 	return false;
       /* In the following try to find a type that is most natural to be
 	 used for the memcpy source and destination and that allows
@@ -1178,9 +955,11 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 	 using that type.  In theory we could always use a char[len] type
 	 but that only gains us that the destination and source possibly
 	 no longer will have their address taken.  */
+      srctype = TREE_TYPE (TREE_TYPE (src));
       if (TREE_CODE (srctype) == ARRAY_TYPE
 	  && !tree_int_cst_equal (TYPE_SIZE_UNIT (srctype), len))
 	srctype = TREE_TYPE (srctype);
+      desttype = TREE_TYPE (TREE_TYPE (dest));
       if (TREE_CODE (desttype) == ARRAY_TYPE
 	  && !tree_int_cst_equal (TYPE_SIZE_UNIT (desttype), len))
 	desttype = TREE_TYPE (desttype);
@@ -1207,44 +986,36 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 
       src_align = get_pointer_alignment (src);
       dest_align = get_pointer_alignment (dest);
-
-      /* Choose between src and destination type for the access based
-         on alignment, whether the access constitutes a register access
-	 and whether it may actually expose a declaration for SSA rewrite
-	 or SRA decomposition.  Also try to expose a string constant, we
-	 might be able to concatenate several of them later into a single
-	 string store.  */
-      destvar = NULL_TREE;
-      srcvar = NULL_TREE;
-      if (TREE_CODE (dest) == ADDR_EXPR
-	  && var_decl_component_p (TREE_OPERAND (dest, 0))
-	  && tree_int_cst_equal (TYPE_SIZE_UNIT (desttype), len)
-	  && dest_align >= TYPE_ALIGN (desttype)
-	  && (is_gimple_reg_type (desttype)
-	      || src_align >= TYPE_ALIGN (desttype)))
-	destvar = fold_build2 (MEM_REF, desttype, dest, off0);
-      else if (TREE_CODE (src) == ADDR_EXPR
-	       && var_decl_component_p (TREE_OPERAND (src, 0))
-	       && tree_int_cst_equal (TYPE_SIZE_UNIT (srctype), len)
-	       && src_align >= TYPE_ALIGN (srctype)
-	       && (is_gimple_reg_type (srctype)
-		   || dest_align >= TYPE_ALIGN (srctype)))
-	srcvar = fold_build2 (MEM_REF, srctype, src, off0);
-      /* FIXME: Don't transform copies from strings with known original length.
-	 As soon as strlenopt tests that rely on it for passing are adjusted,
-	 this hack can be removed.  */
-      else if (gimple_call_alloca_for_var_p (stmt)
-	       && (srcvar = string_constant (src, &srcoff, NULL, NULL))
-	       && integer_zerop (srcoff)
-	       && tree_int_cst_equal (TYPE_SIZE_UNIT (TREE_TYPE (srcvar)), len)
-	       && dest_align >= TYPE_ALIGN (TREE_TYPE (srcvar)))
-	srctype = TREE_TYPE (srcvar);
-      else
+      if (dest_align < TYPE_ALIGN (desttype)
+	  || src_align < TYPE_ALIGN (srctype))
 	return false;
 
-      /* Now that we chose an access type express the other side in
-         terms of it if the target allows that with respect to alignment
-	 constraints.  */
+      destvar = NULL_TREE;
+      if (TREE_CODE (dest) == ADDR_EXPR
+	  && var_decl_component_p (TREE_OPERAND (dest, 0))
+	  && tree_int_cst_equal (TYPE_SIZE_UNIT (desttype), len))
+	destvar = fold_build2 (MEM_REF, desttype, dest, off0);
+
+      srcvar = NULL_TREE;
+      if (TREE_CODE (src) == ADDR_EXPR
+	  && var_decl_component_p (TREE_OPERAND (src, 0))
+	  && tree_int_cst_equal (TYPE_SIZE_UNIT (srctype), len))
+	{
+	  if (!destvar
+	      || src_align >= TYPE_ALIGN (desttype))
+	    srcvar = fold_build2 (MEM_REF, destvar ? desttype : srctype,
+				  src, off0);
+	  else if (!STRICT_ALIGNMENT)
+	    {
+	      srctype = build_aligned_type (TYPE_MAIN_VARIANT (desttype),
+					    src_align);
+	      srcvar = fold_build2 (MEM_REF, srctype, src, off0);
+	    }
+	}
+
+      if (srcvar == NULL_TREE && destvar == NULL_TREE)
+	return false;
+
       if (srcvar == NULL_TREE)
 	{
 	  if (src_align >= TYPE_ALIGN (desttype))
@@ -1302,31 +1073,25 @@ gimple_fold_builtin_memory_op (gimple_stmt_iterator *gsi,
 	  goto set_vop_and_replace;
 	}
 
-      /* We get an aggregate copy.  If the source is a STRING_CST, then
-	 directly use its type to perform the copy.  */
-      if (TREE_CODE (srcvar) == STRING_CST)
-	  desttype = srctype;
-
-      /* Or else, use an unsigned char[] type to perform the copy in order
-	 to preserve padding and to avoid any issues with TREE_ADDRESSABLE
-	 types or float modes behavior on copying.  */
-      else
-	{
-	  desttype = build_array_type_nelts (unsigned_char_type_node,
-					     tree_to_uhwi (len));
-	  srctype = desttype;
-	  if (src_align > TYPE_ALIGN (srctype))
-	    srctype = build_aligned_type (srctype, src_align);
-	  srcvar = fold_build2 (MEM_REF, srctype, src, off0);
-	}
-
+      /* We get an aggregate copy.  Use an unsigned char[] type to
+	 perform the copying to preserve padding and to avoid any issues
+	 with TREE_ADDRESSABLE types or float modes behavior on copying.  */
+      desttype = build_array_type_nelts (unsigned_char_type_node,
+					 tree_to_uhwi (len));
+      srctype = desttype;
+      if (src_align > TYPE_ALIGN (srctype))
+	srctype = build_aligned_type (srctype, src_align);
       if (dest_align > TYPE_ALIGN (desttype))
 	desttype = build_aligned_type (desttype, dest_align);
-      destvar = fold_build2 (MEM_REF, desttype, dest, off0);
-      new_stmt = gimple_build_assign (destvar, srcvar);
-
+      new_stmt
+	= gimple_build_assign (fold_build2 (MEM_REF, desttype, dest, off0),
+			       fold_build2 (MEM_REF, srctype, src, off0));
 set_vop_and_replace:
-      gimple_move_vops (new_stmt, stmt);
+      gimple_set_vuse (new_stmt, gimple_vuse (stmt));
+      gimple_set_vdef (new_stmt, gimple_vdef (stmt));
+      if (gimple_vdef (new_stmt)
+	  && TREE_CODE (gimple_vdef (new_stmt)) == SSA_NAME)
+	SSA_NAME_DEF_STMT (gimple_vdef (new_stmt)) = new_stmt;
       if (!lhs)
 	{
 	  gsi_replace (gsi, new_stmt, false);
@@ -1337,16 +1102,17 @@ set_vop_and_replace:
 
 done:
   gimple_seq stmts = NULL;
-  if (code == BUILT_IN_MEMCPY || code == BUILT_IN_MEMMOVE)
+  if (endp == 0 || endp == 3)
     len = NULL_TREE;
-  else if (code == BUILT_IN_MEMPCPY)
+  else if (endp == 2)
+    len = gimple_build (&stmts, loc, MINUS_EXPR, TREE_TYPE (len), len,
+			ssize_int (1));
+  if (endp == 2 || endp == 1)
     {
       len = gimple_convert_to_ptrofftype (&stmts, loc, len);
       dest = gimple_build (&stmts, loc, POINTER_PLUS_EXPR,
 			   TREE_TYPE (dest), dest, len);
     }
-  else
-    gcc_unreachable ();
 
   gsi_insert_seq_before (gsi, stmts, GSI_SAME_STMT);
   gimple *repl = gimple_build_assign (lhs, dest);
@@ -1476,17 +1242,11 @@ gimple_fold_builtin_memset (gimple_stmt_iterator *gsi, tree c, tree len)
 
   length = tree_to_uhwi (len);
   if (GET_MODE_SIZE (SCALAR_INT_TYPE_MODE (etype)) != length
-      || (GET_MODE_PRECISION (SCALAR_INT_TYPE_MODE (etype))
-	  != GET_MODE_BITSIZE (SCALAR_INT_TYPE_MODE (etype)))
       || get_pointer_alignment (dest) / BITS_PER_UNIT < length)
     return NULL_TREE;
 
   if (length > HOST_BITS_PER_WIDE_INT / BITS_PER_UNIT)
     return NULL_TREE;
-
-  if (!type_has_mode_precision_p (etype))
-    etype = lang_hooks.types.type_for_mode (SCALAR_INT_TYPE_MODE (etype),
-					    TYPE_UNSIGNED (etype));
 
   if (integer_zerop (c))
     cval = 0;
@@ -1504,8 +1264,13 @@ gimple_fold_builtin_memset (gimple_stmt_iterator *gsi, tree c, tree len)
 
   var = fold_build2 (MEM_REF, etype, dest, build_int_cst (ptr_type_node, 0));
   gimple *store = gimple_build_assign (var, build_int_cst_type (etype, cval));
-  gimple_move_vops (store, stmt);
-  gimple_set_location (store, gimple_location (stmt));
+  gimple_set_vuse (store, gimple_vuse (stmt));
+  tree vdef = gimple_vdef (stmt);
+  if (vdef && TREE_CODE (vdef) == SSA_NAME)
+    {
+      gimple_set_vdef (store, gimple_vdef (stmt));
+      SSA_NAME_DEF_STMT (gimple_vdef (stmt)) = store;
+    }
   gsi_insert_before (gsi, store, GSI_SAME_STMT);
   if (gimple_call_lhs (stmt))
     {
@@ -1529,7 +1294,7 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 		       c_strlen_data *pdata, unsigned eltsize)
 {
   gcc_assert (TREE_CODE (arg) != SSA_NAME);
-
+ 
   /* The length computed by this invocation of the function.  */
   tree val = NULL_TREE;
 
@@ -1593,10 +1358,6 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 	}
     }
 
-  /* Set if VAL represents the maximum length based on array size (set
-     when exact length cannot be determined).  */
-  bool maxbound = false;
-
   if (!val && rkind == SRK_LENRANGE)
     {
       if (TREE_CODE (arg) == ADDR_EXPR)
@@ -1620,9 +1381,7 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 
 	  /* Fail when the array bound is unknown or zero.  */
 	  val = TYPE_SIZE_UNIT (optype);
-	  if (!val
-	      || TREE_CODE (val) != INTEGER_CST
-	      || integer_zerop (val))
+	  if (!val || integer_zerop (val))
 	    return false;
 
 	  val = fold_build2 (MINUS_EXPR, TREE_TYPE (val), val,
@@ -1656,9 +1415,7 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 
 	  /* Fail when the array bound is unknown or zero.  */
 	  val = TYPE_SIZE_UNIT (optype);
-	  if (!val
-	      || TREE_CODE (val) != INTEGER_CST
-	      || integer_zerop (val))
+	  if (!val || integer_zerop (val))
 	    return false;
 	  val = fold_build2 (MINUS_EXPR, TREE_TYPE (val), val,
 			     integer_one_node);
@@ -1675,46 +1432,7 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 	     type about the length here.  */
 	  tight_bound = true;
 	}
-      else if (TREE_CODE (arg) == MEM_REF
-	       && TREE_CODE (TREE_TYPE (arg)) == ARRAY_TYPE
-	       && TREE_CODE (TREE_TYPE (TREE_TYPE (arg))) == INTEGER_TYPE
-	       && TREE_CODE (TREE_OPERAND (arg, 0)) == ADDR_EXPR)
-	{
-	  /* Handle a MEM_REF into a DECL accessing an array of integers,
-	     being conservative about references to extern structures with
-	     flexible array members that can be initialized to arbitrary
-	     numbers of elements as an extension (static structs are okay).
-	     FIXME: Make this less conservative -- see
-	     component_ref_size in tree.c.  */
-	  tree ref = TREE_OPERAND (TREE_OPERAND (arg, 0), 0);
-	  if ((TREE_CODE (ref) == PARM_DECL || VAR_P (ref))
-	      && (decl_binds_to_current_def_p (ref)
-		  || !array_at_struct_end_p (arg)))
-	    {
-	      /* Fail if the offset is out of bounds.  Such accesses
-		 should be diagnosed at some point.  */
-	      val = DECL_SIZE_UNIT (ref);
-	      if (!val
-		  || TREE_CODE (val) != INTEGER_CST
-		  || integer_zerop (val))
-		return false;
-
-	      poly_offset_int psiz = wi::to_offset (val);
-	      poly_offset_int poff = mem_ref_offset (arg);
-	      if (known_le (psiz, poff))
-		return false;
-
-	      pdata->minlen = ssize_int (0);
-
-	      /* Subtract the offset and one for the terminating nul.  */
-	      psiz -= poff;
-	      psiz -= 1;
-	      val = wide_int_to_tree (TREE_TYPE (val), psiz);
-	      /* Since VAL reflects the size of a declared object
-		 rather the type of the access it is not a tight bound.  */
-	    }
-	}
-      else if (TREE_CODE (arg) == PARM_DECL || VAR_P (arg))
+      else if (VAR_P (arg))
 	{
 	  /* Avoid handling pointers to arrays.  GCC might misuse
 	     a pointer to an array of one bound to point to an array
@@ -1735,7 +1453,6 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 	      pdata->minlen = ssize_int (0);
 	    }
 	}
-      maxbound = true;
     }
 
   if (!val)
@@ -1749,23 +1466,25 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 	  && tree_int_cst_lt (val, pdata->minlen)))
     pdata->minlen = val;
 
-  if (pdata->maxbound && TREE_CODE (pdata->maxbound) == INTEGER_CST)
+  if (pdata->maxbound)
     {
       /* Adjust the tighter (more optimistic) string length bound
 	 if necessary and proceed to adjust the more conservative
 	 bound.  */
       if (TREE_CODE (val) == INTEGER_CST)
 	{
-	  if (tree_int_cst_lt (pdata->maxbound, val))
-	    pdata->maxbound = val;
+	  if (TREE_CODE (pdata->maxbound) == INTEGER_CST)
+	    {
+	      if (tree_int_cst_lt (pdata->maxbound, val))
+		pdata->maxbound = val;
+	    }
+	  else
+	    pdata->maxbound = build_all_ones_cst (size_type_node);
 	}
       else
 	pdata->maxbound = val;
     }
-  else if (pdata->maxbound || maxbound)
-    /* Set PDATA->MAXBOUND only if it either isn't INTEGER_CST or
-       if VAL corresponds to the maximum length determined based
-       on the type of the object.  */
+  else
     pdata->maxbound = val;
 
   if (tight_bound)
@@ -1792,8 +1511,7 @@ get_range_strlen_tree (tree arg, bitmap *visited, strlen_range_kind rkind,
 	     the referenced subobject minus 1 (for the terminating nul).  */
 	  tree type = TREE_TYPE (base);
 	  if (TREE_CODE (type) == POINTER_TYPE
-	      || (TREE_CODE (base) != PARM_DECL && !VAR_P (base))
-	      || !(val = DECL_SIZE_UNIT (base)))
+	      || !VAR_P (base) || !(val = DECL_SIZE_UNIT (base)))
 	    val = build_all_ones_cst (size_type_node);
 	  else
 	    {
@@ -1945,25 +1663,35 @@ get_range_strlen (tree arg, bitmap *visited,
     }
 }
 
-/* Try to obtain the range of the lengths of the string(s) referenced
-   by ARG, or the size of the largest array ARG refers to if the range
-   of lengths cannot be determined, and store all in *PDATA which must
-   be zero-initialized on input except PDATA->MAXBOUND may be set to
-   a non-null tree node other than INTEGER_CST to request to have it
-   set to the length of the longest string in a PHI.  ELTSIZE is
-   the expected size of the string element in bytes: 1 for char and
-   some power of 2 for wide characters.
-   Return true if the range [PDATA->MINLEN, PDATA->MAXLEN] is suitable
-   for optimization.  Returning false means that a nonzero PDATA->MINLEN
-   doesn't reflect the true lower bound of the range when PDATA->MAXLEN
-   is -1 (in that case, the actual range is indeterminate, i.e.,
-   [0, PTRDIFF_MAX - 2].  */
+/* Determine the minimum and maximum value or string length that ARG
+   refers to and store each in the first two elements of MINMAXLEN.
+   For expressions that point to strings of unknown lengths that are
+   character arrays, use the upper bound of the array as the maximum
+   length.  For example, given an expression like 'x ? array : "xyz"'
+   and array declared as 'char array[8]', MINMAXLEN[0] will be set
+   to 0 and MINMAXLEN[1] to 7, the longest string that could be
+   stored in array.
+   Return true if the range of the string lengths has been obtained
+   from the upper bound of an array at the end of a struct.  Such
+   an array may hold a string that's longer than its upper bound
+   due to it being used as a poor-man's flexible array member.
+
+   STRICT is true if it will handle PHIs and COND_EXPRs conservatively
+   and false if PHIs and COND_EXPRs are to be handled optimistically,
+   if we can determine string length minimum and maximum; it will use
+   the minimum from the ones where it can be determined.
+   STRICT false should be only used for warning code.
+   When non-null, clear *NONSTR if ARG refers to a constant array
+   that is known not be nul-terminated.  Otherwise set it to
+   the declaration of the constant non-terminated array.
+
+   ELTSIZE is 1 for normal single byte character strings, and 2 or
+   4 for wide characer strings.  ELTSIZE is by default 1.  */
 
 bool
 get_range_strlen (tree arg, c_strlen_data *pdata, unsigned eltsize)
 {
   bitmap visited = NULL;
-  tree maxbound = pdata->maxbound;
 
   if (!get_range_strlen (arg, &visited, SRK_LENRANGE, pdata, eltsize))
     {
@@ -1976,10 +1704,9 @@ get_range_strlen (tree arg, c_strlen_data *pdata, unsigned eltsize)
   else if (!pdata->minlen)
     pdata->minlen = ssize_int (0);
 
-  /* If it's unchanged from it initial non-null value, set the conservative
-     MAXBOUND to SIZE_MAX.  Otherwise leave it null (if it is null).  */
-  if (maxbound && pdata->maxbound == maxbound)
-    pdata->maxbound = build_all_ones_cst (size_type_node);
+  /* Unless its null, leave the more conservative MAXBOUND unchanged.  */
+  if (!pdata->maxbound)
+    pdata->maxbound = pdata->maxlen;
 
   if (visited)
     BITMAP_FREE (visited);
@@ -2051,7 +1778,7 @@ gimple_fold_builtin_strcpy (gimple_stmt_iterator *gsi,
 	 not point to objects and so do not indicate an overlap;
 	 such calls could be the result of sanitization and jump
 	 threading).  */
-      if (!integer_zerop (dest) && !warning_suppressed_p (stmt, OPT_Wrestrict))
+      if (!integer_zerop (dest) && !gimple_no_warning_p (stmt))
 	{
 	  tree func = gimple_call_fndecl (stmt);
 
@@ -2078,9 +1805,9 @@ gimple_fold_builtin_strcpy (gimple_stmt_iterator *gsi,
   if (nonstr)
     {
       /* Avoid folding calls with unterminated arrays.  */
-      if (!warning_suppressed_p (stmt, OPT_Wstringop_overread))
-	warn_string_no_nul (loc, stmt, "strcpy", src, nonstr);
-      suppress_warning (stmt, OPT_Wstringop_overread);
+      if (!gimple_no_warning_p (stmt))
+	warn_string_no_nul (loc, "strcpy", src, nonstr);
+      gimple_set_no_warning (stmt, true);
       return false;
     }
 
@@ -2111,7 +1838,7 @@ gimple_fold_builtin_strncpy (gimple_stmt_iterator *gsi,
   /* If the LEN parameter is zero, return DEST.  */
   if (integer_zerop (len))
     {
-      /* Avoid warning if the destination refers to an array/pointer
+      /* Avoid warning if the destination refers to a an array/pointer
 	 decorate with attribute nonstring.  */
       if (!nonstring)
 	{
@@ -2122,13 +1849,13 @@ gimple_fold_builtin_strncpy (gimple_stmt_iterator *gsi,
 	  tree slen = get_maxval_strlen (src, SRK_STRLEN);
 	  if (slen && !integer_zerop (slen))
 	    warning_at (loc, OPT_Wstringop_truncation,
-			"%qD destination unchanged after copying no bytes "
+			"%G%qD destination unchanged after copying no bytes "
 			"from a string of length %E",
-			fndecl, slen);
+			stmt, fndecl, slen);
 	  else
 	    warning_at (loc, OPT_Wstringop_truncation,
-			"%qD destination unchanged after copying no bytes",
-			fndecl);
+			"%G%qD destination unchanged after copying no bytes",
+			stmt, fndecl);
 	}
 
       replace_call_with_value (gsi, dest);
@@ -2187,11 +1914,6 @@ gimple_fold_builtin_strchr (gimple_stmt_iterator *gsi, bool is_strrchr)
   char ch;
 
   if (!gimple_call_lhs (stmt))
-    return false;
-
-  /* Avoid folding if the first argument is not a nul-terminated array.
-     Defer warning until later.  */
-  if (!check_nul_terminated_array (NULL_TREE, str))
     return false;
 
   if ((p = c_getstr (str)) && target_char_cst_p (c, &ch))
@@ -2268,23 +1990,18 @@ static bool
 gimple_fold_builtin_strstr (gimple_stmt_iterator *gsi)
 {
   gimple *stmt = gsi_stmt (*gsi);
+  tree haystack = gimple_call_arg (stmt, 0);
+  tree needle = gimple_call_arg (stmt, 1);
+  const char *p, *q;
+
   if (!gimple_call_lhs (stmt))
     return false;
 
-  tree haystack = gimple_call_arg (stmt, 0);
-  tree needle = gimple_call_arg (stmt, 1);
-
-  /* Avoid folding if either argument is not a nul-terminated array.
-     Defer warning until later.  */
-  if (!check_nul_terminated_array (NULL_TREE, haystack)
-      || !check_nul_terminated_array (NULL_TREE, needle))
-    return false;
-
-  const char *q = c_getstr (needle);
+  q = c_getstr (needle);
   if (q == NULL)
     return false;
 
-  if (const char *p = c_getstr (haystack))
+  if ((p = c_getstr (haystack)))
     {
       const char *r = strstr (p, q);
 
@@ -2488,7 +2205,7 @@ gimple_fold_builtin_strncat (gimple_stmt_iterator *gsi)
 
   unsigned HOST_WIDE_INT dstsize;
 
-  bool nowarn = warning_suppressed_p (stmt, OPT_Wstringop_overflow_);
+  bool nowarn = gimple_no_warning_p (stmt);
 
   if (!nowarn && compute_builtin_object_size (dst, 1, &dstsize))
     {
@@ -2505,13 +2222,13 @@ gimple_fold_builtin_strncat (gimple_stmt_iterator *gsi)
 	  location_t loc = gimple_location (stmt);
 	  nowarn = warning_at (loc, OPT_Wstringop_overflow_,
 			       cmpdst == 0
-			       ? G_("%qD specified bound %E equals "
+			       ? G_("%G%qD specified bound %E equals "
 				    "destination size")
-			       : G_("%qD specified bound %E exceeds "
+			       : G_("%G%qD specified bound %E exceeds "
 				    "destination size %wu"),
-			       fndecl, len, dstsize);
+			       stmt, fndecl, len, dstsize);
 	  if (nowarn)
-	    suppress_warning (stmt, OPT_Wstringop_overflow_);
+	    gimple_set_no_warning (stmt, true);
 	}
     }
 
@@ -2525,9 +2242,9 @@ gimple_fold_builtin_strncat (gimple_stmt_iterator *gsi)
 	 of the destination is unknown (it's not an uncommon mistake
 	 to specify as the bound to strncpy the length of the source).  */
       if (warning_at (loc, OPT_Wstringop_overflow_,
-		      "%qD specified bound %E equals source length",
-		      fndecl, len))
-	suppress_warning (stmt, OPT_Wstringop_overflow_);
+		      "%G%qD specified bound %E equals source length",
+		      stmt, fndecl, len))
+	gimple_set_no_warning (stmt, true);
     }
 
   tree fn = builtin_decl_implicit (BUILT_IN_STRCAT);
@@ -2623,7 +2340,8 @@ gimple_load_first_char (location_t loc, tree str, gimple_seq *stmts)
   return var;
 }
 
-/* Fold a call to the str{n}{case}cmp builtin pointed by GSI iterator.  */
+/* Fold a call to the str{n}{case}cmp builtin pointed by GSI iterator.
+   FCODE is the name of the builtin.  */
 
 static bool
 gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
@@ -2636,20 +2354,18 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
   tree str1 = gimple_call_arg (stmt, 0);
   tree str2 = gimple_call_arg (stmt, 1);
   tree lhs = gimple_call_lhs (stmt);
-
-  tree bound_node = NULL_TREE;
-  unsigned HOST_WIDE_INT bound = HOST_WIDE_INT_M1U;
+  HOST_WIDE_INT length = -1;
 
   /* Handle strncmp and strncasecmp functions.  */
   if (gimple_call_num_args (stmt) == 3)
     {
-      bound_node = gimple_call_arg (stmt, 2);
-      if (tree_fits_uhwi_p (bound_node))
-	bound = tree_to_uhwi (bound_node);
+      tree len = gimple_call_arg (stmt, 2);
+      if (tree_fits_uhwi_p (len))
+	length = tree_to_uhwi (len);
     }
 
-  /* If the BOUND parameter is zero, return zero.  */
-  if (bound == 0)
+  /* If the LEN parameter is zero, return zero.  */
+  if (length == 0)
     {
       replace_call_with_value (gsi, integer_zero_node);
       return true;
@@ -2662,32 +2378,8 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
       return true;
     }
 
-  /* Initially set to the number of characters, including the terminating
-     nul if each array has one.   LENx == strnlen (Sx, LENx) implies that
-     the array Sx is not terminated by a nul.
-     For nul-terminated strings then adjusted to their length so that
-     LENx == NULPOSx holds.  */
-  unsigned HOST_WIDE_INT len1 = HOST_WIDE_INT_MAX, len2 = len1;
-  const char *p1 = getbyterep (str1, &len1);
-  const char *p2 = getbyterep (str2, &len2);
-
-  /* The position of the terminating nul character if one exists, otherwise
-     a value greater than LENx.  */
-  unsigned HOST_WIDE_INT nulpos1 = HOST_WIDE_INT_MAX, nulpos2 = nulpos1;
-
-  if (p1)
-    {
-      size_t n = strnlen (p1, len1);
-      if (n < len1)
-	len1 = nulpos1 = n;
-    }
-
-  if (p2)
-    {
-      size_t n = strnlen (p2, len2);
-      if (n < len2)
-	len2 = nulpos2 = n;
-    }
+  const char *p1 = c_getstr (str1);
+  const char *p2 = c_getstr (str2);
 
   /* For known strings, return an immediate value.  */
   if (p1 && p2)
@@ -2699,33 +2391,17 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
 	{
 	case BUILT_IN_STRCMP:
 	case BUILT_IN_STRCMP_EQ:
-	  if (len1 != nulpos1 || len2 != nulpos2)
+	  {
+	    r = strcmp (p1, p2);
+	    known_result = true;
 	    break;
-
-	  r = strcmp (p1, p2);
-	  known_result = true;
-	  break;
-
+	  }
 	case BUILT_IN_STRNCMP:
 	case BUILT_IN_STRNCMP_EQ:
 	  {
-	    if (bound == HOST_WIDE_INT_M1U)
+	    if (length == -1)
 	      break;
-
-	    /* Reduce the bound to be no more than the length
-	       of the shorter of the two strings, or the sizes
-	       of the unterminated arrays.  */
-	    unsigned HOST_WIDE_INT n = bound;
-
-	    if (len1 == nulpos1 && len1 < n)
-	      n = len1 + 1;
-	    if (len2 == nulpos2 && len2 < n)
-	      n = len2 + 1;
-
-	    if (MIN (nulpos1, nulpos2) + 1 < n)
-	      break;
-
-	    r = strncmp (p1, p2, n);
+	    r = strncmp (p1, p2, length);
 	    known_result = true;
 	    break;
 	  }
@@ -2735,9 +2411,9 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
 	  break;
 	case BUILT_IN_STRNCASECMP:
 	  {
-	    if (bound == HOST_WIDE_INT_M1U)
+	    if (length == -1)
 	      break;
-	    r = strncmp (p1, p2, bound);
+	    r = strncmp (p1, p2, length);
 	    if (r == 0)
 	      known_result = true;
 	    break;
@@ -2753,7 +2429,7 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
 	}
     }
 
-  bool nonzero_bound = (bound >= 1 && bound < HOST_WIDE_INT_M1U)
+  bool nonzero_length = length >= 1
     || fcode == BUILT_IN_STRCMP
     || fcode == BUILT_IN_STRCMP_EQ
     || fcode == BUILT_IN_STRCASECMP;
@@ -2761,7 +2437,7 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
   location_t loc = gimple_location (stmt);
 
   /* If the second arg is "", return *(const unsigned char*)arg1.  */
-  if (p2 && *p2 == '\0' && nonzero_bound)
+  if (p2 && *p2 == '\0' && nonzero_length)
     {
       gimple_seq stmts = NULL;
       tree var = gimple_load_first_char (loc, str1, &stmts);
@@ -2776,7 +2452,7 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
     }
 
   /* If the first arg is "", return -*(const unsigned char*)arg2.  */
-  if (p1 && *p1 == '\0' && nonzero_bound)
+  if (p1 && *p1 == '\0' && nonzero_length)
     {
       gimple_seq stmts = NULL;
       tree var = gimple_load_first_char (loc, str2, &stmts);
@@ -2795,9 +2471,9 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
       return true;
     }
 
-  /* If BOUND is one, return an expression corresponding to
+  /* If len parameter is one, return an expression corresponding to
      (*(const unsigned char*)arg2 - *(const unsigned char*)arg1).  */
-  if (fcode == BUILT_IN_STRNCMP && bound == 1)
+  if (fcode == BUILT_IN_STRNCMP && length == 1)
     {
       gimple_seq stmts = NULL;
       tree temp1 = gimple_load_first_char (loc, str1, &stmts);
@@ -2821,13 +2497,12 @@ gimple_fold_builtin_string_compare (gimple_stmt_iterator *gsi)
       return true;
     }
 
-  /* If BOUND is greater than the length of one constant string,
-     and the other argument is also a nul-terminated string, replace
-     strncmp with strcmp.  */
-  if (fcode == BUILT_IN_STRNCMP
-      && bound > 0 && bound < HOST_WIDE_INT_M1U
-      && ((p2 && len2 < bound && len2 == nulpos2)
-	  || (p1 && len1 < bound && len1 == nulpos1)))
+  /* If length is larger than the length of one constant string, 
+     replace strncmp with corresponding strcmp */ 
+  if (fcode == BUILT_IN_STRNCMP 
+      && length > 0
+      && ((p2 && (size_t) length > strlen (p2)) 
+          || (p1 && (size_t) length > strlen (p1))))
     {
       tree fn = builtin_decl_implicit (BUILT_IN_STRCMP);
       if (!fn)
@@ -2866,22 +2541,14 @@ gimple_fold_builtin_memchr (gimple_stmt_iterator *gsi)
 
   unsigned HOST_WIDE_INT length = tree_to_uhwi (len);
   unsigned HOST_WIDE_INT string_length;
-  const char *p1 = getbyterep (arg1, &string_length);
+  const char *p1 = c_getstr (arg1, &string_length);
 
   if (p1)
     {
       const char *r = (const char *)memchr (p1, c, MIN (length, string_length));
       if (r == NULL)
 	{
-	  tree mem_size, offset_node;
-	  byte_representation (arg1, &offset_node, &mem_size, NULL);
-	  unsigned HOST_WIDE_INT offset = (offset_node == NULL_TREE)
-					  ? 0 : tree_to_uhwi (offset_node);
-	  /* MEM_SIZE is the size of the array the string literal
-	     is stored in.  */
-	  unsigned HOST_WIDE_INT string_size = tree_to_uhwi (mem_size) - offset;
-	  gcc_checking_assert (string_length <= string_size);
-	  if (length <= string_size)
+	  if (length <= string_length)
 	    {
 	      replace_call_with_value (gsi, build_int_cst (ptr_type_node, 0));
 	      return true;
@@ -2893,7 +2560,7 @@ gimple_fold_builtin_memchr (gimple_stmt_iterator *gsi)
 	  gimple_seq stmts = NULL;
 	  if (lhs != NULL_TREE)
 	    {
-	      tree offset_cst = build_int_cst (sizetype, offset);
+	      tree offset_cst = build_int_cst (TREE_TYPE (len), offset);
 	      gassign *stmt = gimple_build_assign (lhs, POINTER_PLUS_EXPR,
 						   arg1, offset_cst);
 	      gimple_seq_add_stmt_without_update (&stmts, stmt);
@@ -3112,8 +2779,7 @@ gimple_fold_builtin_stxcpy_chk (gimple_stmt_iterator *gsi,
 	 not point to objects and so do not indicate an overlap;
 	 such calls could be the result of sanitization and jump
 	 threading).  */
-      if (!integer_zerop (dest)
-	  && !warning_suppressed_p (stmt, OPT_Wrestrict))
+      if (!integer_zerop (dest) && !gimple_no_warning_p (stmt))
 	{
 	  tree func = gimple_call_fndecl (stmt);
 
@@ -3279,16 +2945,11 @@ gimple_fold_builtin_stpcpy (gimple_stmt_iterator *gsi)
 
   /* Set to non-null if ARG refers to an unterminated array.  */
   c_strlen_data data = { };
-  /* The size of the unterminated array if SRC referes to one.  */
-  tree size;
-  /* True if the size is exact/constant, false if it's the lower bound
-     of a range.  */
-  bool exact;
   tree len = c_strlen (src, 1, &data, 1);
   if (!len
       || TREE_CODE (len) != INTEGER_CST)
     {
-      data.decl = unterminated_array (src, &size, &exact);
+      data.decl = unterminated_array (src);
       if (!data.decl)
 	return false;
     }
@@ -3296,10 +2957,9 @@ gimple_fold_builtin_stpcpy (gimple_stmt_iterator *gsi)
   if (data.decl)
     {
       /* Avoid folding calls with unterminated arrays.  */
-      if (!warning_suppressed_p (stmt, OPT_Wstringop_overread))
-	warn_string_no_nul (loc, stmt, "stpcpy", src, data.decl, size,
-			    exact);
-      suppress_warning (stmt, OPT_Wstringop_overread);
+      if (!gimple_no_warning_p (stmt))
+	warn_string_no_nul (loc, "stpcpy", src, data.decl);
+      gimple_set_no_warning (stmt, true);
       return false;
     }
 
@@ -3319,7 +2979,11 @@ gimple_fold_builtin_stpcpy (gimple_stmt_iterator *gsi)
 			tem, build_int_cst (size_type_node, 1));
   gsi_insert_seq_before (gsi, stmts, GSI_SAME_STMT);
   gcall *repl = gimple_build_call (fn, 3, dest, src, lenp1);
-  gimple_move_vops (repl, stmt);
+  gimple_set_vuse (repl, gimple_vuse (stmt));
+  gimple_set_vdef (repl, gimple_vdef (stmt));
+  if (gimple_vdef (repl)
+      && TREE_CODE (gimple_vdef (repl)) == SSA_NAME)
+    SSA_NAME_DEF_STMT (gimple_vdef (repl)) = repl;
   gsi_insert_before (gsi, repl, GSI_SAME_STMT);
   /* Replace the result with dest + len.  */
   stmts = NULL;
@@ -3522,6 +3186,10 @@ bool
 gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
 {
   gimple *stmt = gsi_stmt (*gsi);
+  tree dest = gimple_call_arg (stmt, 0);
+  tree fmt = gimple_call_arg (stmt, 1);
+  tree orig = NULL_TREE;
+  const char *fmt_str = NULL;
 
   /* Verify the required arguments in the original call.  We deal with two
      types of sprintf() calls: 'sprintf (str, fmt)' and
@@ -3529,28 +3197,25 @@ gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
   if (gimple_call_num_args (stmt) > 3)
     return false;
 
-  tree orig = NULL_TREE;
   if (gimple_call_num_args (stmt) == 3)
     orig = gimple_call_arg (stmt, 2);
 
   /* Check whether the format is a literal string constant.  */
-  tree fmt = gimple_call_arg (stmt, 1);
-  const char *fmt_str = c_getstr (fmt);
+  fmt_str = c_getstr (fmt);
   if (fmt_str == NULL)
     return false;
 
-  tree dest = gimple_call_arg (stmt, 0);
-
   if (!init_target_chars ())
-    return false;
-
-  tree fn = builtin_decl_implicit (BUILT_IN_STRCPY);
-  if (!fn)
     return false;
 
   /* If the format doesn't contain % args or %%, use strcpy.  */
   if (strchr (fmt_str, target_percent) == NULL)
     {
+      tree fn = builtin_decl_implicit (BUILT_IN_STRCPY);
+
+      if (!fn)
+	return false;
+
       /* Don't optimize sprintf (buf, "abc", ptr++).  */
       if (orig)
 	return false;
@@ -3562,7 +3227,8 @@ gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
 
       /* Propagate the NO_WARNING bit to avoid issuing the same
 	 warning more than once.  */
-      copy_warning (repl, stmt);
+      if (gimple_no_warning_p (stmt))
+	gimple_set_no_warning (repl, true);
 
       gimple_seq_add_stmt_without_update (&stmts, repl);
       if (tree lhs = gimple_call_lhs (stmt))
@@ -3590,13 +3256,14 @@ gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
   /* If the format is "%s", use strcpy if the result isn't used.  */
   else if (fmt_str && strcmp (fmt_str, target_percent_s) == 0)
     {
-      /* Don't crash on sprintf (str1, "%s").  */
-      if (!orig)
+      tree fn;
+      fn = builtin_decl_implicit (BUILT_IN_STRCPY);
+
+      if (!fn)
 	return false;
 
-      /* Don't fold calls with source arguments of invalid (nonpointer)
-	 types.  */
-      if (!POINTER_TYPE_P (TREE_TYPE (orig)))
+      /* Don't crash on sprintf (str1, "%s").  */
+      if (!orig)
 	return false;
 
       tree orig_len = NULL_TREE;
@@ -3613,7 +3280,8 @@ gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
 
       /* Propagate the NO_WARNING bit to avoid issuing the same
 	 warning more than once.  */
-      copy_warning (repl, stmt);
+      if (gimple_no_warning_p (stmt))
+	gimple_set_no_warning (repl, true);
 
       gimple_seq_add_stmt_without_update (&stmts, repl);
       if (tree lhs = gimple_call_lhs (stmt))
@@ -4080,7 +3748,7 @@ gimple_fold_builtin_strlen (gimple_stmt_iterator *gsi)
 
   /* Set the strlen() range to [0, MAXLEN].  */
   if (tree lhs = gimple_call_lhs (stmt))
-    set_strlen_range (lhs, minlen, maxlen);
+    set_strlen_range (lhs, maxlen);
 
   return false;
 }
@@ -4149,876 +3817,6 @@ gimple_fold_builtin_realloc (gimple_stmt_iterator *gsi)
   return false;
 }
 
-/* Number of bytes into which any type but aggregate or vector types
-   should fit.  */
-static constexpr size_t clear_padding_unit
-  = MAX_BITSIZE_MODE_ANY_MODE / BITS_PER_UNIT;
-/* Buffer size on which __builtin_clear_padding folding code works.  */
-static const size_t clear_padding_buf_size = 32 * clear_padding_unit;
-
-/* Data passed through __builtin_clear_padding folding.  */
-struct clear_padding_struct {
-  location_t loc;
-  /* 0 during __builtin_clear_padding folding, nonzero during
-     clear_type_padding_in_mask.  In that case, instead of clearing the
-     non-padding bits in union_ptr array clear the padding bits in there.  */
-  bool clear_in_mask;
-  tree base;
-  tree alias_type;
-  gimple_stmt_iterator *gsi;
-  /* Alignment of buf->base + 0.  */
-  unsigned align;
-  /* Offset from buf->base.  Should be always a multiple of UNITS_PER_WORD.  */
-  HOST_WIDE_INT off;
-  /* Number of padding bytes before buf->off that don't have padding clear
-     code emitted yet.  */
-  HOST_WIDE_INT padding_bytes;
-  /* The size of the whole object.  Never emit code to touch
-     buf->base + buf->sz or following bytes.  */
-  HOST_WIDE_INT sz;
-  /* Number of bytes recorded in buf->buf.  */
-  size_t size;
-  /* When inside union, instead of emitting code we and bits inside of
-     the union_ptr array.  */
-  unsigned char *union_ptr;
-  /* Set bits mean padding bits that need to be cleared by the builtin.  */
-  unsigned char buf[clear_padding_buf_size + clear_padding_unit];
-};
-
-/* Emit code to clear padding requested in BUF->buf - set bits
-   in there stand for padding that should be cleared.  FULL is true
-   if everything from the buffer should be flushed, otherwise
-   it can leave up to 2 * clear_padding_unit bytes for further
-   processing.  */
-
-static void
-clear_padding_flush (clear_padding_struct *buf, bool full)
-{
-  gcc_assert ((clear_padding_unit % UNITS_PER_WORD) == 0);
-  if (!full && buf->size < 2 * clear_padding_unit)
-    return;
-  gcc_assert ((buf->off % UNITS_PER_WORD) == 0);
-  size_t end = buf->size;
-  if (!full)
-    end = ((end - clear_padding_unit - 1) / clear_padding_unit
-	   * clear_padding_unit);
-  size_t padding_bytes = buf->padding_bytes;
-  if (buf->union_ptr)
-    {
-      if (buf->clear_in_mask)
-	{
-	  /* During clear_type_padding_in_mask, clear the padding
-	     bits set in buf->buf in the buf->union_ptr mask.  */
-	  for (size_t i = 0; i < end; i++)
-	    {
-	      if (buf->buf[i] == (unsigned char) ~0)
-		padding_bytes++;
-	      else
-		{
-		  memset (&buf->union_ptr[buf->off + i - padding_bytes],
-			  0, padding_bytes);
-		  padding_bytes = 0;
-		  buf->union_ptr[buf->off + i] &= ~buf->buf[i];
-		}
-	    }
-	  if (full)
-	    {
-	      memset (&buf->union_ptr[buf->off + end - padding_bytes],
-		      0, padding_bytes);
-	      buf->off = 0;
-	      buf->size = 0;
-	      buf->padding_bytes = 0;
-	    }
-	  else
-	    {
-	      memmove (buf->buf, buf->buf + end, buf->size - end);
-	      buf->off += end;
-	      buf->size -= end;
-	      buf->padding_bytes = padding_bytes;
-	    }
-	  return;
-	}
-      /* Inside of a union, instead of emitting any code, instead
-	 clear all bits in the union_ptr buffer that are clear
-	 in buf.  Whole padding bytes don't clear anything.  */
-      for (size_t i = 0; i < end; i++)
-	{
-	  if (buf->buf[i] == (unsigned char) ~0)
-	    padding_bytes++;
-	  else
-	    {
-	      padding_bytes = 0;
-	      buf->union_ptr[buf->off + i] &= buf->buf[i];
-	    }
-	}
-      if (full)
-	{
-	  buf->off = 0;
-	  buf->size = 0;
-	  buf->padding_bytes = 0;
-	}
-      else
-	{
-	  memmove (buf->buf, buf->buf + end, buf->size - end);
-	  buf->off += end;
-	  buf->size -= end;
-	  buf->padding_bytes = padding_bytes;
-	}
-      return;
-    }
-  size_t wordsize = UNITS_PER_WORD;
-  for (size_t i = 0; i < end; i += wordsize)
-    {
-      size_t nonzero_first = wordsize;
-      size_t nonzero_last = 0;
-      size_t zero_first = wordsize;
-      size_t zero_last = 0;
-      bool all_ones = true, bytes_only = true;
-      if ((unsigned HOST_WIDE_INT) (buf->off + i + wordsize)
-	  > (unsigned HOST_WIDE_INT) buf->sz)
-	{
-	  gcc_assert (wordsize > 1);
-	  wordsize /= 2;
-	  i -= wordsize;
-	  continue;
-	}
-      for (size_t j = i; j < i + wordsize && j < end; j++)
-	{
-	  if (buf->buf[j])
-	    {
-	      if (nonzero_first == wordsize)
-		{
-		  nonzero_first = j - i;
-		  nonzero_last = j - i;
-		}
-	      if (nonzero_last != j - i)
-		all_ones = false;
-	      nonzero_last = j + 1 - i;
-	    }
-	  else
-	    {
-	      if (zero_first == wordsize)
-		zero_first = j - i;
-	      zero_last = j + 1 - i;
-	    }
-	  if (buf->buf[j] != 0 && buf->buf[j] != (unsigned char) ~0)
-	    {
-	      all_ones = false;
-	      bytes_only = false;
-	    }
-	}
-      size_t padding_end = i;
-      if (padding_bytes)
-	{
-	  if (nonzero_first == 0
-	      && nonzero_last == wordsize
-	      && all_ones)
-	    {
-	      /* All bits are padding and we had some padding
-		 before too.  Just extend it.  */
-	      padding_bytes += wordsize;
-	      continue;
-	    }
-	  if (all_ones && nonzero_first == 0)
-	    {
-	      padding_bytes += nonzero_last;
-	      padding_end += nonzero_last;
-	      nonzero_first = wordsize;
-	      nonzero_last = 0;
-	    }
-	  else if (bytes_only && nonzero_first == 0)
-	    {
-	      gcc_assert (zero_first && zero_first != wordsize);
-	      padding_bytes += zero_first;
-	      padding_end += zero_first;
-	    }
-	  tree atype, src;
-	  if (padding_bytes == 1)
-	    {
-	      atype = char_type_node;
-	      src = build_zero_cst (char_type_node);
-	    }
-	  else
-	    {
-	      atype = build_array_type_nelts (char_type_node, padding_bytes);
-	      src = build_constructor (atype, NULL);
-	    }
-	  tree dst = build2_loc (buf->loc, MEM_REF, atype, buf->base,
-				 build_int_cst (buf->alias_type,
-						buf->off + padding_end
-						- padding_bytes));
-	  gimple *g = gimple_build_assign (dst, src);
-	  gimple_set_location (g, buf->loc);
-	  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-	  padding_bytes = 0;
-	  buf->padding_bytes = 0;
-	}
-      if (nonzero_first == wordsize)
-	/* All bits in a word are 0, there are no padding bits.  */
-	continue;
-      if (all_ones && nonzero_last == wordsize)
-	{
-	  /* All bits between nonzero_first and end of word are padding
-	     bits, start counting padding_bytes.  */
-	  padding_bytes = nonzero_last - nonzero_first;
-	  continue;
-	}
-      if (bytes_only)
-	{
-	  /* If bitfields aren't involved in this word, prefer storing
-	     individual bytes or groups of them over performing a RMW
-	     operation on the whole word.  */
-	  gcc_assert (i + zero_last <= end);
-	  for (size_t j = padding_end; j < i + zero_last; j++)
-	    {
-	      if (buf->buf[j])
-		{
-		  size_t k;
-		  for (k = j; k < i + zero_last; k++)
-		    if (buf->buf[k] == 0)
-		      break;
-		  HOST_WIDE_INT off = buf->off + j;
-		  tree atype, src;
-		  if (k - j == 1)
-		    {
-		      atype = char_type_node;
-		      src = build_zero_cst (char_type_node);
-		    }
-		  else
-		    {
-		      atype = build_array_type_nelts (char_type_node, k - j);
-		      src = build_constructor (atype, NULL);
-		    }
-		  tree dst = build2_loc (buf->loc, MEM_REF, atype,
-					 buf->base,
-					 build_int_cst (buf->alias_type, off));
-		  gimple *g = gimple_build_assign (dst, src);
-		  gimple_set_location (g, buf->loc);
-		  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-		  j = k;
-		}
-	    }
-	  if (nonzero_last == wordsize)
-	    padding_bytes = nonzero_last - zero_last;
-	  continue;
-	}
-      for (size_t eltsz = 1; eltsz <= wordsize; eltsz <<= 1)
-	{
-	  if (nonzero_last - nonzero_first <= eltsz
-	      && ((nonzero_first & ~(eltsz - 1))
-		  == ((nonzero_last - 1) & ~(eltsz - 1))))
-	    {
-	      tree type;
-	      if (eltsz == 1)
-		type = char_type_node;
-	      else
-		type = lang_hooks.types.type_for_size (eltsz * BITS_PER_UNIT,
-						       0);
-	      size_t start = nonzero_first & ~(eltsz - 1);
-	      HOST_WIDE_INT off = buf->off + i + start;
-	      tree atype = type;
-	      if (eltsz > 1 && buf->align < TYPE_ALIGN (type))
-		atype = build_aligned_type (type, buf->align);
-	      tree dst = build2_loc (buf->loc, MEM_REF, atype, buf->base,
-				     build_int_cst (buf->alias_type, off));
-	      tree src;
-	      gimple *g;
-	      if (all_ones
-		  && nonzero_first == start
-		  && nonzero_last == start + eltsz)
-		src = build_zero_cst (type);
-	      else
-		{
-		  src = make_ssa_name (type);
-		  g = gimple_build_assign (src, unshare_expr (dst));
-		  gimple_set_location (g, buf->loc);
-		  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-		  tree mask = native_interpret_expr (type,
-						     buf->buf + i + start,
-						     eltsz);
-		  gcc_assert (mask && TREE_CODE (mask) == INTEGER_CST);
-		  mask = fold_build1 (BIT_NOT_EXPR, type, mask);
-		  tree src_masked = make_ssa_name (type);
-		  g = gimple_build_assign (src_masked, BIT_AND_EXPR,
-					   src, mask);
-		  gimple_set_location (g, buf->loc);
-		  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-		  src = src_masked;
-		}
-	      g = gimple_build_assign (dst, src);
-	      gimple_set_location (g, buf->loc);
-	      gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-	      break;
-	    }
-	}
-    }
-  if (full)
-    {
-      if (padding_bytes)
-	{
-	  tree atype, src;
-	  if (padding_bytes == 1)
-	    {
-	      atype = char_type_node;
-	      src = build_zero_cst (char_type_node);
-	    }
-	  else
-	    {
-	      atype = build_array_type_nelts (char_type_node, padding_bytes);
-	      src = build_constructor (atype, NULL);
-	    }
-	  tree dst = build2_loc (buf->loc, MEM_REF, atype, buf->base,
-				 build_int_cst (buf->alias_type,
-						buf->off + end
-						- padding_bytes));
-	  gimple *g = gimple_build_assign (dst, src);
-	  gimple_set_location (g, buf->loc);
-	  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-	}
-      size_t end_rem = end % UNITS_PER_WORD;
-      buf->off += end - end_rem;
-      buf->size = end_rem;
-      memset (buf->buf, 0, buf->size);
-      buf->padding_bytes = 0;
-    }
-  else
-    {
-      memmove (buf->buf, buf->buf + end, buf->size - end);
-      buf->off += end;
-      buf->size -= end;
-      buf->padding_bytes = padding_bytes;
-    }
-}
-
-/* Append PADDING_BYTES padding bytes.  */
-
-static void
-clear_padding_add_padding (clear_padding_struct *buf,
-			   HOST_WIDE_INT padding_bytes)
-{
-  if (padding_bytes == 0)
-    return;
-  if ((unsigned HOST_WIDE_INT) padding_bytes + buf->size
-      > (unsigned HOST_WIDE_INT) clear_padding_buf_size)
-    clear_padding_flush (buf, false);
-  if ((unsigned HOST_WIDE_INT) padding_bytes + buf->size
-      > (unsigned HOST_WIDE_INT) clear_padding_buf_size)
-    {
-      memset (buf->buf + buf->size, ~0, clear_padding_buf_size - buf->size);
-      padding_bytes -= clear_padding_buf_size - buf->size;
-      buf->size = clear_padding_buf_size;
-      clear_padding_flush (buf, false);
-      gcc_assert (buf->padding_bytes);
-      /* At this point buf->buf[0] through buf->buf[buf->size - 1]
-	 is guaranteed to be all ones.  */
-      padding_bytes += buf->size;
-      buf->size = padding_bytes % UNITS_PER_WORD;
-      memset (buf->buf, ~0, buf->size);
-      buf->off += padding_bytes - buf->size;
-      buf->padding_bytes += padding_bytes - buf->size;
-    }
-  else
-    {
-      memset (buf->buf + buf->size, ~0, padding_bytes);
-      buf->size += padding_bytes;
-    }
-}
-
-static void clear_padding_type (clear_padding_struct *, tree,
-				HOST_WIDE_INT, bool);
-
-/* Clear padding bits of union type TYPE.  */
-
-static void
-clear_padding_union (clear_padding_struct *buf, tree type,
-		     HOST_WIDE_INT sz, bool for_auto_init)
-{
-  clear_padding_struct *union_buf;
-  HOST_WIDE_INT start_off = 0, next_off = 0;
-  size_t start_size = 0;
-  if (buf->union_ptr)
-    {
-      start_off = buf->off + buf->size;
-      next_off = start_off + sz;
-      start_size = start_off % UNITS_PER_WORD;
-      start_off -= start_size;
-      clear_padding_flush (buf, true);
-      union_buf = buf;
-    }
-  else
-    {
-      if (sz + buf->size > clear_padding_buf_size)
-	clear_padding_flush (buf, false);
-      union_buf = XALLOCA (clear_padding_struct);
-      union_buf->loc = buf->loc;
-      union_buf->clear_in_mask = buf->clear_in_mask;
-      union_buf->base = NULL_TREE;
-      union_buf->alias_type = NULL_TREE;
-      union_buf->gsi = NULL;
-      union_buf->align = 0;
-      union_buf->off = 0;
-      union_buf->padding_bytes = 0;
-      union_buf->sz = sz;
-      union_buf->size = 0;
-      if (sz + buf->size <= clear_padding_buf_size)
-	union_buf->union_ptr = buf->buf + buf->size;
-      else
-	union_buf->union_ptr = XNEWVEC (unsigned char, sz);
-      memset (union_buf->union_ptr, ~0, sz);
-    }
-
-  for (tree field = TYPE_FIELDS (type); field; field = DECL_CHAIN (field))
-    if (TREE_CODE (field) == FIELD_DECL && !DECL_PADDING_P (field))
-      {
-	if (DECL_SIZE_UNIT (field) == NULL_TREE)
-	  {
-	    if (TREE_TYPE (field) == error_mark_node)
-	      continue;
-	    gcc_assert (TREE_CODE (TREE_TYPE (field)) == ARRAY_TYPE
-			&& !COMPLETE_TYPE_P (TREE_TYPE (field)));
-	    if (!buf->clear_in_mask && !for_auto_init)
-	      error_at (buf->loc, "flexible array member %qD does not have "
-				  "well defined padding bits for %qs",
-			field, "__builtin_clear_padding");
-	    continue;
-	  }
-	HOST_WIDE_INT fldsz = tree_to_shwi (DECL_SIZE_UNIT (field));
-	gcc_assert (union_buf->size == 0);
-	union_buf->off = start_off;
-	union_buf->size = start_size;
-	memset (union_buf->buf, ~0, start_size);
-	clear_padding_type (union_buf, TREE_TYPE (field), fldsz, for_auto_init);
-	clear_padding_add_padding (union_buf, sz - fldsz);
-	clear_padding_flush (union_buf, true);
-      }
-
-  if (buf == union_buf)
-    {
-      buf->off = next_off;
-      buf->size = next_off % UNITS_PER_WORD;
-      buf->off -= buf->size;
-      memset (buf->buf, ~0, buf->size);
-    }
-  else if (sz + buf->size <= clear_padding_buf_size)
-    buf->size += sz;
-  else
-    {
-      unsigned char *union_ptr = union_buf->union_ptr;
-      while (sz)
-	{
-	  clear_padding_flush (buf, false);
-	  HOST_WIDE_INT this_sz
-	    = MIN ((unsigned HOST_WIDE_INT) sz,
-		   clear_padding_buf_size - buf->size);
-	  memcpy (buf->buf + buf->size, union_ptr, this_sz);
-	  buf->size += this_sz;
-	  union_ptr += this_sz;
-	  sz -= this_sz;
-	}
-      XDELETE (union_buf->union_ptr);
-    }
-}
-
-/* The only known floating point formats with padding bits are the
-   IEEE extended ones.  */
-
-static bool
-clear_padding_real_needs_padding_p (tree type)
-{
-  const struct real_format *fmt = REAL_MODE_FORMAT (TYPE_MODE (type));
-  return (fmt->b == 2
-	  && fmt->signbit_ro == fmt->signbit_rw
-	  && (fmt->signbit_ro == 79 || fmt->signbit_ro == 95));
-}
-
-/* Return true if TYPE might contain any padding bits.  */
-
-bool
-clear_padding_type_may_have_padding_p (tree type)
-{
-  switch (TREE_CODE (type))
-    {
-    case RECORD_TYPE:
-    case UNION_TYPE:
-      return true;
-    case ARRAY_TYPE:
-    case COMPLEX_TYPE:
-    case VECTOR_TYPE:
-      return clear_padding_type_may_have_padding_p (TREE_TYPE (type));
-    case REAL_TYPE:
-      return clear_padding_real_needs_padding_p (type);
-    default:
-      return false;
-    }
-}
-
-/* Emit a runtime loop:
-   for (; buf.base != end; buf.base += sz)
-     __builtin_clear_padding (buf.base);  */
-
-static void
-clear_padding_emit_loop (clear_padding_struct *buf, tree type,
-			 tree end, bool for_auto_init)
-{
-  tree l1 = create_artificial_label (buf->loc);
-  tree l2 = create_artificial_label (buf->loc);
-  tree l3 = create_artificial_label (buf->loc);
-  gimple *g = gimple_build_goto (l2);
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-  g = gimple_build_label (l1);
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-  clear_padding_type (buf, type, buf->sz, for_auto_init);
-  clear_padding_flush (buf, true);
-  g = gimple_build_assign (buf->base, POINTER_PLUS_EXPR, buf->base,
-			   size_int (buf->sz));
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-  g = gimple_build_label (l2);
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-  g = gimple_build_cond (NE_EXPR, buf->base, end, l1, l3);
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-  g = gimple_build_label (l3);
-  gimple_set_location (g, buf->loc);
-  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-}
-
-/* Clear padding bits for TYPE.  Called recursively from
-   gimple_fold_builtin_clear_padding.  If FOR_AUTO_INIT is true,
-   the __builtin_clear_padding is not called by the end user,
-   instead, it's inserted by the compiler to initialize the
-   paddings of automatic variable.  Therefore, we should not
-   emit the error messages for flexible array members to confuse
-   the end user.  */
-
-static void
-clear_padding_type (clear_padding_struct *buf, tree type,
-		    HOST_WIDE_INT sz, bool for_auto_init)
-{
-  switch (TREE_CODE (type))
-    {
-    case RECORD_TYPE:
-      HOST_WIDE_INT cur_pos;
-      cur_pos = 0;
-      for (tree field = TYPE_FIELDS (type); field; field = DECL_CHAIN (field))
-	if (TREE_CODE (field) == FIELD_DECL && !DECL_PADDING_P (field))
-	  {
-	    tree ftype = TREE_TYPE (field);
-	    if (DECL_BIT_FIELD (field))
-	      {
-		HOST_WIDE_INT fldsz = TYPE_PRECISION (ftype);
-		if (fldsz == 0)
-		  continue;
-		HOST_WIDE_INT pos = int_byte_position (field);
-		if (pos >= sz)
-		  continue;
-		HOST_WIDE_INT bpos
-		  = tree_to_uhwi (DECL_FIELD_BIT_OFFSET (field));
-		bpos %= BITS_PER_UNIT;
-		HOST_WIDE_INT end
-		  = ROUND_UP (bpos + fldsz, BITS_PER_UNIT) / BITS_PER_UNIT;
-		if (pos + end > cur_pos)
-		  {
-		    clear_padding_add_padding (buf, pos + end - cur_pos);
-		    cur_pos = pos + end;
-		  }
-		gcc_assert (cur_pos > pos
-			    && ((unsigned HOST_WIDE_INT) buf->size
-				>= (unsigned HOST_WIDE_INT) cur_pos - pos));
-		unsigned char *p = buf->buf + buf->size - (cur_pos - pos);
-		if (BYTES_BIG_ENDIAN != WORDS_BIG_ENDIAN)
-		  sorry_at (buf->loc, "PDP11 bit-field handling unsupported"
-				      " in %qs", "__builtin_clear_padding");
-		else if (BYTES_BIG_ENDIAN)
-		  {
-		    /* Big endian.  */
-		    if (bpos + fldsz <= BITS_PER_UNIT)
-		      *p &= ~(((1 << fldsz) - 1)
-			      << (BITS_PER_UNIT - bpos - fldsz));
-		    else
-		      {
-			if (bpos)
-			  {
-			    *p &= ~(((1U << BITS_PER_UNIT) - 1) >> bpos);
-			    p++;
-			    fldsz -= BITS_PER_UNIT - bpos;
-			  }
-			memset (p, 0, fldsz / BITS_PER_UNIT);
-			p += fldsz / BITS_PER_UNIT;
-			fldsz %= BITS_PER_UNIT;
-			if (fldsz)
-			  *p &= ((1U << BITS_PER_UNIT) - 1) >> fldsz;
-		      }
-		  }
-		else
-		  {
-		    /* Little endian.  */
-		    if (bpos + fldsz <= BITS_PER_UNIT)
-		      *p &= ~(((1 << fldsz) - 1) << bpos);
-		    else
-		      {
-			if (bpos)
-			  {
-			    *p &= ~(((1 << BITS_PER_UNIT) - 1) << bpos);
-			    p++;
-			    fldsz -= BITS_PER_UNIT - bpos;
-			  }
-			memset (p, 0, fldsz / BITS_PER_UNIT);
-			p += fldsz / BITS_PER_UNIT;
-			fldsz %= BITS_PER_UNIT;
-			if (fldsz)
-			  *p &= ~((1 << fldsz) - 1);
-		      }
-		  }
-	      }
-	    else if (DECL_SIZE_UNIT (field) == NULL_TREE)
-	      {
-		if (ftype == error_mark_node)
-		  continue;
-		gcc_assert (TREE_CODE (ftype) == ARRAY_TYPE
-			    && !COMPLETE_TYPE_P (ftype));
-		if (!buf->clear_in_mask && !for_auto_init)
-		  error_at (buf->loc, "flexible array member %qD does not "
-				      "have well defined padding bits for %qs",
-			    field, "__builtin_clear_padding");
-	      }
-	    else if (is_empty_type (TREE_TYPE (field)))
-	      continue;
-	    else
-	      {
-		HOST_WIDE_INT pos = int_byte_position (field);
-		if (pos >= sz)
-		  continue;
-		HOST_WIDE_INT fldsz = tree_to_shwi (DECL_SIZE_UNIT (field));
-		gcc_assert (pos >= 0 && fldsz >= 0 && pos >= cur_pos);
-		clear_padding_add_padding (buf, pos - cur_pos);
-		cur_pos = pos;
-		clear_padding_type (buf, TREE_TYPE (field),
-				    fldsz, for_auto_init);
-		cur_pos += fldsz;
-	      }
-	  }
-      gcc_assert (sz >= cur_pos);
-      clear_padding_add_padding (buf, sz - cur_pos);
-      break;
-    case ARRAY_TYPE:
-      HOST_WIDE_INT nelts, fldsz;
-      fldsz = int_size_in_bytes (TREE_TYPE (type));
-      if (fldsz == 0)
-	break;
-      nelts = sz / fldsz;
-      if (nelts > 1
-	  && sz > 8 * UNITS_PER_WORD
-	  && buf->union_ptr == NULL
-	  && clear_padding_type_may_have_padding_p (TREE_TYPE (type)))
-	{
-	  /* For sufficiently large array of more than one elements,
-	     emit a runtime loop to keep code size manageable.  */
-	  tree base = buf->base;
-	  unsigned int prev_align = buf->align;
-	  HOST_WIDE_INT off = buf->off + buf->size;
-	  HOST_WIDE_INT prev_sz = buf->sz;
-	  clear_padding_flush (buf, true);
-	  tree elttype = TREE_TYPE (type);
-	  buf->base = create_tmp_var (build_pointer_type (elttype));
-	  tree end = make_ssa_name (TREE_TYPE (buf->base));
-	  gimple *g = gimple_build_assign (buf->base, POINTER_PLUS_EXPR,
-					   base, size_int (off));
-	  gimple_set_location (g, buf->loc);
-	  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-	  g = gimple_build_assign (end, POINTER_PLUS_EXPR, buf->base,
-				   size_int (sz));
-	  gimple_set_location (g, buf->loc);
-	  gsi_insert_before (buf->gsi, g, GSI_SAME_STMT);
-	  buf->sz = fldsz;
-	  buf->align = TYPE_ALIGN (elttype);
-	  buf->off = 0;
-	  buf->size = 0;
-	  clear_padding_emit_loop (buf, elttype, end, for_auto_init);
-	  buf->base = base;
-	  buf->sz = prev_sz;
-	  buf->align = prev_align;
-	  buf->size = off % UNITS_PER_WORD;
-	  buf->off = off - buf->size;
-	  memset (buf->buf, 0, buf->size);
-	  break;
-	}
-      for (HOST_WIDE_INT i = 0; i < nelts; i++)
-	clear_padding_type (buf, TREE_TYPE (type), fldsz, for_auto_init);
-      break;
-    case UNION_TYPE:
-      clear_padding_union (buf, type, sz, for_auto_init);
-      break;
-    case REAL_TYPE:
-      gcc_assert ((size_t) sz <= clear_padding_unit);
-      if ((unsigned HOST_WIDE_INT) sz + buf->size > clear_padding_buf_size)
-	clear_padding_flush (buf, false);
-      if (clear_padding_real_needs_padding_p (type))
-	{
-	  /* Use native_interpret_expr + native_encode_expr to figure out
-	     which bits are padding.  */
-	  memset (buf->buf + buf->size, ~0, sz);
-	  tree cst = native_interpret_expr (type, buf->buf + buf->size, sz);
-	  gcc_assert (cst && TREE_CODE (cst) == REAL_CST);
-	  int len = native_encode_expr (cst, buf->buf + buf->size, sz);
-	  gcc_assert (len > 0 && (size_t) len == (size_t) sz);
-	  for (size_t i = 0; i < (size_t) sz; i++)
-	    buf->buf[buf->size + i] ^= ~0;
-	}
-      else
-	memset (buf->buf + buf->size, 0, sz);
-      buf->size += sz;
-      break;
-    case COMPLEX_TYPE:
-      fldsz = int_size_in_bytes (TREE_TYPE (type));
-      clear_padding_type (buf, TREE_TYPE (type), fldsz, for_auto_init);
-      clear_padding_type (buf, TREE_TYPE (type), fldsz, for_auto_init);
-      break;
-    case VECTOR_TYPE:
-      nelts = TYPE_VECTOR_SUBPARTS (type).to_constant ();
-      fldsz = int_size_in_bytes (TREE_TYPE (type));
-      for (HOST_WIDE_INT i = 0; i < nelts; i++)
-	clear_padding_type (buf, TREE_TYPE (type), fldsz, for_auto_init);
-      break;
-    case NULLPTR_TYPE:
-      gcc_assert ((size_t) sz <= clear_padding_unit);
-      if ((unsigned HOST_WIDE_INT) sz + buf->size > clear_padding_buf_size)
-	clear_padding_flush (buf, false);
-      memset (buf->buf + buf->size, ~0, sz);
-      buf->size += sz;
-      break;
-    default:
-      gcc_assert ((size_t) sz <= clear_padding_unit);
-      if ((unsigned HOST_WIDE_INT) sz + buf->size > clear_padding_buf_size)
-	clear_padding_flush (buf, false);
-      memset (buf->buf + buf->size, 0, sz);
-      buf->size += sz;
-      break;
-    }
-}
-
-/* Clear padding bits of TYPE in MASK.  */
-
-void
-clear_type_padding_in_mask (tree type, unsigned char *mask)
-{
-  clear_padding_struct buf;
-  buf.loc = UNKNOWN_LOCATION;
-  buf.clear_in_mask = true;
-  buf.base = NULL_TREE;
-  buf.alias_type = NULL_TREE;
-  buf.gsi = NULL;
-  buf.align = 0;
-  buf.off = 0;
-  buf.padding_bytes = 0;
-  buf.sz = int_size_in_bytes (type);
-  buf.size = 0;
-  buf.union_ptr = mask;
-  clear_padding_type (&buf, type, buf.sz, false);
-  clear_padding_flush (&buf, true);
-}
-
-/* Fold __builtin_clear_padding builtin.  */
-
-static bool
-gimple_fold_builtin_clear_padding (gimple_stmt_iterator *gsi)
-{
-  gimple *stmt = gsi_stmt (*gsi);
-  gcc_assert (gimple_call_num_args (stmt) == 3);
-  tree ptr = gimple_call_arg (stmt, 0);
-  tree typearg = gimple_call_arg (stmt, 1);
-  /* the 3rd argument of __builtin_clear_padding is to distinguish whether
-     this call is made by the user or by the compiler for automatic variable
-     initialization.  */
-  bool for_auto_init = (bool) TREE_INT_CST_LOW (gimple_call_arg (stmt, 2));
-  tree type = TREE_TYPE (TREE_TYPE (typearg));
-  location_t loc = gimple_location (stmt);
-  clear_padding_struct buf;
-  gimple_stmt_iterator gsiprev = *gsi;
-  /* This should be folded during the lower pass.  */
-  gcc_assert (!gimple_in_ssa_p (cfun) && cfun->cfg == NULL);
-  gcc_assert (COMPLETE_TYPE_P (type));
-  gsi_prev (&gsiprev);
-
-  buf.loc = loc;
-  buf.clear_in_mask = false;
-  buf.base = ptr;
-  buf.alias_type = NULL_TREE;
-  buf.gsi = gsi;
-  buf.align = get_pointer_alignment (ptr);
-  unsigned int talign = min_align_of_type (type) * BITS_PER_UNIT;
-  buf.align = MAX (buf.align, talign);
-  buf.off = 0;
-  buf.padding_bytes = 0;
-  buf.size = 0;
-  buf.sz = int_size_in_bytes (type);
-  buf.union_ptr = NULL;
-  if (buf.sz < 0 && int_size_in_bytes (strip_array_types (type)) < 0)
-    sorry_at (loc, "%s not supported for variable length aggregates",
-	      "__builtin_clear_padding");
-  /* The implementation currently assumes 8-bit host and target
-     chars which is the case for all currently supported targets
-     and hosts and is required e.g. for native_{encode,interpret}* APIs.  */
-  else if (CHAR_BIT != 8 || BITS_PER_UNIT != 8)
-    sorry_at (loc, "%s not supported on this target",
-	      "__builtin_clear_padding");
-  else if (!clear_padding_type_may_have_padding_p (type))
-    ;
-  else if (TREE_CODE (type) == ARRAY_TYPE && buf.sz < 0)
-    {
-      tree sz = TYPE_SIZE_UNIT (type);
-      tree elttype = type;
-      /* Only supports C/C++ VLAs and flattens all the VLA levels.  */
-      while (TREE_CODE (elttype) == ARRAY_TYPE
-	     && int_size_in_bytes (elttype) < 0)
-	elttype = TREE_TYPE (elttype);
-      HOST_WIDE_INT eltsz = int_size_in_bytes (elttype);
-      gcc_assert (eltsz >= 0);
-      if (eltsz)
-	{
-	  buf.base = create_tmp_var (build_pointer_type (elttype));
-	  tree end = make_ssa_name (TREE_TYPE (buf.base));
-	  gimple *g = gimple_build_assign (buf.base, ptr);
-	  gimple_set_location (g, loc);
-	  gsi_insert_before (gsi, g, GSI_SAME_STMT);
-	  g = gimple_build_assign (end, POINTER_PLUS_EXPR, buf.base, sz);
-	  gimple_set_location (g, loc);
-	  gsi_insert_before (gsi, g, GSI_SAME_STMT);
-	  buf.sz = eltsz;
-	  buf.align = TYPE_ALIGN (elttype);
-	  buf.alias_type = build_pointer_type (elttype);
-	  clear_padding_emit_loop (&buf, elttype, end, for_auto_init);
-	}
-    }
-  else
-    {
-      if (!is_gimple_mem_ref_addr (buf.base))
-	{
-	  buf.base = make_ssa_name (TREE_TYPE (ptr));
-	  gimple *g = gimple_build_assign (buf.base, ptr);
-	  gimple_set_location (g, loc);
-	  gsi_insert_before (gsi, g, GSI_SAME_STMT);
-	}
-      buf.alias_type = build_pointer_type (type);
-      clear_padding_type (&buf, type, buf.sz, for_auto_init);
-      clear_padding_flush (&buf, true);
-    }
-
-  gimple_stmt_iterator gsiprev2 = *gsi;
-  gsi_prev (&gsiprev2);
-  if (gsi_stmt (gsiprev) == gsi_stmt (gsiprev2))
-    gsi_replace (gsi, gimple_build_nop (), true);
-  else
-    {
-      gsi_remove (gsi, true);
-      *gsi = gsiprev2;
-    }
-  return true;
-}
-
 /* Fold the non-target builtin at *GSI and return whether any simplification
    was made.  */
 
@@ -5049,10 +3847,14 @@ gimple_fold_builtin (gimple_stmt_iterator *gsi)
 					 gimple_call_arg (stmt, 1),
 					 gimple_call_arg (stmt, 2));
     case BUILT_IN_MEMCPY:
+      return gimple_fold_builtin_memory_op (gsi, gimple_call_arg (stmt, 0),
+					    gimple_call_arg (stmt, 1), 0);
     case BUILT_IN_MEMPCPY:
+      return gimple_fold_builtin_memory_op (gsi, gimple_call_arg (stmt, 0),
+					    gimple_call_arg (stmt, 1), 1);
     case BUILT_IN_MEMMOVE:
       return gimple_fold_builtin_memory_op (gsi, gimple_call_arg (stmt, 0),
-					    gimple_call_arg (stmt, 1), fcode);
+					    gimple_call_arg (stmt, 1), 3);
     case BUILT_IN_SPRINTF_CHK:
     case BUILT_IN_VSPRINTF_CHK:
       return gimple_fold_builtin_sprintf_chk (gsi, fcode);
@@ -5176,9 +3978,6 @@ gimple_fold_builtin (gimple_stmt_iterator *gsi)
     case BUILT_IN_REALLOC:
       return gimple_fold_builtin_realloc (gsi);
 
-    case BUILT_IN_CLEAR_PADDING:
-      return gimple_fold_builtin_clear_padding (gsi);
-
     default:;
     }
 
@@ -5191,7 +3990,8 @@ gimple_fold_builtin (gimple_stmt_iterator *gsi)
 	STRIP_NOPS (result);
       else
 	result = fold_convert (gimple_call_return_type (stmt), result);
-      gimplify_and_update_call_from_tree (gsi, result);
+      if (!update_call_from_tree (gsi, result))
+	gimplify_and_update_call_from_tree (gsi, result);
       return true;
     }
 
@@ -5335,7 +4135,9 @@ fold_builtin_atomic_compare_exchange (gimple_stmt_iterator *gsi)
 				  gimple_call_arg (stmt, 5));
   tree lhs = make_ssa_name (ctype);
   gimple_call_set_lhs (g, lhs);
-  gimple_move_vops (g, stmt);
+  gimple_set_vdef (g, gimple_vdef (stmt));
+  gimple_set_vuse (g, gimple_vuse (stmt));
+  SSA_NAME_DEF_STMT (gimple_vdef (g)) = g;
   tree oldlhs = gimple_call_lhs (stmt);
   if (stmt_can_throw_internal (cfun, stmt))
     {
@@ -5406,63 +4208,6 @@ arith_overflowed_p (enum tree_code code, const_tree type,
   return wi::min_precision (wres, sign) > TYPE_PRECISION (type);
 }
 
-/* If IFN_MASK_LOAD/STORE call CALL is unconditional, return a MEM_REF
-   for the memory it references, otherwise return null.  VECTYPE is the
-   type of the memory vector.  */
-
-static tree
-gimple_fold_mask_load_store_mem_ref (gcall *call, tree vectype)
-{
-  tree ptr = gimple_call_arg (call, 0);
-  tree alias_align = gimple_call_arg (call, 1);
-  tree mask = gimple_call_arg (call, 2);
-  if (!tree_fits_uhwi_p (alias_align) || !integer_all_onesp (mask))
-    return NULL_TREE;
-
-  unsigned HOST_WIDE_INT align = tree_to_uhwi (alias_align);
-  if (TYPE_ALIGN (vectype) != align)
-    vectype = build_aligned_type (vectype, align);
-  tree offset = build_zero_cst (TREE_TYPE (alias_align));
-  return fold_build2 (MEM_REF, vectype, ptr, offset);
-}
-
-/* Try to fold IFN_MASK_LOAD call CALL.  Return true on success.  */
-
-static bool
-gimple_fold_mask_load (gimple_stmt_iterator *gsi, gcall *call)
-{
-  tree lhs = gimple_call_lhs (call);
-  if (!lhs)
-    return false;
-
-  if (tree rhs = gimple_fold_mask_load_store_mem_ref (call, TREE_TYPE (lhs)))
-    {
-      gassign *new_stmt = gimple_build_assign (lhs, rhs);
-      gimple_set_location (new_stmt, gimple_location (call));
-      gimple_move_vops (new_stmt, call);
-      gsi_replace (gsi, new_stmt, false);
-      return true;
-    }
-  return false;
-}
-
-/* Try to fold IFN_MASK_STORE call CALL.  Return true on success.  */
-
-static bool
-gimple_fold_mask_store (gimple_stmt_iterator *gsi, gcall *call)
-{
-  tree rhs = gimple_call_arg (call, 3);
-  if (tree lhs = gimple_fold_mask_load_store_mem_ref (call, TREE_TYPE (rhs)))
-    {
-      gassign *new_stmt = gimple_build_assign (lhs, rhs);
-      gimple_set_location (new_stmt, gimple_location (call));
-      gimple_move_vops (new_stmt, call);
-      gsi_replace (gsi, new_stmt, false);
-      return true;
-    }
-  return false;
-}
-
 /* Attempt to fold a call statement referenced by the statement iterator GSI.
    The statement may be replaced by another statement, e.g., if the call
    simplifies to a constant value. Return true if any changes were made.
@@ -5474,6 +4219,19 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
   gcall *stmt = as_a <gcall *> (gsi_stmt (*gsi));
   tree callee;
   bool changed = false;
+  unsigned i;
+
+  /* Fold *& in call arguments.  */
+  for (i = 0; i < gimple_call_num_args (stmt); ++i)
+    if (REFERENCE_CLASS_P (gimple_call_arg (stmt, i)))
+      {
+	tree tmp = maybe_fold_reference (gimple_call_arg (stmt, i), false);
+	if (tmp)
+	  {
+	    gimple_call_set_arg (stmt, i, tmp);
+	    changed = true;
+	  }
+      }
 
   /* Check for virtual calls that became direct calls.  */
   callee = gimple_call_fn (stmt);
@@ -5558,7 +4316,8 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 		      SSA_NAME_DEF_STMT (lhs) = gimple_build_nop ();
 		      set_ssa_default_def (cfun, var, lhs);
 		    }
-		  gimple_move_vops (new_stmt, stmt);
+		  gimple_set_vuse (new_stmt, gimple_vuse (stmt));
+		  gimple_set_vdef (new_stmt, gimple_vdef (stmt));
 		  gsi_replace (gsi, new_stmt, false);
 		  return true;
 		}
@@ -5575,6 +4334,15 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 	{
 	  gimple_call_set_chain (stmt, NULL);
 	  changed = true;
+	}
+      else
+	{
+	  tree tmp = maybe_fold_reference (gimple_call_chain (stmt), false);
+	  if (tmp)
+	    {
+	      gimple_call_set_chain (stmt, tmp);
+	      changed = true;
+	    }
 	}
     }
 
@@ -5670,12 +4438,6 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 	  subcode = MULT_EXPR;
 	  cplx_result = true;
 	  break;
-	case IFN_MASK_LOAD:
-	  changed |= gimple_fold_mask_load (gsi, stmt);
-	  break;
-	case IFN_MASK_STORE:
-	  changed |= gimple_fold_mask_store (gsi, stmt);
-	  break;
 	default:
 	  break;
 	}
@@ -5765,7 +4527,8 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 		result = build2_loc (gimple_location (stmt), COMPLEX_EXPR,
 				     ctype, result, overflow);
 	    }
-	  gimplify_and_update_call_from_tree (gsi, result);
+	  if (!update_call_from_tree (gsi, result))
+	    gimplify_and_update_call_from_tree (gsi, result);
 	  changed = true;
 	}
     }
@@ -5931,10 +4694,9 @@ replace_stmt_with_simplification (gimple_stmt_iterator *gsi,
 /* Canonicalize MEM_REFs invariant address operand after propagation.  */
 
 static bool
-maybe_canonicalize_mem_ref_addr (tree *t, bool is_debug = false)
+maybe_canonicalize_mem_ref_addr (tree *t)
 {
   bool res = false;
-  tree *orig_t = t;
 
   if (TREE_CODE (*t) == ADDR_EXPR)
     t = &TREE_OPERAND (*t, 0);
@@ -5995,11 +4757,7 @@ maybe_canonicalize_mem_ref_addr (tree *t, bool is_debug = false)
 	  base = get_addr_base_and_unit_offset (TREE_OPERAND (addr, 0),
 						&coffset);
 	  if (!base)
-	    {
-	      if (is_debug)
-		return false;
-	      gcc_unreachable ();
-	    }
+	    gcc_unreachable ();
 
 	  TREE_OPERAND (*t, 0) = build_fold_addr_expr (base);
 	  TREE_OPERAND (*t, 1) = int_const_binop (PLUS_EXPR,
@@ -6039,31 +4797,6 @@ maybe_canonicalize_mem_ref_addr (tree *t, bool is_debug = false)
 	}
     }
 
-  else if (TREE_CODE (*orig_t) == ADDR_EXPR
-	   && TREE_CODE (*t) == MEM_REF
-	   && TREE_CODE (TREE_OPERAND (*t, 0)) == INTEGER_CST)
-    {
-      tree base;
-      poly_int64 coffset;
-      base = get_addr_base_and_unit_offset (TREE_OPERAND (*orig_t, 0),
-					    &coffset);
-      if (base)
-	{
-	  gcc_assert (TREE_CODE (base) == MEM_REF);
-	  poly_int64 moffset;
-	  if (mem_ref_offset (base).to_shwi (&moffset))
-	    {
-	      coffset += moffset;
-	      if (wi::to_poly_wide (TREE_OPERAND (base, 0)).to_shwi (&moffset))
-		{
-		  coffset += moffset;
-		  *orig_t = build_int_cst (TREE_TYPE (*orig_t), coffset);
-		  return true;
-		}
-	    }
-	}
-    }
-
   /* Canonicalize TARGET_MEM_REF in particular with respect to
      the indexes becoming constant.  */
   else if (TREE_CODE (*t) == TARGET_MEM_REF)
@@ -6072,8 +4805,6 @@ maybe_canonicalize_mem_ref_addr (tree *t, bool is_debug = false)
       if (tem)
 	{
 	  *t = tem;
-	  if (TREE_CODE (*orig_t) == ADDR_EXPR)
-	    recompute_tree_invariant_for_addr_expr (*orig_t);
 	  res = true;
 	}
     }
@@ -6089,7 +4820,7 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 {
   bool changed = false;
   gimple *stmt = gsi_stmt (*gsi);
-  bool nowarning = warning_suppressed_p (stmt, OPT_Wstrict_overflow);
+  bool nowarning = gimple_no_warning_p (stmt);
   unsigned i;
   fold_defer_overflow_warnings ();
 
@@ -6181,7 +4912,7 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 	  if (*val
 	      && (REFERENCE_CLASS_P (*val)
 		  || TREE_CODE (*val) == ADDR_EXPR)
-	      && maybe_canonicalize_mem_ref_addr (val, true))
+	      && maybe_canonicalize_mem_ref_addr (val))
 	    changed = true;
 	}
       break;
@@ -6290,6 +5021,50 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
       changed |= gimple_fold_call (gsi, inplace);
       break;
 
+    case GIMPLE_ASM:
+      /* Fold *& in asm operands.  */
+      {
+	gasm *asm_stmt = as_a <gasm *> (stmt);
+	size_t noutputs;
+	const char **oconstraints;
+	const char *constraint;
+	bool allows_mem, allows_reg;
+
+	noutputs = gimple_asm_noutputs (asm_stmt);
+	oconstraints = XALLOCAVEC (const char *, noutputs);
+
+	for (i = 0; i < gimple_asm_noutputs (asm_stmt); ++i)
+	  {
+	    tree link = gimple_asm_output_op (asm_stmt, i);
+	    tree op = TREE_VALUE (link);
+	    oconstraints[i]
+	      = TREE_STRING_POINTER (TREE_VALUE (TREE_PURPOSE (link)));
+	    if (REFERENCE_CLASS_P (op)
+		&& (op = maybe_fold_reference (op, true)) != NULL_TREE)
+	      {
+		TREE_VALUE (link) = op;
+		changed = true;
+	      }
+	  }
+	for (i = 0; i < gimple_asm_ninputs (asm_stmt); ++i)
+	  {
+	    tree link = gimple_asm_input_op (asm_stmt, i);
+	    tree op = TREE_VALUE (link);
+	    constraint
+	      = TREE_STRING_POINTER (TREE_VALUE (TREE_PURPOSE (link)));
+	    parse_input_constraint (&constraint, 0, 0, noutputs, 0,
+				    oconstraints, &allows_mem, &allows_reg);
+	    if (REFERENCE_CLASS_P (op)
+		&& (op = maybe_fold_reference (op, !allows_reg && allows_mem))
+		   != NULL_TREE)
+	      {
+		TREE_VALUE (link) = op;
+		changed = true;
+	      }
+	  }
+      }
+      break;
+
     case GIMPLE_DEBUG:
       if (gimple_debug_bind_p (stmt))
 	{
@@ -6297,7 +5072,7 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 	  if (val
 	      && REFERENCE_CLASS_P (val))
 	    {
-	      tree tem = maybe_fold_reference (val);
+	      tree tem = maybe_fold_reference (val, false);
 	      if (tem)
 		{
 		  gimple_debug_bind_set_value (stmt, tem);
@@ -6308,7 +5083,7 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 		   && TREE_CODE (val) == ADDR_EXPR)
 	    {
 	      tree ref = TREE_OPERAND (val, 0);
-	      tree tem = maybe_fold_reference (ref);
+	      tree tem = maybe_fold_reference (ref, false);
 	      if (tem)
 		{
 		  tem = build_fold_addr_expr_with_type (tem, TREE_TYPE (val));
@@ -6341,6 +5116,21 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
     }
 
   stmt = gsi_stmt (*gsi);
+
+  /* Fold *& on the lhs.  */
+  if (gimple_has_lhs (stmt))
+    {
+      tree lhs = gimple_get_lhs (stmt);
+      if (lhs && REFERENCE_CLASS_P (lhs))
+	{
+	  tree new_lhs = maybe_fold_reference (lhs, true);
+	  if (new_lhs)
+	    {
+	      gimple_set_lhs (stmt, new_lhs);
+	      changed = true;
+	    }
+	}
+    }
 
   fold_undefer_overflow_warnings (changed && !nowarning, stmt, 0);
   return changed;
@@ -6545,22 +5335,22 @@ same_bool_result_p (const_tree op1, const_tree op2)
 /* Forward declarations for some mutually recursive functions.  */
 
 static tree
-and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
+and_comparisons_1 (enum tree_code code1, tree op1a, tree op1b,
 		   enum tree_code code2, tree op2a, tree op2b);
 static tree
-and_var_with_comparison (tree type, tree var, bool invert,
+and_var_with_comparison (tree var, bool invert,
 			 enum tree_code code2, tree op2a, tree op2b);
 static tree
-and_var_with_comparison_1 (tree type, gimple *stmt,
+and_var_with_comparison_1 (gimple *stmt,
 			   enum tree_code code2, tree op2a, tree op2b);
 static tree
-or_comparisons_1 (tree, enum tree_code code1, tree op1a, tree op1b,
+or_comparisons_1 (enum tree_code code1, tree op1a, tree op1b,
 		  enum tree_code code2, tree op2a, tree op2b);
 static tree
-or_var_with_comparison (tree, tree var, bool invert,
+or_var_with_comparison (tree var, bool invert,
 			enum tree_code code2, tree op2a, tree op2b);
 static tree
-or_var_with_comparison_1 (tree, gimple *stmt,
+or_var_with_comparison_1 (gimple *stmt,
 			  enum tree_code code2, tree op2a, tree op2b);
 
 /* Helper function for and_comparisons_1:  try to simplify the AND of the
@@ -6569,7 +5359,7 @@ or_var_with_comparison_1 (tree, gimple *stmt,
    Return NULL_EXPR if we can't simplify this to a single expression.  */
 
 static tree
-and_var_with_comparison (tree type, tree var, bool invert,
+and_var_with_comparison (tree var, bool invert,
 			 enum tree_code code2, tree op2a, tree op2b)
 {
   tree t;
@@ -6583,11 +5373,11 @@ and_var_with_comparison (tree type, tree var, bool invert,
      !var AND (op2a code2 op2b) => !(var OR !(op2a code2 op2b))
      Then we only have to consider the simpler non-inverted cases.  */
   if (invert)
-    t = or_var_with_comparison_1 (type, stmt,
+    t = or_var_with_comparison_1 (stmt, 
 				  invert_tree_comparison (code2, false),
 				  op2a, op2b);
   else
-    t = and_var_with_comparison_1 (type, stmt, code2, op2a, op2b);
+    t = and_var_with_comparison_1 (stmt, code2, op2a, op2b);
   return canonicalize_bool (t, invert);
 }
 
@@ -6596,7 +5386,7 @@ and_var_with_comparison (tree type, tree var, bool invert,
    Return NULL_EXPR if we can't simplify this to a single expression.  */
 
 static tree
-and_var_with_comparison_1 (tree type, gimple *stmt,
+and_var_with_comparison_1 (gimple *stmt,
 			   enum tree_code code2, tree op2a, tree op2b)
 {
   tree var = gimple_assign_lhs (stmt);
@@ -6627,7 +5417,7 @@ and_var_with_comparison_1 (tree type, gimple *stmt,
   /* If the definition is a comparison, recurse on it.  */
   if (TREE_CODE_CLASS (innercode) == tcc_comparison)
     {
-      tree t = and_comparisons_1 (type, innercode,
+      tree t = and_comparisons_1 (innercode,
 				  gimple_assign_rhs1 (stmt),
 				  gimple_assign_rhs2 (stmt),
 				  code2,
@@ -6663,20 +5453,18 @@ and_var_with_comparison_1 (tree type, gimple *stmt,
       else if (inner1 == false_test_var)
 	return (is_and
 		? boolean_false_node
-		: and_var_with_comparison (type, inner2, false, code2, op2a,
-					   op2b));
+		: and_var_with_comparison (inner2, false, code2, op2a, op2b));
       else if (inner2 == false_test_var)
 	return (is_and
 		? boolean_false_node
-		: and_var_with_comparison (type, inner1, false, code2, op2a,
-					   op2b));
+		: and_var_with_comparison (inner1, false, code2, op2a, op2b));
 
       /* Next, redistribute/reassociate the AND across the inner tests.
 	 Compute the first partial result, (inner1 AND (op2a code op2b))  */
       if (TREE_CODE (inner1) == SSA_NAME
 	  && is_gimple_assign (s = SSA_NAME_DEF_STMT (inner1))
 	  && TREE_CODE_CLASS (gimple_assign_rhs_code (s)) == tcc_comparison
-	  && (t = maybe_fold_and_comparisons (type, gimple_assign_rhs_code (s),
+	  && (t = maybe_fold_and_comparisons (gimple_assign_rhs_code (s),
 					      gimple_assign_rhs1 (s),
 					      gimple_assign_rhs2 (s),
 					      code2, op2a, op2b)))
@@ -6708,7 +5496,7 @@ and_var_with_comparison_1 (tree type, gimple *stmt,
       if (TREE_CODE (inner2) == SSA_NAME
 	  && is_gimple_assign (s = SSA_NAME_DEF_STMT (inner2))
 	  && TREE_CODE_CLASS (gimple_assign_rhs_code (s)) == tcc_comparison
-	  && (t = maybe_fold_and_comparisons (type, gimple_assign_rhs_code (s),
+	  && (t = maybe_fold_and_comparisons (gimple_assign_rhs_code (s),
 					      gimple_assign_rhs1 (s),
 					      gimple_assign_rhs2 (s),
 					      code2, op2a, op2b)))
@@ -6764,7 +5552,7 @@ and_var_with_comparison_1 (tree type, gimple *stmt,
    in the first comparison but not the second.  */
 
 static tree
-and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
+and_comparisons_1 (enum tree_code code1, tree op1a, tree op1b,
 		   enum tree_code code2, tree op2a, tree op2b)
 {
   tree truth_type = truth_type_for (TREE_TYPE (op1a));
@@ -6794,6 +5582,136 @@ and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 	return t;
     }
 
+  /* If both comparisons are of the same value against constants, we might
+     be able to merge them.  */
+  if (operand_equal_p (op1a, op2a, 0)
+      && TREE_CODE (op1b) == INTEGER_CST
+      && TREE_CODE (op2b) == INTEGER_CST)
+    {
+      int cmp = tree_int_cst_compare (op1b, op2b);
+
+      /* If we have (op1a == op1b), we should either be able to
+	 return that or FALSE, depending on whether the constant op1b
+	 also satisfies the other comparison against op2b.  */
+      if (code1 == EQ_EXPR)
+	{
+	  bool done = true;
+	  bool val;
+	  switch (code2)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp < 0); break;
+	    case GT_EXPR: val = (cmp > 0); break;
+	    case LE_EXPR: val = (cmp <= 0); break;
+	    case GE_EXPR: val = (cmp >= 0); break;
+	    default: done = false;
+	    }
+	  if (done)
+	    {
+	      if (val)
+		return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	      else
+		return boolean_false_node;
+	    }
+	}
+      /* Likewise if the second comparison is an == comparison.  */
+      else if (code2 == EQ_EXPR)
+	{
+	  bool done = true;
+	  bool val;
+	  switch (code1)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp > 0); break;
+	    case GT_EXPR: val = (cmp < 0); break;
+	    case LE_EXPR: val = (cmp >= 0); break;
+	    case GE_EXPR: val = (cmp <= 0); break;
+	    default: done = false;
+	    }
+	  if (done)
+	    {
+	      if (val)
+		return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	      else
+		return boolean_false_node;
+	    }
+	}
+
+      /* Same business with inequality tests.  */
+      else if (code1 == NE_EXPR)
+	{
+	  bool val;
+	  switch (code2)
+	    {
+	    case EQ_EXPR: val = (cmp != 0); break;
+	    case NE_EXPR: val = (cmp == 0); break;
+	    case LT_EXPR: val = (cmp >= 0); break;
+	    case GT_EXPR: val = (cmp <= 0); break;
+	    case LE_EXPR: val = (cmp > 0); break;
+	    case GE_EXPR: val = (cmp < 0); break;
+	    default:
+	      val = false;
+	    }
+	  if (val)
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	}
+      else if (code2 == NE_EXPR)
+	{
+	  bool val;
+	  switch (code1)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp <= 0); break;
+	    case GT_EXPR: val = (cmp >= 0); break;
+	    case LE_EXPR: val = (cmp < 0); break;
+	    case GE_EXPR: val = (cmp > 0); break;
+	    default:
+	      val = false;
+	    }
+	  if (val)
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	}
+
+      /* Chose the more restrictive of two < or <= comparisons.  */
+      else if ((code1 == LT_EXPR || code1 == LE_EXPR)
+	       && (code2 == LT_EXPR || code2 == LE_EXPR))
+	{
+	  if ((cmp < 0) || (cmp == 0 && code1 == LT_EXPR))
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	  else
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	}
+
+      /* Likewise chose the more restrictive of two > or >= comparisons.  */
+      else if ((code1 == GT_EXPR || code1 == GE_EXPR)
+	       && (code2 == GT_EXPR || code2 == GE_EXPR))
+	{
+	  if ((cmp > 0) || (cmp == 0 && code1 == GT_EXPR))
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	  else
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	}
+
+      /* Check for singleton ranges.  */
+      else if (cmp == 0
+	       && ((code1 == LE_EXPR && code2 == GE_EXPR)
+		   || (code1 == GE_EXPR && code2 == LE_EXPR)))
+	return fold_build2 (EQ_EXPR, boolean_type_node, op1a, op2b);
+
+      /* Check for disjoint ranges. */
+      else if (cmp <= 0
+	       && (code1 == LT_EXPR || code1 == LE_EXPR)
+	       && (code2 == GT_EXPR || code2 == GE_EXPR))
+	return boolean_false_node;
+      else if (cmp >= 0
+	       && (code1 == GT_EXPR || code1 == GE_EXPR)
+	       && (code2 == LT_EXPR || code2 == LE_EXPR))
+	return boolean_false_node;
+    }
+
   /* Perhaps the first comparison is (NAME != 0) or (NAME == 1) where
      NAME's definition is a truth value.  See if there are any simplifications
      that can be done against the NAME's definition.  */
@@ -6808,8 +5726,7 @@ and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 	{
 	case GIMPLE_ASSIGN:
 	  /* Try to simplify by copy-propagating the definition.  */
-	  return and_var_with_comparison (type, op1a, invert, code2, op2a,
-					  op2b);
+	  return and_var_with_comparison (op1a, invert, code2, op2a, op2b);
 
 	case GIMPLE_PHI:
 	  /* If every argument to the PHI produces the same result when
@@ -6859,7 +5776,7 @@ and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 					     gimple_bb (def_stmt),
 					     gimple_bb (stmt)))
 			return NULL_TREE;
-		      temp = and_var_with_comparison (type, arg, invert, code2,
+		      temp = and_var_with_comparison (arg, invert, code2,
 						      op2a, op2b);
 		      if (!temp)
 			return NULL_TREE;
@@ -6881,83 +5798,6 @@ and_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
   return NULL_TREE;
 }
 
-/* Helper function for maybe_fold_and_comparisons and maybe_fold_or_comparisons
-   : try to simplify the AND/OR of the ssa variable VAR with the comparison
-   specified by (OP2A CODE2 OP2B) from match.pd.  Return NULL_EXPR if we can't
-   simplify this to a single expression.  As we are going to lower the cost
-   of building SSA names / gimple stmts significantly, we need to allocate
-   them ont the stack.  This will cause the code to be a bit ugly.  */
-
-static tree
-maybe_fold_comparisons_from_match_pd (tree type, enum tree_code code,
-				      enum tree_code code1,
-				      tree op1a, tree op1b,
-				      enum tree_code code2, tree op2a,
-				      tree op2b)
-{
-  /* Allocate gimple stmt1 on the stack.  */
-  gassign *stmt1
-    = (gassign *) XALLOCAVEC (char, gimple_size (GIMPLE_ASSIGN, 3));
-  gimple_init (stmt1, GIMPLE_ASSIGN, 3);
-  gimple_assign_set_rhs_code (stmt1, code1);
-  gimple_assign_set_rhs1 (stmt1, op1a);
-  gimple_assign_set_rhs2 (stmt1, op1b);
-
-  /* Allocate gimple stmt2 on the stack.  */
-  gassign *stmt2
-    = (gassign *) XALLOCAVEC (char, gimple_size (GIMPLE_ASSIGN, 3));
-  gimple_init (stmt2, GIMPLE_ASSIGN, 3);
-  gimple_assign_set_rhs_code (stmt2, code2);
-  gimple_assign_set_rhs1 (stmt2, op2a);
-  gimple_assign_set_rhs2 (stmt2, op2b);
-
-  /* Allocate SSA names(lhs1) on the stack.  */
-  tree lhs1 = (tree)XALLOCA (tree_ssa_name);
-  memset (lhs1, 0, sizeof (tree_ssa_name));
-  TREE_SET_CODE (lhs1, SSA_NAME);
-  TREE_TYPE (lhs1) = type;
-  init_ssa_name_imm_use (lhs1);
-
-  /* Allocate SSA names(lhs2) on the stack.  */
-  tree lhs2 = (tree)XALLOCA (tree_ssa_name);
-  memset (lhs2, 0, sizeof (tree_ssa_name));
-  TREE_SET_CODE (lhs2, SSA_NAME);
-  TREE_TYPE (lhs2) = type;
-  init_ssa_name_imm_use (lhs2);
-
-  gimple_assign_set_lhs (stmt1, lhs1);
-  gimple_assign_set_lhs (stmt2, lhs2);
-
-  gimple_match_op op (gimple_match_cond::UNCOND, code,
-		      type, gimple_assign_lhs (stmt1),
-		      gimple_assign_lhs (stmt2));
-  if (op.resimplify (NULL, follow_all_ssa_edges))
-    {
-      if (gimple_simplified_result_is_gimple_val (&op))
-	{
-	  tree res = op.ops[0];
-	  if (res == lhs1)
-	    return build2 (code1, type, op1a, op1b);
-	  else if (res == lhs2)
-	    return build2 (code2, type, op2a, op2b);
-	  else
-	    return res;
-	}
-      else if (op.code.is_tree_code ()
-	       && TREE_CODE_CLASS ((tree_code)op.code) == tcc_comparison)
-	{
-	  tree op0 = op.ops[0];
-	  tree op1 = op.ops[1];
-	  if (op0 == lhs1 || op0 == lhs2 || op1 == lhs1 || op1 == lhs2)
-	    return NULL_TREE;  /* not simple */
-
-	  return build2 ((enum tree_code)op.code, op.type, op0, op1);
-	}
-    }
-
-  return NULL_TREE;
-}
-
 /* Try to simplify the AND of two comparisons, specified by
    (OP1A CODE1 OP1B) and (OP2B CODE2 OP2B), respectively.
    If this can be simplified to a single expression (without requiring
@@ -6966,22 +5806,14 @@ maybe_fold_comparisons_from_match_pd (tree type, enum tree_code code,
    If the result expression is non-null, it has boolean type.  */
 
 tree
-maybe_fold_and_comparisons (tree type,
-			    enum tree_code code1, tree op1a, tree op1b,
+maybe_fold_and_comparisons (enum tree_code code1, tree op1a, tree op1b,
 			    enum tree_code code2, tree op2a, tree op2b)
 {
-  if (tree t = and_comparisons_1 (type, code1, op1a, op1b, code2, op2a, op2b))
+  tree t = and_comparisons_1 (code1, op1a, op1b, code2, op2a, op2b);
+  if (t)
     return t;
-
-  if (tree t = and_comparisons_1 (type, code2, op2a, op2b, code1, op1a, op1b))
-    return t;
-
-  if (tree t = maybe_fold_comparisons_from_match_pd (type, BIT_AND_EXPR, code1,
-						     op1a, op1b, code2, op2a,
-						     op2b))
-    return t;
-
-  return NULL_TREE;
+  else
+    return and_comparisons_1 (code2, op2a, op2b, code1, op1a, op1b);
 }
 
 /* Helper function for or_comparisons_1:  try to simplify the OR of the
@@ -6990,7 +5822,7 @@ maybe_fold_and_comparisons (tree type,
    Return NULL_EXPR if we can't simplify this to a single expression.  */
 
 static tree
-or_var_with_comparison (tree type, tree var, bool invert,
+or_var_with_comparison (tree var, bool invert,
 			enum tree_code code2, tree op2a, tree op2b)
 {
   tree t;
@@ -7004,11 +5836,11 @@ or_var_with_comparison (tree type, tree var, bool invert,
      !var OR (op2a code2 op2b) => !(var AND !(op2a code2 op2b))
      Then we only have to consider the simpler non-inverted cases.  */
   if (invert)
-    t = and_var_with_comparison_1 (type, stmt,
+    t = and_var_with_comparison_1 (stmt, 
 				   invert_tree_comparison (code2, false),
 				   op2a, op2b);
   else
-    t = or_var_with_comparison_1 (type, stmt, code2, op2a, op2b);
+    t = or_var_with_comparison_1 (stmt, code2, op2a, op2b);
   return canonicalize_bool (t, invert);
 }
 
@@ -7017,7 +5849,7 @@ or_var_with_comparison (tree type, tree var, bool invert,
    Return NULL_EXPR if we can't simplify this to a single expression.  */
 
 static tree
-or_var_with_comparison_1 (tree type, gimple *stmt,
+or_var_with_comparison_1 (gimple *stmt,
 			  enum tree_code code2, tree op2a, tree op2b)
 {
   tree var = gimple_assign_lhs (stmt);
@@ -7048,7 +5880,7 @@ or_var_with_comparison_1 (tree type, gimple *stmt,
   /* If the definition is a comparison, recurse on it.  */
   if (TREE_CODE_CLASS (innercode) == tcc_comparison)
     {
-      tree t = or_comparisons_1 (type, innercode,
+      tree t = or_comparisons_1 (innercode,
 				 gimple_assign_rhs1 (stmt),
 				 gimple_assign_rhs2 (stmt),
 				 code2,
@@ -7084,20 +5916,18 @@ or_var_with_comparison_1 (tree type, gimple *stmt,
       else if (inner1 == false_test_var)
 	return (is_or
 		? boolean_true_node
-		: or_var_with_comparison (type, inner2, false, code2, op2a,
-					  op2b));
+		: or_var_with_comparison (inner2, false, code2, op2a, op2b));
       else if (inner2 == false_test_var)
 	return (is_or
 		? boolean_true_node
-		: or_var_with_comparison (type, inner1, false, code2, op2a,
-					  op2b));
+		: or_var_with_comparison (inner1, false, code2, op2a, op2b));
       
       /* Next, redistribute/reassociate the OR across the inner tests.
 	 Compute the first partial result, (inner1 OR (op2a code op2b))  */
       if (TREE_CODE (inner1) == SSA_NAME
 	  && is_gimple_assign (s = SSA_NAME_DEF_STMT (inner1))
 	  && TREE_CODE_CLASS (gimple_assign_rhs_code (s)) == tcc_comparison
-	  && (t = maybe_fold_or_comparisons (type, gimple_assign_rhs_code (s),
+	  && (t = maybe_fold_or_comparisons (gimple_assign_rhs_code (s),
 					     gimple_assign_rhs1 (s),
 					     gimple_assign_rhs2 (s),
 					     code2, op2a, op2b)))
@@ -7129,7 +5959,7 @@ or_var_with_comparison_1 (tree type, gimple *stmt,
       if (TREE_CODE (inner2) == SSA_NAME
 	  && is_gimple_assign (s = SSA_NAME_DEF_STMT (inner2))
 	  && TREE_CODE_CLASS (gimple_assign_rhs_code (s)) == tcc_comparison
-	  && (t = maybe_fold_or_comparisons (type, gimple_assign_rhs_code (s),
+	  && (t = maybe_fold_or_comparisons (gimple_assign_rhs_code (s),
 					     gimple_assign_rhs1 (s),
 					     gimple_assign_rhs2 (s),
 					     code2, op2a, op2b)))
@@ -7186,7 +6016,7 @@ or_var_with_comparison_1 (tree type, gimple *stmt,
    in the first comparison but not the second.  */
 
 static tree
-or_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
+or_comparisons_1 (enum tree_code code1, tree op1a, tree op1b,
 		  enum tree_code code2, tree op2a, tree op2b)
 {
   tree truth_type = truth_type_for (TREE_TYPE (op1a));
@@ -7216,6 +6046,136 @@ or_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 	return t;
     }
 
+  /* If both comparisons are of the same value against constants, we might
+     be able to merge them.  */
+  if (operand_equal_p (op1a, op2a, 0)
+      && TREE_CODE (op1b) == INTEGER_CST
+      && TREE_CODE (op2b) == INTEGER_CST)
+    {
+      int cmp = tree_int_cst_compare (op1b, op2b);
+
+      /* If we have (op1a != op1b), we should either be able to
+	 return that or TRUE, depending on whether the constant op1b
+	 also satisfies the other comparison against op2b.  */
+      if (code1 == NE_EXPR)
+	{
+	  bool done = true;
+	  bool val;
+	  switch (code2)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp < 0); break;
+	    case GT_EXPR: val = (cmp > 0); break;
+	    case LE_EXPR: val = (cmp <= 0); break;
+	    case GE_EXPR: val = (cmp >= 0); break;
+	    default: done = false;
+	    }
+	  if (done)
+	    {
+	      if (val)
+		return boolean_true_node;
+	      else
+		return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	    }
+	}
+      /* Likewise if the second comparison is a != comparison.  */
+      else if (code2 == NE_EXPR)
+	{
+	  bool done = true;
+	  bool val;
+	  switch (code1)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp > 0); break;
+	    case GT_EXPR: val = (cmp < 0); break;
+	    case LE_EXPR: val = (cmp >= 0); break;
+	    case GE_EXPR: val = (cmp <= 0); break;
+	    default: done = false;
+	    }
+	  if (done)
+	    {
+	      if (val)
+		return boolean_true_node;
+	      else
+		return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	    }
+	}
+
+      /* See if an equality test is redundant with the other comparison.  */
+      else if (code1 == EQ_EXPR)
+	{
+	  bool val;
+	  switch (code2)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp < 0); break;
+	    case GT_EXPR: val = (cmp > 0); break;
+	    case LE_EXPR: val = (cmp <= 0); break;
+	    case GE_EXPR: val = (cmp >= 0); break;
+	    default:
+	      val = false;
+	    }
+	  if (val)
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	}
+      else if (code2 == EQ_EXPR)
+	{
+	  bool val;
+	  switch (code1)
+	    {
+	    case EQ_EXPR: val = (cmp == 0); break;
+	    case NE_EXPR: val = (cmp != 0); break;
+	    case LT_EXPR: val = (cmp > 0); break;
+	    case GT_EXPR: val = (cmp < 0); break;
+	    case LE_EXPR: val = (cmp >= 0); break;
+	    case GE_EXPR: val = (cmp <= 0); break;
+	    default:
+	      val = false;
+	    }
+	  if (val)
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	}
+
+      /* Chose the less restrictive of two < or <= comparisons.  */
+      else if ((code1 == LT_EXPR || code1 == LE_EXPR)
+	       && (code2 == LT_EXPR || code2 == LE_EXPR))
+	{
+	  if ((cmp < 0) || (cmp == 0 && code1 == LT_EXPR))
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	  else
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	}
+
+      /* Likewise chose the less restrictive of two > or >= comparisons.  */
+      else if ((code1 == GT_EXPR || code1 == GE_EXPR)
+	       && (code2 == GT_EXPR || code2 == GE_EXPR))
+	{
+	  if ((cmp > 0) || (cmp == 0 && code1 == GT_EXPR))
+	    return fold_build2 (code2, boolean_type_node, op2a, op2b);
+	  else
+	    return fold_build2 (code1, boolean_type_node, op1a, op1b);
+	}
+
+      /* Check for singleton ranges.  */
+      else if (cmp == 0
+	       && ((code1 == LT_EXPR && code2 == GT_EXPR)
+		   || (code1 == GT_EXPR && code2 == LT_EXPR)))
+	return fold_build2 (NE_EXPR, boolean_type_node, op1a, op2b);
+
+      /* Check for less/greater pairs that don't restrict the range at all.  */
+      else if (cmp >= 0
+	       && (code1 == LT_EXPR || code1 == LE_EXPR)
+	       && (code2 == GT_EXPR || code2 == GE_EXPR))
+	return boolean_true_node;
+      else if (cmp <= 0
+	       && (code1 == GT_EXPR || code1 == GE_EXPR)
+	       && (code2 == LT_EXPR || code2 == LE_EXPR))
+	return boolean_true_node;
+    }
+
   /* Perhaps the first comparison is (NAME != 0) or (NAME == 1) where
      NAME's definition is a truth value.  See if there are any simplifications
      that can be done against the NAME's definition.  */
@@ -7230,8 +6190,7 @@ or_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 	{
 	case GIMPLE_ASSIGN:
 	  /* Try to simplify by copy-propagating the definition.  */
-	  return or_var_with_comparison (type, op1a, invert, code2, op2a,
-					 op2b);
+	  return or_var_with_comparison (op1a, invert, code2, op2a, op2b);
 
 	case GIMPLE_PHI:
 	  /* If every argument to the PHI produces the same result when
@@ -7281,7 +6240,7 @@ or_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
 					     gimple_bb (def_stmt),
 					     gimple_bb (stmt)))
 			return NULL_TREE;
-		      temp = or_var_with_comparison (type, arg, invert, code2,
+		      temp = or_var_with_comparison (arg, invert, code2,
 						     op2a, op2b);
 		      if (!temp)
 			return NULL_TREE;
@@ -7311,23 +6270,16 @@ or_comparisons_1 (tree type, enum tree_code code1, tree op1a, tree op1b,
    If the result expression is non-null, it has boolean type.  */
 
 tree
-maybe_fold_or_comparisons (tree type,
-			   enum tree_code code1, tree op1a, tree op1b,
+maybe_fold_or_comparisons (enum tree_code code1, tree op1a, tree op1b,
 			   enum tree_code code2, tree op2a, tree op2b)
 {
-  if (tree t = or_comparisons_1 (type, code1, op1a, op1b, code2, op2a, op2b))
+  tree t = or_comparisons_1 (code1, op1a, op1b, code2, op2a, op2b);
+  if (t)
     return t;
-
-  if (tree t = or_comparisons_1 (type, code2, op2a, op2b, code1, op1a, op1b))
-    return t;
-
-  if (tree t = maybe_fold_comparisons_from_match_pd (type, BIT_IOR_EXPR, code1,
-						     op1a, op1b, code2, op2a,
-						     op2b))
-    return t;
-
-  return NULL_TREE;
+  else
+    return or_comparisons_1 (code2, op2a, op2b, code1, op1a, op1b);
 }
+
 
 /* Fold STMT to a constant using VALUEIZE to valueize SSA names.
 
@@ -7492,8 +6444,8 @@ gimple_fold_stmt_to_constant_1 (gimple *stmt, tree (*valueize) (tree),
 		    && TREE_CODE (op1) == INTEGER_CST)
 		  {
 		    tree off = fold_convert (ptr_type_node, op1);
-		    return build1_loc
-			(loc, ADDR_EXPR, TREE_TYPE (op0),
+		    return build_fold_addr_expr_loc
+			(loc,
 			 fold_build2 (MEM_REF,
 				      TREE_TYPE (TREE_TYPE (op0)),
 				      unshare_expr (op0), off));
@@ -7532,8 +6484,7 @@ gimple_fold_stmt_to_constant_1 (gimple *stmt, tree (*valueize) (tree),
               tree op1 = (*valueize) (gimple_assign_rhs2 (stmt));
               tree op2 = (*valueize) (gimple_assign_rhs3 (stmt));
               return fold_ternary_loc (loc, subcode,
-				       TREE_TYPE (gimple_assign_lhs (stmt)),
-				       op0, op1, op2);
+				       gimple_expr_type (stmt), op0, op1, op2);
             }
 
           default:
@@ -7767,13 +6718,14 @@ fold_array_ctor_reference (tree type, tree ctor,
   elt_size = wi::to_offset (TYPE_SIZE_UNIT (TREE_TYPE (TREE_TYPE (ctor))));
 
   /* When TYPE is non-null, verify that it specifies a constant-sized
-     access of a multiple of the array element size.  Avoid division
+     accessed not larger than size of array element.  Avoid division
      by zero below when ELT_SIZE is zero, such as with the result of
      an initializer for a zero-length array or an empty struct.  */
   if (elt_size == 0
       || (type
 	  && (!TYPE_SIZE_UNIT (type)
-	      || TREE_CODE (TYPE_SIZE_UNIT (type)) != INTEGER_CST)))
+	      || TREE_CODE (TYPE_SIZE_UNIT (type)) != INTEGER_CST
+	      || elt_size < wi::to_offset (TYPE_SIZE_UNIT (type)))))
     return NULL_TREE;
 
   /* Compute the array index we look for.  */
@@ -7784,91 +6736,10 @@ fold_array_ctor_reference (tree type, tree ctor,
   /* And offset within the access.  */
   inner_offset = offset % (elt_size.to_uhwi () * BITS_PER_UNIT);
 
-  unsigned HOST_WIDE_INT elt_sz = elt_size.to_uhwi ();
-  if (size > elt_sz * BITS_PER_UNIT)
-    {
-      /* native_encode_expr constraints.  */
-      if (size > MAX_BITSIZE_MODE_ANY_MODE
-	  || size % BITS_PER_UNIT != 0
-	  || inner_offset % BITS_PER_UNIT != 0
-	  || elt_sz > MAX_BITSIZE_MODE_ANY_MODE / BITS_PER_UNIT)
-	return NULL_TREE;
-
-      unsigned ctor_idx;
-      tree val = get_array_ctor_element_at_index (ctor, access_index,
-						  &ctor_idx);
-      if (!val && ctor_idx >= CONSTRUCTOR_NELTS  (ctor))
-	return build_zero_cst (type);
-
-      /* native-encode adjacent ctor elements.  */
-      unsigned char buf[MAX_BITSIZE_MODE_ANY_MODE / BITS_PER_UNIT];
-      unsigned bufoff = 0;
-      offset_int index = 0;
-      offset_int max_index = access_index;
-      constructor_elt *elt = CONSTRUCTOR_ELT (ctor, ctor_idx);
-      if (!val)
-	val = build_zero_cst (TREE_TYPE (TREE_TYPE (ctor)));
-      else if (!CONSTANT_CLASS_P (val))
-	return NULL_TREE;
-      if (!elt->index)
-	;
-      else if (TREE_CODE (elt->index) == RANGE_EXPR)
-	{
-	  index = wi::to_offset (TREE_OPERAND (elt->index, 0));
-	  max_index = wi::to_offset (TREE_OPERAND (elt->index, 1));
-	}
-      else
-	index = max_index = wi::to_offset (elt->index);
-      index = wi::umax (index, access_index);
-      do
-	{
-	  if (bufoff + elt_sz > sizeof (buf))
-	    elt_sz = sizeof (buf) - bufoff;
-	  int len = native_encode_expr (val, buf + bufoff, elt_sz,
-					inner_offset / BITS_PER_UNIT);
-	  if (len != (int) elt_sz - inner_offset / BITS_PER_UNIT)
-	    return NULL_TREE;
-	  inner_offset = 0;
-	  bufoff += len;
-
-	  access_index += 1;
-	  if (wi::cmpu (access_index, index) == 0)
-	    val = elt->value;
-	  else if (wi::cmpu (access_index, max_index) > 0)
-	    {
-	      ctor_idx++;
-	      if (ctor_idx >= CONSTRUCTOR_NELTS (ctor))
-		{
-		  val = build_zero_cst (TREE_TYPE (TREE_TYPE (ctor)));
-		  ++max_index;
-		}
-	      else
-		{
-		  elt = CONSTRUCTOR_ELT (ctor, ctor_idx);
-		  index = 0;
-		  max_index = access_index;
-		  if (!elt->index)
-		    ;
-		  else if (TREE_CODE (elt->index) == RANGE_EXPR)
-		    {
-		      index = wi::to_offset (TREE_OPERAND (elt->index, 0));
-		      max_index = wi::to_offset (TREE_OPERAND (elt->index, 1));
-		    }
-		  else
-		    index = max_index = wi::to_offset (elt->index);
-		  index = wi::umax (index, access_index);
-		  if (wi::cmpu (access_index, index) == 0)
-		    val = elt->value;
-		  else
-		    val = build_zero_cst (TREE_TYPE (TREE_TYPE (ctor)));
-		}
-	    }
-	}
-      while (bufoff < size / BITS_PER_UNIT);
-      *suboff += size;
-      return native_interpret_expr (type, buf, size / BITS_PER_UNIT);
-    }
-
+  /* See if the array field is large enough to span whole access.  We do not
+     care to fold accesses spanning multiple array indexes.  */
+  if (inner_offset + size > elt_size.to_uhwi () * BITS_PER_UNIT)
+    return NULL_TREE;
   if (tree val = get_array_ctor_element_at_index (ctor, access_index))
     {
       if (!size && TREE_CODE (val) != CONSTRUCTOR)
@@ -7879,17 +6750,10 @@ fold_array_ctor_reference (tree type, tree ctor,
 	     SIZE to the size of the accessed element.  */
 	  inner_offset = 0;
 	  type = TREE_TYPE (val);
-	  size = elt_sz * BITS_PER_UNIT;
+	  size = elt_size.to_uhwi () * BITS_PER_UNIT;
 	}
-      else if (size && access_index < CONSTRUCTOR_NELTS (ctor) - 1
-	       && TREE_CODE (val) == CONSTRUCTOR
-	       && (elt_sz * BITS_PER_UNIT - inner_offset) < size)
-	/* If this isn't the last element in the CTOR and a CTOR itself
-	   and it does not cover the whole object we are requesting give up
-	   since we're not set up for combining from multiple CTORs.  */
-	return NULL_TREE;
 
-      *suboff += access_index.to_uhwi () * elt_sz * BITS_PER_UNIT;
+      *suboff += (access_index * elt_size * BITS_PER_UNIT).to_uhwi ();
       return fold_ctor_reference (type, val, inner_offset, size, from_decl,
 				  suboff);
     }
@@ -7995,15 +6859,12 @@ fold_nonarray_ctor_reference (tree type, tree ctor,
 				      from_decl, suboff);
 	}
     }
-
-  if (!type)
-    return NULL_TREE;
-
-  return build_zero_cst (type);
+  /* Memory not explicitly mentioned in constructor is 0.  */
+  return type ? build_zero_cst (type) : NULL_TREE;
 }
 
 /* CTOR is value initializing memory.  Fold a reference of TYPE and
-   bit size POLY_SIZE to the memory at bit POLY_OFFSET.  When POLY_SIZE
+   bit size POLY_SIZE to the memory at bit POLY_OFFSET.  When SIZE
    is zero, attempt to fold a reference to the entire subobject
    which OFFSET refers to.  This is used when folding accesses to
    string members of aggregates.  When non-null, set *SUBOFF to
@@ -8048,10 +6909,8 @@ fold_ctor_reference (tree type, tree ctor, const poly_uint64 &poly_offset,
   if (CONSTANT_CLASS_P (ctor)
       && BITS_PER_UNIT == 8
       && offset % BITS_PER_UNIT == 0
-      && offset / BITS_PER_UNIT <= INT_MAX
       && size % BITS_PER_UNIT == 0
-      && size <= MAX_BITSIZE_MODE_ANY_MODE
-      && can_native_interpret_type_p (type))
+      && size <= MAX_BITSIZE_MODE_ANY_MODE)
     {
       unsigned char buf[MAX_BITSIZE_MODE_ANY_MODE / BITS_PER_UNIT];
       int len = native_encode_expr (ctor, buf, size / BITS_PER_UNIT,
@@ -8065,35 +6924,13 @@ fold_ctor_reference (tree type, tree ctor, const poly_uint64 &poly_offset,
       if (!suboff)
 	suboff = &dummy;
 
-      tree ret;
       if (TREE_CODE (TREE_TYPE (ctor)) == ARRAY_TYPE
 	  || TREE_CODE (TREE_TYPE (ctor)) == VECTOR_TYPE)
-	ret = fold_array_ctor_reference (type, ctor, offset, size,
-					 from_decl, suboff);
-      else
-	ret = fold_nonarray_ctor_reference (type, ctor, offset, size,
-					    from_decl, suboff);
+	return fold_array_ctor_reference (type, ctor, offset, size,
+					  from_decl, suboff);
 
-      /* Fall back to native_encode_initializer.  Needs to be done
-	 only in the outermost fold_ctor_reference call (because it itself
-	 recurses into CONSTRUCTORs) and doesn't update suboff.  */
-      if (ret == NULL_TREE
-	  && suboff == &dummy
-	  && BITS_PER_UNIT == 8
-	  && offset % BITS_PER_UNIT == 0
-	  && offset / BITS_PER_UNIT <= INT_MAX
-	  && size % BITS_PER_UNIT == 0
-	  && size <= MAX_BITSIZE_MODE_ANY_MODE
-	  && can_native_interpret_type_p (type))
-	{
-	  unsigned char buf[MAX_BITSIZE_MODE_ANY_MODE / BITS_PER_UNIT];
-	  int len = native_encode_initializer (ctor, buf, size / BITS_PER_UNIT,
-					       offset / BITS_PER_UNIT);
-	  if (len > 0)
-	    return native_interpret_expr (type, buf, len);
-	}
-
-      return ret;
+      return fold_nonarray_ctor_reference (type, ctor, offset, size,
+					   from_decl, suboff);
     }
 
   return NULL_TREE;
@@ -8146,7 +6983,7 @@ fold_const_aggregate_ref_1 (tree t, tree (*valueize) (tree))
 	      poly_offset_int woffset
 		= wi::sext (wi::to_poly_offset (idx)
 			    - wi::to_poly_offset (low_bound),
-			    TYPE_PRECISION (sizetype));
+			    TYPE_PRECISION (TREE_TYPE (idx)));
 	      woffset *= tree_to_uhwi (unit_size);
 	      woffset *= BITS_PER_UNIT;
 	      if (woffset.to_shwi (&offset))
@@ -8193,64 +7030,8 @@ fold_const_aggregate_ref_1 (tree t, tree (*valueize) (tree))
       if (maybe_lt (offset, 0))
 	return NULL_TREE;
 
-      tem = fold_ctor_reference (TREE_TYPE (t), ctor, offset, size, base);
-      if (tem)
-	return tem;
-
-      /* For bit field reads try to read the representative and
-	 adjust.  */
-      if (TREE_CODE (t) == COMPONENT_REF
-	  && DECL_BIT_FIELD (TREE_OPERAND (t, 1))
-	  && DECL_BIT_FIELD_REPRESENTATIVE (TREE_OPERAND (t, 1)))
-	{
-	  HOST_WIDE_INT csize, coffset;
-	  tree field = TREE_OPERAND (t, 1);
-	  tree repr = DECL_BIT_FIELD_REPRESENTATIVE (field);
-	  if (INTEGRAL_TYPE_P (TREE_TYPE (repr))
-	      && size.is_constant (&csize)
-	      && offset.is_constant (&coffset)
-	      && (coffset % BITS_PER_UNIT != 0
-		  || csize % BITS_PER_UNIT != 0)
-	      && !reverse
-	      && BYTES_BIG_ENDIAN == WORDS_BIG_ENDIAN)
-	    {
-	      poly_int64 bitoffset;
-	      poly_uint64 field_offset, repr_offset;
-	      if (poly_int_tree_p (DECL_FIELD_OFFSET (field), &field_offset)
-		  && poly_int_tree_p (DECL_FIELD_OFFSET (repr), &repr_offset))
-		bitoffset = (field_offset - repr_offset) * BITS_PER_UNIT;
-	      else
-		bitoffset = 0;
-	      bitoffset += (tree_to_uhwi (DECL_FIELD_BIT_OFFSET (field))
-			    - tree_to_uhwi (DECL_FIELD_BIT_OFFSET (repr)));
-	      HOST_WIDE_INT bitoff;
-	      int diff = (TYPE_PRECISION (TREE_TYPE (repr))
-			  - TYPE_PRECISION (TREE_TYPE (field)));
-	      if (bitoffset.is_constant (&bitoff)
-		  && bitoff >= 0
-		  && bitoff <= diff)
-		{
-		  offset -= bitoff;
-		  size = tree_to_uhwi (DECL_SIZE (repr));
-
-		  tem = fold_ctor_reference (TREE_TYPE (repr), ctor, offset,
-					     size, base);
-		  if (tem && TREE_CODE (tem) == INTEGER_CST)
-		    {
-		      if (!BYTES_BIG_ENDIAN)
-			tem = wide_int_to_tree (TREE_TYPE (field),
-						wi::lrshift (wi::to_wide (tem),
-							     bitoff));
-		      else
-			tem = wide_int_to_tree (TREE_TYPE (field),
-						wi::lrshift (wi::to_wide (tem),
-							     diff - bitoff));
-		      return tem;
-		    }
-		}
-	    }
-	}
-      break;
+      return fold_ctor_reference (TREE_TYPE (t), ctor, offset, size,
+				  base);
 
     case REALPART_EXPR:
     case IMAGPART_EXPR:
@@ -8258,7 +7039,7 @@ fold_const_aggregate_ref_1 (tree t, tree (*valueize) (tree))
 	tree c = fold_const_aggregate_ref_1 (TREE_OPERAND (t, 0), valueize);
 	if (c && TREE_CODE (c) == COMPLEX_CST)
 	  return fold_build1_loc (EXPR_LOCATION (t),
-				  TREE_CODE (t), TREE_TYPE (t), c);
+			      TREE_CODE (t), TREE_TYPE (t), c);
 	break;
       }
 
@@ -8544,7 +7325,6 @@ arith_code_with_undefined_signed_overflow (tree_code code)
 {
   switch (code)
     {
-    case ABS_EXPR:
     case PLUS_EXPR:
     case MINUS_EXPR:
     case MULT_EXPR:
@@ -8577,19 +7357,15 @@ rewrite_to_defined_overflow (gimple *stmt)
   tree lhs = gimple_assign_lhs (stmt);
   tree type = unsigned_type_for (TREE_TYPE (lhs));
   gimple_seq stmts = NULL;
-  if (gimple_assign_rhs_code (stmt) == ABS_EXPR)
-    gimple_assign_set_rhs_code (stmt, ABSU_EXPR);
-  else
-    for (unsigned i = 1; i < gimple_num_ops (stmt); ++i)
-      {
-	tree op = gimple_op (stmt, i);
-	op = gimple_convert (&stmts, type, op);
-	gimple_set_op (stmt, i, op);
-      }
+  for (unsigned i = 1; i < gimple_num_ops (stmt); ++i)
+    {
+      tree op = gimple_op (stmt, i);
+      op = gimple_convert (&stmts, type, op);
+      gimple_set_op (stmt, i, op);
+    }
   gimple_assign_set_lhs (stmt, make_ssa_name (type, stmt));
   if (gimple_assign_rhs_code (stmt) == POINTER_PLUS_EXPR)
     gimple_assign_set_rhs_code (stmt, PLUS_EXPR);
-  gimple_set_modified (stmt, true);
   gimple_seq_add_stmt (&stmts, stmt);
   gimple *cvt = gimple_build_assign (lhs, NOP_EXPR, gimple_assign_lhs (stmt));
   gimple_seq_add_stmt (&stmts, cvt);
@@ -8679,32 +7455,6 @@ gimple_build (gimple_seq *seq, location_t loc,
       gimple_set_location (stmt, loc);
       gimple_seq_add_stmt_without_update (seq, stmt);
     }
-  return res;
-}
-
-/* Build the call FN () with a result of type TYPE (or no result if TYPE is
-   void) with a location LOC.  Returns the built expression value (or NULL_TREE
-   if TYPE is void) and appends statements possibly defining it to SEQ.  */
-
-tree
-gimple_build (gimple_seq *seq, location_t loc, combined_fn fn, tree type)
-{
-  tree res = NULL_TREE;
-  gcall *stmt;
-  if (internal_fn_p (fn))
-    stmt = gimple_build_call_internal (as_internal_fn (fn), 0);
-  else
-    {
-      tree decl = builtin_decl_implicit (as_builtin_fn (fn));
-      stmt = gimple_build_call (decl, 0);
-    }
-  if (!VOID_TYPE_P (type))
-    {
-      res = create_tmp_reg_or_ssa_name (type);
-      gimple_call_set_lhs (stmt, res);
-    }
-  gimple_set_location (stmt, loc);
-  gimple_seq_add_stmt_without_update (seq, stmt);
   return res;
 }
 
@@ -8875,7 +7625,7 @@ gimple_build_vector (gimple_seq *seq, location_t loc,
   gcc_assert (builder->nelts_per_pattern () <= 2);
   unsigned int encoded_nelts = builder->encoded_nelts ();
   for (unsigned int i = 0; i < encoded_nelts; ++i)
-    if (!CONSTANT_CLASS_P ((*builder)[i]))
+    if (!TREE_CONSTANT ((*builder)[i]))
       {
 	tree type = builder->type ();
 	unsigned int nelts = TYPE_VECTOR_SUBPARTS (type).to_constant ();
@@ -8897,26 +7647,6 @@ gimple_build_vector (gimple_seq *seq, location_t loc,
   return builder->build ();
 }
 
-/* Emit gimple statements into &stmts that take a value given in OLD_SIZE
-   and generate a value guaranteed to be rounded upwards to ALIGN.
-
-   Return the tree node representing this size, it is of TREE_TYPE TYPE.  */
-
-tree
-gimple_build_round_up (gimple_seq *seq, location_t loc, tree type,
-		       tree old_size, unsigned HOST_WIDE_INT align)
-{
-  unsigned HOST_WIDE_INT tg_mask = align - 1;
-  /* tree new_size = (old_size + tg_mask) & ~tg_mask;  */
-  gcc_assert (INTEGRAL_TYPE_P (type));
-  tree tree_mask = build_int_cst (type, tg_mask);
-  tree oversize = gimple_build (seq, loc, PLUS_EXPR, type, old_size,
-				tree_mask);
-
-  tree mask = build_int_cst (type, -align);
-  return gimple_build (seq, loc, BIT_AND_EXPR, type, oversize, mask);
-}
-
 /* Return true if the result of assignment STMT is known to be non-negative.
    If the return value is based on the assumption that signed overflow is
    undefined, set *STRICT_OVERFLOW_P to true; otherwise, don't change
@@ -8927,17 +7657,16 @@ gimple_assign_nonnegative_warnv_p (gimple *stmt, bool *strict_overflow_p,
 				   int depth)
 {
   enum tree_code code = gimple_assign_rhs_code (stmt);
-  tree type = TREE_TYPE (gimple_assign_lhs (stmt));
   switch (get_gimple_rhs_class (code))
     {
     case GIMPLE_UNARY_RHS:
       return tree_unary_nonnegative_warnv_p (gimple_assign_rhs_code (stmt),
-					     type,
+					     gimple_expr_type (stmt),
 					     gimple_assign_rhs1 (stmt),
 					     strict_overflow_p, depth);
     case GIMPLE_BINARY_RHS:
       return tree_binary_nonnegative_warnv_p (gimple_assign_rhs_code (stmt),
-					      type,
+					      gimple_expr_type (stmt),
 					      gimple_assign_rhs1 (stmt),
 					      gimple_assign_rhs2 (stmt),
 					      strict_overflow_p, depth);
@@ -8965,12 +7694,12 @@ gimple_call_nonnegative_warnv_p (gimple *stmt, bool *strict_overflow_p,
     gimple_call_arg (stmt, 0) : NULL_TREE;
   tree arg1 = gimple_call_num_args (stmt) > 1 ?
     gimple_call_arg (stmt, 1) : NULL_TREE;
-  tree lhs = gimple_call_lhs (stmt);
-  return (lhs
-	  && tree_call_nonnegative_warnv_p (TREE_TYPE (lhs),
-					    gimple_call_combined_fn (stmt),
-					    arg0, arg1,
-					    strict_overflow_p, depth));
+
+  return tree_call_nonnegative_warnv_p (gimple_expr_type (stmt),
+					gimple_call_combined_fn (stmt),
+					arg0,
+					arg1,
+					strict_overflow_p, depth);
 }
 
 /* Return true if return value of call STMT is known to be non-negative.

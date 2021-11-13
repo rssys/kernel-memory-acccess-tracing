@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || linux || netbsd || openbsd || solaris
 // +build aix darwin dragonfly freebsd hurd linux netbsd openbsd solaris
 
 package os
@@ -10,6 +9,7 @@ package os
 import (
 	"internal/syscall/unix"
 	"io"
+	"runtime"
 	"syscall"
 )
 
@@ -23,7 +23,7 @@ func removeAll(path string) error {
 	// The rmdir system call does not permit removing ".",
 	// so we don't permit it either.
 	if endsWithDot(path) {
-		return &PathError{Op: "RemoveAll", Path: path, Err: syscall.EINVAL}
+		return &PathError{"RemoveAll", path, syscall.EINVAL}
 	}
 
 	// Simple case: if Remove works, we're done.
@@ -71,7 +71,7 @@ func removeAllFrom(parent *File, base string) error {
 	// whose contents need to be removed.
 	// Otherwise just return the error.
 	if err != syscall.EISDIR && err != syscall.EPERM && err != syscall.EACCES {
-		return &PathError{Op: "unlinkat", Path: base, Err: err}
+		return &PathError{"unlinkat", base, err}
 	}
 
 	// Is this a directory we need to recurse into?
@@ -81,18 +81,17 @@ func removeAllFrom(parent *File, base string) error {
 		if IsNotExist(statErr) {
 			return nil
 		}
-		return &PathError{Op: "fstatat", Path: base, Err: statErr}
+		return &PathError{"fstatat", base, statErr}
 	}
 	if statInfo.Mode&syscall.S_IFMT != syscall.S_IFDIR {
 		// Not a directory; return the error from the unix.Unlinkat.
-		return &PathError{Op: "unlinkat", Path: base, Err: err}
+		return &PathError{"unlinkat", base, err}
 	}
 
 	// Remove the directory's entries.
 	var recurseErr error
 	for {
-		const reqSize = 1024
-		var respSize int
+		const request = 1024
 
 		// Open the directory to recurse into
 		file, err := openFdAt(parentFd, base)
@@ -100,41 +99,27 @@ func removeAllFrom(parent *File, base string) error {
 			if IsNotExist(err) {
 				return nil
 			}
-			recurseErr = &PathError{Op: "openfdat", Path: base, Err: err}
+			recurseErr = &PathError{"openfdat", base, err}
 			break
 		}
 
-		for {
-			numErr := 0
-
-			names, readErr := file.Readdirnames(reqSize)
-			// Errors other than EOF should stop us from continuing.
-			if readErr != nil && readErr != io.EOF {
-				file.Close()
-				if IsNotExist(readErr) {
-					return nil
-				}
-				return &PathError{Op: "readdirnames", Path: base, Err: readErr}
+		names, readErr := file.Readdirnames(request)
+		// Errors other than EOF should stop us from continuing.
+		if readErr != nil && readErr != io.EOF {
+			file.Close()
+			if IsNotExist(readErr) {
+				return nil
 			}
+			return &PathError{"readdirnames", base, readErr}
+		}
 
-			respSize = len(names)
-			for _, name := range names {
-				err := removeAllFrom(file, name)
-				if err != nil {
-					if pathErr, ok := err.(*PathError); ok {
-						pathErr.Path = base + string(PathSeparator) + pathErr.Path
-					}
-					numErr++
-					if recurseErr == nil {
-						recurseErr = err
-					}
+		for _, name := range names {
+			err := removeAllFrom(file, name)
+			if err != nil {
+				if pathErr, ok := err.(*PathError); ok {
+					pathErr.Path = base + string(PathSeparator) + pathErr.Path
 				}
-			}
-
-			// If we can delete any entry, break to start new iteration.
-			// Otherwise, we discard current names, get next entries and try deleting them.
-			if numErr != reqSize {
-				break
+				recurseErr = err
 			}
 		}
 
@@ -146,7 +131,7 @@ func removeAllFrom(parent *File, base string) error {
 		file.Close()
 
 		// Finish when the end of the directory is reached
-		if respSize < reqSize {
+		if len(names) < request {
 			break
 		}
 	}
@@ -160,7 +145,7 @@ func removeAllFrom(parent *File, base string) error {
 	if recurseErr != nil {
 		return recurseErr
 	}
-	return &PathError{Op: "unlinkat", Path: base, Err: unlinkError}
+	return &PathError{"unlinkat", base, unlinkError}
 }
 
 // openFdAt opens path relative to the directory in fd.
@@ -172,13 +157,13 @@ func openFdAt(dirfd int, name string) (*File, error) {
 	var r int
 	for {
 		var e error
-		r, e = unix.Openat(dirfd, name, O_RDONLY|syscall.O_CLOEXEC, 0)
+		r, e = unix.Openat(dirfd, name, O_RDONLY, 0)
 		if e == nil {
 			break
 		}
 
 		// See comment in openFileNolog.
-		if e == syscall.EINTR {
+		if runtime.GOOS == "darwin" && e == syscall.EINTR {
 			continue
 		}
 

@@ -1,7 +1,6 @@
 /* Check Class <protocol> types */
 /* Author: David Ayers <d.ayers@inode.at> */
 /* { dg-do compile } */
-// { dg-additional-options "-Wno-objc-root-class" }
 
 #include <objc/objc.h>
 #include "../objc-obj-c++-shared/runtime.h"
@@ -437,4 +436,6 @@ int main ()
   return(0);
 }
 
-/* { dg-warning "messages without a matching method signature will be assumed to return .id. and accept .\.\.\.. as arguments" "" { target *-*-* } 0 } */
+/* { dg-warning "Messages without a matching method signature" "" { target *-*-* } 0 } */
+/* { dg-warning "will be assumed to return .id. and accept" "" { target *-*-* } 0 } */
+/* { dg-warning ".\.\.\.. as arguments" "" { target *-*-* } 0 } */

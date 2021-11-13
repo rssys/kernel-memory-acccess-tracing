@@ -9,9 +9,9 @@
 
 	Define flags using flag.String(), Bool(), Int(), etc.
 
-	This declares an integer flag, -n, stored in the pointer nFlag, with type *int:
+	This declares an integer flag, -flagname, stored in the pointer ip, with type *int.
 		import "flag"
-		var nFlag = flag.Int("n", 1234, "help message for flag n")
+		var ip = flag.Int("flagname", 1234, "help message for flagname")
 	If you like, you can bind the flag to a variable using the Var() functions.
 		var flagvar int
 		func init() {
@@ -278,12 +278,6 @@ func (d *durationValue) Get() interface{} { return time.Duration(*d) }
 
 func (d *durationValue) String() string { return (*time.Duration)(d).String() }
 
-type funcValue func(string) error
-
-func (f funcValue) Set(s string) error { return f(s) }
-
-func (f funcValue) String() string { return "" }
-
 // Value is the interface to the dynamic value stored in a flag.
 // (The default value is represented as a string.)
 //
@@ -302,7 +296,7 @@ type Value interface {
 // Getter is an interface that allows the contents of a Value to be retrieved.
 // It wraps the Value interface, rather than being part of it, because it
 // appeared after Go 1 and its compatibility rules. All Value types provided
-// by this package satisfy the Getter interface, except the type used by Func.
+// by this package satisfy the Getter interface.
 type Getter interface {
 	Value
 	Get() interface{}
@@ -314,15 +308,12 @@ type ErrorHandling int
 // These constants cause FlagSet.Parse to behave as described if the parse fails.
 const (
 	ContinueOnError ErrorHandling = iota // Return a descriptive error.
-	ExitOnError                          // Call os.Exit(2) or for -h/-help Exit(0).
+	ExitOnError                          // Call os.Exit(2).
 	PanicOnError                         // Call panic with a descriptive error.
 )
 
 // A FlagSet represents a set of defined flags. The zero value of a FlagSet
 // has no name and has ContinueOnError error handling.
-//
-// Flag names must be unique within a FlagSet. An attempt to define a flag whose
-// name is already in use will cause a panic.
 type FlagSet struct {
 	// Usage is the function called when an error occurs while parsing flags.
 	// The field is a function (not a method) that may be changed to point to
@@ -337,7 +328,7 @@ type FlagSet struct {
 	formal        map[string]*Flag
 	args          []string // arguments after flags
 	errorHandling ErrorHandling
-	output        io.Writer // nil means stderr; use Output() accessor
+	output        io.Writer // nil means stderr; use out() accessor
 }
 
 // A Flag represents the state of a flag.
@@ -350,15 +341,17 @@ type Flag struct {
 
 // sortFlags returns the flags as a slice in lexicographical sorted order.
 func sortFlags(flags map[string]*Flag) []*Flag {
-	result := make([]*Flag, len(flags))
+	list := make(sort.StringSlice, len(flags))
 	i := 0
 	for _, f := range flags {
-		result[i] = f
+		list[i] = f.Name
 		i++
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name < result[j].Name
-	})
+	list.Sort()
+	result := make([]*Flag, len(list))
+	for i, name := range list {
+		result[i] = flags[name]
+	}
 	return result
 }
 
@@ -508,33 +501,31 @@ func UnquoteUsage(flag *Flag) (name string, usage string) {
 // documentation for the global function PrintDefaults for more information.
 func (f *FlagSet) PrintDefaults() {
 	f.VisitAll(func(flag *Flag) {
-		var b strings.Builder
-		fmt.Fprintf(&b, "  -%s", flag.Name) // Two spaces before -; see next two comments.
+		s := fmt.Sprintf("  -%s", flag.Name) // Two spaces before -; see next two comments.
 		name, usage := UnquoteUsage(flag)
 		if len(name) > 0 {
-			b.WriteString(" ")
-			b.WriteString(name)
+			s += " " + name
 		}
 		// Boolean flags of one ASCII letter are so common we
 		// treat them specially, putting their usage on the same line.
-		if b.Len() <= 4 { // space, space, '-', 'x'.
-			b.WriteString("\t")
+		if len(s) <= 4 { // space, space, '-', 'x'.
+			s += "\t"
 		} else {
 			// Four spaces before the tab triggers good alignment
 			// for both 4- and 8-space tab stops.
-			b.WriteString("\n    \t")
+			s += "\n    \t"
 		}
-		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
+		s += strings.ReplaceAll(usage, "\n", "\n    \t")
 
 		if !isZeroValue(flag, flag.DefValue) {
 			if _, ok := flag.Value.(*stringValue); ok {
 				// put quotes on the value
-				fmt.Fprintf(&b, " (default %q)", flag.DefValue)
+				s += fmt.Sprintf(" (default %q)", flag.DefValue)
 			} else {
-				fmt.Fprintf(&b, " (default %v)", flag.DefValue)
+				s += fmt.Sprintf(" (default %v)", flag.DefValue)
 			}
 		}
-		fmt.Fprint(f.Output(), b.String(), "\n")
+		fmt.Fprint(f.Output(), s, "\n")
 	})
 }
 
@@ -838,20 +829,6 @@ func Duration(name string, value time.Duration, usage string) *time.Duration {
 	return CommandLine.Duration(name, value, usage)
 }
 
-// Func defines a flag with the specified name and usage string.
-// Each time the flag is seen, fn is called with the value of the flag.
-// If fn returns a non-nil error, it will be treated as a flag value parsing error.
-func (f *FlagSet) Func(name, usage string, fn func(string) error) {
-	f.Var(funcValue(fn), name, usage)
-}
-
-// Func defines a flag with the specified name and usage string.
-// Each time the flag is seen, fn is called with the value of the flag.
-// If fn returns a non-nil error, it will be treated as a flag value parsing error.
-func Func(name, usage string, fn func(string) error) {
-	CommandLine.Func(name, usage, fn)
-}
-
 // Var defines a flag with the specified name and usage string. The type and
 // value of the flag are represented by the first argument, of type Value, which
 // typically holds a user-defined implementation of Value. For instance, the
@@ -859,23 +836,17 @@ func Func(name, usage string, fn func(string) error) {
 // of strings by giving the slice the methods of Value; in particular, Set would
 // decompose the comma-separated string into the slice.
 func (f *FlagSet) Var(value Value, name string, usage string) {
-	// Flag must not begin "-" or contain "=".
-	if strings.HasPrefix(name, "-") {
-		panic(f.sprintf("flag %q begins with -", name))
-	} else if strings.Contains(name, "=") {
-		panic(f.sprintf("flag %q contains =", name))
-	}
-
 	// Remember the default value as a string; it won't change.
 	flag := &Flag{name, usage, value, value.String()}
 	_, alreadythere := f.formal[name]
 	if alreadythere {
 		var msg string
 		if f.name == "" {
-			msg = f.sprintf("flag redefined: %s", name)
+			msg = fmt.Sprintf("flag redefined: %s", name)
 		} else {
-			msg = f.sprintf("%s flag redefined: %s", f.name, name)
+			msg = fmt.Sprintf("%s flag redefined: %s", f.name, name)
 		}
+		fmt.Fprintln(f.Output(), msg)
 		panic(msg) // Happens only if flags are declared with identical names
 	}
 	if f.formal == nil {
@@ -894,19 +865,13 @@ func Var(value Value, name string, usage string) {
 	CommandLine.Var(value, name, usage)
 }
 
-// sprintf formats the message, prints it to output, and returns it.
-func (f *FlagSet) sprintf(format string, a ...interface{}) string {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Fprintln(f.Output(), msg)
-	return msg
-}
-
 // failf prints to standard error a formatted error and usage message and
 // returns the error.
 func (f *FlagSet) failf(format string, a ...interface{}) error {
-	msg := f.sprintf(format, a...)
+	err := fmt.Errorf(format, a...)
+	fmt.Fprintln(f.Output(), err)
 	f.usage()
-	return errors.New(msg)
+	return err
 }
 
 // usage calls the Usage method for the flag set if one is specified,
@@ -1013,9 +978,6 @@ func (f *FlagSet) Parse(arguments []string) error {
 		case ContinueOnError:
 			return err
 		case ExitOnError:
-			if err == ErrHelp {
-				os.Exit(0)
-			}
 			os.Exit(2)
 		case PanicOnError:
 			panic(err)

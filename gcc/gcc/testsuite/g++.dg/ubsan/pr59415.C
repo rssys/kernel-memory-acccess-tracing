@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-fsanitize=null -Wall -fvtable-verify=std -fno-lto" } */
+/* { dg-options "-fsanitize=null -Wall -fvtable-verify=std" } */
 
 void
 foo (void)

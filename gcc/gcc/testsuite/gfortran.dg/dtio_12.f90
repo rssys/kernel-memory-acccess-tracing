@@ -1,4 +1,4 @@
-! { dg-do run { target fd_truncate } }
+! { dg-do run }
 !
 ! Test the fix for PR77657 in which the DTIO subroutine was not found,
 ! which led to an error in attempting to link to the abstract interface.

@@ -1,9 +1,3 @@
-/*
-TEST_OUTPUT:
----
-fail_compilation/fail7424i.d(10): Error: template `this.g()()` has no value
----
-*/
 struct S7424g
 {
     @property int g()() immutable { return 0; }

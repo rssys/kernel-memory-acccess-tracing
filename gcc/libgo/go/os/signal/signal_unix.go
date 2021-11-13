@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || hurd || (js && wasm) || linux || netbsd || openbsd || solaris || windows
-// +build aix darwin dragonfly freebsd hurd js,wasm linux netbsd openbsd solaris windows
+// +build aix darwin dragonfly freebsd hurd js,wasm linux nacl netbsd openbsd solaris windows
 
 package signal
 
@@ -26,7 +25,8 @@ func loop() {
 }
 
 func init() {
-	watchSignalLoop = loop
+	signal_enable(0) // first call - initialize
+	go loop()
 }
 
 const (

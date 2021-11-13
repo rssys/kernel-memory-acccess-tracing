@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,10 +30,9 @@
 ------------------------------------------------------------------------------
 
 with Ada.Calendar;               use Ada.Calendar;
+with Ada.Calendar.Formatting;    use Ada.Calendar.Formatting;
 with Ada.Characters.Handling;    use Ada.Characters.Handling;
 with Ada.Directories.Validity;   use Ada.Directories.Validity;
-with Ada.Directories.Hierarchical_File_Names;
-use Ada.Directories.Hierarchical_File_Names;
 with Ada.Strings.Fixed;
 with Ada.Strings.Maps;           use Ada.Strings.Maps;
 with Ada.Strings.Unbounded;      use Ada.Strings.Unbounded;
@@ -68,15 +67,6 @@ package body Ada.Directories is
    Max_Path : Integer;
    pragma Import (C, Max_Path, "__gnat_max_path_len");
    --  The maximum length of a path
-
-   function C_Modification_Time (N : System.Address) return Ada.Calendar.Time;
-   pragma Import (C, C_Modification_Time, "__gnat_file_time");
-   --  Get modification time for file with name referenced by N
-
-   Invalid_Time : constant Ada.Calendar.Time :=
-                    C_Modification_Time (System.Null_Address);
-   --  Result returned from C_Modification_Time call when routine unable to get
-   --  file modification time.
 
    type Search_Data is record
       Is_Valid      : Boolean := False;
@@ -234,21 +224,30 @@ package body Ada.Directories is
               Strings.Fixed.Index (Name, Dir_Seps, Going => Strings.Backward);
 
          begin
-            --  If Name indicates a root directory, raise Use_Error, because
-            --  it has no containing directory.
+            if Last_DS = 0 then
 
-            if Is_Parent_Directory_Name (Name)
-              or else Is_Current_Directory_Name (Name)
-              or else Is_Root_Directory_Name (Name)
-            then
-               raise Use_Error with
-                 "directory """ & Name & """ has no containing directory";
-
-            elsif Last_DS = 0 then
-               --  There is no directory separator, so return ".", representing
+               --  There is no directory separator, returns "." representing
                --  the current working directory.
 
                return ".";
+
+            --  If Name indicates a root directory, raise Use_Error, because
+            --  it has no containing directory.
+
+            elsif Name = "/"
+              or else
+                (Windows
+                  and then
+                  (Name = "\"
+                      or else
+                        (Name'Length = 3
+                          and then Name (Name'Last - 1 .. Name'Last) = ":\"
+                          and then (Name (Name'First) in 'a' .. 'z'
+                                     or else
+                                       Name (Name'First) in 'A' .. 'Z'))))
+            then
+               raise Use_Error with
+                 "directory """ & Name & """ has no containing directory";
 
             else
                declare
@@ -263,14 +262,31 @@ package body Ada.Directories is
                   --  number on Windows.
 
                   while Last > 1 loop
-                     exit when Is_Root_Directory_Name (Result (1 .. Last))
-                                 or else (Result (Last) /= Directory_Separator
-                                           and then Result (Last) /= '/');
+                     exit when
+                       Result (Last) /= '/'
+                         and then
+                       Result (Last) /= Directory_Separator;
+
+                     exit when Windows
+                       and then Last = 3
+                       and then Result (2) = ':'
+                       and then
+                         (Result (1) in 'A' .. 'Z'
+                           or else
+                          Result (1) in 'a' .. 'z');
 
                      Last := Last - 1;
                   end loop;
 
-                  return Result (1 .. Last);
+                  --  Special case of "..": the current directory may be a root
+                  --  directory.
+
+                  if Last = 2 and then Result (1 .. 2) = ".." then
+                     return Containing_Directory (Current_Directory);
+
+                  else
+                     return Result (1 .. Last);
+                  end if;
                end;
             end if;
          end;
@@ -790,20 +806,6 @@ package body Ada.Directories is
                end if;
 
                if Exists = 1 then
-                  --  Ignore special directories "." and ".."
-
-                  if (Full_Name'Length > 1
-                       and then
-                         Full_Name
-                            (Full_Name'Last - 1 .. Full_Name'Last) = "\.")
-                    or else
-                     (Full_Name'Length > 2
-                        and then
-                          Full_Name
-                            (Full_Name'Last - 2 .. Full_Name'Last) = "\..")
-                  then
-                     Exists := 0;
-                  end if;
 
                   --  Now check if the file kind matches the filter
 
@@ -999,9 +1001,14 @@ package body Ada.Directories is
    -----------------------
 
    function Modification_Time (Name : String) return Time is
+      Date   : OS_Time;
+      Year   : Year_Type;
+      Month  : Month_Type;
+      Day    : Day_Type;
+      Hour   : Hour_Type;
+      Minute : Minute_Type;
+      Second : Second_Type;
 
-      Date   : Time;
-      C_Name : aliased String (1 .. Name'Length + 1);
    begin
       --  First, the invalid cases
 
@@ -1009,15 +1016,19 @@ package body Ada.Directories is
          raise Name_Error with '"' & Name & """ not a file or directory";
 
       else
-         C_Name := Name & ASCII.NUL;
-         Date := C_Modification_Time (C_Name'Address);
+         Date := File_Time_Stamp (Name);
 
-         if Date = Invalid_Time then
-            raise Use_Error with
-              "Unable to get modification time of the file """ & Name & '"';
-         end if;
+         --  Break down the time stamp into its constituents relative to GMT.
+         --  This version of Split does not recognize leap seconds or buffer
+         --  space for time zone processing.
 
-         return Date;
+         GM_Split (Date, Year, Month, Day, Hour, Minute, Second);
+
+         --  The result must be in GMT. Ada.Calendar.
+         --  Formatting.Time_Of with default time zone of zero (0) is the
+         --  routine of choice.
+
+         return Time_Of (Year, Month, Day, Hour, Minute, Second, 0.0);
       end if;
    end Modification_Time;
 
@@ -1269,30 +1280,16 @@ package body Ada.Directories is
       function Simple_Name_Internal (Path : String) return String is
          Cut_Start : Natural :=
            Strings.Fixed.Index (Path, Dir_Seps, Going => Strings.Backward);
-
-         --  Cut_End points to the last simple name character
-
-         Cut_End   : Natural := Path'Last;
+         Cut_End   : Natural;
 
       begin
-         --  Root directories are considered simple
-
-         if Is_Root_Directory_Name (Path) then
-            return Path;
-         end if;
-
-         --  Handle trailing directory separators
-
-         if Cut_Start = Path'Last then
-            Cut_End   := Path'Last - 1;
-            Cut_Start := Strings.Fixed.Index
-                           (Path (Path'First .. Path'Last - 1),
-                             Dir_Seps, Going => Strings.Backward);
-         end if;
-
-         --  Cut_Start points to the first simple name character
+         --  Cut_Start pointS to the first simple name character
 
          Cut_Start := (if Cut_Start = 0 then Path'First else Cut_Start + 1);
+
+         --  Cut_End point to the last simple name character
+
+         Cut_End := Path'Last;
 
          Check_For_Standard_Dirs : declare
             BN : constant String := Path (Cut_Start .. Cut_End);
@@ -1304,7 +1301,7 @@ package body Ada.Directories is
 
          begin
             if BN = "." or else BN = ".." then
-               return BN;
+               return "";
 
             elsif Has_Drive_Letter
               and then BN'Length > 2

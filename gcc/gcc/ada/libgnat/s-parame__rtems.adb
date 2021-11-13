@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1997-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1997-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -35,6 +35,10 @@ with Interfaces.C;
 
 package body System.Parameters is
 
+   function ada_pthread_minimum_stack_size return Interfaces.C.size_t;
+   pragma Import (C, ada_pthread_minimum_stack_size,
+     "_ada_pthread_minimum_stack_size");
+
    -------------------------
    -- Adjust_Storage_Size --
    -------------------------
@@ -57,15 +61,8 @@ package body System.Parameters is
    ------------------------
 
    function Default_Stack_Size return Size_Type is
-      Default_Stack_Size : constant Integer
-        with Import, Convention => C,
-             External_Name => "__gl_default_stack_size";
    begin
-      if Default_Stack_Size = -1 then
-         return 32 * 1024;
-      else
-         return Size_Type (Default_Stack_Size);
-      end if;
+      return Size_Type (ada_pthread_minimum_stack_size);
    end Default_Stack_Size;
 
    ------------------------
@@ -73,11 +70,9 @@ package body System.Parameters is
    ------------------------
 
    function Minimum_Stack_Size return Size_Type is
-      POSIX_Threads_Minimum_stack_size : constant Interfaces.C.size_t
-        with Import, Convention => C,
-             External_Name => "_POSIX_Threads_Minimum_stack_size";
+
    begin
-      return Size_Type (POSIX_Threads_Minimum_stack_size);
+      return Size_Type (ada_pthread_minimum_stack_size);
    end Minimum_Stack_Size;
 
 end System.Parameters;

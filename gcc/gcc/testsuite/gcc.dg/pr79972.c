@@ -6,8 +6,7 @@
 int
 f (int dim, int *b, int *c)
 {
-  /* -Wvla-larger-than is only issued with optimization (see PR 100510).  */
-  int newcentroid[3][dim];
+  int newcentroid[3][dim];	/* { dg-warning "unbounded use of variable-length array" } */
   int *a = newcentroid[2];
   int i, dist = 0;
   __builtin_memcpy (newcentroid, c, sizeof (newcentroid));

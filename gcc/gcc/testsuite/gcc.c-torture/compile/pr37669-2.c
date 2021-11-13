@@ -1,5 +1,4 @@
 /* PR middle-end/37669 */
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
 
 #define FMT10 "%d%d%d%d%d%d%d%d%d%d"
 #define FMT100 FMT10 FMT10 FMT10 FMT10 FMT10 FMT10 FMT10 FMT10 FMT10 FMT10

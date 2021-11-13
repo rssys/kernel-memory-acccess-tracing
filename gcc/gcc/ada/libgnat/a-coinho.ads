@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2011-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 2011-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -31,7 +31,6 @@
 
 private with Ada.Finalization;
 private with Ada.Streams;
-private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type (<>) is private;
@@ -93,8 +92,6 @@ package Ada.Containers.Indefinite_Holders is
 
    procedure Move (Target : in out Holder; Source : in out Holder);
 
-   procedure Swap (Left, Right : in out Holder);
-
 private
 
    use Ada.Finalization;
@@ -116,11 +113,7 @@ private
    type Holder is new Ada.Finalization.Controlled with record
       Element : Element_Access;
       Busy    : Natural := 0;
-   end record with Put_Image => Put_Image;
-
-   procedure Put_Image
-     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Holder);
-
+   end record;
    for Holder'Read use Read;
    for Holder'Write use Write;
 

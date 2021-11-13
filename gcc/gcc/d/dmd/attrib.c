@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -29,7 +29,8 @@
 #include "mtype.h"
 
 bool definitelyValueParameter(Expression *e);
-Dsymbols *makeTupleForeachStaticDecl(Scope *sc, ForeachStatement *fs, Dsymbols *dbody, bool needExpansion);
+Expression *semantic(Expression *e, Scope *sc);
+StringExp *semanticString(Scope *sc, Expression *exp, const char *s);
 
 /********************************* AttribDeclaration ****************************/
 
@@ -39,21 +40,18 @@ AttribDeclaration::AttribDeclaration(Dsymbols *decl)
     this->decl = decl;
 }
 
-Dsymbols *AttribDeclaration::include(Scope *)
+Dsymbols *AttribDeclaration::include(Scope *, ScopeDsymbol *)
 {
-    if (errors)
-        return NULL;
-
     return decl;
 }
 
 int AttribDeclaration::apply(Dsymbol_apply_ft_t fp, void *param)
 {
-    Dsymbols *d = include(_scope);
+    Dsymbols *d = include(_scope, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             if (s)
@@ -80,8 +78,8 @@ Scope *AttribDeclaration::createNewScope(Scope *sc,
     if (stc != sc->stc ||
         linkage != sc->linkage ||
         cppmangle != sc->cppmangle ||
+        !protection.isSubsetOf(sc->protection) ||
         explicitProtection != sc->explicitProtection ||
-        !(protection == sc->protection) ||
         aligndecl != sc->aligndecl ||
         inlining != sc->inlining)
     {
@@ -109,13 +107,13 @@ Scope *AttribDeclaration::newScope(Scope *sc)
 
 void AttribDeclaration::addMember(Scope *sc, ScopeDsymbol *sds)
 {
-    Dsymbols *d = include(sc);
+    Dsymbols *d = include(sc, sds);
 
     if (d)
     {
         Scope *sc2 = newScope(sc);
 
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             //printf("\taddMember %s to %s\n", s->toChars(), sds->toChars());
@@ -129,14 +127,14 @@ void AttribDeclaration::addMember(Scope *sc, ScopeDsymbol *sds)
 
 void AttribDeclaration::setScope(Scope *sc)
 {
-    Dsymbols *d = include(sc);
+    Dsymbols *d = include(sc, NULL);
 
     //printf("\tAttribDeclaration::setScope '%s', d = %p\n",toChars(), d);
     if (d)
     {
         Scope *sc2 = newScope(sc);
 
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             s->setScope(sc2);
@@ -149,17 +147,79 @@ void AttribDeclaration::setScope(Scope *sc)
 
 void AttribDeclaration::importAll(Scope *sc)
 {
-    Dsymbols *d = include(sc);
+    Dsymbols *d = include(sc, NULL);
 
     //printf("\tAttribDeclaration::importAll '%s', d = %p\n", toChars(), d);
     if (d)
     {
         Scope *sc2 = newScope(sc);
 
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             s->importAll(sc2);
+        }
+
+        if (sc2 != sc)
+            sc2->pop();
+    }
+}
+
+void AttribDeclaration::semantic(Scope *sc)
+{
+    if (semanticRun != PASSinit)
+        return;
+    semanticRun = PASSsemantic;
+    Dsymbols *d = include(sc, NULL);
+
+    //printf("\tAttribDeclaration::semantic '%s', d = %p\n",toChars(), d);
+    if (d)
+    {
+        Scope *sc2 = newScope(sc);
+
+        for (size_t i = 0; i < d->dim; i++)
+        {
+            Dsymbol *s = (*d)[i];
+            s->semantic(sc2);
+        }
+
+        if (sc2 != sc)
+            sc2->pop();
+    }
+    semanticRun = PASSsemanticdone;
+}
+
+void AttribDeclaration::semantic2(Scope *sc)
+{
+    Dsymbols *d = include(sc, NULL);
+
+    if (d)
+    {
+        Scope *sc2 = newScope(sc);
+
+        for (size_t i = 0; i < d->dim; i++)
+        {
+            Dsymbol *s = (*d)[i];
+            s->semantic2(sc2);
+        }
+
+        if (sc2 != sc)
+            sc2->pop();
+    }
+}
+
+void AttribDeclaration::semantic3(Scope *sc)
+{
+    Dsymbols *d = include(sc, NULL);
+
+    if (d)
+    {
+        Scope *sc2 = newScope(sc);
+
+        for (size_t i = 0; i < d->dim; i++)
+        {
+            Dsymbol *s = (*d)[i];
+            s->semantic3(sc2);
         }
 
         if (sc2 != sc)
@@ -172,11 +232,11 @@ void AttribDeclaration::addComment(const utf8_t *comment)
     //printf("AttribDeclaration::addComment %s\n", comment);
     if (comment)
     {
-        Dsymbols *d = include(NULL);
+        Dsymbols *d = include(NULL, NULL);
 
         if (d)
         {
-            for (size_t i = 0; i < d->length; i++)
+            for (size_t i = 0; i < d->dim; i++)
             {
                 Dsymbol *s = (*d)[i];
                 //printf("AttribDeclaration::addComment %s\n", s->toChars());
@@ -188,11 +248,11 @@ void AttribDeclaration::addComment(const utf8_t *comment)
 
 void AttribDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset, bool isunion)
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             s->setFieldOffset(ad, poffset, isunion);
@@ -202,11 +262,11 @@ void AttribDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffs
 
 bool AttribDeclaration::hasPointers()
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             if (s->hasPointers())
@@ -218,11 +278,11 @@ bool AttribDeclaration::hasPointers()
 
 bool AttribDeclaration::hasStaticCtorOrDtor()
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             if (s->hasStaticCtorOrDtor())
@@ -239,18 +299,18 @@ const char *AttribDeclaration::kind() const
 
 bool AttribDeclaration::oneMember(Dsymbol **ps, Identifier *ident)
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     return Dsymbol::oneMembers(d, ps, ident);
 }
 
 void AttribDeclaration::checkCtorConstInit()
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             s->checkCtorConstInit();
@@ -263,11 +323,11 @@ void AttribDeclaration::checkCtorConstInit()
 
 void AttribDeclaration::addLocalClass(ClassDeclarations *aclasses)
 {
-    Dsymbols *d = include(NULL);
+    Dsymbols *d = include(NULL, NULL);
 
     if (d)
     {
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             s->addLocalClass(aclasses);
@@ -319,11 +379,11 @@ bool StorageClassDeclaration::oneMember(Dsymbol **ps, Identifier *ident)
 
 void StorageClassDeclaration::addMember(Scope *sc, ScopeDsymbol *sds)
 {
-    Dsymbols *d = include(sc);
+    Dsymbols *d = include(sc, sds);
     if (d)
     {
         Scope *sc2 = newScope(sc);
-        for (size_t i = 0; i < d->length; i++)
+        for (size_t i = 0; i < d->dim; i++)
         {
             Dsymbol *s = (*d)[i];
             //printf("\taddMember %s to %s\n", s->toChars(), sds->toChars());
@@ -410,6 +470,22 @@ void DeprecatedDeclaration::setScope(Scope *sc)
     return AttribDeclaration::setScope(sc);
 }
 
+/**
+ * Run the DeprecatedDeclaration's semantic2 phase then its members.
+ *
+ * The message set via a `DeprecatedDeclaration` can be either of:
+ * - a string literal
+ * - an enum
+ * - a static immutable
+ * So we need to call ctfe to resolve it.
+ * Afterward forwards to the members' semantic2.
+ */
+void DeprecatedDeclaration::semantic2(Scope *sc)
+{
+    getMessage();
+    StorageClassDeclaration::semantic2(sc);
+}
+
 const char *DeprecatedDeclaration::getMessage()
 {
     if (Scope *sc = _scope)
@@ -417,7 +493,7 @@ const char *DeprecatedDeclaration::getMessage()
         _scope = NULL;
 
         sc = sc->startCTFE();
-        msg = expressionSemantic(msg, sc);
+        msg = ::semantic(msg, sc);
         msg = resolveProperties(sc, msg);
         sc = sc->endCTFE();
         msg = msg->ctfeInterpret();
@@ -425,7 +501,7 @@ const char *DeprecatedDeclaration::getMessage()
         if (StringExp *se = msg->toStringExp())
             msgstr = (char *)se->string;
         else
-            msg->error("compile time constant expected, not `%s`", msg->toChars());
+            msg->error("compile time constant expected, not '%s'", msg->toChars());
     }
     return msgstr;
 }
@@ -436,7 +512,7 @@ LinkDeclaration::LinkDeclaration(LINK p, Dsymbols *decl)
         : AttribDeclaration(decl)
 {
     //printf("LinkDeclaration(linkage = %d, decl = %p)\n", p, decl);
-    linkage = (p == LINKsystem) ? target.systemLinkage() : p;
+    linkage = (p == LINKsystem) ? Target::systemLinkage() : p;
 }
 
 LinkDeclaration *LinkDeclaration::create(LINK p, Dsymbols *decl)
@@ -516,7 +592,7 @@ ProtDeclaration::ProtDeclaration(Loc loc, Identifiers* pkg_identifiers, Dsymbols
         : AttribDeclaration(decl)
 {
     this->loc = loc;
-    this->protection.kind = Prot::package_;
+    this->protection.kind = PROTpackage;
     this->protection.pkg  = NULL;
     this->pkg_identifiers = pkg_identifiers;
 }
@@ -524,7 +600,7 @@ ProtDeclaration::ProtDeclaration(Loc loc, Identifiers* pkg_identifiers, Dsymbols
 Dsymbol *ProtDeclaration::syntaxCopy(Dsymbol *s)
 {
     assert(!s);
-    if (protection.kind == Prot::package_)
+    if (protection.kind == PROTpackage)
         return new ProtDeclaration(this->loc, pkg_identifiers, Dsymbol::arraySyntaxCopy(decl));
     else
         return new ProtDeclaration(this->loc, protection, Dsymbol::arraySyntaxCopy(decl));
@@ -533,7 +609,7 @@ Dsymbol *ProtDeclaration::syntaxCopy(Dsymbol *s)
 Scope *ProtDeclaration::newScope(Scope *sc)
 {
     if (pkg_identifiers)
-        dsymbolSemantic(this, sc);
+        semantic(sc);
     return createNewScope(sc, sc->stc, sc->linkage, sc->cppmangle,
         this->protection, 1, sc->aligndecl,
         sc->inlining);
@@ -549,24 +625,13 @@ void ProtDeclaration::addMember(Scope *sc, ScopeDsymbol *sds)
         pkg_identifiers = NULL;
     }
 
-    if (protection.kind == Prot::package_ && protection.pkg && sc->_module)
+    if (protection.kind == PROTpackage && protection.pkg && sc->_module)
     {
         Module *m = sc->_module;
-
-        // While isAncestorPackageOf does an equality check, the fix for issue 17441 adds a check to see if
-        // each package's .isModule() properites are equal.
-        //
-        // Properties generated from `package(foo)` i.e. protection.pkg have .isModule() == null.
-        // This breaks package declarations of the package in question if they are declared in
-        // the same package.d file, which _do_ have a module associated with them, and hence a non-null
-        // isModule()
-        if (!m->isPackage() || !protection.pkg->ident->equals(m->isPackage()->ident))
-        {
-            Package* pkg = m->parent ? m->parent->isPackage() : NULL;
-            if (!pkg || !protection.pkg->isAncestorPackageOf(pkg))
-                error("does not bind to one of ancestor packages of module `%s`",
-                      m->toPrettyChars(true));
-        }
+        Package* pkg = m->parent ? m->parent->isPackage() : NULL;
+        if (!pkg || !protection.pkg->isAncestorPackageOf(pkg))
+            error("does not bind to one of ancestor packages of module '%s'",
+               m->toPrettyChars(true));
     }
 
     return AttribDeclaration::addMember(sc, sds);
@@ -579,13 +644,13 @@ const char *ProtDeclaration::kind() const
 
 const char *ProtDeclaration::toPrettyChars(bool)
 {
-    assert(protection.kind > Prot::undefined);
+    assert(protection.kind > PROTundefined);
 
     OutBuffer buf;
     buf.writeByte('\'');
     protectionToBuffer(&buf, protection);
     buf.writeByte('\'');
-    return buf.extractChars();
+    return buf.extractString();
 }
 
 /********************************* AlignDeclaration ****************************/
@@ -602,8 +667,7 @@ Dsymbol *AlignDeclaration::syntaxCopy(Dsymbol *s)
 {
     assert(!s);
     return new AlignDeclaration(loc,
-        ealign ? ealign->syntaxCopy() : NULL,
-        Dsymbol::arraySyntaxCopy(decl));
+        ealign->syntaxCopy(), Dsymbol::arraySyntaxCopy(decl));
 }
 
 Scope *AlignDeclaration::newScope(Scope *sc)
@@ -611,6 +675,12 @@ Scope *AlignDeclaration::newScope(Scope *sc)
     return createNewScope(sc, sc->stc, sc->linkage, sc->cppmangle,
         sc->protection, sc->explicitProtection, this,
         sc->inlining);
+}
+
+void AlignDeclaration::semantic2(Scope *sc)
+{
+    getAlignment(sc);
+    AttribDeclaration::semantic2(sc);
 }
 
 structalign_t AlignDeclaration::getAlignment(Scope *sc)
@@ -622,7 +692,7 @@ structalign_t AlignDeclaration::getAlignment(Scope *sc)
         return salign = STRUCTALIGN_DEFAULT;
 
     sc = sc->startCTFE();
-    ealign = expressionSemantic(ealign, sc);
+    ealign = ::semantic(ealign, sc);
     ealign = resolveProperties(sc, ealign);
     sc = sc->endCTFE();
     ealign = ealign->ctfeInterpret();
@@ -669,6 +739,37 @@ void AnonDeclaration::setScope(Scope *sc)
     AttribDeclaration::setScope(sc);
 }
 
+void AnonDeclaration::semantic(Scope *sc)
+{
+    //printf("\tAnonDeclaration::semantic %s %p\n", isunion ? "union" : "struct", this);
+
+    assert(sc->parent);
+
+    Dsymbol *p = sc->parent->pastMixin();
+    AggregateDeclaration *ad = p->isAggregateDeclaration();
+    if (!ad)
+    {
+        ::error(loc, "%s can only be a part of an aggregate, not %s %s",
+            kind(), p->kind(), p->toChars());
+        return;
+    }
+
+    if (decl)
+    {
+        sc = sc->push();
+        sc->stc &= ~(STCauto | STCscope | STCstatic | STCtls | STCgshared);
+        sc->inunion = isunion;
+        sc->flags = 0;
+
+        for (size_t i = 0; i < decl->dim; i++)
+        {
+            Dsymbol *s = (*decl)[i];
+            s->semantic(sc);
+        }
+        sc = sc->pop();
+    }
+}
+
 void AnonDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset, bool isunion)
 {
     //printf("\tAnonDeclaration::setFieldOffset %s %p\n", isunion ? "union" : "struct", this);
@@ -680,7 +781,7 @@ void AnonDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset
          * size and alignment.
          */
 
-        size_t fieldstart = ad->fields.length;
+        size_t fieldstart = ad->fields.dim;
 
         /* Hackishly hijack ad's structsize and alignsize fields
          * for use in our fake anon aggregate member.
@@ -691,7 +792,7 @@ void AnonDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset
         ad->alignsize = 0;
 
         unsigned offset = 0;
-        for (size_t i = 0; i < decl->length; i++)
+        for (size_t i = 0; i < decl->dim; i++)
         {
             Dsymbol *s = (*decl)[i];
             s->setFieldOffset(ad, &offset, this->isunion);
@@ -703,7 +804,7 @@ void AnonDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset
          * added in ad->fields, just update *poffset for the subsequent
          * field offset calculation.
          */
-        if (fieldstart == ad->fields.length)
+        if (fieldstart == ad->fields.dim)
         {
             ad->structsize = savestructsize;
             ad->alignsize  = savealignsize;
@@ -738,7 +839,7 @@ void AnonDeclaration::setFieldOffset(AggregateDeclaration *ad, unsigned *poffset
 
         // Add to the anon fields the base offset of this anonymous aggregate
         //printf("anon fields, anonoffset = %d\n", anonoffset);
-        for (size_t i = fieldstart; i < ad->fields.length; i++)
+        for (size_t i = fieldstart; i < ad->fields.dim; i++)
         {
             VarDeclaration *v = ad->fields[i];
             //printf("\t[%d] %s %d\n", i, v->toChars(), v->offset);
@@ -776,11 +877,11 @@ Scope *PragmaDeclaration::newScope(Scope *sc)
     if (ident == Id::Pinline)
     {
         PINLINE inlining = PINLINEdefault;
-        if (!args || args->length == 0)
+        if (!args || args->dim == 0)
             inlining = PINLINEdefault;
-        else if (args->length != 1)
+        else if (args->dim != 1)
         {
-            error("one boolean expression expected for pragma(inline), not %d", args->length);
+            error("one boolean expression expected for pragma(inline), not %d", args->dim);
             args->setDim(1);
             (*args)[0] = new ErrorExp();
         }
@@ -806,19 +907,270 @@ Scope *PragmaDeclaration::newScope(Scope *sc)
             sc->protection, sc->explicitProtection, sc->aligndecl,
             inlining);
     }
-    if (ident == Id::printf || ident == Id::scanf)
-    {
-        Scope *sc2 = sc->push();
-
-        if (ident == Id::printf)
-            // Override previous setting, never let both be set
-            sc2->flags = (sc2->flags & ~SCOPEscanf) | SCOPEprintf;
-        else
-            sc2->flags = (sc2->flags & ~SCOPEprintf) | SCOPEscanf;
-
-        return sc2;
-    }
     return sc;
+}
+
+static unsigned setMangleOverride(Dsymbol *s, char *sym)
+{
+    AttribDeclaration *ad = s->isAttribDeclaration();
+
+    if (ad)
+    {
+        Dsymbols *decls = ad->include(NULL, NULL);
+        unsigned nestedCount = 0;
+
+        if (decls && decls->dim)
+            for (size_t i = 0; i < decls->dim; ++i)
+                nestedCount += setMangleOverride((*decls)[i], sym);
+
+        return nestedCount;
+    }
+    else if (s->isFuncDeclaration() || s->isVarDeclaration())
+    {
+        s->isDeclaration()->mangleOverride = sym;
+        return 1;
+    }
+    else
+        return 0;
+}
+
+void PragmaDeclaration::semantic(Scope *sc)
+{
+    // Should be merged with PragmaStatement
+
+    //printf("\tPragmaDeclaration::semantic '%s'\n",toChars());
+    if (ident == Id::msg)
+    {
+        if (args)
+        {
+            for (size_t i = 0; i < args->dim; i++)
+            {
+                Expression *e = (*args)[i];
+
+                sc = sc->startCTFE();
+                e = ::semantic(e, sc);
+                e = resolveProperties(sc, e);
+                sc = sc->endCTFE();
+
+                // pragma(msg) is allowed to contain types as well as expressions
+                e = ctfeInterpretForPragmaMsg(e);
+                if (e->op == TOKerror)
+                {
+                    errorSupplemental(loc, "while evaluating pragma(msg, %s)", (*args)[i]->toChars());
+                    return;
+                }
+                StringExp *se = e->toStringExp();
+                if (se)
+                {
+                    se = se->toUTF8(sc);
+                    fprintf(stderr, "%.*s", (int)se->len, (char *)se->string);
+                }
+                else
+                    fprintf(stderr, "%s", e->toChars());
+            }
+            fprintf(stderr, "\n");
+        }
+        goto Lnodecl;
+    }
+    else if (ident == Id::lib)
+    {
+        if (!args || args->dim != 1)
+            error("string expected for library name");
+        else
+        {
+            StringExp *se = semanticString(sc, (*args)[0], "library name");
+            if (!se)
+                goto Lnodecl;
+            (*args)[0] = se;
+
+            char *name = (char *)mem.xmalloc(se->len + 1);
+            memcpy(name, se->string, se->len);
+            name[se->len] = 0;
+            if (global.params.verbose)
+                message("library   %s", name);
+            if (global.params.moduleDeps && !global.params.moduleDepsFile)
+            {
+                OutBuffer *ob = global.params.moduleDeps;
+                Module *imod = sc->instantiatingModule();
+                ob->writestring("depsLib ");
+                ob->writestring(imod->toPrettyChars());
+                ob->writestring(" (");
+                escapePath(ob, imod->srcfile->toChars());
+                ob->writestring(") : ");
+                ob->writestring((char *) name);
+                ob->writenl();
+            }
+            mem.xfree(name);
+        }
+        goto Lnodecl;
+    }
+    else if (ident == Id::startaddress)
+    {
+        if (!args || args->dim != 1)
+            error("function name expected for start address");
+        else
+        {
+            /* Bugzilla 11980:
+             * resolveProperties and ctfeInterpret call are not necessary.
+             */
+            Expression *e = (*args)[0];
+
+            sc = sc->startCTFE();
+            e = ::semantic(e, sc);
+            sc = sc->endCTFE();
+
+            (*args)[0] = e;
+            Dsymbol *sa = getDsymbol(e);
+            if (!sa || !sa->isFuncDeclaration())
+                error("function name expected for start address, not '%s'", e->toChars());
+        }
+        goto Lnodecl;
+    }
+    else if (ident == Id::Pinline)
+    {
+        goto Ldecl;
+    }
+    else if (ident == Id::mangle)
+    {
+        if (!args)
+            args = new Expressions();
+        if (args->dim != 1)
+        {
+            error("string expected for mangled name");
+            args->setDim(1);
+            (*args)[0] = new ErrorExp();    // error recovery
+            goto Ldecl;
+        }
+
+        StringExp *se = semanticString(sc, (*args)[0], "mangled name");
+        if (!se)
+            goto Ldecl;
+        (*args)[0] = se; // Will be used for later
+
+        if (!se->len)
+        {
+            error("zero-length string not allowed for mangled name");
+            goto Ldecl;
+        }
+        if (se->sz != 1)
+        {
+            error("mangled name characters can only be of type char");
+            goto Ldecl;
+        }
+
+        /* Note: D language specification should not have any assumption about backend
+         * implementation. Ideally pragma(mangle) can accept a string of any content.
+         *
+         * Therefore, this validation is compiler implementation specific.
+         */
+        for (size_t i = 0; i < se->len; )
+        {
+            utf8_t *p = (utf8_t *)se->string;
+            dchar_t c = p[i];
+            if (c < 0x80)
+            {
+                if ((c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    (c != 0 && strchr("$%().:?@[]_", c)))
+                {
+                    ++i;
+                    continue;
+                }
+                else
+                {
+                    error("char 0x%02x not allowed in mangled name", c);
+                    break;
+                }
+            }
+
+            if (const char* msg = utf_decodeChar((utf8_t *)se->string, se->len, &i, &c))
+            {
+                error("%s", msg);
+                break;
+            }
+
+            if (!isUniAlpha(c))
+            {
+                error("char 0x%04x not allowed in mangled name", c);
+                break;
+            }
+        }
+    }
+    else if (global.params.ignoreUnsupportedPragmas)
+    {
+        if (global.params.verbose)
+        {
+            /* Print unrecognized pragmas
+             */
+            OutBuffer buf;
+            buf.writestring(ident->toChars());
+            if (args)
+            {
+                for (size_t i = 0; i < args->dim; i++)
+                {
+                    Expression *e = (*args)[i];
+
+                    sc = sc->startCTFE();
+                    e = ::semantic(e, sc);
+                    e = resolveProperties(sc, e);
+                    sc = sc->endCTFE();
+
+                    e = e->ctfeInterpret();
+                    if (i == 0)
+                        buf.writestring(" (");
+                    else
+                        buf.writeByte(',');
+                    buf.writestring(e->toChars());
+                }
+                if (args->dim)
+                    buf.writeByte(')');
+            }
+            message("pragma    %s", buf.peekString());
+        }
+        goto Lnodecl;
+    }
+    else
+        error("unrecognized pragma(%s)", ident->toChars());
+
+Ldecl:
+    if (decl)
+    {
+        Scope *sc2 = newScope(sc);
+
+        for (size_t i = 0; i < decl->dim; i++)
+        {
+            Dsymbol *s = (*decl)[i];
+
+            s->semantic(sc2);
+
+            if (ident == Id::mangle)
+            {
+                assert(args && args->dim == 1);
+                if (StringExp *se = (*args)[0]->toStringExp())
+                {
+                    char *name = (char *)mem.xmalloc(se->len + 1);
+                    memcpy(name, se->string, se->len);
+                    name[se->len] = 0;
+
+                    unsigned cnt = setMangleOverride(s, name);
+                    if (cnt > 1)
+                        error("can only apply to a single declaration");
+                }
+            }
+        }
+
+        if (sc2 != sc)
+            sc2->pop();
+    }
+    return;
+
+Lnodecl:
+    if (decl)
+    {
+        error("pragma is missing closing ';'");
+        goto Ldecl; // do them anyway, to avoid segfaults.
+    }
 }
 
 const char *PragmaDeclaration::kind() const
@@ -849,7 +1201,7 @@ bool ConditionalDeclaration::oneMember(Dsymbol **ps, Identifier *ident)
     //printf("ConditionalDeclaration::oneMember(), inc = %d\n", condition->inc);
     if (condition->inc)
     {
-        Dsymbols *d = condition->include(NULL) ? decl : elsedecl;
+        Dsymbols *d = condition->include(NULL, NULL) ? decl : elsedecl;
         return Dsymbol::oneMembers(d, ps, ident);
     }
     else
@@ -863,25 +1215,21 @@ bool ConditionalDeclaration::oneMember(Dsymbol **ps, Identifier *ident)
 
 // Decide if 'then' or 'else' code should be included
 
-Dsymbols *ConditionalDeclaration::include(Scope *sc)
+Dsymbols *ConditionalDeclaration::include(Scope *sc, ScopeDsymbol *sds)
 {
     //printf("ConditionalDeclaration::include(sc = %p) _scope = %p\n", sc, _scope);
-
-    if (errors)
-        return NULL;
-
     assert(condition);
-    return condition->include(_scope ? _scope : sc) ? decl : elsedecl;
+    return condition->include(_scope ? _scope : sc, sds) ? decl : elsedecl;
 }
 
 void ConditionalDeclaration::setScope(Scope *sc)
 {
-    Dsymbols *d = include(sc);
+    Dsymbols *d = include(sc, NULL);
 
     //printf("\tConditionalDeclaration::setScope '%s', d = %p\n",toChars(), d);
     if (d)
     {
-       for (size_t i = 0; i < d->length; i++)
+       for (size_t i = 0; i < d->dim; i++)
        {
            Dsymbol *s = (*d)[i];
            s->setScope(sc);
@@ -905,7 +1253,7 @@ void ConditionalDeclaration::addComment(const utf8_t *comment)
         {
             if (d)
             {
-                for (size_t i = 0; i < d->length; i++)
+                for (size_t i = 0; i < d->dim; i++)
                 {
                     Dsymbol *s = (*d)[i];
                     //printf("ConditionalDeclaration::addComment %s\n", s->toChars());
@@ -926,7 +1274,6 @@ StaticIfDeclaration::StaticIfDeclaration(Condition *condition,
     //printf("StaticIfDeclaration::StaticIfDeclaration()\n");
     scopesym = NULL;
     addisdone = false;
-    onStack = false;
 }
 
 Dsymbol *StaticIfDeclaration::syntaxCopy(Dsymbol *s)
@@ -941,33 +1288,28 @@ Dsymbol *StaticIfDeclaration::syntaxCopy(Dsymbol *s)
  * Different from other AttribDeclaration subclasses, include() call requires
  * the completion of addMember and setScope phases.
  */
-Dsymbols *StaticIfDeclaration::include(Scope *sc)
+Dsymbols *StaticIfDeclaration::include(Scope *sc, ScopeDsymbol *)
 {
     //printf("StaticIfDeclaration::include(sc = %p) _scope = %p\n", sc, _scope);
-
-    if (errors || onStack)
-        return NULL;
-    onStack = true;
-    Dsymbols *d;
 
     if (condition->inc == 0)
     {
         assert(scopesym);   // addMember is already done
         assert(_scope);      // setScope is already done
 
-        d = ConditionalDeclaration::include(_scope);
+        Dsymbols *d = ConditionalDeclaration::include(_scope, scopesym);
 
         if (d && !addisdone)
         {
             // Add members lazily.
-            for (size_t i = 0; i < d->length; i++)
+            for (size_t i = 0; i < d->dim; i++)
             {
                 Dsymbol *s = (*d)[i];
                 s->addMember(_scope, scopesym);
             }
 
             // Set the member scopes lazily.
-            for (size_t i = 0; i < d->length; i++)
+            for (size_t i = 0; i < d->dim; i++)
             {
                 Dsymbol *s = (*d)[i];
                 s->setScope(_scope);
@@ -975,14 +1317,11 @@ Dsymbols *StaticIfDeclaration::include(Scope *sc)
 
             addisdone = true;
         }
-        onStack = false;
         return d;
     }
     else
     {
-        d = ConditionalDeclaration::include(sc);
-        onStack = false;
-        return d;
+        return ConditionalDeclaration::include(sc, scopesym);
     }
 }
 
@@ -1016,183 +1355,26 @@ void StaticIfDeclaration::setScope(Scope *sc)
     Dsymbol::setScope(sc);
 }
 
+void StaticIfDeclaration::semantic(Scope *sc)
+{
+    AttribDeclaration::semantic(sc);
+}
+
 const char *StaticIfDeclaration::kind() const
 {
     return "static if";
-}
-
-/***************************** StaticForeachDeclaration ***********************/
-
-/* Static foreach at declaration scope, like:
- *     static foreach (i; [0, 1, 2]){ }
- */
-
-StaticForeachDeclaration::StaticForeachDeclaration(StaticForeach *sfe, Dsymbols *decl)
-        : AttribDeclaration(decl)
-{
-    this->sfe = sfe;
-    this->scopesym = NULL;
-    this->onStack = false;
-    this->cached = false;
-    this->cache = NULL;
-}
-
-Dsymbol *StaticForeachDeclaration::syntaxCopy(Dsymbol *s)
-{
-    assert(!s);
-    return new StaticForeachDeclaration(
-        sfe->syntaxCopy(),
-        Dsymbol::arraySyntaxCopy(decl));
-}
-
-bool StaticForeachDeclaration::oneMember(Dsymbol **ps, Identifier *ident)
-{
-    // Required to support IFTI on a template that contains a
-    // `static foreach` declaration.  `super.oneMember` calls
-    // include with a `null` scope.  As `static foreach` requires
-    // the scope for expansion, `oneMember` can only return a
-    // precise result once `static foreach` has been expanded.
-    if (cached)
-    {
-        return AttribDeclaration::oneMember(ps, ident);
-    }
-    *ps = NULL; // a `static foreach` declaration may in general expand to multiple symbols
-    return false;
-}
-
-Dsymbols *StaticForeachDeclaration::include(Scope *)
-{
-    if (errors || onStack)
-        return NULL;
-    if (cached)
-    {
-        assert(!onStack);
-        return cache;
-    }
-    onStack = true;
-
-    if (_scope)
-    {
-        staticForeachPrepare(sfe, _scope); // lower static foreach aggregate
-    }
-    if (!staticForeachReady(sfe))
-    {
-        onStack = false;
-        return NULL; // TODO: ok?
-    }
-
-    // expand static foreach
-    Dsymbols *d = makeTupleForeachStaticDecl(_scope, sfe->aggrfe, decl, sfe->needExpansion);
-    if (d) // process generated declarations
-    {
-        // Add members lazily.
-        for (size_t i = 0; i < d->length; i++)
-        {
-            Dsymbol *s = (*d)[i];
-            s->addMember(_scope, scopesym);
-        }
-        // Set the member scopes lazily.
-        for (size_t i = 0; i < d->length; i++)
-        {
-            Dsymbol *s = (*d)[i];
-            s->setScope(_scope);
-        }
-    }
-    onStack = false;
-    cached = true;
-    cache = d;
-    return d;
-}
-
-void StaticForeachDeclaration::addMember(Scope *, ScopeDsymbol *sds)
-{
-    // used only for caching the enclosing symbol
-    this->scopesym = sds;
-}
-
-void StaticForeachDeclaration::addComment(const utf8_t *)
-{
-    // do nothing
-    // change this to give semantics to documentation comments on static foreach declarations
-}
-
-void StaticForeachDeclaration::setScope(Scope *sc)
-{
-    // do not evaluate condition before semantic pass
-    // But do set the scope, in case we need it for forward referencing
-    Dsymbol::setScope(sc);
-}
-
-void StaticForeachDeclaration::importAll(Scope *)
-{
-    // do not evaluate aggregate before semantic pass
-}
-
-const char *StaticForeachDeclaration::kind() const
-{
-    return "static foreach";
-}
-
-/***********************************************************
- * Collection of declarations that stores foreach index variables in a
- * local symbol table.  Other symbols declared within are forwarded to
- * another scope, like:
- *
- *      static foreach (i; 0 .. 10) // loop variables for different indices do not conflict.
- *      { // this body is expanded into 10 ForwardingAttribDeclarations, where `i` has storage class STClocal
- *          mixin("enum x" ~ to!string(i) ~ " = i"); // ok, can access current loop variable
- *      }
- *
- *      static foreach (i; 0.. 10)
- *      {
- *          pragma(msg, mixin("x" ~ to!string(i))); // ok, all 10 symbols are visible as they were forwarded to the global scope
- *      }
- *
- *      static assert (!is(typeof(i))); // loop index variable is not visible outside of the static foreach loop
- *
- * A StaticForeachDeclaration generates one
- * ForwardingAttribDeclaration for each expansion of its body.  The
- * AST of the ForwardingAttribDeclaration contains both the `static
- * foreach` variables and the respective copy of the `static foreach`
- * body.  The functionality is achieved by using a
- * ForwardingScopeDsymbol as the parent symbol for the generated
- * declarations.
- */
-
-ForwardingAttribDeclaration::ForwardingAttribDeclaration(Dsymbols *decl)
-        : AttribDeclaration(decl)
-{
-    sym = new ForwardingScopeDsymbol(NULL);
-    sym->symtab = new DsymbolTable();
-}
-
-/**************************************
- * Use the ForwardingScopeDsymbol as the parent symbol for members.
- */
-Scope *ForwardingAttribDeclaration::newScope(Scope *sc)
-{
-    return sc->push(sym);
-}
-
-/***************************************
- * Lazily initializes the scope to forward to.
- */
-void ForwardingAttribDeclaration::addMember(Scope *sc, ScopeDsymbol *sds)
-{
-    parent = sym->parent = sym->forward = sds;
-    return AttribDeclaration::addMember(sc, sym);
 }
 
 /***************************** CompileDeclaration *****************************/
 
 // These are mixin declarations, like mixin("int x");
 
-CompileDeclaration::CompileDeclaration(Loc loc, Expressions *exps)
+CompileDeclaration::CompileDeclaration(Loc loc, Expression *exp)
     : AttribDeclaration(NULL)
 {
     //printf("CompileDeclaration(loc = %d)\n", loc.linnum);
     this->loc = loc;
-    this->exps = exps;
+    this->exp = exp;
     this->scopesym = NULL;
     this->compiled = false;
 }
@@ -1200,7 +1382,7 @@ CompileDeclaration::CompileDeclaration(Loc loc, Expressions *exps)
 Dsymbol *CompileDeclaration::syntaxCopy(Dsymbol *)
 {
     //printf("CompileDeclaration::syntaxCopy('%s')\n", toChars());
-    return new CompileDeclaration(loc, Expression::arraySyntaxCopy(exps));
+    return new CompileDeclaration(loc, exp->syntaxCopy());
 }
 
 void CompileDeclaration::addMember(Scope *, ScopeDsymbol *sds)
@@ -1212,6 +1394,50 @@ void CompileDeclaration::addMember(Scope *, ScopeDsymbol *sds)
 void CompileDeclaration::setScope(Scope *sc)
 {
     Dsymbol::setScope(sc);
+}
+
+void CompileDeclaration::compileIt(Scope *sc)
+{
+    //printf("CompileDeclaration::compileIt(loc = %d) %s\n", loc.linnum, exp->toChars());
+    StringExp *se = semanticString(sc, exp, "argument to mixin");
+    if (!se)
+        return;
+    se = se->toUTF8(sc);
+
+    unsigned errors = global.errors;
+    Parser p(loc, sc->_module, (utf8_t *)se->string, se->len, 0);
+    p.nextToken();
+
+    decl = p.parseDeclDefs(0);
+    if (p.token.value != TOKeof)
+        exp->error("incomplete mixin declaration (%s)", se->toChars());
+    if (p.errors)
+    {
+        assert(global.errors != errors);
+        decl = NULL;
+    }
+}
+
+void CompileDeclaration::semantic(Scope *sc)
+{
+    //printf("CompileDeclaration::semantic()\n");
+
+    if (!compiled)
+    {
+        compileIt(sc);
+        AttribDeclaration::addMember(sc, scopesym);
+        compiled = true;
+
+        if (_scope && decl)
+        {
+            for (size_t i = 0; i < decl->dim; i++)
+            {
+                Dsymbol *s = (*decl)[i];
+                s->setScope(_scope);
+            }
+        }
+    }
+    AttribDeclaration::semantic(sc);
 }
 
 const char *CompileDeclaration::kind() const
@@ -1240,7 +1466,7 @@ Dsymbol *UserAttributeDeclaration::syntaxCopy(Dsymbol *s)
 Scope *UserAttributeDeclaration::newScope(Scope *sc)
 {
     Scope *sc2 = sc;
-    if (atts && atts->length)
+    if (atts && atts->dim)
     {
         // create new one for changes
         sc2 = sc->copy();
@@ -1258,14 +1484,23 @@ void UserAttributeDeclaration::setScope(Scope *sc)
     return AttribDeclaration::setScope(sc);
 }
 
-void udaExpressionEval(Scope *sc, Expressions *exps)
+void UserAttributeDeclaration::semantic(Scope *sc)
 {
-    for (size_t i = 0; i < exps->length; i++)
+    //printf("UserAttributeDeclaration::semantic() %p\n", this);
+    if (decl && !_scope)
+        Dsymbol::setScope(sc);  // for function local symbols
+
+    return AttribDeclaration::semantic(sc);
+}
+
+static void udaExpressionEval(Scope *sc, Expressions *exps)
+{
+    for (size_t i = 0; i < exps->dim; i++)
     {
         Expression *e = (*exps)[i];
         if (e)
         {
-            e = expressionSemantic(e, sc);
+            e = ::semantic(e, sc);
             if (definitelyValueParameter(e))
                 e = e->ctfeInterpret();
             if (e->op == TOKtuple)
@@ -1278,12 +1513,23 @@ void udaExpressionEval(Scope *sc, Expressions *exps)
     }
 }
 
+void UserAttributeDeclaration::semantic2(Scope *sc)
+{
+    if (decl && atts && atts->dim && _scope)
+    {
+        _scope = NULL;
+        udaExpressionEval(sc, atts);
+    }
+
+    AttribDeclaration::semantic2(sc);
+}
+
 Expressions *UserAttributeDeclaration::concat(Expressions *udas1, Expressions *udas2)
 {
     Expressions *udas;
-    if (!udas1 || udas1->length == 0)
+    if (!udas1 || udas1->dim == 0)
         udas = udas2;
-    else if (!udas2 || udas2->length == 0)
+    else if (!udas2 || udas2->dim == 0)
         udas = udas1;
     else
     {
@@ -1308,7 +1554,7 @@ Expressions *UserAttributeDeclaration::getAttributes()
     Expressions *exps = new Expressions();
     if (userAttribDecl)
         exps->push(new TupleExp(Loc(), userAttribDecl->getAttributes()));
-    if (atts && atts->length)
+    if (atts && atts->dim)
         exps->push(new TupleExp(Loc(), atts));
 
     return exps;

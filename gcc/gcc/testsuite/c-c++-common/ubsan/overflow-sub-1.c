@@ -1,6 +1,5 @@
 /* { dg-do run } */
 /* { dg-options "-fsanitize=signed-integer-overflow -Wno-unused-variable -fno-sanitize-recover=signed-integer-overflow" } */
-/* { dg-options "-fsanitize=signed-integer-overflow -Wno-unused-variable -fno-sanitize-recover=signed-integer-overflow -Wno-volatile" { target c++ } } */
 
 #define SCHAR_MAX __SCHAR_MAX__
 #define SCHAR_MIN (-__SCHAR_MAX__ - 1)

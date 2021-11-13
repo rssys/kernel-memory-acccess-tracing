@@ -1,6 +1,6 @@
 /* Gcov.c: prepend line execution counts and branch probabilities to a
    source file.
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2019 Free Software Foundation, Inc.
    Contributed by James E. Wilson of Cygnus Support.
    Mangled by Bob Manson of Cygnus Support.
    Mangled further by Nathan Sidwell <nathan@codesourcery.com>
@@ -76,17 +76,17 @@ using namespace std;
 
 /* This is the size of the buffer used to read in source file lines.  */
 
-class function_info;
-class block_info;
-class source_info;
+struct function_info;
+struct block_info;
+struct source_info;
 
 /* Describes an arc between two basic blocks.  */
 
 struct arc_info
 {
   /* source and destination blocks.  */
-  class block_info *src;
-  class block_info *dst;
+  struct block_info *src;
+  struct block_info *dst;
 
   /* transition counts.  */
   gcov_type count;
@@ -121,9 +121,8 @@ struct arc_info
 /* Describes which locations (lines and files) are associated with
    a basic block.  */
 
-class block_location_info
+struct block_location_info
 {
-public:
   block_location_info (unsigned _source_file_idx):
     source_file_idx (_source_file_idx)
   {}
@@ -135,9 +134,8 @@ public:
 /* Describes a basic block. Contains lists of arcs to successor and
    predecessor blocks.  */
 
-class block_info
+struct block_info
 {
-public:
   /* Constructor.  */
   block_info ();
 
@@ -178,7 +176,7 @@ public:
 
   /* Temporary chain for solving graph, and for chaining blocks on one
      line.  */
-  class block_info *chain;
+  struct block_info *chain;
 
 };
 
@@ -193,9 +191,8 @@ block_info::block_info (): succ (NULL), pred (NULL), num_succ (0), num_pred (0),
 /* Describes a single line of source.  Contains a chain of basic blocks
    with code on it.  */
 
-class line_info
+struct line_info
 {
-public:
   /* Default constructor.  */
   line_info ();
 
@@ -233,9 +230,8 @@ static int flag_demangled_names = 0;
 
 /* Describes a single function. Contains an array of basic blocks.  */
 
-class function_info
+struct function_info
 {
-public:
   function_info ();
   ~function_info ();
 
@@ -293,11 +289,11 @@ public:
   /* Index of source file where the function is defined.  */
   unsigned src;
 
-  /* Vector of line information (used only for group functions).  */
+  /* Vector of line information.  */
   vector<line_info> lines;
 
   /* Next function.  */
-  class function_info *next;
+  struct function_info *next;
 
   /*  Get demangled name of a function.  The demangled name
       is converted when it is used for the first time.  */
@@ -360,9 +356,8 @@ struct coverage_info
 /* Describes a file mentioned in the block graph.  Contains an array
    of line info.  */
 
-class source_info
+struct source_info
 {
-public:
   /* Default constructor.  */
   source_info ();
 
@@ -370,9 +365,6 @@ public:
 
   /* Register a new function.  */
   void add_function (function_info *fn);
-
-  /* Debug the source file.  */
-  void debug ();
 
   /* Index of the source_info in sources vector.  */
   unsigned index;
@@ -429,31 +421,6 @@ source_info::get_functions_at_location (unsigned line_num) const
     std::sort (slot->begin (), slot->end (), function_line_start_cmp ());
 
   return slot;
-}
-
-void source_info::debug ()
-{
-  fprintf (stderr, "source_info: %s\n", name);
-  for (vector<function_info *>::iterator it = functions.begin ();
-       it != functions.end (); it++)
-    {
-      function_info *fn = *it;
-      fprintf (stderr, "  function_info: %s\n", fn->get_name ());
-      for (vector<block_info>::iterator bit = fn->blocks.begin ();
-	   bit != fn->blocks.end (); bit++)
-	{
-	  fprintf (stderr, "    block_info id=%d, count=%" PRId64 " \n",
-		   bit->id, bit->count);
-	}
-    }
-
-  for (unsigned lineno = 1; lineno < lines.size (); ++lineno)
-    {
-      line_info &line = lines[lineno];
-      fprintf (stderr, "  line_info=%d, count=%" PRId64 "\n", lineno, line.count);
-    }
-
-  fprintf (stderr, "\n");
 }
 
 class name_map
@@ -607,10 +574,6 @@ static int flag_human_readable_numbers = 0;
 
 static int flag_function_summary = 0;
 
-/* Print debugging dumps.  */
-
-static int flag_debug = 0;
-
 /* Object directory file prefix.  This is the directory/file where the
    graph and data files are looked for, if nonzero.  */
 
@@ -638,9 +601,6 @@ static int flag_preserve_paths = 0;
 
 static int flag_counts = 0;
 
-/* Return code of the tool invocation.  */
-static int return_code = 0;
-
 /* Forward declarations.  */
 static int process_args (int, char **);
 static void print_usage (int) ATTRIBUTE_NORETURN;
@@ -665,8 +625,8 @@ static void accumulate_line_counts (source_info *);
 static void output_gcov_file (const char *, source_info *);
 static int output_branch_count (FILE *, int, const arc_info *);
 static void output_lines (FILE *, const source_info *);
-static string make_gcov_file_name (const char *, const char *);
-static char *mangle_name (const char *);
+static char *make_gcov_file_name (const char *, const char *);
+static char *mangle_name (const char *, char *);
 static void release_structures (void);
 extern int main (int, char **);
 
@@ -846,6 +806,7 @@ get_cycles_count (line_info &linfo)
      Therefore, operating on a permuted order (i.e., non-sorted) only
      has the effect of permuting the output cycles.  */
 
+  bool loop_found = false;
   gcov_type count = 0;
   for (vector<block_info *>::iterator it = linfo.blocks.begin ();
        it != linfo.blocks.end (); it++)
@@ -853,7 +814,8 @@ get_cycles_count (line_info &linfo)
       arc_vector_t path;
       block_vector_t blocked;
       vector<block_vector_t > block_lists;
-      circuit (*it, path, *it, blocked, block_lists, linfo, count);
+      loop_found |= circuit (*it, path, *it, blocked, block_lists, linfo,
+			     count);
     }
 
   return count;
@@ -907,10 +869,7 @@ main (int argc, char **argv)
 	}
     }
 
-  if (!flag_use_stdout)
-    executed_summary (total_lines, total_executed);
-
-  return return_code;
+  return 0;
 }
 
 /* Print a usage message and exit.  If ERROR_P is nonzero, this is an error,
@@ -929,12 +888,10 @@ print_usage (int error_p)
   fnotice (file, "  -c, --branch-counts             Output counts of branches taken\n\
                                     rather than percentages\n");
   fnotice (file, "  -d, --display-progress          Display progress information\n");
-  fnotice (file, "  -D, --debug			    Display debugging dumps\n");
   fnotice (file, "  -f, --function-summaries        Output summaries for each function\n");
   fnotice (file, "  -h, --help                      Print this help, then exit\n");
-  fnotice (file, "  -j, --json-format               Output JSON intermediate format\n\
-                                    into .gcov.json.gz file\n");
-  fnotice (file, "  -H, --human-readable            Output human readable numbers\n");
+  fnotice (file, "  -i, --json-format               Output JSON intermediate format into .gcov.json.gz file\n");
+  fnotice (file, "  -j, --human-readable            Output human readable numbers\n");
   fnotice (file, "  -k, --use-colors                Emit colored output\n");
   fnotice (file, "  -l, --long-file-names           Use long output file names for included\n\
                                     source files\n");
@@ -950,9 +907,6 @@ print_usage (int error_p)
   fnotice (file, "  -v, --version                   Print version number, then exit\n");
   fnotice (file, "  -w, --verbose                   Print verbose informations\n");
   fnotice (file, "  -x, --hash-filenames            Hash long pathnames\n");
-  fnotice (file, "\nObsolete options:\n");
-  fnotice (file, "  -i, --json-format               Replaced with -j, --json-format\n");
-  fnotice (file, "  -j, --human-readable            Replaced with -H, --human-readable\n");
   fnotice (file, "\nFor bug reporting instructions, please see:\n%s.\n",
 	   bug_report_url);
   exit (status);
@@ -964,11 +918,12 @@ static void
 print_version (void)
 {
   fnotice (stdout, "gcov %s%s\n", pkgversion_string, version_string);
-  fprintf (stdout, "Copyright %s 2021 Free Software Foundation, Inc.\n",
+  fprintf (stdout, "Copyright %s 2019 Free Software Foundation, Inc.\n",
 	   _("(C)"));
   fnotice (stdout,
-	   _("This is free software; see the source for copying conditions.  There is NO\n\
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"));
+	   _("This is free software; see the source for copying conditions.\n"
+	     "There is NO warranty; not even for MERCHANTABILITY or \n"
+	     "FITNESS FOR A PARTICULAR PURPOSE.\n\n"));
   exit (SUCCESS_EXIT_CODE);
 }
 
@@ -980,8 +935,8 @@ static const struct option options[] =
   { "all-blocks",           no_argument,       NULL, 'a' },
   { "branch-probabilities", no_argument,       NULL, 'b' },
   { "branch-counts",        no_argument,       NULL, 'c' },
-  { "json-format",	    no_argument,       NULL, 'j' },
-  { "human-readable",	    no_argument,       NULL, 'H' },
+  { "json-format",	    no_argument,       NULL, 'i' },
+  { "human-readable",	    no_argument,       NULL, 'j' },
   { "no-output",            no_argument,       NULL, 'n' },
   { "long-file-names",      no_argument,       NULL, 'l' },
   { "function-summaries",   no_argument,       NULL, 'f' },
@@ -997,7 +952,6 @@ static const struct option options[] =
   { "hash-filenames",	    no_argument,       NULL, 'x' },
   { "use-colors",	    no_argument,       NULL, 'k' },
   { "use-hotness-colors",   no_argument,       NULL, 'q' },
-  { "debug",		    no_argument,       NULL, 'D' },
   { 0, 0, 0, 0 }
 };
 
@@ -1008,7 +962,7 @@ process_args (int argc, char **argv)
 {
   int opt;
 
-  const char *opts = "abcdDfhHijklmno:pqrs:tuvwx";
+  const char *opts = "abcdfhijklmno:pqrs:tuvwx";
   while ((opt = getopt_long (argc, argv, opts, options, NULL)) != -1)
     {
       switch (opt)
@@ -1031,7 +985,7 @@ process_args (int argc, char **argv)
 	case 'l':
 	  flag_long_names = 1;
 	  break;
-	case 'H':
+	case 'j':
 	  flag_human_readable_numbers = 1;
 	  break;
 	case 'k':
@@ -1063,7 +1017,6 @@ process_args (int argc, char **argv)
 	  flag_unconditional = 1;
 	  break;
 	case 'i':
-	case 'j':
 	  flag_json_format = 1;
 	  flag_gcov_file = 1;
 	  break;
@@ -1078,9 +1031,6 @@ process_args (int argc, char **argv)
 	  break;
 	case 't':
 	  flag_use_stdout = 1;
-	  break;
-	case 'D':
-	  flag_debug = 1;
 	  break;
 	case 'v':
 	  print_version ();
@@ -1106,10 +1056,10 @@ output_intermediate_json_line (json::array *object,
     return;
 
   json::object *lineo = new json::object ();
-  lineo->set ("line_number", new json::integer_number (line_num));
+  lineo->set ("line_number", new json::number (line_num));
   if (function_name != NULL)
     lineo->set ("function_name", new json::string (function_name));
-  lineo->set ("count", new json::integer_number (line->count));
+  lineo->set ("count", new json::number (line->count));
   lineo->set ("unexecuted_block",
 	      new json::literal (line->has_unexecuted_block));
 
@@ -1124,7 +1074,7 @@ output_intermediate_json_line (json::array *object,
 	if (!(*it)->is_unconditional && !(*it)->is_call_non_return)
 	  {
 	    json::object *branch = new json::object ();
-	    branch->set ("count", new json::integer_number ((*it)->count));
+	    branch->set ("count", new json::number ((*it)->count));
 	    branch->set ("throw", new json::literal ((*it)->is_throw));
 	    branch->set ("fallthrough",
 			 new json::literal ((*it)->fall_through));
@@ -1133,41 +1083,6 @@ output_intermediate_json_line (json::array *object,
       }
 
   object->append (lineo);
-}
-
-/* Strip filename extension in STR.  */
-
-static string
-strip_extention (string str)
-{
-  string::size_type pos = str.rfind ('.');
-  if (pos != string::npos)
-    str = str.substr (0, pos);
-
-  return str;
-}
-
-/* Calcualte md5sum for INPUT string and return it in hex string format.  */
-
-static string
-get_md5sum (const char *input)
-{
-  md5_ctx ctx;
-  char md5sum[16];
-  string str;
-
-  md5_init_ctx (&ctx);
-  md5_process_bytes (input, strlen (input), &ctx);
-  md5_finish_ctx (&ctx, md5sum);
-
-  for (unsigned i = 0; i < 16; i++)
-    {
-      char b[3];
-      sprintf (b, "%02x", (unsigned char)md5sum[i]);
-      str += b;
-    }
-
-  return str;
 }
 
 /* Get the name of the gcov file.  The return value must be free'd.
@@ -1179,26 +1094,20 @@ get_md5sum (const char *input)
    input: foo.da,       output: foo.da.gcov
    input: a/b/foo.cc,   output: foo.cc.gcov  */
 
-static string
-get_gcov_intermediate_filename (const char *input_file_name)
+static char *
+get_gcov_intermediate_filename (const char *file_name)
 {
-  string base = basename (input_file_name);
-  string str = strip_extention (base);
+  const char *gcov = ".gcov.json.gz";
+  char *result;
+  const char *cptr;
 
-  if (flag_hash_filenames)
-    {
-      str += "##";
-      str += get_md5sum (input_file_name);
-    }
-  else if (flag_preserve_paths && base != input_file_name)
-    {
-      str += "##";
-      str += mangle_path (input_file_name);
-      str = strip_extention (str);
-    }
+  /* Find the 'basename'.  */
+  cptr = lbasename (file_name);
 
-  str += ".gcov.json.gz";
-  return str.c_str ();
+  result = XNEWVEC (char, strlen (cptr) + strlen (gcov) + 1);
+  sprintf (result, "%s%s", cptr, gcov);
+
+  return result;
 }
 
 /* Output the result in JSON intermediate format.
@@ -1224,19 +1133,16 @@ output_json_intermediate_file (json::array *json_files, source_info *src)
       function->set ("name", new json::string ((*it)->m_name));
       function->set ("demangled_name",
 		     new json::string ((*it)->get_demangled_name ()));
-      function->set ("start_line",
-		     new json::integer_number ((*it)->start_line));
-      function->set ("start_column",
-		     new json::integer_number ((*it)->start_column));
-      function->set ("end_line", new json::integer_number ((*it)->end_line));
-      function->set ("end_column",
-		     new json::integer_number ((*it)->end_column));
+      function->set ("start_line", new json::number ((*it)->start_line));
+      function->set ("start_column", new json::number ((*it)->start_column));
+      function->set ("end_line", new json::number ((*it)->end_line));
+      function->set ("end_column", new json::number ((*it)->end_column));
       function->set ("blocks",
-		     new json::integer_number ((*it)->get_block_count ()));
+		     new json::number ((*it)->get_block_count ()));
       function->set ("blocks_executed",
-		     new json::integer_number ((*it)->blocks_executed));
+		     new json::number ((*it)->blocks_executed));
       function->set ("execution_count",
-		     new json::integer_number ((*it)->blocks[0].count));
+		     new json::number ((*it)->blocks[0].count));
 
       functions->append (function);
     }
@@ -1244,22 +1150,21 @@ output_json_intermediate_file (json::array *json_files, source_info *src)
   json::array *lineso = new json::array ();
   root->set ("lines", lineso);
 
-  vector<function_info *> last_non_group_fns;
+  function_info *last_non_group_fn = NULL;
 
   for (unsigned line_num = 1; line_num <= src->lines.size (); line_num++)
     {
       vector<function_info *> *fns = src->get_functions_at_location (line_num);
 
       if (fns != NULL)
-	/* Print info for all group functions that begin on the line.  */
+	/* Print first group functions that begin on the line.  */
 	for (vector<function_info *>::iterator it2 = fns->begin ();
 	     it2 != fns->end (); it2++)
 	  {
 	    if (!(*it2)->is_group)
-	      last_non_group_fns.push_back (*it2);
+	      last_non_group_fn = *it2;
 
 	    vector<line_info> &lines = (*it2)->lines;
-	    /* The LINES array is allocated only for group functions.  */
 	    for (unsigned i = 0; i < lines.size (); i++)
 	      {
 		line_info *line = &lines[i];
@@ -1270,17 +1175,9 @@ output_json_intermediate_file (json::array *json_files, source_info *src)
 
       /* Follow with lines associated with the source file.  */
       if (line_num < src->lines.size ())
-	{
-	  unsigned size = last_non_group_fns.size ();
-	  function_info *last_fn = size > 0 ? last_non_group_fns[size - 1] : NULL;
-	  const char *fname = last_fn ? last_fn->m_name : NULL;
-	  output_intermediate_json_line (lineso, &src->lines[line_num], line_num,
-					 fname);
-
-	  /* Pop ending function from stack.  */
-	  if (last_fn != NULL && last_fn->end_line == line_num)
-	    last_non_group_fns.pop_back ();
-	}
+	output_intermediate_json_line (lineso, &src->lines[line_num], line_num,
+				       (last_non_group_fn != NULL
+					? last_non_group_fn->m_name : NULL));
     }
 }
 
@@ -1319,8 +1216,6 @@ struct function_start_pair_hash : typed_noop_remove <function_start>
   {
     ref.start_line = ~1U;
   }
-
-  static const bool empty_zero_p = false;
 
   static void
   mark_empty (function_start &ref)
@@ -1458,9 +1353,7 @@ process_all_functions (void)
 static void
 output_gcov_file (const char *file_name, source_info *src)
 {
-  string gcov_file_name_str
-    = make_gcov_file_name (file_name, src->coverage.name);
-  const char *gcov_file_name = gcov_file_name_str.c_str ();
+  char *gcov_file_name = make_gcov_file_name (file_name, src->coverage.name);
 
   if (src->coverage.lines)
     {
@@ -1470,30 +1363,25 @@ output_gcov_file (const char *file_name, source_info *src)
 	  fnotice (stdout, "Creating '%s'\n", gcov_file_name);
 	  output_lines (gcov_file, src);
 	  if (ferror (gcov_file))
-	    {
-	      fnotice (stderr, "Error writing output file '%s'\n",
-		       gcov_file_name);
-	      return_code = 6;
-	    }
+	    fnotice (stderr, "Error writing output file '%s'\n",
+		     gcov_file_name);
 	  fclose (gcov_file);
 	}
       else
-	{
-	  fnotice (stderr, "Could not open output file '%s'\n", gcov_file_name);
-	  return_code = 6;
-	}
+	fnotice (stderr, "Could not open output file '%s'\n", gcov_file_name);
     }
   else
     {
       unlink (gcov_file_name);
       fnotice (stdout, "Removing '%s'\n", gcov_file_name);
     }
+  free (gcov_file_name);
 }
 
 static void
 generate_results (const char *file_name)
 {
-  string gcov_intermediate_filename;
+  char *gcov_intermediate_filename;
 
   for (vector<function_info *>::iterator it = functions.begin ();
        it != functions.end (); it++)
@@ -1512,13 +1400,17 @@ generate_results (const char *file_name)
     }
 
   name_map needle;
-  needle.name = file_name;
-  vector<name_map>::iterator it
-    = std::find (names.begin (), names.end (), needle);
-  if (it != names.end ())
-    file_name = sources[it->src].coverage.name;
-  else
-    file_name = canonicalize_name (file_name);
+
+  if (file_name)
+    {
+      needle.name = file_name;
+      vector<name_map>::iterator it = std::find (names.begin (), names.end (),
+						 needle);
+      if (it != names.end ())
+	file_name = sources[it->src].coverage.name;
+      else
+	file_name = canonicalize_name (file_name);
+    }
 
   gcov_intermediate_filename = get_gcov_intermediate_filename (file_name);
 
@@ -1552,8 +1444,6 @@ generate_results (const char *file_name)
 	}
 
       accumulate_line_counts (src);
-      if (flag_debug)
-	src->debug ();
 
       if (!flag_use_stdout)
 	file_summary (&src->coverage);
@@ -1562,11 +1452,7 @@ generate_results (const char *file_name)
       if (flag_gcov_file)
 	{
 	  if (flag_json_format)
-	    {
-	      output_json_intermediate_file (json_files, src);
-	      if (!flag_use_stdout)
-		fnotice (stdout, "\n");
-	    }
+	    output_json_intermediate_file (json_files, src);
 	  else
 	    {
 	      if (flag_use_stdout)
@@ -1596,14 +1482,11 @@ generate_results (const char *file_name)
 	  root->print (&pp);
 	  pp_formatted_text (&pp);
 
-	  fnotice (stdout, "Creating '%s'\n",
-		   gcov_intermediate_filename.c_str ());
-	  gzFile output = gzopen (gcov_intermediate_filename.c_str (), "w");
+	  gzFile output = gzopen (gcov_intermediate_filename, "w");
 	  if (output == NULL)
 	    {
 	      fnotice (stderr, "Cannot open JSON output file %s\n",
-		       gcov_intermediate_filename.c_str ());
-	      return_code = 6;
+		       gcov_intermediate_filename);
 	      return;
 	    }
 
@@ -1611,12 +1494,14 @@ generate_results (const char *file_name)
 	      || gzclose (output))
 	    {
 	      fnotice (stderr, "Error writing JSON output file %s\n",
-		       gcov_intermediate_filename.c_str ());
-	      return_code = 6;
+		       gcov_intermediate_filename);
 	      return;
 	    }
 	}
     }
+
+  if (!file_name)
+    executed_summary (total_lines, total_executed);
 }
 
 /* Release all memory used.  */
@@ -1801,14 +1686,12 @@ read_graph_file (void)
   if (!gcov_open (bbg_file_name, 1))
     {
       fnotice (stderr, "%s:cannot open notes file\n", bbg_file_name);
-      return_code = 1;
       return;
     }
   bbg_file_time = gcov_time ();
   if (!gcov_magic (gcov_read_unsigned (), GCOV_NOTE_MAGIC))
     {
       fnotice (stderr, "%s:not a gcov notes file\n", bbg_file_name);
-      return_code = 2;
       gcov_close ();
       return;
     }
@@ -1823,11 +1706,8 @@ read_graph_file (void)
 
       fnotice (stderr, "%s:version '%.4s', prefer '%.4s'\n",
 	       bbg_file_name, v, e);
-      return_code = 3;
     }
   bbg_stamp = gcov_read_unsigned ();
-  /* Read checksum.  */
-  gcov_read_unsigned ();
   bbg_cwd = xstrdup (gcov_read_string ());
   bbg_supports_has_unexecuted_blocks = gcov_read_unsigned ();
 
@@ -1901,8 +1781,6 @@ read_graph_file (void)
 	      arc = XCNEW (arc_info);
 
 	      arc->dst = &fn->blocks[dest];
-	      /* Set id in order to find EXIT_BLOCK.  */
-	      arc->dst->id = dest;
 	      arc->src = src_blk;
 
 	      arc->count = 0;
@@ -1991,7 +1869,6 @@ read_graph_file (void)
 	{
 	corrupt:;
 	  fnotice (stderr, "%s:corrupted\n", bbg_file_name);
-	  return_code = 4;
 	  break;
 	}
     }
@@ -2024,7 +1901,6 @@ read_count_file (void)
   if (!gcov_magic (gcov_read_unsigned (), GCOV_DATA_MAGIC))
     {
       fnotice (stderr, "%s:not a gcov data file\n", da_file_name);
-      return_code = 2;
     cleanup:;
       gcov_close ();
       return 1;
@@ -2039,23 +1915,17 @@ read_count_file (void)
 
       fnotice (stderr, "%s:version '%.4s', prefer version '%.4s'\n",
 	       da_file_name, v, e);
-      return_code = 3;
     }
   tag = gcov_read_unsigned ();
   if (tag != bbg_stamp)
     {
       fnotice (stderr, "%s:stamp mismatch with notes file\n", da_file_name);
-      return_code = 5;
       goto cleanup;
     }
-
-  /* Read checksum.  */
-  gcov_read_unsigned ();
 
   while ((tag = gcov_read_unsigned ()))
     {
       unsigned length = gcov_read_unsigned ();
-      int read_length = (int)length;
       unsigned long base = gcov_position ();
 
       if (tag == GCOV_TAG_OBJECT_SUMMARY)
@@ -2088,17 +1958,13 @@ read_count_file (void)
 	}
       else if (tag == GCOV_TAG_FOR_COUNTER (GCOV_COUNTER_ARCS) && fn)
 	{
-	  length = abs (read_length);
 	  if (length != GCOV_TAG_COUNTER_LENGTH (fn->counts.size ()))
 	    goto mismatch;
 
-	  if (read_length > 0)
-	    for (ix = 0; ix != fn->counts.size (); ix++)
-	      fn->counts[ix] += gcov_read_counter ();
+	  for (ix = 0; ix != fn->counts.size (); ix++)
+	    fn->counts[ix] += gcov_read_counter ();
 	}
-      if (read_length < 0)
-	read_length = 0;
-      gcov_sync (base, read_length);
+      gcov_sync (base, length);
       if ((error = gcov_is_error ()))
 	{
 	  fnotice (stderr,
@@ -2106,7 +1972,6 @@ read_count_file (void)
 		   ? N_("%s:overflowed\n")
 		   : N_("%s:corrupted\n"),
 		   da_file_name);
-	  return_code = 4;
 	  goto cleanup;
 	}
     }
@@ -2612,6 +2477,15 @@ canonicalize_name (const char *name)
   return result;
 }
 
+/* Print hex representation of 16 bytes from SUM and write it to BUFFER.  */
+
+static void
+md5sum_to_hex (const char *sum, char *buffer)
+{
+  for (unsigned i = 0; i < 16; i++)
+    sprintf (buffer + (2 * i), "%02x", (unsigned char)sum[i]);
+}
+
 /* Generate an output file name. INPUT_NAME is the canonicalized main
    input file and SRC_NAME is the canonicalized file name.
    LONG_OUTPUT_NAMES and PRESERVE_PATHS affect name generation.  With
@@ -2624,42 +2498,77 @@ canonicalize_name (const char *name)
    component.  (Remember, the canonicalized name will already have
    elided '.' components and converted \\ separators.)  */
 
-static string
+static char *
 make_gcov_file_name (const char *input_name, const char *src_name)
 {
-  string str;
+  char *ptr;
+  char *result;
+
+  if (flag_long_names && input_name && strcmp (src_name, input_name))
+    {
+      /* Generate the input filename part.  */
+      result = XNEWVEC (char, strlen (input_name) + strlen (src_name) + 10);
+
+      ptr = result;
+      ptr = mangle_name (input_name, ptr);
+      ptr[0] = ptr[1] = '#';
+      ptr += 2;
+    }
+  else
+    {
+      result = XNEWVEC (char, strlen (src_name) + 10);
+      ptr = result;
+    }
+
+  ptr = mangle_name (src_name, ptr);
+  strcpy (ptr, ".gcov");
 
   /* When hashing filenames, we shorten them by only using the filename
      component and appending a hash of the full (mangled) pathname.  */
   if (flag_hash_filenames)
-    str = (string (mangle_name (src_name)) + "##"
-	   + get_md5sum (src_name) + ".gcov");
-  else
     {
-      if (flag_long_names && input_name && strcmp (src_name, input_name) != 0)
-	{
-	  str += mangle_name (input_name);
-	  str += "##";
-	}
+      md5_ctx ctx;
+      char md5sum[16];
+      char md5sum_hex[33];
 
-      str += mangle_name (src_name);
-      str += ".gcov";
+      md5_init_ctx (&ctx);
+      md5_process_bytes (src_name, strlen (src_name), &ctx);
+      md5_finish_ctx (&ctx, md5sum);
+      md5sum_to_hex (md5sum, md5sum_hex);
+      free (result);
+
+      result = XNEWVEC (char, strlen (src_name) + 50);
+      ptr = result;
+      ptr = mangle_name (src_name, ptr);
+      ptr[0] = ptr[1] = '#';
+      ptr += 2;
+      memcpy (ptr, md5sum_hex, 32);
+      ptr += 32;
+      strcpy (ptr, ".gcov");
     }
 
-  return str;
+  return result;
 }
 
 /* Mangle BASE name, copy it at the beginning of PTR buffer and
    return address of the \0 character of the buffer.  */
 
 static char *
-mangle_name (char const *base)
+mangle_name (char const *base, char *ptr)
 {
+  size_t len;
+
   /* Generate the source filename part.  */
   if (!flag_preserve_paths)
-    return xstrdup (lbasename (base));
+    base = lbasename (base);
   else
-    return mangle_path (base);
+    base = mangle_path (base);
+
+  len = strlen (base);
+  memcpy (ptr, base, len);
+  ptr += len;
+
+  return ptr;
 }
 
 /* Scan through the bb_data for each line in the block, increment
@@ -2912,6 +2821,7 @@ read_line (FILE *file)
   static char *string;
   static size_t string_len;
   size_t pos = 0;
+  char *ptr;
 
   if (!string_len)
     {
@@ -2919,7 +2829,7 @@ read_line (FILE *file)
       string = XNEWVEC (char, string_len);
     }
 
-  while (fgets (string + pos, string_len - pos, file))
+  while ((ptr = fgets (string + pos, string_len - pos, file)))
     {
       size_t len = strlen (string + pos);
 

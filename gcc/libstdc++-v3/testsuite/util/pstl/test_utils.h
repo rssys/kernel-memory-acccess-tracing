@@ -10,15 +10,14 @@
 // File contains common utilities that tests rely on
 
 // Do not #include <algorithm>, because if we do we will not detect accidental dependencies.
-#include <atomic>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
-#include <iostream>
-#include <iterator>
-#include <memory>
 #include <sstream>
+#include <iostream>
+#include <cstring>
+#include <iterator>
 #include <vector>
+#include <atomic>
+#include <memory>
+#include <cstdint>
 
 #include "pstl_test_config.h"
 
@@ -39,30 +38,32 @@ template <typename T>
 class Sequence;
 
 // Handy macros for error reporting
-#define EXPECT_TRUE(condition, message) ::TestUtils::expect(true, condition, __FILE__, __LINE__, message)
-#define EXPECT_FALSE(condition, message) ::TestUtils::expect(false, condition, __FILE__, __LINE__, message)
+#define EXPECT_TRUE(condition, message) TestUtils::expect<true>(condition, __FILE__, __LINE__, message)
+#define EXPECT_FALSE(condition, message) TestUtils::expect<false>(condition, __FILE__, __LINE__, message)
 
 // Check that expected and actual are equal and have the same type.
-#define EXPECT_EQ(expected, actual, message) ::TestUtils::expect_equal(expected, actual, __FILE__, __LINE__, message)
+#define EXPECT_EQ(expected, actual, message) TestUtils::expect_equal(expected, actual, __FILE__, __LINE__, message)
 
 // Check that sequences started with expected and actual and have had size n are equal and have the same type.
 #define EXPECT_EQ_N(expected, actual, n, message)                                                                      \
-    ::TestUtils::expect_equal(expected, actual, n, __FILE__, __LINE__, message)
+    TestUtils::expect_equal(expected, actual, n, __FILE__, __LINE__, message)
 
 // Issue error message from outstr, adding a newline.
 // Real purpose of this routine is to have a place to hang a breakpoint.
-inline void
+static void
 issue_error_message(std::stringstream& outstr)
 {
     outstr << std::endl;
     std::cerr << outstr.str();
-    std::exit(EXIT_FAILURE);
 }
 
-inline void
-expect(bool expected, bool condition, const char* file, int32_t line, const char* message)
+template <bool B>
+void
+expect(bool condition, const char* file, int32_t line, const char* message)
 {
-    if (condition != expected)
+    // Templating this function is somewhat silly, but avoids the need to declare it static
+    // or have a separate translation unit.
+    if (condition != B)
     {
         std::stringstream outstr;
         outstr << "error at " << file << ":" << line << " - " << message;
@@ -572,7 +573,7 @@ struct Matrix2x2
     T a[2][2];
     Matrix2x2() : a{{1, 0}, {0, 1}} {}
     Matrix2x2(T x, T y) : a{{0, x}, {x, y}} {}
-#if !_PSTL_ICL_19_VC14_VC141_TEST_SCAN_RELEASE_BROKEN
+#if !__PSTL_ICL_19_VC14_VC141_TEST_SCAN_RELEASE_BROKEN
     Matrix2x2(const Matrix2x2& m) : a{{m.a[0][0], m.a[0][1]}, {m.a[1][0], m.a[1][1]}} {}
     Matrix2x2&
     operator=(const Matrix2x2& m)
@@ -605,6 +606,13 @@ multiply_matrix(const Matrix2x2<T>& left, const Matrix2x2<T>& right)
     }
     return result;
 }
+
+// Check that Intel(R) Threading Building Blocks header files are not used when parallel policies are off
+#if !__PSTL_USE_PAR_POLICIES
+#if defined(TBB_INTERFACE_VERSION)
+#error The parallel backend is used while it should not (__PSTL_USE_PAR_POLICIES==0)
+#endif
+#endif
 
 //============================================================================
 // Adapters for creating different types of iterators.
@@ -651,7 +659,7 @@ struct ReverseAdapter
     iterator_type
     operator()(Iterator it)
     {
-#if _PSTL_CPP14_MAKE_REVERSE_ITERATOR_PRESENT
+#if __PSTL_CPP14_MAKE_REVERSE_ITERATOR_PRESENT
         return std::make_reverse_iterator(it);
 #else
         return iterator_type(it);
@@ -752,7 +760,7 @@ struct invoke_if_<std::false_type, std::false_type>
 {
     template <typename Op, typename... Rest>
     void
-    operator()(bool, Op op, Rest&&... rest)
+    operator()(bool is_allow, Op op, Rest&&... rest)
     {
         op(std::forward<Rest>(rest)...);
     }
@@ -787,14 +795,14 @@ struct non_const_wrapper_tagged : non_const_wrapper
 
     template <typename Policy, typename Iterator>
     typename std::enable_if<IsPositiveCondition != is_same_iterator_category<Iterator, IteratorTag>::value, void>::type
-    operator()(Policy&&, Iterator)
+    operator()(Policy&& exec, Iterator iter)
     {
     }
 
     template <typename Policy, typename InputIterator, typename OutputIterator>
     typename std::enable_if<IsPositiveCondition != is_same_iterator_category<OutputIterator, IteratorTag>::value,
                             void>::type
-    operator()(Policy&&, InputIterator, OutputIterator)
+    operator()(Policy&& exec, InputIterator input_iter, OutputIterator out_iter)
     {
     }
 };
@@ -999,7 +1007,7 @@ struct iterator_invoker<std::forward_iterator_tag, /*isReverse=*/std::true_type>
 {
     template <typename... Rest>
     void
-    operator()(Rest&&...)
+    operator()(Rest&&... rest)
     {
     }
 };
@@ -1044,8 +1052,10 @@ invoke_on_all_policies(Op op, T&&... rest)
     // Try static execution policies
     invoke_on_all_iterator_types()(seq, op, std::forward<T>(rest)...);
     invoke_on_all_iterator_types()(unseq, op, std::forward<T>(rest)...);
+#if __PSTL_USE_PAR_POLICIES
     invoke_on_all_iterator_types()(par, op, std::forward<T>(rest)...);
     invoke_on_all_iterator_types()(par_unseq, op, std::forward<T>(rest)...);
+#endif
 }
 
 template <typename F>
@@ -1191,7 +1201,7 @@ transform_reduce_serial(InputIterator first, InputIterator last, T init, BinaryO
 static const char*
 done()
 {
-#if _PSTL_TEST_SUCCESSFUL_KEYWORD
+#if __PSTL_TEST_SUCCESSFUL_KEYWORD
     return "done";
 #else
     return "passed";
@@ -1226,9 +1236,9 @@ test_algo_basic_double(F&& f)
 
 template <typename Policy, typename F>
 static void
-invoke_if(Policy&&, F f)
+invoke_if(Policy&& p, F f)
 {
-#if _PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN || _PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN
+#if __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN || __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN
     __pstl::__internal::invoke_if_not(__pstl::__internal::allow_unsequenced<Policy>(), f);
 #else
     f();

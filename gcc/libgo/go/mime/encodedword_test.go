@@ -7,6 +7,7 @@ package mime
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -181,7 +182,7 @@ func TestCharsetDecoder(t *testing.T) {
 				if charset != test.charsets[i] {
 					t.Errorf("DecodeHeader(%q), got charset %q, want %q", test.src, charset, test.charsets[i])
 				}
-				content, err := io.ReadAll(input)
+				content, err := ioutil.ReadAll(input)
 				if err != nil {
 					t.Errorf("DecodeHeader(%q), error in reader: %v", test.src, err)
 				}

@@ -1,5 +1,3 @@
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
-
 #define E0 ((type *)10000000)
 #define reg0 r0
 #define indreg0 (*p0)

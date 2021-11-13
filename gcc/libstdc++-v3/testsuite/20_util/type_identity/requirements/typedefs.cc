@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2021 Free Software Foundation, Inc.
+// Copyright (C) 2018-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -38,7 +38,10 @@ void test01()
   static_assert(test<volatile unsigned int>::value, "");
   static_assert(test<const volatile unsigned int>::value, "");
   static_assert(test<const unsigned char>::value, "");
+
+#ifdef _GLIBCXX_USE_WCHAR_T
   static_assert(test<volatile wchar_t>::value, "" );
+#endif
 
   // Pointers
   static_assert(test<void*>::value, "");
@@ -83,7 +86,7 @@ void test01()
 
 #ifndef __STRICT_ANSI__
   // GNU Extensions.
-#ifdef __SIZEOF_INT128__
+#ifdef _GLIBCXX_USE_INT128
   static_assert(test<unsigned __int128>::value, "");
   static_assert(test<unsigned __int128>::value, "");
 #endif

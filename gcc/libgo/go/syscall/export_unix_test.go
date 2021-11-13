@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build dragonfly || freebsd || hurd || linux || netbsd || openbsd || solaris
-// +build dragonfly freebsd hurd linux netbsd openbsd solaris
+// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
 
 package syscall
 
-import "unsafe"
-
-func Ioctl(fd, req uintptr, arg unsafe.Pointer) (err Errno) {
-	_, err = raw_ioctl_ptr(int(fd), req, arg)
+func Ioctl(fd, req, arg uintptr) (err Errno) {
+	_, _, err = Syscall(SYS_IOCTL, fd, req, arg)
 	return err
 }

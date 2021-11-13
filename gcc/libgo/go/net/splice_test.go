@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build linux
 // +build linux
 
 package net
 
 import (
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -202,7 +202,7 @@ func testSpliceIssue25985(t *testing.T, upNet, downNet string) {
 	}
 	defer fromProxy.Close()
 
-	_, err = io.ReadAll(fromProxy)
+	_, err = ioutil.ReadAll(fromProxy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,6 @@ func startSpliceClient(conn Conn, op string, chunkSize, totalSize int) (func(), 
 		"GO_NET_TEST_SPLICE_OP=" + op,
 		"GO_NET_TEST_SPLICE_CHUNK_SIZE=" + strconv.Itoa(chunkSize),
 		"GO_NET_TEST_SPLICE_TOTAL_SIZE=" + strconv.Itoa(totalSize),
-		"TMPDIR=" + os.Getenv("TMPDIR"),
 	}...)
 	cmd.ExtraFiles = append(cmd.ExtraFiles, f)
 	cmd.Stdout = os.Stdout

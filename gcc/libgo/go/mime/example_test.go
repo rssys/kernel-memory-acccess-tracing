@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build ignore
+
 package mime_test
 
 import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime"
 )
 
@@ -37,7 +40,7 @@ func ExampleWordDecoder_Decode() {
 			// Fake character set for example.
 			// Real use would integrate with packages such
 			// as code.google.com/p/go-charset
-			content, err := io.ReadAll(input)
+			content, err := ioutil.ReadAll(input)
 			if err != nil {
 				return nil, err
 			}
@@ -76,7 +79,7 @@ func ExampleWordDecoder_DecodeHeader() {
 			// Fake character set for example.
 			// Real use would integrate with packages such
 			// as code.google.com/p/go-charset
-			content, err := io.ReadAll(input)
+			content, err := ioutil.ReadAll(input)
 			if err != nil {
 				return nil, err
 			}
@@ -94,30 +97,4 @@ func ExampleWordDecoder_DecodeHeader() {
 	// Éric <eric@example.org>, Anaïs <anais@example.org>
 	// ¡Hola, señor!
 	// HELLO WORLD!
-}
-
-func ExampleFormatMediaType() {
-	mediatype := "text/html"
-	params := map[string]string{
-		"charset": "utf-8",
-	}
-
-	result := mime.FormatMediaType(mediatype, params)
-
-	fmt.Println("result:", result)
-	// Output:
-	// result: text/html; charset=utf-8
-}
-
-func ExampleParseMediaType() {
-	mediatype, params, err := mime.ParseMediaType("text/html; charset=utf-8")
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("type:", mediatype)
-	fmt.Println("charset:", params["charset"])
-	// Output:
-	// type: text/html
-	// charset: utf-8
 }

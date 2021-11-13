@@ -10,7 +10,7 @@ contains
     !$acc end data ! { dg-error "Unexpected" }
     !$acc data deviceptr (10) ! { dg-error "Syntax error" }
     !$acc end data ! { dg-error "Unexpected" }
-    !$acc data private (10) ! { dg-error "Failed to match clause" }
+    !$acc data private (10) ! { dg-error "Unclassifiable" }
     !$acc end data ! { dg-error "Unexpected" }
     !$acc host_data use_device (10) ! { dg-error "Syntax error" }
     !$acc end host_data ! { dg-error "Unexpected" }

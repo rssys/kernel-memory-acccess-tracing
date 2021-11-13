@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build cgo
 // +build cgo
 
 package runtime_test
@@ -91,9 +90,9 @@ func TestCgoExternalThreadSIGPROF(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("no pthreads on %s", runtime.GOOS)
 	}
-	if runtime.GOARCH == "ppc64" && runtime.GOOS == "linux" {
+	if runtime.GOARCH == "ppc64" {
 		// TODO(austin) External linking not implemented on
-		// linux/ppc64 (issue #8912)
+		// ppc64 (issue #8912)
 		t.Skipf("no external linking on ppc64")
 	}
 
@@ -155,7 +154,7 @@ func TestCgoExecSignalMask(t *testing.T) {
 	case "windows", "plan9":
 		t.Skipf("skipping signal mask test on %s", runtime.GOOS)
 	}
-	got := runTestProg(t, "testprogcgo", "CgoExecSignalMask", "GOTRACEBACK=system")
+	got := runTestProg(t, "testprogcgo", "CgoExecSignalMask")
 	want := "OK\n"
 	if got != want {
 		t.Errorf("expected %q, got %v", want, got)
@@ -258,45 +257,12 @@ func TestCgoCrashTraceback(t *testing.T) {
 	}
 }
 
-func TestCgoCrashTracebackGo(t *testing.T) {
-	t.Parallel()
-	switch platform := runtime.GOOS + "/" + runtime.GOARCH; platform {
-	case "darwin/amd64":
-	case "linux/amd64":
-	case "linux/ppc64le":
-	default:
-		t.Skipf("not yet supported on %s", platform)
-	}
-	if runtime.Compiler == "gccgo" {
-		t.Skip("gccgo does not have SetCgoTraceback")
-	}
-	got := runTestProg(t, "testprogcgo", "CrashTracebackGo")
-	for i := 1; i <= 3; i++ {
-		want := fmt.Sprintf("main.h%d", i)
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %s", want)
-		}
-	}
-}
-
 func TestCgoTracebackContext(t *testing.T) {
 	t.Parallel()
 	if runtime.Compiler == "gccgo" {
 		t.Skip("gccgo does not have SetCgoTraceback")
 	}
 	got := runTestProg(t, "testprogcgo", "TracebackContext")
-	want := "OK\n"
-	if got != want {
-		t.Errorf("expected %q got %v", want, got)
-	}
-}
-
-func TestCgoTracebackContextPreemption(t *testing.T) {
-	t.Parallel()
-	if runtime.Compiler == "gccgo" {
-		t.Skip("gccgo does not have SetCgoTraceback")
-	}
-	got := runTestProg(t, "testprogcgo", "TracebackContextPreemption")
 	want := "OK\n"
 	if got != want {
 		t.Errorf("expected %q got %v", want, got)
@@ -318,19 +284,13 @@ func testCgoPprof(t *testing.T, buildArg, runArg, top, bottom string) {
 		t.Fatal(err)
 	}
 
-	// pprofCgoTraceback is called whenever CGO code is executing and a signal
-	// is received. Disable signal preemption to increase the likelihood at
-	// least one SIGPROF signal fired to capture a sample. See issue #37201.
-	cmd := testenv.CleanCmdEnv(exec.Command(exe, runArg))
-	cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
-
-	got, err := cmd.CombinedOutput()
+	got, err := testenv.CleanCmdEnv(exec.Command(exe, runArg)).CombinedOutput()
 	if err != nil {
 		if testenv.Builder() == "linux-amd64-alpine" {
 			// See Issue 18243 and Issue 19938.
 			t.Skipf("Skipping failing test on Alpine (golang.org/issue/18243). Ignoring error: %v", err)
 		}
-		t.Fatalf("%s\n\n%v", got, err)
+		t.Fatal(err)
 	}
 	fn := strings.TrimSpace(string(got))
 	defer os.Remove(fn)
@@ -600,62 +560,4 @@ func findTrace(text, top string) []string {
 		}
 	}
 	return nil
-}
-
-func TestSegv(t *testing.T) {
-	switch runtime.GOOS {
-	case "plan9", "windows":
-		t.Skipf("no signals on %s", runtime.GOOS)
-	}
-
-	for _, test := range []string{"Segv", "SegvInCgo"} {
-		t.Run(test, func(t *testing.T) {
-			t.Parallel()
-			got := runTestProg(t, "testprogcgo", test)
-			t.Log(got)
-			if !strings.Contains(got, "SIGSEGV") {
-				t.Errorf("expected crash from signal")
-			}
-		})
-	}
-}
-
-// TestEINTR tests that we handle EINTR correctly.
-// See issue #20400 and friends.
-func TestEINTR(t *testing.T) {
-	switch runtime.GOOS {
-	case "plan9", "windows":
-		t.Skipf("no EINTR on %s", runtime.GOOS)
-	case "linux":
-		if runtime.GOARCH == "386" {
-			// On linux-386 the Go signal handler sets
-			// a restorer function that is not preserved
-			// by the C sigaction call in the test,
-			// causing the signal handler to crash when
-			// returning the normal code. The test is not
-			// architecture-specific, so just skip on 386
-			// rather than doing a complicated workaround.
-			t.Skip("skipping on linux-386; C sigaction does not preserve Go restorer")
-		}
-	}
-
-	t.Parallel()
-	output := runTestProg(t, "testprogcgo", "EINTR")
-	want := "OK\n"
-	if output != want {
-		t.Fatalf("want %s, got %s\n", want, output)
-	}
-}
-
-// Issue #42207.
-func TestNeedmDeadlock(t *testing.T) {
-	switch runtime.GOOS {
-	case "plan9", "windows":
-		t.Skipf("no signals on %s", runtime.GOOS)
-	}
-	output := runTestProg(t, "testprogcgo", "NeedmDeadlock")
-	want := "OK\n"
-	if output != want {
-		t.Fatalf("want %s, got %s\n", want, output)
-	}
 }

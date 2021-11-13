@@ -13,5 +13,3 @@ inline void *t (void)
 {
 	return q ();		 /* { dg-message "called from here" } */
 }
-
-/* { dg-prune-output "-Wreturn-local-addr" } */

@@ -37,7 +37,7 @@ program loops
   !$acc end kernels
 
   do i = 1, n
-     if (a(i) .ne. b(i)) stop 1
+     if (a(i) .ne. b(i)) call abort
   end do
   call check (a, b, n)
 
@@ -61,6 +61,6 @@ subroutine check (a, b, n)
   integer :: i
 
   do i = 1, n
-     if (a(i) .ne. b(i)) stop 2
+     if (a(i) .ne. b(i)) call abort
   end do
 end subroutine check

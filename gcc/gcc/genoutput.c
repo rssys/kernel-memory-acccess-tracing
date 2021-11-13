@@ -1,5 +1,5 @@
 /* Generate code from to output assembler insns as recognized from rtl.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -143,10 +143,9 @@ static struct operand_data **odata_end = &null_operand.next;
 /* Record in this chain all information that we will output,
    associated with the code number of the insn.  */
 
-class data
+struct data
 {
-public:
-  class data *next;
+  struct data *next;
   const char *name;
   const char *template_code;
   file_location loc;
@@ -161,29 +160,28 @@ public:
 };
 
 /* This variable points to the first link in the insn chain.  */
-static class data *idata;
+static struct data *idata;
 
 /* This variable points to the end of the insn chain.  This is where
    everything relevant from the machien description is appended to.  */
-static class data **idata_end;
+static struct data **idata_end;
 
 
 static void output_prologue (void);
 static void output_operand_data (void);
 static void output_insn_data (void);
 static void output_get_insn_name (void);
-static void scan_operands (class data *, rtx, int, int);
+static void scan_operands (struct data *, rtx, int, int);
 static int compare_operands (struct operand_data *,
 			     struct operand_data *);
-static void place_operands (class data *);
-static void process_template (class data *, const char *);
-static void validate_insn_alternatives (class data *);
-static void validate_insn_operands (class data *);
+static void place_operands (struct data *);
+static void process_template (struct data *, const char *);
+static void validate_insn_alternatives (struct data *);
+static void validate_insn_operands (struct data *);
 
-class constraint_data
+struct constraint_data
 {
-public:
-  class constraint_data *next_this_letter;
+  struct constraint_data *next_this_letter;
   file_location loc;
   unsigned int namelen;
   char name[1];
@@ -193,7 +191,7 @@ public:
    are handled outside the define*_constraint mechanism.  */
 static const char indep_constraints[] = ",=+%*?!^$#&g";
 
-static class constraint_data *
+static struct constraint_data *
 constraints_by_letter_table[1 << CHAR_BIT];
 
 static int mdep_constraint_len (const char *, file_location, int);
@@ -277,12 +275,12 @@ output_operand_data (void)
 static void
 output_insn_data (void)
 {
-  class data *d;
+  struct data *d;
   int name_offset = 0;
   int next_name_offset;
   const char * last_name = 0;
   const char * next_name = 0;
-  class data *n;
+  struct data *n;
 
   for (n = idata, next_name_offset = 1; n; n = n->next, next_name_offset++)
     if (n->name)
@@ -423,7 +421,7 @@ output_get_insn_name (void)
    THIS_STRICT_LOW is nonzero if the containing rtx was a STRICT_LOW_PART.  */
 
 static void
-scan_operands (class data *d, rtx part, int this_address_p,
+scan_operands (struct data *d, rtx part, int this_address_p,
 	       int this_strict_low)
 {
   int i, j;
@@ -565,7 +563,7 @@ compare_operands (struct operand_data *d0, struct operand_data *d1)
    find a subsequence that is the same, or allocate a new one at the end.  */
 
 static void
-place_operands (class data *d)
+place_operands (struct data *d)
 {
   struct operand_data *od, *od2;
   int i;
@@ -619,7 +617,7 @@ place_operands (class data *d)
    templates, or C code to generate the assembler code template.  */
 
 static void
-process_template (class data *d, const char *template_code)
+process_template (struct data *d, const char *template_code)
 {
   const char *cp;
   int i;
@@ -742,7 +740,7 @@ process_template (class data *d, const char *template_code)
 /* Check insn D for consistency in number of constraint alternatives.  */
 
 static void
-validate_insn_alternatives (class data *d)
+validate_insn_alternatives (struct data *d)
 {
   int n = 0, start;
 
@@ -757,7 +755,6 @@ validate_insn_alternatives (class data *d)
 	int which_alternative = 0;
 	int alternative_count_unsure = 0;
 	bool seen_write = false;
-	bool alt_mismatch = false;
 
 	for (p = d->operand[start].constraint; (c = *p); p += len)
 	  {
@@ -814,19 +811,8 @@ validate_insn_alternatives (class data *d)
 	    if (n == 0)
 	      n = d->operand[start].n_alternatives;
 	    else if (n != d->operand[start].n_alternatives)
-	      {
-		if (!alt_mismatch)
-		  {
-		    alt_mismatch = true;
-		    error_at (d->loc,
-			      "alternative number mismatch: "
-			      "operand %d has %d, operand %d has %d",
-			      0, n, start, d->operand[start].n_alternatives);
-		  }
-		else
-		  error_at (d->loc, "operand %d has %d alternatives",
-		    start, d->operand[start].n_alternatives);
-	      }
+	      error_at (d->loc, "wrong number of alternatives in operand %d",
+			start);
 	  }
       }
 
@@ -837,7 +823,7 @@ validate_insn_alternatives (class data *d)
 /* Verify that there are no gaps in operand numbers for INSNs.  */
 
 static void
-validate_insn_operands (class data *d)
+validate_insn_operands (struct data *d)
 {
   int i;
 
@@ -847,13 +833,13 @@ validate_insn_operands (class data *d)
 }
 
 static void
-validate_optab_operands (class data *d)
+validate_optab_operands (struct data *d)
 {
   if (!d->name || d->name[0] == '\0' || d->name[0] == '*')
     return;
 
   /* Miscellaneous tests.  */
-  if (startswith (d->name, "cstore")
+  if (strncmp (d->name, "cstore", 6) == 0
       && d->name[strlen (d->name) - 1] == '4'
       && d->operand[0].mode == VOIDmode)
     {
@@ -992,7 +978,7 @@ gen_expand (md_rtx_info *info)
 static void
 init_insn_for_nothing (void)
 {
-  idata = XCNEW (class data);
+  idata = XCNEW (struct data);
   new (idata) data ();
   idata->name = "*placeholder_for_nothing";
   idata->loc = file_location ("<internal>", 0, 0);
@@ -1036,7 +1022,6 @@ main (int argc, const char **argv)
       case DEFINE_ADDRESS_CONSTRAINT:
       case DEFINE_MEMORY_CONSTRAINT:
       case DEFINE_SPECIAL_MEMORY_CONSTRAINT:
-      case DEFINE_RELAXED_MEMORY_CONSTRAINT:
 	note_constraint (&info);
 	break;
 
@@ -1101,7 +1086,7 @@ note_constraint (md_rtx_info *info)
 {
   rtx exp = info->def;
   const char *name = XSTR (exp, 0);
-  class constraint_data **iter, **slot, *new_cdata;
+  struct constraint_data **iter, **slot, *new_cdata;
 
   if (strcmp (name, "TARGET_MEM_CONSTRAINT") == 0)
     name = general_mem;
@@ -1151,8 +1136,8 @@ note_constraint (md_rtx_info *info)
 	  return;
 	}
     }
-  new_cdata = XNEWVAR (class constraint_data,
-		       sizeof (class constraint_data) + namelen);
+  new_cdata = XNEWVAR (struct constraint_data,
+		       sizeof (struct constraint_data) + namelen);
   new (new_cdata) constraint_data ();
   strcpy (CONST_CAST (char *, new_cdata->name), name);
   new_cdata->namelen = namelen;
@@ -1168,7 +1153,7 @@ note_constraint (md_rtx_info *info)
 static int
 mdep_constraint_len (const char *s, file_location loc, int opno)
 {
-  class constraint_data *p;
+  struct constraint_data *p;
 
   p = constraints_by_letter_table[(unsigned int)s[0]];
 

@@ -1,7 +1,6 @@
 /* { dg-do run } */
 /* { dg-add-options ieee } */
 /* { dg-require-effective-target fenv_exceptions } */
-/* { dg-skip-if "fenv" { powerpc-ibm-aix* } } */
 
 #include <fenv.h>
 

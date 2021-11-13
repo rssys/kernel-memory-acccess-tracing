@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -55,7 +55,7 @@ package body Ada.Wide_Wide_Text_IO is
 
    use type System.CRTL.size_t;
 
-   WC_Encoding : constant Character;
+   WC_Encoding : Character;
    pragma Import (C, WC_Encoding, "__gl_wc_encoding");
    --  Default wide character encoding
 
@@ -136,15 +136,15 @@ package body Ada.Wide_Wide_Text_IO is
       --  is required (RM A.10.3(23)) but it seems reasonable, and besides
       --  ACVC test CE3208A expects this behavior.
 
-      if File = Current_In then
+      if File_Type (File) = Current_In then
          Current_In := null;
-      elsif File = Current_Out then
+      elsif File_Type (File) = Current_Out then
          Current_Out := null;
-      elsif File = Current_Err then
+      elsif File_Type (File) = Current_Err then
          Current_Err := null;
       end if;
 
-      Terminate_Line (File.all'Access);
+      Terminate_Line (File_Type (File));
    end AFCB_Close;
 
    ---------------
@@ -152,10 +152,11 @@ package body Ada.Wide_Wide_Text_IO is
    ---------------
 
    procedure AFCB_Free (File : not null access Wide_Wide_Text_AFCB) is
-      FT : File_Type := File.all'Access;
+      type FCB_Ptr is access all Wide_Wide_Text_AFCB;
+      FT : FCB_Ptr := FCB_Ptr (File);
 
       procedure Free is new
-        Ada.Unchecked_Deallocation (Wide_Wide_Text_AFCB, File_Type);
+        Ada.Unchecked_Deallocation (Wide_Wide_Text_AFCB, FCB_Ptr);
 
    begin
       Free (FT);

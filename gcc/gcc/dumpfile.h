@@ -1,5 +1,5 @@
 /* Definitions for the shared dumpfile.
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -48,7 +48,6 @@ enum tree_dump_index
   TDI_gimple,			/* dump each function after gimplifying it */
   TDI_nested,			/* dump each function after unnesting it */
   TDI_lto_stream_out,		/* dump information about lto streaming */
-  TDI_profile_report,		/* dump information about profile quality */
 
   TDI_lang_all,			/* enable all the language dumps.  */
   TDI_tree_all,			/* enable all the GENERIC/GIMPLE dumps.  */
@@ -74,7 +73,7 @@ enum dump_kind
    the DUMP_OPTIONS array in dumpfile.c. The TDF_* flags coexist with
    MSG_* flags (for -fopt-info) and the bit values must be chosen to
    allow that.  */
-enum dump_flag : uint32_t
+enum dump_flag
 {
   /* Value of TDF_NONE is used just for bits filtered by TDF_KIND_MASK.  */
   TDF_NONE  = 0,
@@ -140,7 +139,7 @@ enum dump_flag : uint32_t
   /* Dump SCEV details.  */
   TDF_SCEV = (1 << 19),
 
-  /* Dump in GIMPLE FE syntax.  */
+  /* Dump in GIMPLE FE syntax  */
   TDF_GIMPLE = (1 << 20),
 
   /* Dump folding details.  */
@@ -191,17 +190,11 @@ enum dump_flag : uint32_t
 			| MSG_PRIORITY_INTERNALS
 			| MSG_PRIORITY_REEMITTED),
 
-  /* All -fdump- flags.  */
-  TDF_ALL_VALUES = (1 << 28) - 1,
-
   /* Dumping for -fcompare-debug.  */
   TDF_COMPARE_DEBUG = (1 << 28),
 
-  /* Dump a GIMPLE value which means wrapping certain things with _Literal.  */
-  TDF_GIMPLE_VAL = (1 << 29),
-
-  /* For error.  */
-  TDF_ERROR = ((uint32_t)1 << 30),
+  /* All values.  */
+  TDF_ALL_VALUES = (1 << 29) - 1
 };
 
 /* Dump flags type.  */
@@ -211,36 +204,32 @@ typedef enum dump_flag dump_flags_t;
 static inline dump_flags_t
 operator| (dump_flags_t lhs, dump_flags_t rhs)
 {
-  return (dump_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-			| (std::underlying_type<dump_flags_t>::type)rhs);
+  return (dump_flags_t)((int)lhs | (int)rhs);
 }
 
 static inline dump_flags_t
 operator& (dump_flags_t lhs, dump_flags_t rhs)
 {
-  return (dump_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-			& (std::underlying_type<dump_flags_t>::type)rhs);
+  return (dump_flags_t)((int)lhs & (int)rhs);
 }
 
 static inline dump_flags_t
 operator~ (dump_flags_t flags)
 {
-  return (dump_flags_t)~((std::underlying_type<dump_flags_t>::type)flags);
+  return (dump_flags_t)~((int)flags);
 }
 
 static inline dump_flags_t &
 operator|= (dump_flags_t &lhs, dump_flags_t rhs)
 {
-  lhs = (dump_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-		       | (std::underlying_type<dump_flags_t>::type)rhs);
+  lhs = (dump_flags_t)((int)lhs | (int)rhs);
   return lhs;
 }
 
 static inline dump_flags_t &
 operator&= (dump_flags_t &lhs, dump_flags_t rhs)
 {
-  lhs = (dump_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-		       & (std::underlying_type<dump_flags_t>::type)rhs);
+  lhs = (dump_flags_t)((int)lhs & (int)rhs);
   return lhs;
 }
 
@@ -279,15 +268,13 @@ typedef enum optgroup_flag optgroup_flags_t;
 static inline optgroup_flags_t
 operator| (optgroup_flags_t lhs, optgroup_flags_t rhs)
 {
-  return (optgroup_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-			    | (std::underlying_type<dump_flags_t>::type)rhs);
+  return (optgroup_flags_t)((int)lhs | (int)rhs);
 }
 
 static inline optgroup_flags_t &
 operator|= (optgroup_flags_t &lhs, optgroup_flags_t rhs)
 {
-  lhs = (optgroup_flags_t)((std::underlying_type<dump_flags_t>::type)lhs
-			   | (std::underlying_type<dump_flags_t>::type)rhs);
+  lhs = (optgroup_flags_t)((int)lhs | (int)rhs);
   return lhs;
 }
 
@@ -377,9 +364,8 @@ class dump_user_location_t
 /* A class for identifying where in the compiler's own source
    (or a plugin) that a dump message is being emitted from.  */
 
-class dump_impl_location_t
+struct dump_impl_location_t
 {
-public:
   dump_impl_location_t (
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8)
 			const char *file = __builtin_FILE (),
@@ -515,8 +501,6 @@ extern void dump_end (int, FILE *);
 extern int opt_info_switch_p (const char *);
 extern const char *dump_flag_name (int);
 extern const kv_pair<optgroup_flags_t> optgroup_options[];
-extern dump_flags_t
-parse_dump_option (const char *, const char **);
 
 /* Global variables used to communicate with passes.  */
 extern FILE *dump_file;
@@ -658,7 +642,7 @@ extern void dump_combine_total_stats (FILE *);
 /* In cfghooks.c  */
 extern void dump_bb (FILE *, basic_block, int, dump_flags_t);
 
-class opt_pass;
+struct opt_pass;
 
 namespace gcc {
 
@@ -701,7 +685,7 @@ public:
   char *
   get_dump_file_name (struct dump_file_info *dfi, int part = -1) const;
 
-  void
+  int
   dump_switch_p (const char *arg);
 
   /* Start a dump for PHASE. Store user-supplied dump flags in

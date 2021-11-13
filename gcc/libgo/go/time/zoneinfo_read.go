@@ -13,21 +13,7 @@ import (
 	"errors"
 	"runtime"
 	"syscall"
-	_ "unsafe" // for go:linkname
 )
-
-// registerLoadFromEmbeddedTZData is called by the time/tzdata package,
-// if it is imported.
-//go:linkname registerLoadFromEmbeddedTZData
-func registerLoadFromEmbeddedTZData(f func(string) (string, error)) {
-	loadFromEmbeddedTZData = f
-}
-
-// loadFromEmbeddedTZData is used to load a specific tzdata file
-// from tzdata information embedded in the binary itself.
-// This is set when the time/tzdata package is imported,
-// via registerLoadFromEmbeddedTzdata.
-var loadFromEmbeddedTZData func(zipname string) (string, error)
 
 // maxFileSize is the max permitted size of files read by readFile.
 // As reference, the zoneinfo.zip distributed by Go is ~350 KB,
@@ -73,16 +59,6 @@ func (d *dataIO) big4() (n uint32, ok bool) {
 	return uint32(p[3]) | uint32(p[2])<<8 | uint32(p[1])<<16 | uint32(p[0])<<24, true
 }
 
-func (d *dataIO) big8() (n uint64, ok bool) {
-	n1, ok1 := d.big4()
-	n2, ok2 := d.big4()
-	if !ok1 || !ok2 {
-		d.error = true
-		return 0, false
-	}
-	return (uint64(n1) << 32) | uint64(n2), true
-}
-
 func (d *dataIO) byte() (n byte, ok bool) {
 	p := d.read(1)
 	if len(p) < 1 {
@@ -90,13 +66,6 @@ func (d *dataIO) byte() (n byte, ok bool) {
 		return 0, false
 	}
 	return p[0], true
-}
-
-// read returns the read of the data in the buffer.
-func (d *dataIO) rest() []byte {
-	r := d.p
-	d.p = nil
-	return r
 }
 
 // Make a string by stopping at the first NUL
@@ -124,21 +93,9 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 	}
 
 	// 1-byte version, then 15 bytes of padding
-	var version int
 	var p []byte
-	if p = d.read(16); len(p) != 16 {
+	if p = d.read(16); len(p) != 16 || p[0] != 0 && p[0] != '2' && p[0] != '3' {
 		return nil, badData
-	} else {
-		switch p[0] {
-		case 0:
-			version = 1
-		case '2':
-			version = 2
-		case '3':
-			version = 3
-		default:
-			return nil, badData
-		}
 	}
 
 	// six big-endian 32-bit integers:
@@ -162,53 +119,11 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 		if !ok {
 			return nil, badData
 		}
-		if uint32(int(nn)) != nn {
-			return nil, badData
-		}
 		n[i] = int(nn)
 	}
 
-	// If we have version 2 or 3, then the data is first written out
-	// in a 32-bit format, then written out again in a 64-bit format.
-	// Skip the 32-bit format and read the 64-bit one, as it can
-	// describe a broader range of dates.
-
-	is64 := false
-	if version > 1 {
-		// Skip the 32-bit data.
-		skip := n[NTime]*4 +
-			n[NTime] +
-			n[NZone]*6 +
-			n[NChar] +
-			n[NLeap]*8 +
-			n[NStdWall] +
-			n[NUTCLocal]
-		// Skip the version 2 header that we just read.
-		skip += 4 + 16
-		d.read(skip)
-
-		is64 = true
-
-		// Read the counts again, they can differ.
-		for i := 0; i < 6; i++ {
-			nn, ok := d.big4()
-			if !ok {
-				return nil, badData
-			}
-			if uint32(int(nn)) != nn {
-				return nil, badData
-			}
-			n[i] = int(nn)
-		}
-	}
-
-	size := 4
-	if is64 {
-		size = 8
-	}
-
 	// Transition times.
-	txtimes := dataIO{d.read(n[NTime] * size), false}
+	txtimes := dataIO{d.read(n[NTime] * 4), false}
 
 	// Time zone indices for transition times.
 	txzones := d.read(n[NTime])
@@ -220,7 +135,7 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 	abbrev := d.read(n[NChar])
 
 	// Leap-second time pairs
-	d.read(n[NLeap] * (size + 4))
+	d.read(n[NLeap] * 8)
 
 	// Whether tx times associated with local time types
 	// are specified as standard time or wall time.
@@ -234,47 +149,36 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 		return nil, badData
 	}
 
-	var extend string
-	rest := d.rest()
-	if len(rest) > 2 && rest[0] == '\n' && rest[len(rest)-1] == '\n' {
-		extend = string(rest[1 : len(rest)-1])
-	}
+	// If version == 2 or 3, the entire file repeats, this time using
+	// 8-byte ints for txtimes and leap seconds.
+	// We won't need those until 2106.
 
 	// Now we can build up a useful data structure.
 	// First the zone information.
 	//	utcoff[4] isdst[1] nameindex[1]
-	nzone := n[NZone]
-	if nzone == 0 {
-		// Reject tzdata files with no zones. There's nothing useful in them.
-		// This also avoids a panic later when we add and then use a fake transition (golang.org/issue/29437).
-		return nil, badData
-	}
-	zones := make([]zone, nzone)
-	for i := range zones {
+	zone := make([]zone, n[NZone])
+	for i := range zone {
 		var ok bool
 		var n uint32
 		if n, ok = zonedata.big4(); !ok {
 			return nil, badData
 		}
-		if uint32(int(n)) != n {
-			return nil, badData
-		}
-		zones[i].offset = int(int32(n))
+		zone[i].offset = int(int32(n))
 		var b byte
 		if b, ok = zonedata.byte(); !ok {
 			return nil, badData
 		}
-		zones[i].isDST = b != 0
+		zone[i].isDST = b != 0
 		if b, ok = zonedata.byte(); !ok || int(b) >= len(abbrev) {
 			return nil, badData
 		}
-		zones[i].name = byteString(abbrev[b:])
+		zone[i].name = byteString(abbrev[b:])
 		if runtime.GOOS == "aix" && len(name) > 8 && (name[:8] == "Etc/GMT+" || name[:8] == "Etc/GMT-") {
 			// There is a bug with AIX 7.2 TL 0 with files in Etc,
 			// GMT+1 will return GMT-1 instead of GMT+1 or -01.
 			if name != "Etc/GMT+0" {
 				// GMT+0 is OK
-				zones[i].name = name[4:]
+				zone[i].name = name[4:]
 			}
 		}
 	}
@@ -282,22 +186,13 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 	// Now the transition time info.
 	tx := make([]zoneTrans, n[NTime])
 	for i := range tx {
-		var n int64
-		if !is64 {
-			if n4, ok := txtimes.big4(); !ok {
-				return nil, badData
-			} else {
-				n = int64(int32(n4))
-			}
-		} else {
-			if n8, ok := txtimes.big8(); !ok {
-				return nil, badData
-			} else {
-				n = int64(n8)
-			}
+		var ok bool
+		var n uint32
+		if n, ok = txtimes.big4(); !ok {
+			return nil, badData
 		}
-		tx[i].when = n
-		if int(txzones[i]) >= len(zones) {
+		tx[i].when = int64(int32(n))
+		if int(txzones[i]) >= len(zone) {
 			return nil, badData
 		}
 		tx[i].index = txzones[i]
@@ -316,7 +211,7 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 	}
 
 	// Committed to succeed.
-	l := &Location{zone: zones, tx: tx, name: name, extend: extend}
+	l := &Location{zone: zone, tx: tx, name: name}
 
 	// Fill in the cache with information about right now,
 	// since that will be the most common lookup.
@@ -325,41 +220,14 @@ func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
 		if tx[i].when <= sec && (i+1 == len(tx) || sec < tx[i+1].when) {
 			l.cacheStart = tx[i].when
 			l.cacheEnd = omega
-			l.cacheZone = &l.zone[tx[i].index]
 			if i+1 < len(tx) {
 				l.cacheEnd = tx[i+1].when
-			} else if l.extend != "" {
-				// If we're at the end of the known zone transitions,
-				// try the extend string.
-				if name, offset, estart, eend, isDST, ok := tzset(l.extend, l.cacheEnd, sec); ok {
-					l.cacheStart = estart
-					l.cacheEnd = eend
-					// Find the zone that is returned by tzset to avoid allocation if possible.
-					if zoneIdx := findZone(l.zone, name, offset, isDST); zoneIdx != -1 {
-						l.cacheZone = &l.zone[zoneIdx]
-					} else {
-						l.cacheZone = &zone{
-							name:   name,
-							offset: offset,
-							isDST:  isDST,
-						}
-					}
-				}
 			}
-			break
+			l.cacheZone = &l.zone[tx[i].index]
 		}
 	}
 
 	return l, nil
-}
-
-func findZone(zones []zone, name string, offset int, isDST bool) int {
-	for i, z := range zones {
-		if z.name == name && z.offset == offset && z.isDST == isDST {
-			return i
-		}
-	}
-	return -1
 }
 
 // loadTzinfoFromDirOrZip returns the contents of the file with the given name
@@ -540,17 +408,6 @@ func loadLocation(name string, sources []string) (z *Location, firstErr error) {
 			firstErr = err
 		}
 	}
-	if loadFromEmbeddedTZData != nil {
-		zonedata, err := loadFromEmbeddedTZData(name)
-		if err == nil {
-			if z, err = LoadLocationFromTZData(name, []byte(zonedata)); err == nil {
-				return z, nil
-			}
-		}
-		if firstErr == nil && err != syscall.ENOENT {
-			firstErr = err
-		}
-	}
 	if firstErr != nil {
 		return nil, firstErr
 	}
@@ -558,7 +415,7 @@ func loadLocation(name string, sources []string) (z *Location, firstErr error) {
 }
 
 // readFile reads and returns the content of the named file.
-// It is a trivial implementation of os.ReadFile, reimplemented
+// It is a trivial implementation of ioutil.ReadFile, reimplemented
 // here to avoid depending on io/ioutil or os.
 // It returns an error if name exceeds maxFileSize bytes.
 func readFile(name string) ([]byte, error) {

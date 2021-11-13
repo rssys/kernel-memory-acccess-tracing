@@ -8,11 +8,10 @@
  */
 module core.sys.windows.objbase;
 version (Windows):
-@system:
 pragma(lib, "ole32");
 
 import core.sys.windows.cguid, core.sys.windows.objidl, core.sys.windows.unknwn, core.sys.windows.wtypes;
-import core.sys.windows.basetyps, core.sys.windows.objfwd, core.sys.windows.rpcdce, core.sys.windows.winbase,
+private import core.sys.windows.basetyps, core.sys.windows.objfwd, core.sys.windows.rpcdce, core.sys.windows.winbase,
   core.sys.windows.windef;
 
 // DAC: Not needed for D?

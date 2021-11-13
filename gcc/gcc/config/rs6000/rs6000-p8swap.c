@@ -1,6 +1,6 @@
 /* Subroutines used to remove unnecessary doubleword swaps
    for p8 little-endian VSX code.
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -250,21 +250,6 @@ union_uses (swap_web_entry *insn_entry, rtx insn, df_ref def)
     }
 }
 
-/* Return 1 iff PAT (a SINGLE_SET) is a rotate 64 bit expression; else return
-   0.  */
-
-static bool
-pattern_is_rotate64 (rtx pat)
-{
-  rtx rot = SET_SRC (pat);
-
-  if (GET_CODE (rot) == ROTATE && CONST_INT_P (XEXP (rot, 1))
-      && INTVAL (XEXP (rot, 1)) == 64)
-    return true;
-
-  return false;
-}
-
 /* Return 1 iff INSN is a load insn, including permuting loads that
    represent an lvxd2x instruction; else return 0.  */
 static unsigned int
@@ -279,9 +264,6 @@ insn_is_load_p (rtx insn)
 
       if (GET_CODE (SET_SRC (body)) == VEC_SELECT
 	  && MEM_P (XEXP (SET_SRC (body), 0)))
-	return 1;
-
-      if (pattern_is_rotate64 (body) && MEM_P (XEXP (SET_SRC (body), 0)))
 	return 1;
 
       return 0;
@@ -323,8 +305,6 @@ insn_is_swap_p (rtx insn)
   if (GET_CODE (body) != SET)
     return 0;
   rtx rhs = SET_SRC (body);
-  if (pattern_is_rotate64 (body))
-    return 1;
   if (GET_CODE (rhs) != VEC_SELECT)
     return 0;
   rtx parallel = XEXP (rhs, 1);
@@ -412,8 +392,7 @@ quad_aligned_load_p (swap_web_entry *insn_entry, rtx_insn *insn)
      false.  */
   rtx body = PATTERN (def_insn);
   if (GET_CODE (body) != SET
-      || !(GET_CODE (SET_SRC (body)) == VEC_SELECT
-	   || pattern_is_rotate64 (body))
+      || GET_CODE (SET_SRC (body)) != VEC_SELECT
       || !MEM_P (XEXP (SET_SRC (body), 0)))
     return false;
 
@@ -552,8 +531,7 @@ const_load_sequence_p (swap_web_entry *insn_entry, rtx insn)
 	 false.  */
       rtx body = PATTERN (def_insn);
       if (GET_CODE (body) != SET
-	  || !(GET_CODE (SET_SRC (body)) == VEC_SELECT
-	       || pattern_is_rotate64 (body))
+	  || GET_CODE (SET_SRC (body)) != VEC_SELECT
 	  || !MEM_P (XEXP (SET_SRC (body), 0)))
 	return false;
 
@@ -766,6 +744,8 @@ rtx_is_swappable_p (rtx op, unsigned int *special)
 	  default:
 	    break;
 	  case UNSPEC_VBPERMQ:
+	  case UNSPEC_VMRGH_DIRECT:
+	  case UNSPEC_VMRGL_DIRECT:
 	  case UNSPEC_VPACK_SIGN_SIGN_SAT:
 	  case UNSPEC_VPACK_SIGN_UNS_SAT:
 	  case UNSPEC_VPACK_UNS_UNS_MOD:
@@ -1521,22 +1501,6 @@ replace_swap_with_copy (swap_web_entry *insn_entry, unsigned i)
   insn->set_deleted ();
 }
 
-/* INSN is known to contain a SUBREG, which we can normally handle,
-   but if the SUBREG itself contains a MULT then we need to leave it alone
-   to avoid turning a mult_hipart into a mult_lopart, for example.  */
-static bool
-has_part_mult (rtx_insn *insn)
-{
-  rtx body = PATTERN (insn);
-  if (GET_CODE (body) != SET)
-    return false;
-  rtx src = SET_SRC (body);
-  if (GET_CODE (src) != SUBREG)
-    return false;
-  rtx inner = XEXP (src, 0);
-  return (GET_CODE (inner) == MULT);
-}
-
 /* Make NEW_MEM_EXP's attributes and flags resemble those of
    ORIGINAL_MEM_EXP.  */
 static void
@@ -1768,8 +1732,7 @@ replace_swapped_aligned_load (swap_web_entry *insn_entry, rtx swap_insn)
      swap (indicated by code VEC_SELECT).  */
   rtx body = PATTERN (def_insn);
   gcc_assert ((GET_CODE (body) == SET)
-	      && (GET_CODE (SET_SRC (body)) == VEC_SELECT
-		  || pattern_is_rotate64 (body))
+	      && (GET_CODE (SET_SRC (body)) == VEC_SELECT)
 	      && MEM_P (XEXP (SET_SRC (body), 0)));
 
   rtx src_exp = XEXP (SET_SRC (body), 0);
@@ -1959,7 +1922,7 @@ replace_swapped_load_constant (swap_web_entry *insn_entry, rtx swap_insn)
     XEXP (new_mem, 0) = base_reg;
 
     /* Move the newly created insn ahead of the load insn.  */
-    /* The last insn is the insn that forced new_mem into a register.  */
+    /* The last insn is the the insn that forced new_mem into a register.  */
     rtx_insn *force_insn = get_last_insn ();
     /* Remove this insn from the end of the instruction sequence.  */
     remove_insn (force_insn);
@@ -2132,15 +2095,11 @@ alignment_mask (rtx_insn *insn)
   return alignment_with_canonical_addr (SET_SRC (body));
 }
 
-/* Given INSN that's a load or store based at BASE_REG, check if
-   all of its feeding computations align its address on a 16-byte
-   boundary.  If so, return true and add all definition insns into
-   AND_INSNS and their corresponding fully-expanded rtxes for the
-   masking operations into AND_OPS.  */
-
-static bool
-find_alignment_op (rtx_insn *insn, rtx base_reg, vec<rtx_insn *> *and_insns,
-		   vec<rtx> *and_ops)
+/* Given INSN that's a load or store based at BASE_REG, look for a
+   feeding computation that aligns its address on a 16-byte boundary.
+   Return the rtx and its containing AND_INSN.  */
+static rtx
+find_alignment_op (rtx_insn *insn, rtx base_reg, rtx_insn **and_insn)
 {
   df_ref base_use;
   struct df_insn_info *insn_info = DF_INSN_INFO_GET (insn);
@@ -2152,28 +2111,19 @@ find_alignment_op (rtx_insn *insn, rtx base_reg, vec<rtx_insn *> *and_insns,
 	continue;
 
       struct df_link *base_def_link = DF_REF_CHAIN (base_use);
-      if (!base_def_link)
-	return false;
+      if (!base_def_link || base_def_link->next)
+	break;
 
-      while (base_def_link)
-	{
-	  /* With stack-protector code enabled, and possibly in other
-	     circumstances, there may not be an associated insn for
-	     the def.  */
-	  if (DF_REF_IS_ARTIFICIAL (base_def_link->ref))
-	    return false;
+      /* With stack-protector code enabled, and possibly in other
+	 circumstances, there may not be an associated insn for 
+	 the def.  */
+      if (DF_REF_IS_ARTIFICIAL (base_def_link->ref))
+	break;
 
-	  rtx_insn *and_insn = DF_REF_INSN (base_def_link->ref);
-	  and_operation = alignment_mask (and_insn);
-
-	  /* Stop if we find any one which doesn't align.  */
-	  if (!and_operation)
-	    return false;
-
-	  and_insns->safe_push (and_insn);
-	  and_ops->safe_push (and_operation);
-	  base_def_link = base_def_link->next;
-	}
+      *and_insn = DF_REF_INSN (base_def_link->ref);
+      and_operation = alignment_mask (*and_insn);
+      if (and_operation != 0)
+	break;
     }
 
   return and_operation;
@@ -2187,21 +2137,17 @@ recombine_lvx_pattern (rtx_insn *insn, del_info *to_delete)
 {
   rtx body = PATTERN (insn);
   gcc_assert (GET_CODE (body) == SET
-	      && (GET_CODE (SET_SRC (body)) == VEC_SELECT
-		  || pattern_is_rotate64 (body))
+	      && GET_CODE (SET_SRC (body)) == VEC_SELECT
 	      && MEM_P (XEXP (SET_SRC (body), 0)));
 
   rtx mem = XEXP (SET_SRC (body), 0);
   rtx base_reg = XEXP (mem, 0);
 
-  auto_vec<rtx_insn *> and_insns;
-  auto_vec<rtx> and_ops;
-  bool is_any_def_and
-    = find_alignment_op (insn, base_reg, &and_insns, &and_ops);
+  rtx_insn *and_insn;
+  rtx and_operation = find_alignment_op (insn, base_reg, &and_insn);
 
-  if (is_any_def_and)
+  if (and_operation != 0)
     {
-      gcc_assert (and_insns.length () == and_ops.length ());
       df_ref def;
       struct df_insn_info *insn_info = DF_INSN_INFO_GET (insn);
       FOR_EACH_INSN_INFO_DEF (def, insn_info)
@@ -2222,35 +2168,25 @@ recombine_lvx_pattern (rtx_insn *insn, del_info *to_delete)
 	  to_delete[INSN_UID (swap_insn)].replace = true;
 	  to_delete[INSN_UID (swap_insn)].replace_insn = swap_insn;
 
-	  rtx new_reg = 0;
-	  rtx and_mask = 0;
-	  for (unsigned i = 0; i < and_insns.length (); i++)
-	    {
-	      /* However, first we must be sure that we make the
-		 base register from the AND operation available
-		 in case the register has been overwritten.  Copy
-		 the base register to a new pseudo and use that
-		 as the base register of the AND operation in
-		 the new LVX instruction.  */
-	      rtx_insn *and_insn = and_insns[i];
-	      rtx and_op = and_ops[i];
-	      rtx and_base = XEXP (and_op, 0);
-	      if (!new_reg)
-		{
-		  new_reg = gen_reg_rtx (GET_MODE (and_base));
-		  and_mask = XEXP (and_op, 1);
-		}
-	      rtx copy = gen_rtx_SET (new_reg, and_base);
-	      rtx_insn *new_insn = emit_insn_after (copy, and_insn);
-	      set_block_for_insn (new_insn, BLOCK_FOR_INSN (and_insn));
-	      df_insn_rescan (new_insn);
-	    }
+	  /* However, first we must be sure that we make the
+	     base register from the AND operation available
+	     in case the register has been overwritten.  Copy
+	     the base register to a new pseudo and use that
+	     as the base register of the AND operation in
+	     the new LVX instruction.  */
+	  rtx and_base = XEXP (and_operation, 0);
+	  rtx new_reg = gen_reg_rtx (GET_MODE (and_base));
+	  rtx copy = gen_rtx_SET (new_reg, and_base);
+	  rtx_insn *new_insn = emit_insn_after (copy, and_insn);
+	  set_block_for_insn (new_insn, BLOCK_FOR_INSN (and_insn));
+	  df_insn_rescan (new_insn);
 
-	  XEXP (mem, 0) = gen_rtx_AND (GET_MODE (new_reg), new_reg, and_mask);
+	  XEXP (mem, 0) = gen_rtx_AND (GET_MODE (and_base), new_reg,
+				       XEXP (and_operation, 1));
 	  SET_SRC (body) = mem;
 	  INSN_CODE (insn) = -1; /* Force re-recognition.  */
 	  df_insn_rescan (insn);
-
+		  
 	  if (dump_file)
 	    fprintf (dump_file, "lvx opportunity found at %d\n",
 		     INSN_UID (insn));
@@ -2265,19 +2201,15 @@ recombine_stvx_pattern (rtx_insn *insn, del_info *to_delete)
   rtx body = PATTERN (insn);
   gcc_assert (GET_CODE (body) == SET
 	      && MEM_P (SET_DEST (body))
-	      && (GET_CODE (SET_SRC (body)) == VEC_SELECT
-		  || pattern_is_rotate64 (body)));
+	      && GET_CODE (SET_SRC (body)) == VEC_SELECT);
   rtx mem = SET_DEST (body);
   rtx base_reg = XEXP (mem, 0);
 
-  auto_vec<rtx_insn *> and_insns;
-  auto_vec<rtx> and_ops;
-  bool is_any_def_and
-    = find_alignment_op (insn, base_reg, &and_insns, &and_ops);
+  rtx_insn *and_insn;
+  rtx and_operation = find_alignment_op (insn, base_reg, &and_insn);
 
-  if (is_any_def_and)
+  if (and_operation != 0)
     {
-      gcc_assert (and_insns.length () == and_ops.length ());
       rtx src_reg = XEXP (SET_SRC (body), 0);
       df_ref src_use;
       struct df_insn_info *insn_info = DF_INSN_INFO_GET (insn);
@@ -2302,35 +2234,25 @@ recombine_stvx_pattern (rtx_insn *insn, del_info *to_delete)
 	  to_delete[INSN_UID (swap_insn)].replace = true;
 	  to_delete[INSN_UID (swap_insn)].replace_insn = swap_insn;
 
-	  rtx new_reg = 0;
-	  rtx and_mask = 0;
-	  for (unsigned i = 0; i < and_insns.length (); i++)
-	    {
-	      /* However, first we must be sure that we make the
-		 base register from the AND operation available
-		 in case the register has been overwritten.  Copy
-		 the base register to a new pseudo and use that
-		 as the base register of the AND operation in
-		 the new STVX instruction.  */
-	      rtx_insn *and_insn = and_insns[i];
-	      rtx and_op = and_ops[i];
-	      rtx and_base = XEXP (and_op, 0);
-	      if (!new_reg)
-		{
-		  new_reg = gen_reg_rtx (GET_MODE (and_base));
-		  and_mask = XEXP (and_op, 1);
-		}
-	      rtx copy = gen_rtx_SET (new_reg, and_base);
-	      rtx_insn *new_insn = emit_insn_after (copy, and_insn);
-	      set_block_for_insn (new_insn, BLOCK_FOR_INSN (and_insn));
-	      df_insn_rescan (new_insn);
-	    }
+	  /* However, first we must be sure that we make the
+	     base register from the AND operation available
+	     in case the register has been overwritten.  Copy
+	     the base register to a new pseudo and use that
+	     as the base register of the AND operation in
+	     the new STVX instruction.  */
+	  rtx and_base = XEXP (and_operation, 0);
+	  rtx new_reg = gen_reg_rtx (GET_MODE (and_base));
+	  rtx copy = gen_rtx_SET (new_reg, and_base);
+	  rtx_insn *new_insn = emit_insn_after (copy, and_insn);
+	  set_block_for_insn (new_insn, BLOCK_FOR_INSN (and_insn));
+	  df_insn_rescan (new_insn);
 
-	  XEXP (mem, 0) = gen_rtx_AND (GET_MODE (new_reg), new_reg, and_mask);
+	  XEXP (mem, 0) = gen_rtx_AND (GET_MODE (and_base), new_reg,
+				       XEXP (and_operation, 1));
 	  SET_SRC (body) = src_reg;
 	  INSN_CODE (insn) = -1; /* Force re-recognition.  */
 	  df_insn_rescan (insn);
-
+		  
 	  if (dump_file)
 	    fprintf (dump_file, "stvx opportunity found at %d\n",
 		     INSN_UID (insn));
@@ -2515,9 +2437,6 @@ rs6000_analyze_swaps (function *fun)
 		    insn_entry[uid].is_swappable = 0;
 		  else if (special != SH_NONE)
 		    insn_entry[uid].special_handling = special;
-		  else if (insn_entry[uid].contains_subreg
-			   && has_part_mult (insn))
-		    insn_entry[uid].is_swappable = 0;
 		  else if (insn_entry[uid].contains_subreg)
 		    insn_entry[uid].special_handling = SH_SUBREG;
 		}

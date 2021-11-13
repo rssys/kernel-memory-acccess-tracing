@@ -1,5 +1,4 @@
 /* PR rtl-optimization/25432 */
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
 
 void *malloc (__SIZE_TYPE__);
 void *realloc (void *, __SIZE_TYPE__);

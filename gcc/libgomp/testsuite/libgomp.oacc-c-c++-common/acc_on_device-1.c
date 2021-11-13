@@ -19,8 +19,6 @@ main (int argc, char *argv[])
       abort ();
     if (acc_on_device (acc_device_nvidia))
       abort ();
-    if (acc_on_device (acc_device_radeon))
-      abort ();
   }
 
 
@@ -35,8 +33,6 @@ main (int argc, char *argv[])
     if (acc_on_device (acc_device_not_host))
       abort ();
     if (acc_on_device (acc_device_nvidia))
-      abort ();
-    if (acc_on_device (acc_device_radeon))
       abort ();
   }
 
@@ -58,13 +54,6 @@ main (int argc, char *argv[])
       abort ();
 #else
     if (acc_on_device (acc_device_nvidia))
-      abort ();
-#endif
-#if ACC_DEVICE_TYPE_radeon
-    if (!acc_on_device (acc_device_radeon))
-      abort ();
-#else
-    if (acc_on_device (acc_device_radeon))
       abort ();
 #endif
   }

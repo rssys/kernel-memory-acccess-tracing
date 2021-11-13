@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2021 Free Software Foundation, Inc.
+// Copyright (C) 2005-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -51,7 +51,6 @@ namespace __gnu_pbds
   /**
    *  @defgroup heap-based Heap-Based
    *  @ingroup containers-pbds
-   *
    *  @{
    */
 
@@ -96,7 +95,8 @@ namespace __gnu_pbds
     typedef typename detail::container_base_dispatch<_Tv, Cmp_Fn, _Alloc,
 						     Tag>::type
  							base_type;
-    typedef detail::rebind_traits<_Alloc, _Tv>		__rebind_va;
+    typedef typename _Alloc::template rebind<_Tv>   	__rebind_v;
+    typedef typename __rebind_v::other			__rebind_va;
 
  public:
     typedef typename __rebind_va::reference 		reference;
@@ -152,6 +152,6 @@ namespace __gnu_pbds
     swap(priority_queue& other)
     { base_type::swap(other); }
   };
- ///@} heap-based
 } // namespace __gnu_pbds
+ //@} heap-based
 #endif

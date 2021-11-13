@@ -3,25 +3,21 @@
 
 int test_uninit_1 (void)
 {
-  int result_1;     /* { dg-message "declared here" } */
-  return result_1;  /* { dg-warning "uninitialized" } */
-  /* { dg-begin-multiline-output "" }
-   return result_1;
-          ^~~~~~~~
-   int result_1;
-       ^~~~~~~~
+  int result;
+  return result;  /* { dg-warning "uninitialized" } */
+/* { dg-begin-multiline-output "" }
+   return result;
+          ^~~~~~
    { dg-end-multiline-output "" } */
 }
 
 int test_uninit_2 (void)
 {
-  int result_2;     /* { dg-message "declared here" } */
-  result_2 += 3;    /* { dg-warning "uninitialized" } */
-  /* { dg-begin-multiline-output "" }
-   result_2 += 3;
-   ~~~~~~~~~^~~~
-   int result_2;
-       ^~~~~~~~
+  int result;
+  result += 3; /* { dg-warning "uninitialized" } */
+/* { dg-begin-multiline-output "" }
+   result += 3;
+   ~~~~~~~^~~~
    { dg-end-multiline-output "" } */
-  return result_2;
+  return result;
 }

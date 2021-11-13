@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build dragonfly || freebsd || linux
 // +build dragonfly freebsd linux
 
 package runtime
@@ -13,15 +12,16 @@ import (
 )
 
 // For gccgo, while we still have C runtime code, use go:linkname to
-// export some functions.
+// rename some functions to themselves, so that the compiler will
+// export them.
 //
-//go:linkname lock
-//go:linkname unlock
-//go:linkname noteclear
-//go:linkname notewakeup
-//go:linkname notesleep
-//go:linkname notetsleep
-//go:linkname notetsleepg
+//go:linkname lock runtime.lock
+//go:linkname unlock runtime.unlock
+//go:linkname noteclear runtime.noteclear
+//go:linkname notewakeup runtime.notewakeup
+//go:linkname notesleep runtime.notesleep
+//go:linkname notetsleep runtime.notetsleep
+//go:linkname notetsleepg runtime.notetsleepg
 
 // This implementation depends on OS-specific implementations of
 //
@@ -56,10 +56,6 @@ func key32(p *uintptr) *uint32 {
 }
 
 func lock(l *mutex) {
-	lockWithRank(l, getLockRank(l))
-}
-
-func lock2(l *mutex) {
 	gp := getg()
 
 	if gp.m.locks < 0 {
@@ -120,10 +116,6 @@ func lock2(l *mutex) {
 }
 
 func unlock(l *mutex) {
-	unlockWithRank(l)
-}
-
-func unlock2(l *mutex) {
 	v := atomic.Xchg(key32(&l.key), mutex_unlocked)
 	if v == mutex_unlocked {
 		throw("unlock of unlocked lock")
@@ -250,8 +242,8 @@ func notetsleepg(n *note, ns int64) bool {
 	return ok
 }
 
-func beforeIdle(int64, int64) (*g, bool) {
-	return nil, false
+func beforeIdle() bool {
+	return false
 }
 
 func checkTimeouts() {}

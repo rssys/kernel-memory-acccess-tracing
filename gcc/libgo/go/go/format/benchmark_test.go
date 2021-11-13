@@ -12,7 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
-	"os"
+	"io/ioutil"
 	"testing"
 )
 
@@ -67,7 +67,7 @@ func BenchmarkFormat(b *testing.B) {
 
 		if *debug {
 			filename := t.name + ".src"
-			err := os.WriteFile(filename, data, 0660)
+			err := ioutil.WriteFile(filename, data, 0660)
 			if err != nil {
 				b.Fatalf("couldn't write %s: %v", filename, err)
 			}

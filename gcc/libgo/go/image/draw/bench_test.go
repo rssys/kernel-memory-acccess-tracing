@@ -236,11 +236,7 @@ func BenchmarkRGBA(b *testing.B) {
 	bench(b, color.RGBAModel, color.RGBA64Model, nil, Src)
 }
 
-func BenchmarkPalettedFill(b *testing.B) {
-	bench(b, palette, nil, nil, Src)
-}
-
-func BenchmarkPalettedRGBA(b *testing.B) {
+func BenchmarkPaletted(b *testing.B) {
 	bench(b, palette, color.RGBAModel, nil, Src)
 }
 

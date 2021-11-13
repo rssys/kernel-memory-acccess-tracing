@@ -1,4 +1,4 @@
-#  Copyright (C) 2003-2021 Free Software Foundation, Inc.
+#  Copyright (C) 2003-2019 Free Software Foundation, Inc.
 #  Contributed by Kelley Cook, June 2004.
 #  Original code from Neil Booth, May 2003.
 #
@@ -72,16 +72,6 @@ function opt_args(name, flags)
 	return flags
 }
 
-# If FLAGS contains a "NAME(...argument...)" flag, return the value
-# of the argument.  Print error message otherwise.
-function opt_args_non_empty(name, flags, description)
-{
-	args = opt_args(name, flags)
-	if (args == "")
-		print "#error Empty option argument '" name "' during parsing of: " flags
-	return args
-}
-
 # Return the Nth comma-separated element of S.  Return the empty string
 # if S does not contain N elements.
 function nth_arg(n, s)
@@ -115,8 +105,7 @@ function switch_flags (flags)
 	  test_flag("Undocumented", flags,  " | CL_UNDOCUMENTED") \
 	  test_flag("NoDWARFRecord", flags,  " | CL_NO_DWARF_RECORD") \
 	  test_flag("Warning", flags,  " | CL_WARNING") \
-	  test_flag("(Optimization|PerFunction)", flags,  " | CL_OPTIMIZATION") \
-	  test_flag("Param", flags,  " | CL_PARAMS")
+	  test_flag("(Optimization|PerFunction)", flags,  " | CL_OPTIMIZATION")
 	sub( "^0 \\| ", "", result )
 	return result
 }
@@ -166,10 +155,8 @@ function switch_bit_fields (flags)
 	  uinteger_flag \
 	  hwi_flag \
 	  flag_init("ToLower", flags) \
+	  flag_init("Report", flags) \
 	  byte_size_flag
-
-	if (flag_set_p("Report", flags))
-	    print "#error Report option property is dropped"
 
 	sub(", $", "", result)
 	return result
@@ -356,16 +343,13 @@ function search_var_name(name, opt_numbers, opts, flags, n_opts)
     return ""
 }
 
-function integer_range_info(range_option, init, option, uinteger_used)
+function integer_range_info(range_option, init, option)
 {
     if (range_option != "") {
-	ival = init + 0;
-	start = nth_arg(0, range_option) + 0;
-	end = nth_arg(1, range_option) + 0;
-	if (init != "" && init != "-1" && (ival < start || ival > end))
+	start = nth_arg(0, range_option);
+	end = nth_arg(1, range_option);
+	if (init != "" && init != "-1" && (init < start || init > end))
 	  print "#error initial value " init " of '" option "' must be in range [" start "," end "]"
-	if (uinteger_used && start < 0)
-	  print "#error '" option"': negative IntegerRange (" start ", " end ") cannot be combined with UInteger"
 	return start ", " end
     }
     else

@@ -7,7 +7,7 @@
 --                                 B o d y                                  --
 --                                                                          --
 --               Copyright (C) 1986 by University of Toronto.               --
---                      Copyright (C) 1999-2021, AdaCore                    --
+--                      Copyright (C) 1999-2019, AdaCore                    --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1460,9 +1460,19 @@ package body System.Regpat is
                  and then Expression (Parse_Pos + 1) /= ']'
                then
                   Parse_Pos := Parse_Pos + 1;
-                  In_Range := True;
+
+                  --  Do we have a range like '\d-a' and '[:space:]-a'
+                  --  which is not a real range
+
+                  if Named_Class /= ANYOF_NONE then
+                     Set_In_Class (Bitmap, '-');
+                  else
+                     In_Range := True;
+                  end if;
+
                else
                   Set_In_Class (Bitmap, Value);
+
                end if;
 
             --  Else in a character range
@@ -1548,8 +1558,7 @@ package body System.Regpat is
          Has_Special_Operator : Boolean := False;
 
       begin
-         Expr_Flags := Worst_Expression;  --  Ensure Expr_Flags is initialized
-         Parse_Pos  := Parse_Pos - 1;     --  Look at current character
+         Parse_Pos := Parse_Pos - 1;      --  Look at current character
 
          IP :=
            Emit_Node
@@ -1675,8 +1684,11 @@ package body System.Regpat is
       begin
          Parse_Atom (New_Flags, IP);
 
-         if IP = 0
-           or else Parse_Pos > Parse_End
+         if IP = 0 then
+            return;
+         end if;
+
+         if Parse_Pos > Parse_End
            or else not Is_Mult (Parse_Pos)
          then
             Expr_Flags := New_Flags;
@@ -3265,13 +3277,13 @@ package body System.Regpat is
         (IP  : Pointer;
          Max : Natural := Natural'Last) return Natural
       is
-         Scan   : Natural := Input_Pos;
-         Last   : Natural;
-         Op     : constant Opcode :=
-           Opcode'Val (Character'Pos (Program (IP)));
-         Count  : Natural;
-         C      : Character;
-         Bitmap : Character_Class;
+         Scan  : Natural := Input_Pos;
+         Last  : Natural;
+         Op    : constant Opcode := Opcode'Val (Character'Pos (Program (IP)));
+         Count : Natural;
+         C     : Character;
+         Is_First : Boolean := True;
+         Bitmap   : Character_Class;
 
       begin
          if Max = Natural'Last or else Scan + Max - 1 > Last_In_Data then
@@ -3314,7 +3326,10 @@ package body System.Regpat is
                end loop;
 
             when ANYOF =>
-               Bitmap_Operand (Program, IP, Bitmap);
+               if Is_First then
+                  Bitmap_Operand (Program, IP, Bitmap);
+                  Is_First := False;
+               end if;
 
                while Scan <= Last
                  and then Get_From_Class (Bitmap, Data (Scan))
@@ -3463,58 +3478,18 @@ package body System.Regpat is
          end;
 
       elsif Self.First /= ASCII.NUL then
-         --  We know what char (modulo casing) it must start with
+         --  We know what char it must start with
 
-         if (Self.Flags and Case_Insensitive) = 0
-           or else Self.First not in 'a' .. 'z'
-         then
-            declare
-               Next_Try : Natural := Index (First_In_Data, Self.First);
-            begin
-               while Next_Try /= 0 loop
-                  Matched := Try (Next_Try);
-                  exit when Matched;
-                  Next_Try := Index (Next_Try + 1, Self.First);
-               end loop;
-            end;
-         else
-            declare
-               Uc_First : constant Character := To_Upper (Self.First);
+         declare
+            Next_Try : Natural := Index (First_In_Data, Self.First);
 
-               function Case_Insensitive_Index
-                 (Start : Positive) return Natural;
-               --  Search for both Self.First and To_Upper (Self.First).
-               --  If both are nonzero, return the smaller one; if exactly
-               --  one is nonzero, return it; if both are zero, return zero.
-
-               ---------------------------
-               -- Case_Insenstive_Index --
-               ---------------------------
-
-               function Case_Insensitive_Index
-                 (Start : Positive) return Natural
-               is
-                  Lc_Index : constant Natural := Index (Start, Self.First);
-                  Uc_Index : constant Natural := Index (Start, Uc_First);
-               begin
-                  if Lc_Index = 0 then
-                     return Uc_Index;
-                  elsif Uc_Index = 0 then
-                     return Lc_Index;
-                  else
-                     return Natural'Min (Lc_Index, Uc_Index);
-                  end if;
-               end Case_Insensitive_Index;
-
-               Next_Try : Natural := Case_Insensitive_Index (First_In_Data);
-            begin
-               while Next_Try /= 0 loop
-                  Matched := Try (Next_Try);
-                  exit when Matched;
-                  Next_Try := Case_Insensitive_Index (Next_Try + 1);
-               end loop;
-            end;
-         end if;
+         begin
+            while Next_Try /= 0 loop
+               Matched := Try (Next_Try);
+               exit when Matched;
+               Next_Try := Index (Next_Try + 1, Self.First);
+            end loop;
+         end;
 
       else
          --  Messy cases: try all locations (including for the empty string)
@@ -3673,9 +3648,6 @@ package body System.Regpat is
 
       if Program (Scan) = EXACT then
          Self.First := Program (String_Operand (Scan));
-
-      elsif Program (Scan) = EXACTF then
-         Self.First := To_Lower (Program (String_Operand (Scan)));
 
       elsif Program (Scan) = BOL
         or else Program (Scan) = SBOL

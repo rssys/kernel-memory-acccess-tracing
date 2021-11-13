@@ -1,6 +1,5 @@
 /* PR libgomp/61200 */
 /* { dg-do run } */
-/* { dg-additional-options "-Wno-deprecated-declarations" } */
 
 #include <omp.h>
 #include <stdlib.h>

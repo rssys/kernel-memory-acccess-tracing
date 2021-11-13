@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -43,7 +43,7 @@
 private generic
    type Num is digits <>;
 
-package Ada.Text_IO.Float_IO with SPARK_Mode => On is
+package Ada.Text_IO.Float_IO is
 
    Default_Fore : Field := 2;
    Default_Aft  : Field := Num'Digits - 1;
@@ -52,58 +52,35 @@ package Ada.Text_IO.Float_IO with SPARK_Mode => On is
    procedure Get
      (File  : File_Type;
       Item  : out Num;
-      Width : Field := 0)
-   with
-     Pre    => Is_Open (File) and then Mode (File) = In_File,
-     Global => (In_Out => File_System);
+      Width : Field := 0);
 
    procedure Get
      (Item  : out Num;
-      Width : Field := 0)
-   with
-     Post   =>
-       Line_Length'Old = Line_Length
-       and Page_Length'Old = Page_Length,
-     Global => (In_Out => File_System);
+      Width : Field := 0);
 
    procedure Put
      (File : File_Type;
       Item : Num;
       Fore : Field := Default_Fore;
       Aft  : Field := Default_Aft;
-      Exp  : Field := Default_Exp)
-   with
-     Pre    => Is_Open (File) and then Mode (File) /= In_File,
-     Post   =>
-       Line_Length (File)'Old = Line_Length (File)
-       and Page_Length (File)'Old = Page_Length (File),
-     Global => (In_Out => File_System);
+      Exp  : Field := Default_Exp);
 
    procedure Put
      (Item : Num;
       Fore : Field := Default_Fore;
       Aft  : Field := Default_Aft;
-      Exp  : Field := Default_Exp)
-   with
-     Post   =>
-       Line_Length'Old = Line_Length
-       and Page_Length'Old = Page_Length,
-     Global => (In_Out => File_System);
+      Exp  : Field := Default_Exp);
 
    procedure Get
      (From : String;
       Item : out Num;
-      Last : out Positive)
-   with
-     Global => null;
+      Last : out Positive);
 
    procedure Put
      (To   : out String;
       Item : Num;
       Aft  : Field := Default_Aft;
-      Exp  : Field := Default_Exp)
-   with
-     Global => null;
+      Exp  : Field := Default_Exp);
 
 private
    pragma Inline (Get);

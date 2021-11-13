@@ -1,5 +1,4 @@
 /* PR tree-optimization/54713 */
-/* { dg-skip-if "exceeds eBPF stack limit" { bpf-*-* } } */
 
 #ifndef N
 #define N 8

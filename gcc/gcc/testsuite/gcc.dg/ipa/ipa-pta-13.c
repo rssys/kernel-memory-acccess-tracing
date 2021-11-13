@@ -1,5 +1,5 @@
 /* { dg-do link } */
-/* { dg-options "-O2 -fipa-pta -fdump-ipa-pta2-details -fdump-tree-fre3 -fno-ipa-icf -fno-ipa-modref" } */
+/* { dg-options "-O2 -fipa-pta -fdump-ipa-pta2-details -fdump-tree-fre3 -fno-ipa-icf" } */
 
 static int x, y;
 

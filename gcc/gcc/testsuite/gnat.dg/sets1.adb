@@ -7,7 +7,7 @@ with GNAT.Sets;   use GNAT.Sets;
 procedure Sets1 is
    function Hash (Key : Integer) return Bucket_Range_Type;
 
-   package Integer_Sets is new Membership_Sets
+   package Integer_Sets is new Membership_Set
      (Element_Type => Integer,
       "="          => "=",
       Hash         => Hash);
@@ -15,32 +15,28 @@ procedure Sets1 is
 
    procedure Check_Empty
      (Caller    : String;
-      S         : Membership_Set;
+      S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer);
    --  Ensure that none of the elements in the range Low_Elem .. High_Elem are
    --  present in set S, and that the set's length is 0.
 
-   procedure Check_Locked_Mutations
-     (Caller : String;
-      S      : in out Membership_Set);
+   procedure Check_Locked_Mutations (Caller : String; S : in out Instance);
    --  Ensure that all mutation operations of set S are locked
 
    procedure Check_Present
      (Caller    : String;
-      S         : Membership_Set;
+      S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer);
    --  Ensure that all elements in the range Low_Elem .. High_Elem are present
    --  in set S.
 
-   procedure Check_Unlocked_Mutations
-     (Caller : String;
-      S      : in out Membership_Set);
+   procedure Check_Unlocked_Mutations (Caller : String; S : in out Instance);
    --  Ensure that all mutation operations of set S are unlocked
 
    procedure Populate
-     (S         : Membership_Set;
+     (S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer);
    --  Add elements in the range Low_Elem .. High_Elem in set S
@@ -90,7 +86,7 @@ procedure Sets1 is
 
    procedure Check_Empty
      (Caller    : String;
-      S         : Membership_Set;
+      S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer)
    is
@@ -114,10 +110,7 @@ procedure Sets1 is
    -- Check_Locked_Mutations --
    ----------------------------
 
-   procedure Check_Locked_Mutations
-     (Caller : String;
-      S      : in out Membership_Set)
-   is
+   procedure Check_Locked_Mutations (Caller : String; S : in out Instance) is
    begin
       begin
          Delete (S, 1);
@@ -156,7 +149,7 @@ procedure Sets1 is
 
    procedure Check_Present
      (Caller    : String;
-      S         : Membership_Set;
+      S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer)
    is
@@ -196,10 +189,7 @@ procedure Sets1 is
    -- Check_Unlocked_Mutations --
    ------------------------------
 
-   procedure Check_Unlocked_Mutations
-     (Caller : String;
-      S      : in out Membership_Set)
-   is
+   procedure Check_Unlocked_Mutations (Caller : String; S : in out Instance) is
    begin
       Delete (S, 1);
       Insert (S, 1);
@@ -219,7 +209,7 @@ procedure Sets1 is
    --------------
 
    procedure Populate
-     (S         : Membership_Set;
+     (S         : Instance;
       Low_Elem  : Integer;
       High_Elem : Integer)
    is
@@ -241,7 +231,7 @@ procedure Sets1 is
       Low_Bogus  : constant Integer := Low_Elem  - 1;
       High_Bogus : constant Integer := High_Elem + 1;
 
-      S : Membership_Set := Create (Init_Size);
+      S : Instance := Create (Init_Size);
 
    begin
       Populate (S, Low_Elem, High_Elem);
@@ -279,7 +269,7 @@ procedure Sets1 is
       Count : Natural;
       Flag  : Boolean;
       Iter  : Iterator;
-      S     : Membership_Set;
+      S     : Instance;
 
    begin
       --  Ensure that every routine defined in the API fails on a set which
@@ -356,7 +346,7 @@ procedure Sets1 is
       Init_Size : Positive)
    is
       Iter : Iterator;
-      S    : Membership_Set := Create (Init_Size);
+      S    : Instance := Create (Init_Size);
 
    begin
       Populate (S, Low_Elem, High_Elem);
@@ -401,7 +391,7 @@ procedure Sets1 is
    -------------------
 
    procedure Test_Is_Empty is
-      S : Membership_Set := Create (8);
+      S : Instance := Create (8);
 
    begin
       if not Is_Empty (S) then
@@ -431,7 +421,7 @@ procedure Sets1 is
       Elem   : Integer;
       Iter_1 : Iterator;
       Iter_2 : Iterator;
-      S      : Membership_Set := Create (5);
+      S      : Instance := Create (5);
 
    begin
       Populate (S, 1, 5);
@@ -492,7 +482,7 @@ procedure Sets1 is
    procedure Test_Iterate_Empty is
       Elem : Integer;
       Iter : Iterator;
-      S    : Membership_Set := Create (5);
+      S    : Instance := Create (5);
 
    begin
       --  Obtain an iterator. This action must lock all mutation operations of
@@ -536,7 +526,7 @@ procedure Sets1 is
    is
       Elem : Integer;
       Iter : Iterator;
-      S    : Membership_Set := Create (Init_Size);
+      S    : Instance := Create (Init_Size);
 
    begin
       Populate (S, Low_Elem, High_Elem);
@@ -583,7 +573,7 @@ procedure Sets1 is
    ---------------
 
    procedure Test_Size is
-      S   : Membership_Set := Create (6);
+      S   : Instance := Create (6);
       Siz : Natural;
 
    begin

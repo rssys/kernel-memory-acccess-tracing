@@ -59,7 +59,7 @@ func TestMutexClose(t *testing.T) {
 }
 
 func TestMutexCloseUnblock(t *testing.T) {
-	c := make(chan bool, 4)
+	c := make(chan bool)
 	var mu FDMutex
 	mu.RWLock(true)
 	for i := 0; i < 4; i++ {
@@ -151,15 +151,12 @@ func TestMutexStress(t *testing.T) {
 		N = 1e4
 	}
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(P))
-	done := make(chan bool, P)
+	done := make(chan bool)
 	var mu FDMutex
 	var readState [2]uint64
 	var writeState [2]uint64
 	for p := 0; p < P; p++ {
 		go func() {
-			defer func() {
-				done <- !t.Failed()
-			}()
 			r := rand.New(rand.NewSource(rand.Int63()))
 			for i := 0; i < N; i++ {
 				switch r.Intn(3) {
@@ -206,12 +203,11 @@ func TestMutexStress(t *testing.T) {
 					}
 				}
 			}
+			done <- true
 		}()
 	}
 	for p := 0; p < P; p++ {
-		if !<-done {
-			t.FailNow()
-		}
+		<-done
 	}
 	if !mu.IncrefAndClose() {
 		t.Fatal("broken")

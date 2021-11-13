@@ -1,6 +1,6 @@
 // Numeric functions implementation -*- C++ -*-
 
-// Copyright (C) 2001-2021 Free Software Foundation, Inc.
+// Copyright (C) 2001-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -83,7 +83,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  @ingroup numeric_ops
    */
   template<typename _ForwardIterator, typename _Tp>
-    _GLIBCXX20_CONSTEXPR
     void
     iota(_ForwardIterator __first, _ForwardIterator __last, _Tp __value)
     {
@@ -129,7 +128,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final sum.
    */
   template<typename _InputIterator, typename _Tp>
-    _GLIBCXX20_CONSTEXPR
     inline _Tp
     accumulate(_InputIterator __first, _InputIterator __last, _Tp __init)
     {
@@ -156,7 +154,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final sum.
    */
   template<typename _InputIterator, typename _Tp, typename _BinaryOperation>
-    _GLIBCXX20_CONSTEXPR
     inline _Tp
     accumulate(_InputIterator __first, _InputIterator __last, _Tp __init,
 	       _BinaryOperation __binary_op)
@@ -185,7 +182,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final inner product.
    */
   template<typename _InputIterator1, typename _InputIterator2, typename _Tp>
-    _GLIBCXX20_CONSTEXPR
     inline _Tp
     inner_product(_InputIterator1 __first1, _InputIterator1 __last1,
 		  _InputIterator2 __first2, _Tp __init)
@@ -218,7 +214,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    */
   template<typename _InputIterator1, typename _InputIterator2, typename _Tp,
 	   typename _BinaryOperation1, typename _BinaryOperation2>
-    _GLIBCXX20_CONSTEXPR
     inline _Tp
     inner_product(_InputIterator1 __first1, _InputIterator1 __last1,
 		  _InputIterator2 __first2, _Tp __init,
@@ -251,7 +246,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  Iterator pointing just beyond the values written to __result.
    */
   template<typename _InputIterator, typename _OutputIterator>
-    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     partial_sum(_InputIterator __first, _InputIterator __last,
 		_OutputIterator __result)
@@ -293,7 +287,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    */
   template<typename _InputIterator, typename _OutputIterator,
 	   typename _BinaryOperation>
-    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     partial_sum(_InputIterator __first, _InputIterator __last,
 		_OutputIterator __result, _BinaryOperation __binary_op)
@@ -333,7 +326,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  DR 539. partial_sum and adjacent_difference should mention requirements
    */
   template<typename _InputIterator, typename _OutputIterator>
-    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     adjacent_difference(_InputIterator __first,
 			_InputIterator __last, _OutputIterator __result)
@@ -377,7 +369,6 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    */
   template<typename _InputIterator, typename _OutputIterator,
 	   typename _BinaryOperation>
-    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     adjacent_difference(_InputIterator __first, _InputIterator __last,
 			_OutputIterator __result, _BinaryOperation __binary_op)
@@ -403,7 +394,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
       return ++__result;
     }
 
-  /// @} group numeric_ops
+  // @} group numeric_ops
 
 #undef _GLIBCXX_MOVE_IF_20
 

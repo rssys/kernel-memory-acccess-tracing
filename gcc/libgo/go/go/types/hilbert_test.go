@@ -12,7 +12,7 @@ import (
 	"go/importer"
 	"go/parser"
 	"go/token"
-	"os"
+	"io/ioutil"
 	"testing"
 
 	. "go/types"
@@ -29,7 +29,7 @@ func TestHilbert(t *testing.T) {
 	// generate source
 	src := program(*H, *out)
 	if *out != "" {
-		os.WriteFile(*out, src, 0666)
+		ioutil.WriteFile(*out, src, 0666)
 		return
 	}
 

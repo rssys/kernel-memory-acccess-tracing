@@ -1,5 +1,4 @@
 /* { dg-require-effective-target size32plus } */
-/* { dg-additional-options "-fno-thread-jumps" } */
 #define NMAX 3000
 #define MEASURE_TIME 1
 
@@ -20,4 +19,4 @@ void dsyrk(int N)
 #pragma endscop
 }
 
-/* { dg-final { scan-tree-dump-times "number of SCoPs: 1" 1 "graphite" } } */
+/* { dg-final { scan-tree-dump-times "number of SCoPs: 1" 1 "graphite" { xfail *-*-* } } } */

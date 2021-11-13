@@ -7,12 +7,11 @@
 // Message-ID: <m0nof3E-0021ifC@jts.com
 class t1 {
 protected:
-    int a; 
+    int a; // { dg-message "" } protected
 };
 
 
-class t2 : private t1 // { dg-message "" } protected
-{ 
+class t2 : private t1 {
 public:
     int b;
 };

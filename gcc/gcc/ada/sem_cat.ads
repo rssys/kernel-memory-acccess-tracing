@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -27,7 +27,7 @@
 --  the semantic restrictions required for the categorization pragmas:
 --
 --    Preelaborate
---    Pure
+--    Pure,
 --    Remote_Call_Interface
 --    Remote_Types
 --    Shared_Passive
@@ -120,8 +120,8 @@ package Sem_Cat is
    --  Checks that Storage_Pool and Storage_Size attribute references are
    --  not applied to remote access-to-class-wide types. Also checks that the
    --  expected type for an allocator cannot be a remote access-to-class-wide
-   --  type. Also checks that a remote access-to-class-wide type cannot be an
-   --  actual parameter for a generic formal access type. RM E.2.2(17).
+   --  type. ALso checks that a remote access-to-class-wide type cannot be an
+   --  actual parameter for a generic formal access type. RM E.2.3(22).
 
    procedure Validate_RT_RAT_Component (N : Node_Id);
    --  Given N, the package library unit declaration node, we should check

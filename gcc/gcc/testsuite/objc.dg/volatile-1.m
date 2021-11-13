@@ -1,8 +1,7 @@
 /* Test for proper handling of volatile parameters in ObjC methods.  */
-/* Contributed by Ziemowit Laski  <zlaski@apple.com>  */
 /* { dg-do compile } */
 /* { dg-options "-O2" } */
-/* { dg-additional-options "-Wno-objc-root-class" } */
+/* Contributed by Ziemowit Laski  <zlaski@apple.com>  */
 
 @interface Test
 -(void) test2: (volatile int) a;

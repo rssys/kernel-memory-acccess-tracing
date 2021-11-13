@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2021 Free Software Foundation, Inc.
+// Copyright (C) 2018-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,7 +19,6 @@
 // { dg-do compile { target c++2a } }
 
 #include <bit>
-#include <limits>
 
 template<typename UInt>
 constexpr bool
@@ -104,7 +103,7 @@ static_assert( test( X{} ).did_not_match() );
 enum E : unsigned { e };
 static_assert( test( e ).did_not_match() );
 
-#if !defined(__STRICT_ANSI__) && defined __SIZEOF_INT128__
+#if !defined(__STRICT_ANSI__) && defined _GLIBCXX_USE_INT128
 static_assert( test( (unsigned __int128)0 ) );
 static_assert( test( (__int128)0 ).did_not_match() );
 #endif
@@ -119,10 +118,6 @@ static_assert( test( (__GLIBCXX_TYPE_INT_N_1)0 ).did_not_match() );
 #if defined(__GLIBCXX_TYPE_INT_N_2)
 static_assert( test( (unsigned __GLIBCXX_TYPE_INT_N_2)0 ) );
 static_assert( test( (__GLIBCXX_TYPE_INT_N_2)0 ).did_not_match() );
-#endif
-#if defined(__GLIBCXX_TYPE_INT_N_3)
-static_assert( test( (unsigned __GLIBCXX_TYPE_INT_N_3)0 ) );
-static_assert( test( (__GLIBCXX_TYPE_INT_N_3)0 ).did_not_match() );
 #endif
 
 #include <cstddef>

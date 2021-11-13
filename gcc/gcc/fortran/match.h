@@ -1,5 +1,5 @@
 /* All matcher functions.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
    Contributed by Steven Bosscher
 
 This file is part of GCC.
@@ -47,8 +47,11 @@ match gfc_match_space (void);
 match gfc_match_eos (void);
 match gfc_match_small_literal_int (int *, int *);
 match gfc_match_st_label (gfc_st_label **);
+match gfc_match_label (void);
 match gfc_match_small_int (int *);
+match gfc_match_small_int_expr (int *, gfc_expr **);
 match gfc_match_name (char *);
+match gfc_match_name_C (const char **buffer);
 match gfc_match_symbol (gfc_symbol **, int);
 match gfc_match_sym_tree (gfc_symtree **, int);
 match gfc_match_intrinsic_op (gfc_intrinsic_op *);
@@ -100,9 +103,11 @@ match gfc_match_call (void);
 
 /* We want to use this function to check for a common-block-name
    that can exist in a bind statement, so removed the "static"
-   declaration of the function in match.c. */
+   declaration of the function in match.c.
  
-match gfc_match_common_name (char *name);
+   TODO: should probably rename this now that it'll be globally seen to
+   gfc_match_common_name.  */
+match match_common_name (char *name);
 
 match gfc_match_common (void);
 match gfc_match_block_data (void);
@@ -116,8 +121,6 @@ match gfc_match_select (void);
 match gfc_match_select_type (void);
 match gfc_match_type_is (void);
 match gfc_match_class_is (void);
-match gfc_match_select_rank (void);
-match gfc_match_rank_is (void);
 match gfc_match_where (gfc_statement *);
 match gfc_match_elsewhere (void);
 match gfc_match_forall (gfc_statement *);
@@ -141,14 +144,12 @@ match gfc_match_oacc_kernels (void);
 match gfc_match_oacc_kernels_loop (void);
 match gfc_match_oacc_parallel (void);
 match gfc_match_oacc_parallel_loop (void);
-match gfc_match_oacc_serial (void);
-match gfc_match_oacc_serial_loop (void);
 match gfc_match_oacc_enter_data (void);
 match gfc_match_oacc_exit_data (void);
 match gfc_match_oacc_routine (void);
 
 /* OpenMP directive matchers.  */
-match gfc_match_omp_eos_error (void);
+match gfc_match_omp_eos (void);
 match gfc_match_omp_atomic (void);
 match gfc_match_omp_barrier (void);
 match gfc_match_omp_cancel (void);
@@ -157,41 +158,21 @@ match gfc_match_omp_critical (void);
 match gfc_match_omp_declare_reduction (void);
 match gfc_match_omp_declare_simd (void);
 match gfc_match_omp_declare_target (void);
-match gfc_match_omp_declare_variant (void);
-match gfc_match_omp_depobj (void);
 match gfc_match_omp_distribute (void);
 match gfc_match_omp_distribute_parallel_do (void);
 match gfc_match_omp_distribute_parallel_do_simd (void);
 match gfc_match_omp_distribute_simd (void);
 match gfc_match_omp_do (void);
 match gfc_match_omp_do_simd (void);
-match gfc_match_omp_loop (void);
-match gfc_match_omp_error (void);
 match gfc_match_omp_flush (void);
-match gfc_match_omp_masked (void);
-match gfc_match_omp_masked_taskloop (void);
-match gfc_match_omp_masked_taskloop_simd (void);
 match gfc_match_omp_master (void);
-match gfc_match_omp_master_taskloop (void);
-match gfc_match_omp_master_taskloop_simd (void);
-match gfc_match_omp_nothing (void);
 match gfc_match_omp_ordered (void);
 match gfc_match_omp_ordered_depend (void);
 match gfc_match_omp_parallel (void);
 match gfc_match_omp_parallel_do (void);
 match gfc_match_omp_parallel_do_simd (void);
-match gfc_match_omp_parallel_loop (void);
-match gfc_match_omp_parallel_masked (void);
-match gfc_match_omp_parallel_masked_taskloop (void);
-match gfc_match_omp_parallel_masked_taskloop_simd (void);
-match gfc_match_omp_parallel_master (void);
-match gfc_match_omp_parallel_master_taskloop (void);
-match gfc_match_omp_parallel_master_taskloop_simd (void);
 match gfc_match_omp_parallel_sections (void);
 match gfc_match_omp_parallel_workshare (void);
-match gfc_match_omp_requires (void);
-match gfc_match_omp_scope (void);
-match gfc_match_omp_scan (void);
 match gfc_match_omp_sections (void);
 match gfc_match_omp_simd (void);
 match gfc_match_omp_single (void);
@@ -202,14 +183,12 @@ match gfc_match_omp_target_exit_data (void);
 match gfc_match_omp_target_parallel (void);
 match gfc_match_omp_target_parallel_do (void);
 match gfc_match_omp_target_parallel_do_simd (void);
-match gfc_match_omp_target_parallel_loop (void);
 match gfc_match_omp_target_simd (void);
 match gfc_match_omp_target_teams (void);
 match gfc_match_omp_target_teams_distribute (void);
 match gfc_match_omp_target_teams_distribute_parallel_do (void);
 match gfc_match_omp_target_teams_distribute_parallel_do_simd (void);
 match gfc_match_omp_target_teams_distribute_simd (void);
-match gfc_match_omp_target_teams_loop (void);
 match gfc_match_omp_target_update (void);
 match gfc_match_omp_task (void);
 match gfc_match_omp_taskgroup (void);
@@ -222,7 +201,6 @@ match gfc_match_omp_teams_distribute (void);
 match gfc_match_omp_teams_distribute_parallel_do (void);
 match gfc_match_omp_teams_distribute_parallel_do_simd (void);
 match gfc_match_omp_teams_distribute_simd (void);
-match gfc_match_omp_teams_loop (void);
 match gfc_match_omp_threadprivate (void);
 match gfc_match_omp_workshare (void);
 match gfc_match_omp_end_critical (void);
@@ -234,6 +212,7 @@ match gfc_match_omp_end_single (void);
 match gfc_match_data (void);
 match gfc_match_null (gfc_expr **);
 match gfc_match_kind_spec (gfc_typespec *, bool);
+match gfc_match_old_kind_spec (gfc_typespec *);
 match gfc_match_decl_type_spec (gfc_typespec *, int);
 
 match gfc_match_end (gfc_statement *);
@@ -292,8 +271,14 @@ match gfc_match_volatile (void);
 
 /* Fortran 2003 c interop.
    TODO: some of these should be moved to another file rather than decl.c */
+void set_com_block_bind_c (gfc_common_head *, int);
+bool set_verify_bind_c_sym (gfc_symbol *, int);
+bool set_verify_bind_c_com_block (gfc_common_head *, int);
+bool get_bind_c_idents (void);
 match gfc_match_bind_c_stmt (void);
+match gfc_match_suffix (gfc_symbol *, gfc_symbol **);
 match gfc_match_bind_c (gfc_symbol *, bool);
+match gfc_get_type_attr_spec (symbol_attribute *, char*);
 
 /* primary.c.  */
 match gfc_match_structure_constructor (gfc_symbol *, gfc_expr **);

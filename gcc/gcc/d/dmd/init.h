@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2021 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * http://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -11,7 +11,7 @@
 #pragma once
 
 #include "root/root.h"
-#include "ast_node.h"
+
 #include "globals.h"
 #include "arraytypes.h"
 #include "visitor.h"
@@ -21,7 +21,6 @@ class Expression;
 struct Scope;
 class Type;
 class AggregateDeclaration;
-class Initializer;
 class ErrorInitializer;
 class VoidInitializer;
 class StructInitializer;
@@ -30,9 +29,7 @@ class ExpInitializer;
 
 enum NeedInterpret { INITnointerpret, INITinterpret };
 
-Initializer *initializerSemantic(Initializer *init, Scope *sc, Type *t, NeedInterpret needInterpret);
-
-class Initializer : public ASTNode
+class Initializer : public RootObject
 {
 public:
     Loc loc;
@@ -48,7 +45,7 @@ public:
     virtual StructInitializer  *isStructInitializer()  { return NULL; }
     virtual ArrayInitializer   *isArrayInitializer()  { return NULL; }
     virtual ExpInitializer     *isExpInitializer()  { return NULL; }
-    void accept(Visitor *v) { v->visit(this); }
+    virtual void accept(Visitor *v) { v->visit(this); }
 };
 
 class VoidInitializer : public Initializer

@@ -22,67 +22,67 @@ static size_t range (void)
 
 void test_bzero (void)
 {
-  bzero (d, range ());   /* { dg-warning ".__builtin_(bzero|memset). writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  bzero (d, range ());   /* { dg-warning ".__builtin_(bzero|memset). writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 void test_memcpy (void)
 {
-  memcpy (d, s, range ());   /* { dg-warning ".__builtin_memcpy. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  memcpy (d, s, range ());   /* { dg-warning ".__builtin_memcpy. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 void test_memmove (void)
 {
-  memmove (d, d + 1, range ());   /* { dg-warning ".__builtin_memmove. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  memmove (d, d + 1, range ());   /* { dg-warning ".__builtin_memmove. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 void test_mempcpy (void)
 {
-  mempcpy (d, s, range ());   /* { dg-warning ".__builtin_mempcpy. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  mempcpy (d, s, range ());   /* { dg-warning ".__builtin_mempcpy. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 void test_memset (int n)
 {
-  memset (d, n, range ());   /* { dg-warning ".__builtin_memset. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  memset (d, n, range ());   /* { dg-warning ".__builtin_memset. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 void test_strcat (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  strcat (d, s);   /* { dg-warning ".__builtin_strcat. writing between 4 and 5 bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  strcat (d, s);   /* { dg-warning ".__builtin_strcat. writing between 4 and 5 bytes into a region of size 3 overflows the destination" } */
 }
 
 char* test_stpcpy (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  return stpcpy (d, s);   /* { dg-warning ".__builtin_stpcpy. writing between 4 and 5 bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  return stpcpy (d, s);   /* { dg-warning ".__builtin_stpcpy. writing between 4 and 5 bytes into a region of size 3 overflows the destination" } */
 }
 
 char* test_stpncpy (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  return stpncpy (d, s, range ());   /* { dg-warning ".__builtin_stpncpy. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  return stpncpy (d, s, range ());   /* { dg-warning ".__builtin_stpncpy. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 char* test_strcpy (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  return strcpy (d, s);   /* { dg-warning ".__builtin_strcpy. writing between 4 and 5 bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  return strcpy (d, s);   /* { dg-warning ".__builtin_strcpy. writing between 4 and 5 bytes into a region of size 3 overflows the destination" } */
 }
 
 char* test_strncpy (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  return strncpy (d, s, range ());   /* { dg-warning ".__builtin_strncpy. writing 4 or more bytes into a region of size 3 overflows the destination" "pr?????" { xfail { *-*-* } } } */
+  return strncpy (d, s, range ());   /* { dg-warning ".__builtin_strncpy. writing 4 or more bytes into a region of size 3 overflows the destination" } */
 }
 
 char* test_strncat (int i)
 {
   const char *s = i < 0 ? "123" : "4567";
 
-  return strncat (d, s, range ());   /* { dg-warning ".__builtin_strncat. specified bound \\\[4, \[0-9\]+] exceeds destination size 3" "pr?????" { xfail { *-*-* } } } */
+  return strncat (d, s, range ());   /* { dg-warning ".__builtin_strncat. specified bound between 4 and \[0-9\]+" } */
 }

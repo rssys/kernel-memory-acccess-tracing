@@ -1,5 +1,5 @@
 /* Conversion of SESE regions to Polyhedra.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@amd.com>.
 
 This file is part of GCC.
@@ -18,7 +18,7 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_ISL
+#define USES_ISL
 
 #include "config.h"
 
@@ -31,6 +31,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "gimple.h"
 #include "ssa.h"
+#include "params.h"
 #include "fold-const.h"
 #include "gimple-iterator.h"
 #include "gimplify.h"
@@ -46,6 +47,15 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-scalar-evolution.h"
 #include "domwalk.h"
 #include "tree-ssa-propagate.h"
+
+#include <isl/constraint.h>
+#include <isl/set.h>
+#include <isl/map.h>
+#include <isl/union_map.h>
+#include <isl/constraint.h>
+#include <isl/aff.h>
+#include <isl/val.h>
+
 #include "graphite.h"
 
 /* Return an isl identifier for the polyhedral basic block PBB.  */
@@ -418,18 +428,13 @@ static void
 add_param_constraints (scop_p scop, graphite_dim_t p, tree parameter)
 {
   tree type = TREE_TYPE (parameter);
-  value_range r;
   wide_int min, max;
 
   gcc_assert (INTEGRAL_TYPE_P (type) || POINTER_TYPE_P (type));
 
   if (INTEGRAL_TYPE_P (type)
-      && get_range_query (cfun)->range_of_expr (r, parameter)
-      && !r.undefined_p ())
-    {
-      min = r.lower_bound ();
-      max = r.upper_bound ();
-    }
+      && get_range_info (parameter, &min, &max) == VR_RANGE)
+    ;
   else
     {
       min = wi::min_value (TYPE_PRECISION (type), TYPE_SIGN (type));

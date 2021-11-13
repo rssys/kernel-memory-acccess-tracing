@@ -8,7 +8,6 @@ package types
 
 import (
 	"bytes"
-	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/token"
@@ -27,8 +26,6 @@ const (
 	mapindex                     // operand is a map index expression (acts like a variable on lhs, commaok on rhs of an assignment)
 	value                        // operand is a computed value
 	commaok                      // like value, but operand may be used in a comma,ok expression
-	commaerr                     // like commaok, but second value is error, not boolean
-	cgofunc                      // operand is a cgo function
 )
 
 var operandModeString = [...]string{
@@ -41,8 +38,6 @@ var operandModeString = [...]string{
 	mapindex:  "map index expression",
 	value:     "value",
 	commaok:   "comma, ok expression",
-	commaerr:  "comma, error expression",
-	cgofunc:   "cgo function",
 }
 
 // An operand represents an intermediate value during type checking.
@@ -59,10 +54,10 @@ type operand struct {
 	id   builtinId
 }
 
-// Pos returns the position of the expression corresponding to x.
+// pos returns the position of the expression corresponding to x.
 // If x is invalid the position is token.NoPos.
 //
-func (x *operand) Pos() token.Pos {
+func (x *operand) pos() token.Pos {
 	// x.expr may not be set if x is invalid
 	if x.expr == nil {
 		return token.NoPos
@@ -97,12 +92,6 @@ func (x *operand) Pos() token.Pos {
 //
 // commaok    <expr> (<untyped kind> <mode>                    )
 // commaok    <expr> (               <mode>       of type <typ>)
-//
-// commaerr   <expr> (<untyped kind> <mode>                    )
-// commaerr   <expr> (               <mode>       of type <typ>)
-//
-// cgofunc    <expr> (<untyped kind> <mode>                    )
-// cgofunc    <expr> (               <mode>       of type <typ>)
 //
 func operandString(x *operand, qf Qualifier) string {
 	var buf bytes.Buffer
@@ -158,16 +147,7 @@ func operandString(x *operand, qf Qualifier) string {
 	// <typ>
 	if hasType {
 		if x.typ != Typ[Invalid] {
-			var intro string
-			switch {
-			case isGeneric(x.typ):
-				intro = " of generic type "
-			case asTypeParam(x.typ) != nil:
-				intro = " of type parameter type "
-			default:
-				intro = " of type "
-			}
-			buf.WriteString(intro)
+			buf.WriteString(" of type ")
 			WriteType(&buf, x.typ, qf)
 		} else {
 			buf.WriteString(" with invalid type")
@@ -204,15 +184,9 @@ func (x *operand) setConst(tok token.Token, lit string) {
 		unreachable()
 	}
 
-	val := constant.MakeFromLiteral(lit, tok, 0)
-	if val.Kind() == constant.Unknown {
-		x.mode = invalid
-		x.typ = Typ[Invalid]
-		return
-	}
 	x.mode = constant_
 	x.typ = Typ[kind]
-	x.val = val
+	x.val = constant.MakeFromLiteral(lit, tok, 0)
 }
 
 // isNil reports whether x is the nil value.
@@ -220,75 +194,84 @@ func (x *operand) isNil() bool {
 	return x.mode == value && x.typ == Typ[UntypedNil]
 }
 
-// assignableTo reports whether x is assignable to a variable of type T. If the
-// result is false and a non-nil reason is provided, it may be set to a more
-// detailed explanation of the failure (result != ""). The returned error code
-// is only valid if the (first) result is false. The check parameter may be nil
-// if assignableTo is invoked through an exported API call, i.e., when all
-// methods have been type-checked.
-func (x *operand) assignableTo(check *Checker, T Type, reason *string) (bool, errorCode) {
+// TODO(gri) The functions operand.assignableTo, checker.convertUntyped,
+//           checker.representable, and checker.assignment are
+//           overlapping in functionality. Need to simplify and clean up.
+
+// assignableTo reports whether x is assignable to a variable of type T.
+// If the result is false and a non-nil reason is provided, it may be set
+// to a more detailed explanation of the failure (result != "").
+// The check parameter may be nil if assignableTo is invoked through
+// an exported API call, i.e., when all methods have been type-checked.
+func (x *operand) assignableTo(check *Checker, T Type, reason *string) bool {
 	if x.mode == invalid || T == Typ[Invalid] {
-		return true, 0 // avoid spurious errors
+		return true // avoid spurious errors
 	}
 
 	V := x.typ
 
 	// x's type is identical to T
-	if check.identical(V, T) {
-		return true, 0
+	if Identical(V, T) {
+		return true
 	}
 
-	Vu := optype(V)
-	Tu := optype(T)
+	Vu := V.Underlying()
+	Tu := T.Underlying()
 
-	// x is an untyped value representable by a value of type T.
+	// x is an untyped value representable by a value of type T
+	// TODO(gri) This is borrowing from checker.convertUntyped and
+	//           checker.representable. Need to clean up.
 	if isUntyped(Vu) {
-		if t, ok := Tu.(*_Sum); ok {
-			return t.is(func(t Type) bool {
-				// TODO(gri) this could probably be more efficient
-				ok, _ := x.assignableTo(check, t, reason)
-				return ok
-			}), _IncompatibleAssign
+		switch t := Tu.(type) {
+		case *Basic:
+			if x.isNil() && t.kind == UnsafePointer {
+				return true
+			}
+			if x.mode == constant_ {
+				return representableConst(x.val, check, t, nil)
+			}
+			// The result of a comparison is an untyped boolean,
+			// but may not be a constant.
+			if Vb, _ := Vu.(*Basic); Vb != nil {
+				return Vb.kind == UntypedBool && isBoolean(Tu)
+			}
+		case *Interface:
+			return x.isNil() || t.Empty()
+		case *Pointer, *Signature, *Slice, *Map, *Chan:
+			return x.isNil()
 		}
-		newType, _, _ := check.implicitTypeAndValue(x, Tu)
-		return newType != nil, _IncompatibleAssign
 	}
 	// Vu is typed
 
 	// x's type V and T have identical underlying types
 	// and at least one of V or T is not a named type
-	if check.identical(Vu, Tu) && (!isNamed(V) || !isNamed(T)) {
-		return true, 0
+	if Identical(Vu, Tu) && (!isNamed(V) || !isNamed(T)) {
+		return true
 	}
 
 	// T is an interface type and x implements T
 	if Ti, ok := Tu.(*Interface); ok {
-		if m, wrongType := check.missingMethod(V, Ti, true); m != nil /* Implements(V, Ti) */ {
+		if m, wrongType := check.missingMethod(x.typ, Ti, true); m != nil /* Implements(x.typ, Ti) */ {
 			if reason != nil {
-				if wrongType != nil {
-					if check.identical(m.typ, wrongType.typ) {
-						*reason = fmt.Sprintf("missing method %s (%s has pointer receiver)", m.name, m.name)
-					} else {
-						*reason = fmt.Sprintf("wrong type for method %s (have %s, want %s)", m.Name(), wrongType.typ, m.typ)
-					}
-
+				if wrongType {
+					*reason = "wrong type for method " + m.Name()
 				} else {
 					*reason = "missing method " + m.Name()
 				}
 			}
-			return false, _InvalidIfaceAssign
+			return false
 		}
-		return true, 0
+		return true
 	}
 
 	// x is a bidirectional channel value, T is a channel
 	// type, x's type V and T have identical element types,
 	// and at least one of V or T is not a named type
 	if Vc, ok := Vu.(*Chan); ok && Vc.dir == SendRecv {
-		if Tc, ok := Tu.(*Chan); ok && check.identical(Vc.elem, Tc.elem) {
-			return !isNamed(V) || !isNamed(T), _InvalidChanAssign
+		if Tc, ok := Tu.(*Chan); ok && Identical(Vc.elem, Tc.elem) {
+			return !isNamed(V) || !isNamed(T)
 		}
 	}
 
-	return false, _IncompatibleAssign
+	return false
 }

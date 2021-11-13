@@ -1,5 +1,4 @@
 /* PR middle-end/83487 */
-/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
 
 struct __attribute__ ((aligned)) A {};
 struct A a;

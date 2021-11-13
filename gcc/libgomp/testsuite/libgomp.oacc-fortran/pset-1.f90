@@ -9,7 +9,7 @@ program test
   integer, allocatable :: c3(:,:,:)
 
   allocate (a1(5))
-  if (.not.allocated (a1)) STOP 49
+  if (.not.allocated (a1)) STOP 1
 
   a1 = 10
 
@@ -30,7 +30,7 @@ program test
   deallocate(a1)
 
   allocate (a1(0:4))
-  if (.not.allocated (a1)) STOP 50
+  if (.not.allocated (a1)) STOP 2
 
   a1 = 10
 
@@ -51,7 +51,7 @@ program test
   deallocate(a1)
 
   allocate (b2(5,5))
-  if (.not.allocated (b2)) STOP 51
+  if (.not.allocated (b2)) STOP 3
 
   b2 = 11
 
@@ -72,7 +72,7 @@ program test
   deallocate(b2)
 
   allocate (b2(0:4,0:4))
-  if (.not.allocated (b2)) STOP 52
+  if (.not.allocated (b2)) STOP 4
 
   b2 = 11
 
@@ -93,7 +93,7 @@ program test
   deallocate(b2)
 
   allocate (c3(5,5,5))
-  if (.not.allocated (c3)) STOP 53
+  if (.not.allocated (c3)) STOP 5
 
   c3 = 12
 
@@ -114,7 +114,7 @@ program test
   deallocate(c3)
 
   allocate (c3(0:4,0:4,0:4))
-  if (.not.allocated (c3)) STOP 54
+  if (.not.allocated (c3)) STOP 6
 
   c3 = 12
 
@@ -135,13 +135,13 @@ program test
   deallocate(c3)
 
   allocate (a1(5))
-  if (.not.allocated (a1)) STOP 55
+  if (.not.allocated (a1)) STOP 7
 
   allocate (b1(5))
-  if (.not.allocated (b1)) STOP 56
+  if (.not.allocated (b1)) STOP 8
 
   allocate (c1(5))
-  if (.not.allocated (c1)) STOP 57
+  if (.not.allocated (c1)) STOP 9
 
   a1 = 10
   b1 = 3
@@ -172,13 +172,13 @@ program test
   deallocate(c1)
 
   allocate (a1(0:4))
-  if (.not.allocated (a1)) STOP 58
+  if (.not.allocated (a1)) STOP 10
 
   allocate (b1(0:4))
-  if (.not.allocated (b1)) STOP 59
+  if (.not.allocated (b1)) STOP 11
 
   allocate (c1(0:4))
-  if (.not.allocated (c1)) STOP 60
+  if (.not.allocated (c1)) STOP 12
 
   a1 = 10
   b1 = 3
@@ -209,7 +209,7 @@ program test
   deallocate(c1)
 
   allocate (a1(5))
-  if (.not.allocated (a1)) STOP 61
+  if (.not.allocated (a1)) STOP 13
 
   a1 = 10
 

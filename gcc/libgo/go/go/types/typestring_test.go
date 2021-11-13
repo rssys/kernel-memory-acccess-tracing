@@ -96,10 +96,6 @@ var independentTestTypes = []testEntry{
 	dup("interface{m()}"),
 	dup(`interface{String() string; m(int) float32}`),
 
-	// TODO(rFindley) uncomment this once this AST is accepted, and add more test
-	// cases.
-	// dup(`interface{type int, float32, complex128}`),
-
 	// maps
 	dup("map[string]int"),
 	{"map[struct{x, y int}][]byte", "map[struct{x int; y int}][]byte"},
@@ -152,11 +148,11 @@ func TestIncompleteInterfaces(t *testing.T) {
 		{new(Interface), "interface{/* incomplete */}"},
 		{new(Interface).Complete(), "interface{}"},
 
-		{NewInterface(nil, nil), "interface{}"},
+		{NewInterface(nil, nil), "interface{/* incomplete */}"},
 		{NewInterface(nil, nil).Complete(), "interface{}"},
-		{NewInterface([]*Func{}, nil), "interface{}"},
+		{NewInterface([]*Func{}, nil), "interface{/* incomplete */}"},
 		{NewInterface([]*Func{}, nil).Complete(), "interface{}"},
-		{NewInterface(nil, []*Named{}), "interface{}"},
+		{NewInterface(nil, []*Named{}), "interface{/* incomplete */}"},
 		{NewInterface(nil, []*Named{}).Complete(), "interface{}"},
 		{NewInterface([]*Func{m}, nil), "interface{m() /* incomplete */}"},
 		{NewInterface([]*Func{m}, nil).Complete(), "interface{m()}"},
@@ -166,11 +162,11 @@ func TestIncompleteInterfaces(t *testing.T) {
 		{NewInterface(nil, []*Named{newDefined(NewInterface([]*Func{m}, nil).Complete())}), "interface{T /* incomplete */}"},
 		{NewInterface(nil, []*Named{newDefined(NewInterface([]*Func{m}, nil).Complete())}).Complete(), "interface{T}"},
 
-		{NewInterfaceType(nil, nil), "interface{}"},
+		{NewInterfaceType(nil, nil), "interface{/* incomplete */}"},
 		{NewInterfaceType(nil, nil).Complete(), "interface{}"},
-		{NewInterfaceType([]*Func{}, nil), "interface{}"},
+		{NewInterfaceType([]*Func{}, nil), "interface{/* incomplete */}"},
 		{NewInterfaceType([]*Func{}, nil).Complete(), "interface{}"},
-		{NewInterfaceType(nil, []Type{}), "interface{}"},
+		{NewInterfaceType(nil, []Type{}), "interface{/* incomplete */}"},
 		{NewInterfaceType(nil, []Type{}).Complete(), "interface{}"},
 		{NewInterfaceType([]*Func{m}, nil), "interface{m() /* incomplete */}"},
 		{NewInterfaceType([]*Func{m}, nil).Complete(), "interface{m()}"},

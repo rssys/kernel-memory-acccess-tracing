@@ -3,6 +3,4 @@
 void
 foo ()
 {
-#pragma acc routine /* { dg-error ".#pragma acc routine. must be at file scope" } */
-// { dg-error "expected" "end" { target *-*-* } .-1 }
-
+#pragma acc routine /* { dg-error ".#pragma acc routine. must be at file scope|expected" } */

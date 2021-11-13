@@ -44,7 +44,11 @@ func lookupFullNameServer(servername, username string) (string, error) {
 	}
 	defer syscall.NetApiBufferFree(p)
 	i := (*syscall.UserInfo10)(unsafe.Pointer(p))
-	return windows.UTF16PtrToString(i.FullName), nil
+	if i.FullName == nil {
+		return "", nil
+	}
+	name := syscall.UTF16ToString((*[1024]uint16)(unsafe.Pointer(i.FullName))[:])
+	return name, nil
 }
 
 func lookupFullName(domain, username, domainAndUser string) (string, error) {
@@ -161,13 +165,14 @@ func listGroupsForUsernameAndDomain(username, domain string) ([]string, error) {
 	if entriesRead == 0 {
 		return nil, fmt.Errorf("listGroupsForUsernameAndDomain: NetUserGetLocalGroups() returned an empty list for domain: %s, username: %s", domain, username)
 	}
-	entries := (*[1024]windows.LocalGroupUserInfo0)(unsafe.Pointer(p0))[:entriesRead:entriesRead]
+	entries := (*[1024]windows.LocalGroupUserInfo0)(unsafe.Pointer(p0))[:entriesRead]
 	var sids []string
 	for _, entry := range entries {
 		if entry.Name == nil {
 			continue
 		}
-		sid, err := lookupGroupName(windows.UTF16PtrToString(entry.Name))
+		name := syscall.UTF16ToString((*[1024]uint16)(unsafe.Pointer(entry.Name))[:])
+		sid, err := lookupGroupName(name)
 		if err != nil {
 			return nil, err
 		}

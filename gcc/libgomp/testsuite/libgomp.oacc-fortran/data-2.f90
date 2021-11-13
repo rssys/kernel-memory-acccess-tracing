@@ -54,7 +54,7 @@ program test
   !$acc wait
 
   do i = 1, N
-    if (d(i) .ne. 4.0) STOP 3
+    if (d(i) .ne. 4.0) call abort
   end do
 
   c(:) = 3.0
@@ -75,7 +75,7 @@ program test
   !$acc wait
 
   do i = 1, N
-    if (d(i) .ne. 4.0) STOP 4
+    if (d(i) .ne. 4.0) call abort
   end do
 
 end program test

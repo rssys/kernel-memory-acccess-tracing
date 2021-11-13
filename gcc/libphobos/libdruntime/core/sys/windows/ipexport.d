@@ -9,9 +9,8 @@
  */
 module core.sys.windows.ipexport;
 version (Windows):
-@system:
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum size_t MAX_ADAPTER_NAME = 128;
 

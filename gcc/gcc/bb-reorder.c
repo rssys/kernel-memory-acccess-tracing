@@ -1,5 +1,5 @@
 /* Basic block reordering routines for the GNU compiler.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -105,6 +105,7 @@
 #include "emit-rtl.h"
 #include "output.h"
 #include "expr.h"
+#include "params.h"
 #include "tree-pass.h"
 #include "cfgrtl.h"
 #include "cfganal.h"
@@ -112,7 +113,6 @@
 #include "cfgcleanup.h"
 #include "bb-reorder.h"
 #include "except.h"
-#include "alloc-pool.h"
 #include "fibonacci_heap.h"
 #include "stringpool.h"
 #include "attribs.h"
@@ -592,7 +592,7 @@ find_traces_1_round (int branch_th, profile_count count_th,
 	  /* If the best destination has multiple successors or predecessors,
 	     don't allow it to be added when optimizing for size.  This makes
 	     sure predecessors with smaller index are handled before the best
-	     destination.  It breaks long trace and reduces long jumps.
+	     destinarion.  It breaks long trace and reduces long jumps.
 
 	     Take if-then-else as an example.
 		A
@@ -1023,8 +1023,8 @@ connect_better_edge_p (const_edge e, bool src_index_p, int best_len,
       e_index = e->src->index;
 
       /* We are looking for predecessor, so probabilities are not that
-	 informative.  We do not want to connect A to B because A has
-	 only one successor (probability is 100%) while there is edge
+	 informative.  We do not want to connect A to B becuse A has
+	 only one sucessor (probablity is 100%) while there is edge
 	 A' to B where probability is 90% but which is much more frequent.  */
       if (e->count () > cur_best_edge->count ())
 	/* The edge has higher probability than the temporary best edge.  */
@@ -1032,7 +1032,7 @@ connect_better_edge_p (const_edge e, bool src_index_p, int best_len,
       else if (e->count () < cur_best_edge->count ())
 	/* The edge has lower probability than the temporary best edge.  */
 	is_better_edge = false;
-      else if (e->probability > cur_best_edge->probability)
+      if (e->probability > cur_best_edge->probability)
 	/* The edge has higher probability than the temporary best edge.  */
 	is_better_edge = true;
       else if (e->probability < cur_best_edge->probability)
@@ -1357,8 +1357,8 @@ connect_traces (int n_traces, struct trace *traces)
 static bool
 copy_bb_p (const_basic_block bb, int code_may_grow)
 {
-  unsigned int size = 0;
-  unsigned int max_size = uncond_jump_length;
+  int size = 0;
+  int max_size = uncond_jump_length;
   rtx_insn *insn;
 
   if (EDGE_COUNT (bb->preds) < 2)
@@ -1371,16 +1371,12 @@ copy_bb_p (const_basic_block bb, int code_may_grow)
     return false;
 
   if (code_may_grow && optimize_bb_for_speed_p (bb))
-    max_size *= param_max_grow_copy_bb_insns;
+    max_size *= PARAM_VALUE (PARAM_MAX_GROW_COPY_BB_INSNS);
 
   FOR_BB_INSNS (bb, insn)
     {
       if (INSN_P (insn))
-	{
-	  size += get_attr_min_length (insn);
-	  if (size > max_size)
-	    break;
-	}
+	size += get_attr_min_length (insn);
     }
 
   if (size <= max_size)
@@ -1389,7 +1385,7 @@ copy_bb_p (const_basic_block bb, int code_may_grow)
   if (dump_file)
     {
       fprintf (dump_file,
-	       "Block %d can't be copied because its size = %u.\n",
+	       "Block %d can't be copied because its size = %d.\n",
 	       bb->index, size);
     }
 
@@ -1401,7 +1397,7 @@ copy_bb_p (const_basic_block bb, int code_may_grow)
 int
 get_uncond_jump_length (void)
 {
-  unsigned int length;
+  int length;
 
   start_sequence ();
   rtx_code_label *label = emit_label (gen_label_rtx ());
@@ -1409,7 +1405,6 @@ get_uncond_jump_length (void)
   length = get_attr_min_length (jump);
   end_sequence ();
 
-  gcc_assert (length < INT_MAX);
   return length;
 }
 
@@ -2662,8 +2657,6 @@ pass_reorder_blocks::execute (function *fun)
       bb->aux = bb->next_bb;
   cfg_layout_finalize ();
 
-  FOR_EACH_BB_FN (bb, fun)
-    df_recompute_luids (bb);
   return 0;
 }
 
@@ -2680,6 +2673,9 @@ make_pass_reorder_blocks (gcc::context *ctxt)
 static bool
 maybe_duplicate_computed_goto (basic_block bb, int max_size)
 {
+  if (single_pred_p (bb))
+    return false;
+
   /* Make sure that the block is small enough.  */
   rtx_insn *insn;
   FOR_BB_INSNS (bb, insn)
@@ -2697,9 +2693,10 @@ maybe_duplicate_computed_goto (basic_block bb, int max_size)
     {
       basic_block pred = e->src;
 
-      /* Do not duplicate BB into PRED if we cannot merge a copy of BB
-	 with PRED.  */
-      if (!single_succ_p (pred)
+      /* Do not duplicate BB into PRED if that is the last predecessor, or if
+	 we cannot merge a copy of BB with PRED.  */
+      if (single_pred_p (bb)
+	  || !single_succ_p (pred)
 	  || e->flags & EDGE_COMPLEX
 	  || pred->index < NUM_FIXED_BLOCKS
 	  || (JUMP_P (BB_END (pred)) && !simplejump_p (BB_END (pred)))
@@ -2749,7 +2746,7 @@ duplicate_computed_gotos (function *fun)
 
   /* Never copy a block larger than this.  */
   int max_size
-    = uncond_jump_length * param_max_goto_duplication_insns;
+    = uncond_jump_length * PARAM_VALUE (PARAM_MAX_GOTO_DUPLICATION_INSNS);
 
   bool changed = false;
 
@@ -2759,10 +2756,6 @@ duplicate_computed_gotos (function *fun)
   FOR_EACH_BB_FN (bb, fun)
     if (computed_jump_p (BB_END (bb)) && can_duplicate_block_p (bb))
       changed |= maybe_duplicate_computed_goto (bb, max_size);
-
-  /* Some blocks may have become unreachable.  */
-  if (changed)
-    cleanup_cfg (0);
 
   /* Duplicating blocks will redirect edges and may cause hot blocks
     previously reached by both hot and cold blocks to become dominated

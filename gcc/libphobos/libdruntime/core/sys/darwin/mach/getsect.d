@@ -44,7 +44,7 @@ version (CoreDdoc)
      * Returns the section data of the given section in the given segment in the
      * mach executable it is linked into.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -52,7 +52,7 @@ version (CoreDdoc)
      *      assert(getsectdata("__TEXT", "__text", &size));
      *      assert(size > 0);
      * }
-     * ---
+     * ___
      *
      * Params:
      *  segname = the name of the segment
@@ -63,8 +63,8 @@ version (CoreDdoc)
      * Returns: a pointer to the section data or `null` if it doesn't exist
      */
     char* getsectdata(
-        const scope char* segname,
-        const scope char* sectname,
+        in char* segname,
+        in char* sectname,
         c_ulong *size
     );
 
@@ -74,7 +74,7 @@ version (CoreDdoc)
      * Returns the section data of the given section in the given segment in the
      * given framework.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -82,7 +82,7 @@ version (CoreDdoc)
      *      assert(getsectdatafromFramework("Foundation", "__TEXT", "__text", &size));
      *      assert(size > 0);
      * }
-     * ---
+     * ___
      *
      * Params:
      *  FrameworkName = the name of the framework to get the section data from
@@ -94,9 +94,9 @@ version (CoreDdoc)
      * Returns: a pointer to the section data or `null` if it doesn't exist
      */
     char* getsectdatafromFramework(
-        const scope char* FrameworkName,
-        const scope char* segname,
-        const scope char* sectname,
+        in char* FrameworkName,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
@@ -115,13 +115,13 @@ version (CoreDdoc)
      * Returns the section structure of the given section in the given segment
      * in the mach executable it is linked into.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
      *      assert(getsectbyname("__TEXT", "__text"));
      * }
-     * ---
+     * ___
      *
      * Params:
      *  segname = the name of the segment
@@ -130,8 +130,8 @@ version (CoreDdoc)
      * Returns: a pointer to the section structure or `null` if it doesn't exist
      */
     const(Section)* getsectbyname(
-        const scope char* segname,
-        const scope char* sectname
+        in char* segname,
+        in char* sectname
     );
 
     /**
@@ -140,7 +140,7 @@ version (CoreDdoc)
      * Returns the section data of the given section in the given segment in the
      * image pointed to by the given mach header.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -151,7 +151,7 @@ version (CoreDdoc)
      *      assert(getsectdata(mph, "__TEXT", "__text", &size));
      *      assert(size > 0);
      * }
-     * ---
+     * ___
      *
      * Params:
      *  mhp = the mach header to get the section data from
@@ -163,9 +163,9 @@ version (CoreDdoc)
      * Returns: a pointer to the section data or `null` if it doesn't exist
      */
     ubyte* getsectiondata(
-        const scope MachHeader* mhp,
-        const scope char* segname,
-        const scope char* sectname,
+        in MachHeader* mhp,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
@@ -175,13 +175,13 @@ version (CoreDdoc)
      * Returns the segment structure of the given segment in the mach executable
      * it is linked into.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
      *      assert(getsegbyname("__TEXT"));
      * }
-     * ---
+     * ___
      *
      * Params:
      *  segname = the name of the segment
@@ -189,7 +189,7 @@ version (CoreDdoc)
      * Returns: a pointer to the section structure or `null` if it doesn't exist
      */
     const(SegmentCommand)* getsegbyname(
-        const scope char* segname
+        in char* segname
     );
 
     /**
@@ -198,7 +198,7 @@ version (CoreDdoc)
      * Returns the segment data of the given segment in the image pointed to by
      * the given mach header.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -209,7 +209,7 @@ version (CoreDdoc)
      *      assert(getsegmentdata(mph, "__TEXT", &size));
      *      assert(size > 0);
      * }
-     * ---
+     * ___
      *
      * Params:
      *  mhp = the mach header to get the section data from
@@ -220,8 +220,8 @@ version (CoreDdoc)
      * Returns: a pointer to the section data or `null` if it doesn't exist
      */
     ubyte* getsegmentdata(
-        const scope MachHeader* mhp,
-        const scope char* segname,
+        in MachHeader* mhp,
+        in char* segname,
         c_ulong* size
     );
 
@@ -236,7 +236,7 @@ version (CoreDdoc)
      * Returns the section data of the given section in the given segment in the
      * image pointed to by the given mach header.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -247,7 +247,7 @@ version (CoreDdoc)
      *      assert(getsectdatafromheader(mph, "__TEXT", "__text", &size));
      *      assert(size > 0);
      * }
-     * ---
+     * ___
      *
      * Params:
      *  mhp = the mach header to get the section data from
@@ -259,17 +259,17 @@ version (CoreDdoc)
      * Returns: a pointer to the section data or `null` if it doesn't exist
      */
     ubyte* getsectdatafromheader(
-        const scope mach_header* mhp,
-        const scope char* segname,
-        const scope char* sectname,
+        in mach_header* mhp,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
     /// ditto
     ubyte* getsectdatafromheader_64(
-        const scope mach_header_64* mhp,
-        const scope char* segname,
-        const scope char* sectname,
+        in mach_header_64* mhp,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
@@ -280,7 +280,7 @@ version (CoreDdoc)
      * Returns the section structure of the given section in the given segment
      * in image pointed to by the given mach header.
      *
-     * ---
+     * ___
      * void main()
      * {
      *      import core.sys.darwin.mach.getsect;
@@ -289,7 +289,7 @@ version (CoreDdoc)
      *      auto mph = _NSGetMachExecuteHeader();
      *      assert(getsectbynamefromheader(mph, "__TEXT", "__text"));
      * }
-     * ---
+     * ___
      *
      * Params:
      *  mhp = the mach header to get the section from
@@ -299,16 +299,16 @@ version (CoreDdoc)
      * Returns: a pointer to the section structure or `null` if it doesn't exist
      */
     const(section)* getsectbynamefromheader(
-        const scope mach_header* mhp,
-        const scope char* segname,
-        const scope char* sectname
+        in mach_header* mhp,
+        in char* segname,
+        in char* sectname
     );
 
     /// ditto
     const(section_64)* getsectbynamefromheader_64(
-        const scope mach_header_64* mhp,
-        const scope char* segname,
-        const scope char* sectname
+        in mach_header_64* mhp,
+        in char* segname,
+        in char* sectname
     );
 
     /**
@@ -326,17 +326,17 @@ version (CoreDdoc)
      * Returns: a pointer to the section structure or `null` if it doesn't exist
      */
     const(section)* getsectbynamefromheaderwithswap(
-        const scope mach_header* mhp,
-        const scope char* segname,
-        const scope char* section,
+        in mach_header* mhp,
+        in char* segname,
+        in char* section,
         int fSwap
     );
 
     /// ditto
     const(section)* getsectbynamefromheaderwithswap_64(
-        const scope mach_header_64* mhp,
-        const scope char* segname,
-        const scope char* section,
+        in mach_header_64* mhp,
+        in char* segname,
+        in char* section,
         int fSwap
     );
 }
@@ -357,15 +357,15 @@ public import core.sys.darwin.mach.loader;
 import core.stdc.config : c_ulong;
 
 char* getsectdata(
-    const scope char* segname,
-    const scope char* sectname,
+    in char* segname,
+    in char* sectname,
     c_ulong *size
 );
 
 char* getsectdatafromFramework(
-    const scope char* FrameworkName,
-    const scope char* segname,
-    const scope char* sectname,
+    in char* FrameworkName,
+    in char* segname,
+    in char* sectname,
     c_ulong* size
 );
 
@@ -377,24 +377,24 @@ c_ulong get_edata();
 version (D_LP64)
 {
     const(section_64)* getsectbyname(
-        const scope char* segname,
-        const scope char* sectname
+        in char* segname,
+        in char* sectname
     );
 
     ubyte* getsectiondata(
-        const scope mach_header_64* mhp,
-        const scope char* segname,
-        const scope char* sectname,
+        in mach_header_64* mhp,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
     const(segment_command_64)* getsegbyname(
-        const scope char* segname
+        in char* segname
     );
 
     ubyte* getsegmentdata(
-        const scope mach_header_64* mhp,
-        const scope char* segname,
+        in mach_header_64* mhp,
+        in char* segname,
         c_ulong* size
     );
 }
@@ -403,24 +403,24 @@ version (D_LP64)
 else
 {
     const(section)* getsectbyname(
-        const scope char* segname,
-        const scope char* sectname
+        in char* segname,
+        in char* sectname
     );
 
     ubyte* getsectiondata(
-        const scope mach_header* mhp,
-        const scope char* segname,
-        const scope char* sectname,
+        in mach_header* mhp,
+        in char* segname,
+        in char* sectname,
         c_ulong* size
     );
 
     const(segment_command)* getsegbyname(
-        const scope char* segname
+        in char* segname
     );
 
     ubyte* getsegmentdata(
-        const scope mach_header* mhp,
-        const scope char* segname,
+        in mach_header* mhp,
+        in char* segname,
         c_ulong* size
     );
 }
@@ -428,44 +428,44 @@ else
 // Interfaces for tools working with 32-bit Mach-O files.
 
 ubyte* getsectdatafromheader(
-    const scope mach_header* mhp,
-    const scope char* segname,
-    const scope char* sectname,
+    in mach_header* mhp,
+    in char* segname,
+    in char* sectname,
     c_ulong* size
 );
 
 const(section)* getsectbynamefromheader(
-    const scope mach_header* mhp,
-    const scope char* segname,
-    const scope char* sectname
+    in mach_header* mhp,
+    in char* segname,
+    in char* sectname
 );
 
 const(section)* getsectbynamefromheaderwithswap(
-    const scope mach_header* mhp,
-    const scope char* segname,
-    const scope char* section,
+    in mach_header* mhp,
+    in char* segname,
+    in char* section,
     int fSwap
 );
 
 // Interfaces for tools working with 64-bit Mach-O files.
 
 ubyte* getsectdatafromheader_64(
-    const scope mach_header_64* mhp,
-    const scope char* segname,
-    const scope char* sectname,
+    in mach_header_64* mhp,
+    in char* segname,
+    in char* sectname,
     c_ulong* size
 );
 
 const(section_64)* getsectbynamefromheader_64(
-    const scope mach_header_64* mhp,
-    const scope char* segname,
-    const scope char* sectname
+    in mach_header_64* mhp,
+    in char* segname,
+    in char* sectname
 );
 
 const(section)* getsectbynamefromheaderwithswap_64(
-    const scope mach_header_64* mhp,
-    const scope char* segname,
-    const scope char* section,
+    in mach_header_64* mhp,
+    in char* segname,
+    in char* section,
     int fSwap
 );
 

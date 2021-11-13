@@ -1,5 +1,5 @@
 /* Subroutines for insn-output.c for VAX.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -54,14 +54,12 @@ static void vax_output_mi_thunk (FILE *, tree, HOST_WIDE_INT,
 static int vax_address_cost_1 (rtx);
 static int vax_address_cost (rtx, machine_mode, addr_space_t, bool);
 static bool vax_rtx_costs (rtx, machine_mode, int, int, int *, bool);
-static machine_mode vax_cc_modes_compatible (machine_mode, machine_mode);
-static rtx_insn *vax_md_asm_adjust (vec<rtx> &, vec<rtx> &,
-				    vec<machine_mode> &, vec<const char *> &,
-				    vec<rtx> &, HARD_REG_SET &, location_t);
-static rtx vax_function_arg (cumulative_args_t, const function_arg_info &);
-static void vax_function_arg_advance (cumulative_args_t,
-				      const function_arg_info &);
+static rtx vax_function_arg (cumulative_args_t, machine_mode,
+			     const_tree, bool);
+static void vax_function_arg_advance (cumulative_args_t, machine_mode,
+				      const_tree, bool);
 static rtx vax_struct_value_rtx (tree, int);
+static rtx vax_builtin_setjmp_frame_value (void);
 static void vax_asm_trampoline_template (FILE *);
 static void vax_trampoline_init (rtx, tree, rtx);
 static poly_int64 vax_return_pops_args (tree, tree, poly_int64);
@@ -85,22 +83,10 @@ static HOST_WIDE_INT vax_starting_frame_offset (void);
 #undef TARGET_ASM_CAN_OUTPUT_MI_THUNK
 #define TARGET_ASM_CAN_OUTPUT_MI_THUNK default_can_output_mi_thunk_no_vcall
 
-/* Enable compare elimination pass.  */
-#undef TARGET_FLAGS_REGNUM
-#define TARGET_FLAGS_REGNUM VAX_PSL_REGNUM
-
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS vax_rtx_costs
 #undef TARGET_ADDRESS_COST
 #define TARGET_ADDRESS_COST vax_address_cost
-
-/* Return the narrowest CC mode that spans both modes offered.  */
-#undef TARGET_CC_MODES_COMPATIBLE
-#define TARGET_CC_MODES_COMPATIBLE vax_cc_modes_compatible
-
-/* Mark PSL as clobbered for compatibility with the CC0 representation.  */
-#undef TARGET_MD_ASM_ADJUST
-#define TARGET_MD_ASM_ADJUST vax_md_asm_adjust
 
 #undef TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
@@ -112,6 +98,9 @@ static HOST_WIDE_INT vax_starting_frame_offset (void);
 
 #undef TARGET_STRUCT_VALUE_RTX
 #define TARGET_STRUCT_VALUE_RTX vax_struct_value_rtx
+
+#undef TARGET_BUILTIN_SETJMP_FRAME_VALUE
+#define TARGET_BUILTIN_SETJMP_FRAME_VALUE vax_builtin_setjmp_frame_value
 
 #undef TARGET_LRA_P
 #define TARGET_LRA_P hook_bool_void_false
@@ -136,9 +125,6 @@ static HOST_WIDE_INT vax_starting_frame_offset (void);
 
 #undef TARGET_STARTING_FRAME_OFFSET
 #define TARGET_STARTING_FRAME_OFFSET vax_starting_frame_offset
-
-#undef TARGET_HAVE_SPECULATION_SAFE_VALUE
-#define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -185,7 +171,7 @@ vax_expand_prologue (void)
   rtx insn;
 
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
+    if (df_regs_ever_live_p (regno) && !call_used_regs[regno])
       mask |= 1 << regno;
 
   insn = emit_insn (gen_procedure_entry_mask (GEN_INT (mask)));
@@ -333,12 +319,12 @@ print_operand_address (FILE * file, rtx addr)
 
     case PLUS:
       /* There can be either two or three things added here.  One must be a
-	 REG.  One can be either a REG or a MULT/ASHIFT of a REG and an
-	 appropriate constant, and the third can only be a constant or a MEM.
+	 REG.  One can be either a REG or a MULT of a REG and an appropriate
+	 constant, and the third can only be a constant or a MEM.
 
 	 We get these two or three things and put the constant or MEM in
-	 OFFSET, the MULT/ASHIFT or REG in IREG, and the REG in BREG.  If we
-	 have a register and can't tell yet if it is a base or index register,
+	 OFFSET, the MULT or REG in IREG, and the REG in BREG.  If we have
+	 a register and can't tell yet if it is a base or index register,
 	 put it into REG1.  */
 
       reg1 = 0; ireg = 0; breg = 0; offset = 0;
@@ -355,14 +341,12 @@ print_operand_address (FILE * file, rtx addr)
 	  offset = XEXP (addr, 1);
 	  addr = XEXP (addr, 0);
 	}
-      else if (GET_CODE (XEXP (addr, 1)) == MULT
-	       || GET_CODE (XEXP (addr, 1)) == ASHIFT)
+      else if (GET_CODE (XEXP (addr, 1)) == MULT)
 	{
 	  ireg = XEXP (addr, 1);
 	  addr = XEXP (addr, 0);
 	}
-      else if (GET_CODE (XEXP (addr, 0)) == MULT
-	       || GET_CODE (XEXP (addr, 0)) == ASHIFT)
+      else if (GET_CODE (XEXP (addr, 0)) == MULT)
 	{
 	  ireg = XEXP (addr, 0);
 	  addr = XEXP (addr, 1);
@@ -387,7 +371,7 @@ print_operand_address (FILE * file, rtx addr)
 	  else
 	    reg1 = addr;
 	}
-      else if (GET_CODE (addr) == MULT || GET_CODE (addr) == ASHIFT)
+      else if (GET_CODE (addr) == MULT)
 	ireg = addr;
       else
 	{
@@ -418,8 +402,7 @@ print_operand_address (FILE * file, rtx addr)
 	    }
 	  else
 	    {
-	      gcc_assert (GET_CODE (XEXP (addr, 0)) == MULT
-			  || GET_CODE (XEXP (addr, 0)) == ASHIFT);
+	      gcc_assert (GET_CODE (XEXP (addr, 0)) == MULT);
 	      gcc_assert (!ireg);
 	      ireg = XEXP (addr, 0);
 	    }
@@ -450,8 +433,7 @@ print_operand_address (FILE * file, rtx addr)
 	    }
 	  else
 	    {
-	      gcc_assert (GET_CODE (XEXP (addr, 1)) == MULT
-			  || GET_CODE (XEXP (addr, 1)) == ASHIFT);
+	      gcc_assert (GET_CODE (XEXP (addr, 1)) == MULT);
 	      gcc_assert (!ireg);
 	      ireg = XEXP (addr, 1);
 	    }
@@ -510,7 +492,7 @@ print_operand_address (FILE * file, rtx addr)
 
       if (ireg != 0)
 	{
-	  if (GET_CODE (ireg) == MULT || GET_CODE (ireg) == ASHIFT)
+	  if (GET_CODE (ireg) == MULT)
 	    ireg = XEXP (ireg, 0);
 	  gcc_assert (REG_P (ireg));
 	  fprintf (file, "[%s]", reg_names[REGNO (ireg)]);
@@ -529,9 +511,9 @@ print_operand (FILE *file, rtx x, int code)
     fputc (ASM_DOUBLE_CHAR, file);
   else if (code == '|')
     fputs (REGISTER_PREFIX, file);
-  else if (code == 'k')
+  else if (code == 'c')
     fputs (cond_name (x), file);
-  else if (code == 'K')
+  else if (code == 'C')
     fputs (rev_cond_name (x), file);
   else if (code == 'D' && CONST_INT_P (x) && INTVAL (x) < 0)
     fprintf (file, "$" NEG_HWI_PRINT_HEX16, INTVAL (x));
@@ -711,7 +693,6 @@ vax_address_cost_1 (rtx addr)
       reg = 1;
       break;
     case MULT:
-    case ASHIFT:
       indexed = 1;	/* 2 on VAX 2 */
       break;
     case CONST_INT:
@@ -769,7 +750,7 @@ vax_address_cost (rtx x, machine_mode mode ATTRIBUTE_UNUSED,
 		  addr_space_t as ATTRIBUTE_UNUSED,
 		  bool speed ATTRIBUTE_UNUSED)
 {
-  return COSTS_N_INSNS (1 + (REG_P (x) ? 0 : vax_address_cost_1 (x)));
+  return (1 + (REG_P (x) ? 0 : vax_address_cost_1 (x)));
 }
 
 /* Cost of an expression on a VAX.  This version has costs tuned for the
@@ -785,7 +766,7 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 	       int opno ATTRIBUTE_UNUSED,
 	       int *total, bool speed ATTRIBUTE_UNUSED)
 {
-  enum rtx_code code = GET_CODE (x);
+  int code = GET_CODE (x);
   int i = 0;				   /* may be modified in switch */
   const char *fmt = GET_RTX_FORMAT (code); /* may be modified in switch */
 
@@ -799,13 +780,12 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
     case CONST_INT:
       if (INTVAL (x) == 0)
 	{
-	  *total = COSTS_N_INSNS (1) / 2;
+	  *total = 0;
 	  return true;
 	}
       if (outer_code == AND)
 	{
-	  *total = ((unsigned HOST_WIDE_INT) ~INTVAL (x) <= 077
-		    ? COSTS_N_INSNS (1) : COSTS_N_INSNS (2));
+	  *total = ((unsigned HOST_WIDE_INT) ~INTVAL (x) <= 077) ? 1 : 2;
 	  return true;
 	}
       if ((unsigned HOST_WIDE_INT) INTVAL (x) <= 077
@@ -814,7 +794,7 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 	  || ((outer_code == PLUS || outer_code == MINUS)
 	      && (unsigned HOST_WIDE_INT) -INTVAL (x) <= 077))
 	{
-	  *total = COSTS_N_INSNS (1);
+	  *total = 1;
 	  return true;
 	}
       /* FALLTHRU */
@@ -822,48 +802,48 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
     case CONST:
     case LABEL_REF:
     case SYMBOL_REF:
-      *total = COSTS_N_INSNS (3);
+      *total = 3;
       return true;
 
     case CONST_DOUBLE:
       if (GET_MODE_CLASS (mode) == MODE_FLOAT)
-	*total = vax_float_literal (x) ? COSTS_N_INSNS (5) : COSTS_N_INSNS (8);
+	*total = vax_float_literal (x) ? 5 : 8;
       else
 	*total = ((CONST_DOUBLE_HIGH (x) == 0
 		   && (unsigned HOST_WIDE_INT) CONST_DOUBLE_LOW (x) < 64)
 		  || (outer_code == PLUS
 		      && CONST_DOUBLE_HIGH (x) == -1
-		      && (unsigned HOST_WIDE_INT)-CONST_DOUBLE_LOW (x) < 64)
-		  ? COSTS_N_INSNS (2) : COSTS_N_INSNS (5));
+		      && (unsigned HOST_WIDE_INT)-CONST_DOUBLE_LOW (x) < 64))
+		 ? 2 : 5;
       return true;
 
     case POST_INC:
-      *total = COSTS_N_INSNS (2);
-      return true;			/* Implies register operand.  */
+      *total = 2;
+      return true;		/* Implies register operand.  */
 
     case PRE_DEC:
-      *total = COSTS_N_INSNS (3);
-      return true;			/* Implies register operand.  */
+      *total = 3;
+      return true;		/* Implies register operand.  */
 
     case MULT:
       switch (mode)
 	{
 	case E_DFmode:
-	  *total = COSTS_N_INSNS (16);	/* 4 on VAX 9000 */
+	  *total = 16;		/* 4 on VAX 9000 */
 	  break;
 	case E_SFmode:
-	  *total = COSTS_N_INSNS (9);	/* 4 on VAX 9000, 12 on VAX 2 */
+	  *total = 9;		/* 4 on VAX 9000, 12 on VAX 2 */
 	  break;
 	case E_DImode:
-	  *total = COSTS_N_INSNS (16);	/* 6 on VAX 9000, 28 on VAX 2 */
+	  *total = 16;		/* 6 on VAX 9000, 28 on VAX 2 */
 	  break;
 	case E_SImode:
 	case E_HImode:
 	case E_QImode:
-	  *total = COSTS_N_INSNS (10);	/* 3-4 on VAX 9000, 20-28 on VAX 2 */
+	  *total = 10;		/* 3-4 on VAX 9000, 20-28 on VAX 2 */
 	  break;
 	default:
-	  *total = MAX_COST;		/* Mode is not supported.  */
+	  *total = MAX_COST;	/* Mode is not supported.  */
 	  return true;
 	}
       break;
@@ -871,65 +851,63 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
     case UDIV:
       if (mode != SImode)
 	{
-	  *total = MAX_COST;		/* Mode is not supported.  */
+	  *total = MAX_COST;	/* Mode is not supported.  */
 	  return true;
 	}
-      *total = COSTS_N_INSNS (17);
+      *total = 17;
       break;
 
     case DIV:
       if (mode == DImode)
-	*total = COSTS_N_INSNS (30);	/* Highly variable.  */
+	*total = 30;		/* Highly variable.  */
       else if (mode == DFmode)
 	/* divide takes 28 cycles if the result is not zero, 13 otherwise */
-	*total = COSTS_N_INSNS (24);
+	*total = 24;
       else
-	*total = COSTS_N_INSNS (11);	/* 25 on VAX 2 */
+	*total = 11;		/* 25 on VAX 2 */
       break;
 
     case MOD:
-      *total = COSTS_N_INSNS (23);
+      *total = 23;
       break;
 
     case UMOD:
       if (mode != SImode)
 	{
-	  *total = MAX_COST;		/* Mode is not supported.  */
+	  *total = MAX_COST;	/* Mode is not supported.  */
 	  return true;
 	}
-      *total = COSTS_N_INSNS (29);
+      *total = 29;
       break;
 
     case FLOAT:
-      *total = COSTS_N_INSNS (6		/* 4 on VAX 9000 */
-			      + (mode == DFmode)
-			      + (GET_MODE (XEXP (x, 0)) != SImode));
+      *total = (6		/* 4 on VAX 9000 */
+		+ (mode == DFmode) + (GET_MODE (XEXP (x, 0)) != SImode));
       break;
 
     case FIX:
-      *total = COSTS_N_INSNS (7);	/* 17 on VAX 2 */
+      *total = 7;		/* 17 on VAX 2 */
       break;
 
     case ASHIFT:
     case LSHIFTRT:
     case ASHIFTRT:
       if (mode == DImode)
-	*total = COSTS_N_INSNS (12);
+	*total = 12;
       else
-	*total = COSTS_N_INSNS (10);	/* 6 on VAX 9000 */
+	*total = 10;		/* 6 on VAX 9000 */
       break;
 
     case ROTATE:
     case ROTATERT:
-      *total = COSTS_N_INSNS (6);	/* 5 on VAX 2, 4 on VAX 9000 */
+      *total = 6;		/* 5 on VAX 2, 4 on VAX 9000 */
       if (CONST_INT_P (XEXP (x, 1)))
 	fmt = "e"; 		/* all constant rotate counts are short */
       break;
 
     case PLUS:
     case MINUS:
-      *total = (mode == DFmode		/* 6/8 on VAX 9000, 16/15 on VAX 2 */
-		? COSTS_N_INSNS (13) : COSTS_N_INSNS (8));
+      *total = (mode == DFmode) ? 13 : 8; /* 6/8 on VAX 9000, 16/15 on VAX 2 */
       /* Small integer operands can use subl2 and addl2.  */
       if ((CONST_INT_P (XEXP (x, 1)))
 	  && (unsigned HOST_WIDE_INT)(INTVAL (XEXP (x, 1)) + 63) < 127)
@@ -938,16 +916,16 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 
     case IOR:
     case XOR:
-      *total = COSTS_N_INSNS (3);
+      *total = 3;
       break;
 
     case AND:
       /* AND is special because the first operand is complemented.  */
-      *total = COSTS_N_INSNS (3);
+      *total = 3;
       if (CONST_INT_P (XEXP (x, 0)))
 	{
 	  if ((unsigned HOST_WIDE_INT)~INTVAL (XEXP (x, 0)) > 63)
-	    *total = COSTS_N_INSNS (4);
+	    *total = 4;
 	  fmt = "e";
 	  i = 1;
 	}
@@ -955,38 +933,38 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 
     case NEG:
       if (mode == DFmode)
-	*total = COSTS_N_INSNS (9);
+	*total = 9;
       else if (mode == SFmode)
-	*total = COSTS_N_INSNS (6);
+	*total = 6;
       else if (mode == DImode)
-	*total = COSTS_N_INSNS (4);
+	*total = 4;
       else
-	*total = COSTS_N_INSNS (2);
+	*total = 2;
       break;
 
     case NOT:
-      *total = COSTS_N_INSNS (2);
+      *total = 2;
       break;
 
     case ZERO_EXTRACT:
     case SIGN_EXTRACT:
-      *total = COSTS_N_INSNS (15);
+      *total = 15;
       break;
 
     case MEM:
       if (mode == DImode || mode == DFmode)
-	*total = COSTS_N_INSNS (5);	/* 7 on VAX 2 */
+	*total = 5;		/* 7 on VAX 2 */
       else
-	*total = COSTS_N_INSNS (3);	/* 4 on VAX 2 */
+	*total = 3;		/* 4 on VAX 2 */
       x = XEXP (x, 0);
       if (!REG_P (x) && GET_CODE (x) != POST_INC)
-	*total += COSTS_N_INSNS (vax_address_cost_1 (x));
+	*total += vax_address_cost_1 (x);
       return true;
 
     case FLOAT_EXTEND:
     case FLOAT_TRUNCATE:
     case TRUNCATE:
-      *total = COSTS_N_INSNS (3);	/* FIXME: Costs need to be checked  */
+      *total = 3;		/* FIXME: Costs need to be checked  */
       break;
 
     default:
@@ -1017,12 +995,12 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 	case CONST_INT:
 	  if ((unsigned HOST_WIDE_INT)INTVAL (op) > 63
 	      && mode != QImode)
-	    *total += COSTS_N_INSNS (1);	/* 2 on VAX 2 */
+	    *total += 1;	/* 2 on VAX 2 */
 	  break;
 	case CONST:
 	case LABEL_REF:
 	case SYMBOL_REF:
-	  *total += COSTS_N_INSNS (1);		/* 2 on VAX 2 */
+	  *total += 1;		/* 2 on VAX 2 */
 	  break;
 	case CONST_DOUBLE:
 	  if (GET_MODE_CLASS (GET_MODE (op)) == MODE_FLOAT)
@@ -1030,163 +1008,31 @@ vax_rtx_costs (rtx x, machine_mode mode, int outer_code,
 	      /* Registers are faster than floating point constants -- even
 		 those constants which can be encoded in a single byte.  */
 	      if (vax_float_literal (op))
-		*total += COSTS_N_INSNS (1);
+		*total += 1;
 	      else
-		*total += (GET_MODE (x) == DFmode
-			   ? COSTS_N_INSNS (3) : COSTS_N_INSNS (2));
+		*total += (GET_MODE (x) == DFmode) ? 3 : 2;
 	    }
 	  else
 	    {
 	      if (CONST_DOUBLE_HIGH (op) != 0
 		  || (unsigned HOST_WIDE_INT)CONST_DOUBLE_LOW (op) > 63)
-		*total += COSTS_N_INSNS (2);
+		*total += 2;
 	    }
 	  break;
 	case MEM:
-	  *total += COSTS_N_INSNS (1);		/* 2 on VAX 2 */
+	  *total += 1;		/* 2 on VAX 2 */
 	  if (!REG_P (XEXP (op, 0)))
-	    *total += COSTS_N_INSNS (vax_address_cost_1 (XEXP (op, 0)));
+	    *total += vax_address_cost_1 (XEXP (op, 0));
 	  break;
 	case REG:
 	case SUBREG:
 	  break;
 	default:
-	  *total += COSTS_N_INSNS (1);
+	  *total += 1;
 	  break;
 	}
     }
   return true;
-}
-
-/* With ELF we do not support GOT entries for external `symbol+offset'
-   references, so do not accept external symbol references if an offset
-   is to be added.  Do not accept external symbol references at all if
-   LOCAL_P is set.  This is for cases where making a reference indirect
-   would make it invalid.  Do not accept any kind of symbols if SYMBOL_P
-   is clear.  This is for situations where the a reference is used as an
-   immediate value for operations other than address loads (MOVA/PUSHA),
-   as those operations do not support PC-relative immediates.  */
-
-bool
-vax_acceptable_pic_operand_p (rtx x ATTRIBUTE_UNUSED,
-			      bool local_p ATTRIBUTE_UNUSED,
-			      bool symbol_p ATTRIBUTE_UNUSED)
-{
-#ifdef NO_EXTERNAL_INDIRECT_ADDRESS
-  if (GET_CODE (x) == CONST && GET_CODE (XEXP (x, 0)) == PLUS)
-    {
-      x = XEXP (XEXP (x, 0), 0);
-      local_p = true;
-    }
-  switch (GET_CODE (x))
-    {
-    case SYMBOL_REF:
-      return symbol_p && !(local_p && !SYMBOL_REF_LOCAL_P (x));
-    case LABEL_REF:
-      return symbol_p && !(local_p && LABEL_REF_NONLOCAL_P (x));
-    default:
-      break;
-    }
-#endif
-  return true;
-}
-
-/* Given a comparison code (NE, EQ, etc.) and the operands of a COMPARE,
-   return the mode to be used for the comparison.  As we have the same
-   interpretation of condition codes across all the instructions we just
-   return the narrowest mode suitable for the comparison code requested.  */
-
-extern machine_mode
-vax_select_cc_mode (enum rtx_code op,
-		    rtx x ATTRIBUTE_UNUSED, rtx y ATTRIBUTE_UNUSED)
-{
-  switch (op)
-    {
-    default:
-      gcc_unreachable ();
-    case NE:
-    case EQ:
-      return CCZmode;
-    case GE:
-    case LT:
-      return CCNmode;
-    case GT:
-    case LE:
-      return CCNZmode;
-    case GEU:
-    case GTU:
-    case LEU:
-    case LTU:
-      return CCmode;
-    }
-}
-
-/* Return the narrowest CC mode that spans both modes offered.  If they
-   intersect, this will be the wider of the two, and if they do not then
-   find find one that is a superset of both (i.e. CCNZmode for a pair
-   consisting of CCNmode and CCZmode).  A wider CC writer will satisfy
-   a narrower CC reader, e.g. a comparison operator that uses CCZmode
-   can use a CCNZmode output of a previous instruction.  */
-
-static machine_mode
-vax_cc_modes_compatible (machine_mode m1, machine_mode m2)
-{
-  switch (m1)
-    {
-    default:
-      gcc_unreachable ();
-    case E_CCmode:
-      switch (m2)
-	{
-	default:
-	  gcc_unreachable ();
-	case E_CCmode:
-	case E_CCNZmode:
-	case E_CCNmode:
-	case E_CCZmode:
-	  return m1;
-	}
-    case E_CCNZmode:
-      switch (m2)
-	{
-	default:
-	  gcc_unreachable ();
-	case E_CCmode:
-	  return m2;
-	case E_CCNmode:
-	case E_CCNZmode:
-	case E_CCZmode:
-	  return m1;
-	}
-    case E_CCNmode:
-    case E_CCZmode:
-      switch (m2)
-	{
-	default:
-	  gcc_unreachable ();
-	case E_CCmode:
-	case E_CCNZmode:
-	  return m2;
-	case E_CCNmode:
-	case E_CCZmode:
-	  return m1 == m2 ? m1 : E_CCNZmode;
-	}
-    }
-}
-
-/* Mark PSL as clobbered for compatibility with the CC0 representation.  */
-
-static rtx_insn *
-vax_md_asm_adjust (vec<rtx> &outputs ATTRIBUTE_UNUSED,
-		   vec<rtx> &inputs ATTRIBUTE_UNUSED,
-		   vec<machine_mode> &input_modes ATTRIBUTE_UNUSED,
-		   vec<const char *> &constraints ATTRIBUTE_UNUSED,
-		   vec<rtx> &clobbers, HARD_REG_SET &clobbered_regs,
-		   location_t /*loc*/)
-{
-  clobbers.safe_push (gen_rtx_REG (CCmode, VAX_PSL_REGNUM));
-  SET_HARD_REG_BIT (clobbered_regs, VAX_PSL_REGNUM);
-  return NULL;
 }
 
 /* Output code to add DELTA to the first argument, and then jump to FUNCTION.
@@ -1203,15 +1049,11 @@ vax_output_mi_thunk (FILE * file,
 		     HOST_WIDE_INT vcall_offset ATTRIBUTE_UNUSED,
 		     tree function)
 {
-  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk));
-
-  assemble_start_function (thunk, fnname);
   fprintf (file, "\t.word 0x0ffc\n\taddl2 $" HOST_WIDE_INT_PRINT_DEC, delta);
   asm_fprintf (file, ",4(%Rap)\n");
   fprintf (file, "\tjmp ");
   assemble_name (file,  XSTR (XEXP (DECL_RTL (function), 0), 0));
   fprintf (file, "+2\n");
-  assemble_end_function (thunk, fnname);
 }
 
 static rtx
@@ -1221,20 +1063,83 @@ vax_struct_value_rtx (tree fntype ATTRIBUTE_UNUSED,
   return gen_rtx_REG (Pmode, VAX_STRUCT_VALUE_REGNUM);
 }
 
-/* Output integer move instructions.  */
-
-bool
-vax_maybe_split_dimode_move (rtx *operands)
+static rtx
+vax_builtin_setjmp_frame_value (void)
 {
-  return (TARGET_QMATH
-	  && (!MEM_P (operands[0])
-	      || GET_CODE (XEXP (operands[0], 0)) == PRE_DEC
-	      || GET_CODE (XEXP (operands[0], 0)) == POST_INC
-	      || !illegal_addsub_di_memory_operand (operands[0], DImode))
-	  && ((CONST_INT_P (operands[1])
-	       && (unsigned HOST_WIDE_INT) INTVAL (operands[1]) >= 64)
-	      || GET_CODE (operands[1]) == CONST_DOUBLE));
+  return hard_frame_pointer_rtx;
 }
+
+/* Worker function for NOTICE_UPDATE_CC.  */
+
+void
+vax_notice_update_cc (rtx exp, rtx insn ATTRIBUTE_UNUSED)
+{
+  if (GET_CODE (exp) == SET)
+    {
+      if (GET_CODE (SET_SRC (exp)) == CALL)
+	CC_STATUS_INIT;
+      else if (GET_CODE (SET_DEST (exp)) != ZERO_EXTRACT
+	       && GET_CODE (SET_DEST (exp)) != PC)
+	{
+	  cc_status.flags = 0;
+	  /* The integer operations below don't set carry or
+	     set it in an incompatible way.  That's ok though
+	     as the Z bit is all we need when doing unsigned
+	     comparisons on the result of these insns (since
+	     they're always with 0).  Set CC_NO_OVERFLOW to
+	     generate the correct unsigned branches.  */
+	  switch (GET_CODE (SET_SRC (exp)))
+	    {
+	    case NEG:
+	      if (GET_MODE_CLASS (GET_MODE (exp)) == MODE_FLOAT)
+		break;
+	      /* FALLTHRU */
+	    case AND:
+	    case IOR:
+	    case XOR:
+	    case NOT:
+	    case MEM:
+	    case REG:
+	      cc_status.flags = CC_NO_OVERFLOW;
+	      break;
+	    default:
+	      break;
+	    }
+	  cc_status.value1 = SET_DEST (exp);
+	  cc_status.value2 = SET_SRC (exp);
+	}
+    }
+  else if (GET_CODE (exp) == PARALLEL
+	   && GET_CODE (XVECEXP (exp, 0, 0)) == SET)
+    {
+      if (GET_CODE (SET_SRC (XVECEXP (exp, 0, 0))) == CALL)
+	CC_STATUS_INIT;
+      else if (GET_CODE (SET_DEST (XVECEXP (exp, 0, 0))) != PC)
+	{
+	  cc_status.flags = 0;
+	  cc_status.value1 = SET_DEST (XVECEXP (exp, 0, 0));
+	  cc_status.value2 = SET_SRC (XVECEXP (exp, 0, 0));
+	}
+      else
+	/* PARALLELs whose first element sets the PC are aob,
+	   sob insns.  They do change the cc's.  */
+	CC_STATUS_INIT;
+    }
+  else
+    CC_STATUS_INIT;
+  if (cc_status.value1 && REG_P (cc_status.value1)
+      && cc_status.value2
+      && reg_overlap_mentioned_p (cc_status.value1, cc_status.value2))
+    cc_status.value2 = 0;
+  if (cc_status.value1 && MEM_P (cc_status.value1)
+      && cc_status.value2
+      && MEM_P (cc_status.value2))
+    cc_status.value2 = 0;
+  /* Actual condition, one line up, should be that value2's address
+     depends on value1, but that is too much of a pain.  */
+}
+
+/* Output integer move instructions.  */
 
 const char *
 vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
@@ -1242,7 +1147,6 @@ vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
 {
   rtx hi[3], lo[3];
   const char *pattern_hi, *pattern_lo;
-  bool push_p;
 
   switch (mode)
     {
@@ -1312,7 +1216,14 @@ vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
 	    }
 	}
 
-      if (vax_maybe_split_dimode_move (operands))
+      if (TARGET_QMATH
+	  && (!MEM_P (operands[0])
+	      || GET_CODE (XEXP (operands[0], 0)) == PRE_DEC
+	      || GET_CODE (XEXP (operands[0], 0)) == POST_INC
+	      || !illegal_addsub_di_memory_operand (operands[0], DImode))
+	  && ((CONST_INT_P (operands[1])
+	       && (unsigned HOST_WIDE_INT) INTVAL (operands[1]) >= 64)
+	      || GET_CODE (operands[1]) == CONST_DOUBLE))
 	{
 	  hi[0] = operands[0];
 	  hi[1] = operands[1];
@@ -1326,10 +1237,10 @@ vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
 	     be shorter (1 opcode byte + 1 addrmode byte + 8 immediate value
 	     bytes .vs. 2 opcode bytes + 2 addrmode bytes + 8 immediate value
 	     value bytes.  */
-	  if ((startswith (pattern_lo, "movl")
-	      && startswith (pattern_hi, "movl"))
-	      || (startswith (pattern_lo, "pushl")
-		  && startswith (pattern_hi, "pushl")))
+	  if ((!strncmp (pattern_lo, "movl", 4)
+	      && !strncmp (pattern_hi, "movl", 4))
+	      || (!strncmp (pattern_lo, "pushl", 5)
+		  && !strncmp (pattern_hi, "pushl", 5)))
 	    return "movq %1,%0";
 
 	  if (MEM_P (operands[0])
@@ -1353,13 +1264,19 @@ vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
       return "movq %1,%0";
 
     case E_SImode:
-      push_p = push_operand (operands[0], SImode);
-
       if (symbolic_operand (operands[1], SImode))
-	return push_p ? "pushab %a1" : "movab %a1,%0";
+	{
+	  if (push_operand (operands[0], SImode))
+	    return "pushab %a1";
+	  return "movab %a1,%0";
+	}
 
       if (operands[1] == const0_rtx)
-	return push_p ? "pushl %1" : "clrl %0";
+	{
+	  if (push_operand (operands[1], SImode))
+	    return "pushl %1";
+	  return "clrl %0";
+	}
 
       if (CONST_INT_P (operands[1])
 	  && (unsigned HOST_WIDE_INT) INTVAL (operands[1]) >= 64)
@@ -1385,7 +1302,9 @@ vax_output_int_move (rtx insn ATTRIBUTE_UNUSED, rtx *operands,
 	  if (i >= -0x8000 && i < 0)
 	    return "cvtwl %1,%0";
 	}
-      return push_p ? "pushl %1" : "movl %1,%0";
+      if (push_operand (operands[0], SImode))
+	return "pushl %1";
+      return "movl %1,%0";
 
     case E_HImode:
       if (CONST_INT_P (operands[1]))
@@ -1454,11 +1373,9 @@ vax_output_int_add (rtx_insn *insn, rtx *operands, machine_mode mode)
 	if (TARGET_QMATH)
 	  {
 	    gcc_assert (rtx_equal_p (operands[0], operands[1]));
-#ifdef NO_EXTERNAL_INDIRECT_ADDRESS
-	    gcc_assert (!flag_pic
-			|| !non_pic_external_memory_operand (low[2], SImode));
-	    gcc_assert (!flag_pic
-			|| !non_pic_external_memory_operand (low[0], SImode));
+#ifdef NO_EXTERNAL_INDIRECT_ADDRESSS
+	    gcc_assert (!flag_pic || !external_memory_operand (low[2], SImode));
+	    gcc_assert (!flag_pic || !external_memory_operand (low[0], SImode));
 #endif
 
 	    /* No reason to add a 0 to the low part and thus no carry, so just
@@ -1598,7 +1515,7 @@ vax_output_int_add (rtx_insn *insn, rtx *operands, machine_mode mode)
 
       if (flag_pic
 	  && (symbolic_operand (operands[1], SImode)
-	      || symbolic_operand (operands[2], SImode)))
+	      || symbolic_operand (operands[1], SImode)))
 	debug_rtx (insn);
 
       return "addl3 %1,%2,%0";
@@ -1830,26 +1747,23 @@ static bool
 index_term_p (rtx prod, machine_mode mode, bool strict)
 {
   rtx xfoo0, xfoo1;
-  bool log_p;
 
   if (GET_MODE_SIZE (mode) == 1)
     return BASE_REGISTER_P (prod, strict);
 
-  if ((GET_CODE (prod) != MULT && GET_CODE (prod) != ASHIFT)
-      || GET_MODE_SIZE (mode) > 8)
+  if (GET_CODE (prod) != MULT || GET_MODE_SIZE (mode) > 8)
     return false;
 
-  log_p = GET_CODE (prod) == ASHIFT;
   xfoo0 = XEXP (prod, 0);
   xfoo1 = XEXP (prod, 1);
 
   if (CONST_INT_P (xfoo0)
-      && GET_MODE_SIZE (mode) == (log_p ? 1 << INTVAL (xfoo0) : INTVAL (xfoo0))
+      && INTVAL (xfoo0) == (int)GET_MODE_SIZE (mode)
       && INDEX_REGISTER_P (xfoo1, strict))
     return true;
 
   if (CONST_INT_P (xfoo1)
-      && GET_MODE_SIZE (mode) == (log_p ? 1 << INTVAL (xfoo1) : INTVAL (xfoo1))
+      && INTVAL (xfoo1) == (int)GET_MODE_SIZE (mode)
       && INDEX_REGISTER_P (xfoo0, strict))
     return true;
 
@@ -2045,14 +1959,12 @@ vax_expand_addsub_di_operands (rtx * operands, enum rtx_code code)
     }
   else
     {
-      /* If we are adding a value to itself, that's really a multiply by 2,
-	 and that's just a left shift by 1.  If subtracting, it's just 0.  */
+      /* If are adding the same value together, that's really a multiply by 2,
+	 and that's just a left shift of 1.  */
       if (rtx_equal_p (operands[1], operands[2]))
 	{
-	  if (code == PLUS)
-	    emit_insn (gen_ashldi3 (operands[0], operands[1], const1_rtx));
-	  else
-	    emit_move_insn (operands[0], const0_rtx);
+	  gcc_assert (code != MINUS);
+	  emit_insn (gen_ashldi3 (operands[0], operands[1], const1_rtx));
 	  return;
 	}
 
@@ -2071,19 +1983,6 @@ vax_expand_addsub_di_operands (rtx * operands, enum rtx_code code)
       else
 	operands[2] = fixup_mathdi_operand (operands[2], DImode);
 
-      /* If we are adding or subtracting 0, then this is a move.  */
-      if (code == PLUS && operands[1] == const0_rtx)
-	{
-	  temp = operands[2];
-	  operands[2] = operands[1];
-	  operands[1] = temp;
-	}
-      if (operands[2] == const0_rtx)
-	{
-	  emit_move_insn (operands[0], operands[1]);
-	  return;
-	}
-
       /* If we are subtracting not from ourselves [d = a - b], and because the
 	 carry ops are two operand only, we would need to do a move prior to
 	 the subtract.  And if d == b, we would need a temp otherwise
@@ -2100,6 +1999,7 @@ vax_expand_addsub_di_operands (rtx * operands, enum rtx_code code)
 	{
 	  if (code == MINUS && CONSTANT_P (operands[1]))
 	    {
+	      temp = gen_reg_rtx (DImode);
 	      emit_insn (gen_sbcdi3 (operands[0], const0_rtx, operands[2]));
 	      code = PLUS;
 	      gen_insn = gen_adcdi3;
@@ -2115,6 +2015,79 @@ vax_expand_addsub_di_operands (rtx * operands, enum rtx_code code)
       gcc_assert (!CONSTANT_P (operands[2]) || code == PLUS);
       emit_insn ((*gen_insn) (operands[0], operands[1], operands[2]));
     }
+}
+
+bool
+adjacent_operands_p (rtx lo, rtx hi, machine_mode mode)
+{
+  HOST_WIDE_INT lo_offset;
+  HOST_WIDE_INT hi_offset;
+
+  if (GET_CODE (lo) != GET_CODE (hi))
+    return false;
+
+  if (REG_P (lo))
+    return mode == SImode && REGNO (lo) + 1 == REGNO (hi);
+  if (CONST_INT_P (lo))
+    return INTVAL (hi) == 0 && UINTVAL (lo) < 64;
+  if (CONST_INT_P (lo))
+    return mode != SImode;
+
+  if (!MEM_P (lo))
+    return false;
+
+  if (MEM_VOLATILE_P (lo) || MEM_VOLATILE_P (hi))
+    return false;
+
+  lo = XEXP (lo, 0);
+  hi = XEXP (hi, 0);
+
+  if (GET_CODE (lo) == POST_INC /* || GET_CODE (lo) == PRE_DEC */)
+    return rtx_equal_p (lo, hi);
+
+  switch (GET_CODE (lo))
+    {
+    case REG:
+    case SYMBOL_REF:
+      lo_offset = 0;
+      break;
+    case CONST:
+      lo = XEXP (lo, 0);
+      /* FALLTHROUGH */
+    case PLUS:
+      if (!CONST_INT_P (XEXP (lo, 1)))
+	return false;
+      lo_offset = INTVAL (XEXP (lo, 1));
+      lo = XEXP (lo, 0);
+      break;
+    default:
+      return false;
+    }
+
+  switch (GET_CODE (hi))
+    {
+    case REG:
+    case SYMBOL_REF:
+      hi_offset = 0;
+      break;
+    case CONST:
+      hi = XEXP (hi, 0);
+      /* FALLTHROUGH */
+    case PLUS:
+      if (!CONST_INT_P (XEXP (hi, 1)))
+	return false;
+      hi_offset = INTVAL (XEXP (hi, 1));
+      hi = XEXP (hi, 0);
+      break;
+    default:
+      return false;
+    }
+
+  if (GET_CODE (lo) == MULT || GET_CODE (lo) == PLUS)
+    return false;
+
+  return rtx_equal_p (lo, hi)
+	 && hi_offset - lo_offset == GET_MODE_SIZE (mode);
 }
 
 /* Output assembler code for a block containing the constant parts
@@ -2174,23 +2147,43 @@ vax_return_pops_args (tree fundecl ATTRIBUTE_UNUSED,
   return size > 255 * 4 ? 0 : (HOST_WIDE_INT) size;
 }
 
-/* Implement TARGET_FUNCTION_ARG.  On the VAX all args are pushed.  */
+/* Define where to put the arguments to a function.
+   Value is zero to push the argument on the stack,
+   or a hard register in which to store the argument.
+
+   MODE is the argument's machine mode.
+   TYPE is the data type of the argument (as a tree).
+    This is null for libcalls where that information may
+    not be available.
+   CUM is a variable of type CUMULATIVE_ARGS which gives info about
+    the preceding args and about the function being called.
+   NAMED is nonzero if this argument is a named parameter
+    (otherwise it is an extra parameter matching an ellipsis).  */
+
+/* On the VAX all args are pushed.  */
 
 static rtx
-vax_function_arg (cumulative_args_t, const function_arg_info &)
+vax_function_arg (cumulative_args_t cum ATTRIBUTE_UNUSED,
+		  machine_mode mode ATTRIBUTE_UNUSED,
+		  const_tree type ATTRIBUTE_UNUSED,
+		  bool named ATTRIBUTE_UNUSED)
 {
   return NULL_RTX;
 }
 
-/* Update the data in CUM to advance over argument ARG.  */
+/* Update the data in CUM to advance over an argument of mode MODE and
+   data type TYPE.  (TYPE is null for libcalls where that information
+   may not be available.)  */
 
 static void
-vax_function_arg_advance (cumulative_args_t cum_v,
-			  const function_arg_info &arg)
+vax_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
+			  const_tree type, bool named ATTRIBUTE_UNUSED)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
-  *cum += (arg.promoted_size_in_bytes () + 3) & ~3;
+  *cum += (mode != BLKmode
+	   ? (GET_MODE_SIZE (mode) + 3) & ~3
+	   : (int_size_in_bytes (type) + 3) & ~3);
 }
 
 static HOST_WIDE_INT

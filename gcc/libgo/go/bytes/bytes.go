@@ -12,12 +12,23 @@ import (
 	"unicode/utf8"
 )
 
-// Equal reports whether a and b
+// Equal returns a boolean reporting whether a and b
 // are the same length and contain the same bytes.
 // A nil argument is equivalent to an empty slice.
 func Equal(a, b []byte) bool {
-	// Neither cmd/compile nor gccgo allocates for these string conversions.
-	return string(a) == string(b)
+	return bytealg.Equal(a, b)
+}
+
+func equalPortable(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, c := range a {
+		if c != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Compare returns an integer comparing two byte slices lexicographically.
@@ -103,34 +114,12 @@ func indexBytePortable(s []byte, c byte) int {
 // LastIndex returns the index of the last instance of sep in s, or -1 if sep is not present in s.
 func LastIndex(s, sep []byte) int {
 	n := len(sep)
-	switch {
-	case n == 0:
+	if n == 0 {
 		return len(s)
-	case n == 1:
-		return LastIndexByte(s, sep[0])
-	case n == len(s):
-		if Equal(s, sep) {
-			return 0
-		}
-		return -1
-	case n > len(s):
-		return -1
 	}
-	// Rabin-Karp search from the end of the string
-	hashss, pow := bytealg.HashStrRevBytes(sep)
-	last := len(s) - n
-	var h uint32
-	for i := len(s) - 1; i >= last; i-- {
-		h = h*bytealg.PrimeRK + uint32(s[i])
-	}
-	if h == hashss && Equal(s[last:], sep) {
-		return last
-	}
-	for i := last - 1; i >= 0; i-- {
-		h *= bytealg.PrimeRK
-		h += uint32(s[i])
-		h -= pow * uint32(s[i+n])
-		if h == hashss && Equal(s[i:i+n], sep) {
+	c := sep[0]
+	for i := len(s) - n; i >= 0; i-- {
+		if s[i] == c && (n == 1 || Equal(s[i:i+n], sep)) {
 			return i
 		}
 	}
@@ -183,29 +172,6 @@ func IndexAny(s []byte, chars string) int {
 		// Avoid scanning all of s.
 		return -1
 	}
-	if len(s) == 1 {
-		r := rune(s[0])
-		if r >= utf8.RuneSelf {
-			// search utf8.RuneError.
-			for _, r = range chars {
-				if r == utf8.RuneError {
-					return 0
-				}
-			}
-			return -1
-		}
-		if bytealg.IndexByteString(chars, s[0]) >= 0 {
-			return 0
-		}
-		return -1
-	}
-	if len(chars) == 1 {
-		r := rune(chars[0])
-		if r >= utf8.RuneSelf {
-			r = utf8.RuneError
-		}
-		return IndexRune(s, r)
-	}
 	if len(s) > 8 {
 		if as, isASCII := makeASCIISet(chars); isASCII {
 			for i, c := range s {
@@ -220,28 +186,9 @@ func IndexAny(s []byte, chars string) int {
 	for i := 0; i < len(s); i += width {
 		r := rune(s[i])
 		if r < utf8.RuneSelf {
-			if bytealg.IndexByteString(chars, s[i]) >= 0 {
-				return i
-			}
 			width = 1
-			continue
-		}
-		r, width = utf8.DecodeRune(s[i:])
-		if r != utf8.RuneError {
-			// r is 2 to 4 bytes
-			if len(chars) == width {
-				if chars == string(r) {
-					return i
-				}
-				continue
-			}
-			// Use bytealg.IndexString for performance if available.
-			if bytealg.MaxLen >= width {
-				if bytealg.IndexString(chars, string(r)) >= 0 {
-					return i
-				}
-				continue
-			}
+		} else {
+			r, width = utf8.DecodeRune(s[i:])
 		}
 		for _, ch := range chars {
 			if r == ch {
@@ -271,64 +218,11 @@ func LastIndexAny(s []byte, chars string) int {
 			return -1
 		}
 	}
-	if len(s) == 1 {
-		r := rune(s[0])
-		if r >= utf8.RuneSelf {
-			for _, r = range chars {
-				if r == utf8.RuneError {
-					return 0
-				}
-			}
-			return -1
-		}
-		if bytealg.IndexByteString(chars, s[0]) >= 0 {
-			return 0
-		}
-		return -1
-	}
-	if len(chars) == 1 {
-		cr := rune(chars[0])
-		if cr >= utf8.RuneSelf {
-			cr = utf8.RuneError
-		}
-		for i := len(s); i > 0; {
-			r, size := utf8.DecodeLastRune(s[:i])
-			i -= size
-			if r == cr {
-				return i
-			}
-		}
-		return -1
-	}
 	for i := len(s); i > 0; {
-		r := rune(s[i-1])
-		if r < utf8.RuneSelf {
-			if bytealg.IndexByteString(chars, s[i-1]) >= 0 {
-				return i - 1
-			}
-			i--
-			continue
-		}
 		r, size := utf8.DecodeLastRune(s[:i])
 		i -= size
-		if r != utf8.RuneError {
-			// r is 2 to 4 bytes
-			if len(chars) == size {
-				if chars == string(r) {
-					return i
-				}
-				continue
-			}
-			// Use bytealg.IndexString for performance if available.
-			if bytealg.MaxLen >= size {
-				if bytealg.IndexString(chars, string(r)) >= 0 {
-					return i
-				}
-				continue
-			}
-		}
-		for _, ch := range chars {
-			if r == ch {
+		for _, c := range chars {
+			if r == c {
 				return i
 			}
 		}
@@ -459,9 +353,8 @@ func Fields(s []byte) [][]byte {
 // It splits the slice s at each run of code points c satisfying f(c) and
 // returns a slice of subslices of s. If all code points in s satisfy f(c), or
 // len(s) == 0, an empty slice is returned.
-//
-// FieldsFunc makes no guarantees about the order in which it calls f(c)
-// and assumes that f always returns the same value for a given c.
+// FieldsFunc makes no guarantees about the order in which it calls f(c).
+// If f does not return consistent results for a given c, FieldsFunc may crash.
 func FieldsFunc(s []byte, f func(rune) bool) [][]byte {
 	// A span is used to record a slice of s of the form s[start:end].
 	// The start index is inclusive and the end index is exclusive.
@@ -472,10 +365,8 @@ func FieldsFunc(s []byte, f func(rune) bool) [][]byte {
 	spans := make([]span, 0, 32)
 
 	// Find the field start and end indices.
-	// Doing this in a separate pass (rather than slicing the string s
-	// and collecting the result substrings right away) is significantly
-	// more efficient, possibly due to cache effects.
-	start := -1 // valid span start if >= 0
+	wasField := false
+	fromIndex := 0
 	for i := 0; i < len(s); {
 		size := 1
 		r := rune(s[i])
@@ -483,21 +374,22 @@ func FieldsFunc(s []byte, f func(rune) bool) [][]byte {
 			r, size = utf8.DecodeRune(s[i:])
 		}
 		if f(r) {
-			if start >= 0 {
-				spans = append(spans, span{start, i})
-				start = -1
+			if wasField {
+				spans = append(spans, span{start: fromIndex, end: i})
+				wasField = false
 			}
 		} else {
-			if start < 0 {
-				start = i
+			if !wasField {
+				fromIndex = i
+				wasField = true
 			}
 		}
 		i += size
 	}
 
 	// Last field might end at EOF.
-	if start >= 0 {
-		spans = append(spans, span{start, len(s)})
+	if wasField {
+		spans = append(spans, span{fromIndex, len(s)})
 	}
 
 	// Create subslices from recorded field indices.
@@ -585,16 +477,13 @@ func Map(mapping func(r rune) rune, s []byte) []byte {
 // It panics if count is negative or if
 // the result of (len(b) * count) overflows.
 func Repeat(b []byte, count int) []byte {
-	if count == 0 {
-		return []byte{}
-	}
 	// Since we cannot return an error on overflow,
 	// we should panic if the repeat will generate
 	// an overflow.
 	// See Issue golang.org/issue/16237.
 	if count < 0 {
 		panic("bytes: negative Repeat count")
-	} else if len(b)*count/count != len(b) {
+	} else if count > 0 && len(b)*count/count != len(b) {
 		panic("bytes: Repeat count causes overflow")
 	}
 
@@ -607,66 +496,11 @@ func Repeat(b []byte, count int) []byte {
 	return nb
 }
 
-// ToUpper returns a copy of the byte slice s with all Unicode letters mapped to
-// their upper case.
-func ToUpper(s []byte) []byte {
-	isASCII, hasLower := true, false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= utf8.RuneSelf {
-			isASCII = false
-			break
-		}
-		hasLower = hasLower || ('a' <= c && c <= 'z')
-	}
+// ToUpper treats s as UTF-8-encoded bytes and returns a copy with all the Unicode letters within it mapped to their upper case.
+func ToUpper(s []byte) []byte { return Map(unicode.ToUpper, s) }
 
-	if isASCII { // optimize for ASCII-only byte slices.
-		if !hasLower {
-			// Just return a copy.
-			return append([]byte(""), s...)
-		}
-		b := make([]byte, len(s))
-		for i := 0; i < len(s); i++ {
-			c := s[i]
-			if 'a' <= c && c <= 'z' {
-				c -= 'a' - 'A'
-			}
-			b[i] = c
-		}
-		return b
-	}
-	return Map(unicode.ToUpper, s)
-}
-
-// ToLower returns a copy of the byte slice s with all Unicode letters mapped to
-// their lower case.
-func ToLower(s []byte) []byte {
-	isASCII, hasUpper := true, false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= utf8.RuneSelf {
-			isASCII = false
-			break
-		}
-		hasUpper = hasUpper || ('A' <= c && c <= 'Z')
-	}
-
-	if isASCII { // optimize for ASCII-only byte slices.
-		if !hasUpper {
-			return append([]byte(""), s...)
-		}
-		b := make([]byte, len(s))
-		for i := 0; i < len(s); i++ {
-			c := s[i]
-			if 'A' <= c && c <= 'Z' {
-				c += 'a' - 'A'
-			}
-			b[i] = c
-		}
-		return b
-	}
-	return Map(unicode.ToLower, s)
-}
+// ToLower treats s as UTF-8-encoded bytes and returns a copy with all the Unicode letters mapped to their lower case.
+func ToLower(s []byte) []byte { return Map(unicode.ToLower, s) }
 
 // ToTitle treats s as UTF-8-encoded bytes and returns a copy with all the Unicode letters mapped to their title case.
 func ToTitle(s []byte) []byte { return Map(unicode.ToTitle, s) }
@@ -687,35 +521,6 @@ func ToLowerSpecial(c unicode.SpecialCase, s []byte) []byte {
 // title case, giving priority to the special casing rules.
 func ToTitleSpecial(c unicode.SpecialCase, s []byte) []byte {
 	return Map(c.ToTitle, s)
-}
-
-// ToValidUTF8 treats s as UTF-8-encoded bytes and returns a copy with each run of bytes
-// representing invalid UTF-8 replaced with the bytes in replacement, which may be empty.
-func ToValidUTF8(s, replacement []byte) []byte {
-	b := make([]byte, 0, len(s)+len(replacement))
-	invalid := false // previous byte was from an invalid UTF-8 sequence
-	for i := 0; i < len(s); {
-		c := s[i]
-		if c < utf8.RuneSelf {
-			i++
-			invalid = false
-			b = append(b, byte(c))
-			continue
-		}
-		_, wid := utf8.DecodeRune(s[i:])
-		if wid == 1 {
-			i++
-			if !invalid {
-				invalid = true
-				b = append(b, replacement...)
-			}
-			continue
-		}
-		invalid = false
-		b = append(b, s[i:i+wid]...)
-		i += wid
-	}
-	return b
 }
 
 // isSeparator reports whether the rune could mark a word boundary.
@@ -929,41 +734,7 @@ func TrimRight(s []byte, cutset string) []byte {
 // TrimSpace returns a subslice of s by slicing off all leading and
 // trailing white space, as defined by Unicode.
 func TrimSpace(s []byte) []byte {
-	// Fast path for ASCII: look for the first ASCII non-space byte
-	start := 0
-	for ; start < len(s); start++ {
-		c := s[start]
-		if c >= utf8.RuneSelf {
-			// If we run into a non-ASCII byte, fall back to the
-			// slower unicode-aware method on the remaining bytes
-			return TrimFunc(s[start:], unicode.IsSpace)
-		}
-		if asciiSpace[c] == 0 {
-			break
-		}
-	}
-
-	// Now look for the first ASCII non-space byte from the end
-	stop := len(s)
-	for ; stop > start; stop-- {
-		c := s[stop-1]
-		if c >= utf8.RuneSelf {
-			return TrimFunc(s[start:stop], unicode.IsSpace)
-		}
-		if asciiSpace[c] == 0 {
-			break
-		}
-	}
-
-	// At this point s[start:stop] starts and ends with an ASCII
-	// non-space bytes, so we're done. Non-ASCII cases have already
-	// been handled above.
-	if start == stop {
-		// Special case to preserve previous TrimLeftFunc behavior,
-		// returning nil instead of empty slice if all spaces.
-		return nil
-	}
-	return s[start:stop]
+	return TrimFunc(s, unicode.IsSpace)
 }
 
 // Runes interprets s as a sequence of UTF-8-encoded code points.
@@ -1032,8 +803,7 @@ func ReplaceAll(s, old, new []byte) []byte {
 }
 
 // EqualFold reports whether s and t, interpreted as UTF-8 strings,
-// are equal under Unicode case-folding, which is a more general
-// form of case-insensitivity.
+// are equal under Unicode case-folding.
 func EqualFold(s, t []byte) bool {
 	for len(s) != 0 && len(t) != 0 {
 		// Extract first rune from each.
@@ -1116,11 +886,11 @@ func Index(s, sep []byte) int {
 			if s[i] != c0 {
 				// IndexByte is faster than bytealg.Index, so use it as long as
 				// we're not getting lots of false positives.
-				o := IndexByte(s[i+1:t], c0)
+				o := IndexByte(s[i:t], c0)
 				if o < 0 {
 					return -1
 				}
-				i += o + 1
+				i += o
 			}
 			if s[i+1] == c1 && Equal(s[i:i+n], sep) {
 				return i
@@ -1145,11 +915,11 @@ func Index(s, sep []byte) int {
 	t := len(s) - n + 1
 	for i < t {
 		if s[i] != c0 {
-			o := IndexByte(s[i+1:t], c0)
+			o := IndexByte(s[i:t], c0)
 			if o < 0 {
 				break
 			}
-			i += o + 1
+			i += o
 		}
 		if s[i+1] == c1 && Equal(s[i:i+n], sep) {
 			return i
@@ -1165,7 +935,7 @@ func Index(s, sep []byte) int {
 			// we should cutover at even larger average skips,
 			// because Equal becomes that much more expensive.
 			// This code does not take that effect into account.
-			j := bytealg.IndexRabinKarpBytes(s[i:], sep)
+			j := indexRabinKarp(s[i:], sep)
 			if j < 0 {
 				return -1
 			}
@@ -1173,4 +943,47 @@ func Index(s, sep []byte) int {
 		}
 	}
 	return -1
+}
+
+func indexRabinKarp(s, sep []byte) int {
+	// Rabin-Karp search
+	hashsep, pow := hashStr(sep)
+	n := len(sep)
+	var h uint32
+	for i := 0; i < n; i++ {
+		h = h*primeRK + uint32(s[i])
+	}
+	if h == hashsep && Equal(s[:n], sep) {
+		return 0
+	}
+	for i := n; i < len(s); {
+		h *= primeRK
+		h += uint32(s[i])
+		h -= pow * uint32(s[i-n])
+		i++
+		if h == hashsep && Equal(s[i-n:i], sep) {
+			return i - n
+		}
+	}
+	return -1
+}
+
+// primeRK is the prime base used in Rabin-Karp algorithm.
+const primeRK = 16777619
+
+// hashStr returns the hash and the appropriate multiplicative
+// factor for use in Rabin-Karp algorithm.
+func hashStr(sep []byte) (uint32, uint32) {
+	hash := uint32(0)
+	for i := 0; i < len(sep); i++ {
+		hash = hash*primeRK + uint32(sep[i])
+	}
+	var pow, sq uint32 = 1, primeRK
+	for i := len(sep); i > 0; i >>= 1 {
+		if i&1 != 0 {
+			pow *= sq
+		}
+		sq *= sq
+	}
+	return hash, pow
 }

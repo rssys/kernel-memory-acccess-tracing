@@ -1,5 +1,4 @@
 /* { dg-do compile } */
-/* { dg-skip-if "-mpure-code supports M-profile only" { *-*-* } { "-mpure-code" } } */
 /* { dg-options "-O2 -fno-omit-frame-pointer -march=armv7-a" } */
 
 int a, h, j;

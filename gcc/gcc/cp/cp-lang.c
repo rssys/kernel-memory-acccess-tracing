@@ -1,5 +1,5 @@
 /* Language-dependent hooks for C++.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
    Contributed by Alexandre Oliva  <aoliva@redhat.com>
 
 This file is part of GCC.
@@ -34,8 +34,6 @@ static tree cp_eh_personality (void);
 static tree get_template_innermost_arguments_folded (const_tree);
 static tree get_template_argument_pack_elems_folded (const_tree);
 static tree cxx_enum_underlying_base_type (const_tree);
-static tree *cxx_omp_get_decl_init (tree);
-static void cxx_omp_finish_decl_inits (void);
 
 /* Lang hooks common to C++ and ObjC++ are declared in cp/cp-objcp-common.h;
    consequently, there should be very few hooks below.  */
@@ -79,12 +77,6 @@ static void cxx_omp_finish_decl_inits (void);
 #define LANG_HOOKS_EH_RUNTIME_TYPE build_eh_type_type
 #undef LANG_HOOKS_ENUM_UNDERLYING_BASE_TYPE
 #define LANG_HOOKS_ENUM_UNDERLYING_BASE_TYPE cxx_enum_underlying_base_type
-#undef LANG_HOOKS_PREPROCESS_MAIN_FILE
-#define LANG_HOOKS_PREPROCESS_MAIN_FILE module_begin_main_file
-#undef LANG_HOOKS_PREPROCESS_OPTIONS
-#define LANG_HOOKS_PREPROCESS_OPTIONS module_preprocess_options
-#undef LANG_HOOKS_PREPROCESS_TOKEN
-#define LANG_HOOKS_PREPROCESS_TOKEN module_token_pre
 
 #if CHECKING_P
 #undef LANG_HOOKS_RUN_LANG_SELFTESTS
@@ -93,12 +85,6 @@ static void cxx_omp_finish_decl_inits (void);
 
 #undef LANG_HOOKS_GET_SUBSTRING_LOCATION
 #define LANG_HOOKS_GET_SUBSTRING_LOCATION c_get_substring_location
-
-#undef LANG_HOOKS_OMP_GET_DECL_INIT
-#define LANG_HOOKS_OMP_GET_DECL_INIT cxx_omp_get_decl_init
-
-#undef LANG_HOOKS_OMP_FINISH_DECL_INITS
-#define LANG_HOOKS_OMP_FINISH_DECL_INITS cxx_omp_finish_decl_inits
 
 /* Each front end provides its own lang hook initializer.  */
 struct lang_hooks lang_hooks = LANG_HOOKS_INITIALIZER;
@@ -123,7 +109,8 @@ cxx_dwarf_name (tree t, int verbosity)
 {
   gcc_assert (DECL_P (t));
 
-  if (DECL_NAME (t) && IDENTIFIER_ANON_P (DECL_NAME (t)))
+  if (DECL_NAME (t)
+      && (anon_aggrname_p (DECL_NAME (t)) || LAMBDA_TYPE_P (t)))
     return NULL;
   if (verbosity >= 2)
     return decl_as_dwarf_string (t,
@@ -239,30 +226,6 @@ tree cxx_enum_underlying_base_type (const_tree type)
                                 TYPE_UNSIGNED (underlying_type));
 
   return underlying_type;
-}
-
-/* The C++ version of the omp_get_decl_init langhook returns the static
-   initializer for a variable declaration if present, otherwise it
-   tries to find and return the dynamic initializer.  If not present,
-   it returns NULL.  */
-
-static tree *
-cxx_omp_get_decl_init (tree decl)
-{
-  if (DECL_INITIAL (decl))
-    return &DECL_INITIAL (decl);
-
-  return hash_map_safe_get (dynamic_initializers, decl);
-}
-
-/* The C++ version of the omp_finish_decl_inits langhook allows GC to
-   reclaim the memory used by the hash-map used to hold dynamic initializer
-   information.  */
-
-static void
-cxx_omp_finish_decl_inits (void)
-{
-  dynamic_initializers = NULL;
 }
 
 #if CHECKING_P

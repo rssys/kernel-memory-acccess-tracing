@@ -1,8 +1,7 @@
 //===-- sanitizer_tls_get_addr.h --------------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -28,7 +27,6 @@
 #ifndef SANITIZER_TLS_GET_ADDR_H
 #define SANITIZER_TLS_GET_ADDR_H
 
-#include "sanitizer_atomic.h"
 #include "sanitizer_common.h"
 
 namespace __sanitizer {
@@ -39,30 +37,14 @@ struct DTLS {
   struct DTV {
     uptr beg, size;
   };
-  struct DTVBlock {
-    atomic_uintptr_t next;
-    DTV dtvs[(4096UL - sizeof(next)) / sizeof(DTLS::DTV)];
-  };
 
-  static_assert(sizeof(DTVBlock) <= 4096UL, "Unexpected block size");
+  uptr dtv_size;
+  DTV *dtv;  // dtv_size elements, allocated by MmapOrDie.
 
-  atomic_uintptr_t dtv_block;
-
-  // Auxiliary fields, don't access them outside sanitizer_tls_get_addr.cpp
+  // Auxiliary fields, don't access them outside sanitizer_tls_get_addr.cc
   uptr last_memalign_size;
   uptr last_memalign_ptr;
 };
-
-template <typename Fn>
-void ForEachDVT(DTLS *dtls, const Fn &fn) {
-  DTLS::DTVBlock *block =
-      (DTLS::DTVBlock *)atomic_load(&dtls->dtv_block, memory_order_acquire);
-  while (block) {
-    int id = 0;
-    for (auto &d : block->dtvs) fn(d, id++);
-    block = (DTLS::DTVBlock *)atomic_load(&block->next, memory_order_acquire);
-  }
-}
 
 // Returns pointer and size of a linker-allocated TLS block.
 // Each block is returned exactly once.

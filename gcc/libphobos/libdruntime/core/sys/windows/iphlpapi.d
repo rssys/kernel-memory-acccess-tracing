@@ -9,10 +9,9 @@
  */
 module core.sys.windows.iphlpapi;
 version (Windows):
-@system:
 
 import core.sys.windows.ipexport, core.sys.windows.iprtrmib, core.sys.windows.iptypes;
-import core.sys.windows.winbase, core.sys.windows.windef;
+private import core.sys.windows.winbase, core.sys.windows.windef;
 
 extern (Windows) {
     DWORD AddIPAddress(IPAddr, IPMask, DWORD, PULONG, PULONG);

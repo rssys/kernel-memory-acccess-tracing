@@ -1,7 +1,7 @@
 /* Test for bug in conversions from 5-byte UTF-8 sequences in
    cpplib.  */
 /* { dg-do run { target { 4byte_wchar_t } } } */
-/* { dg-options "-std=gnu99 -w" } */
+/* { dg-options "-std=gnu99" } */
 
 extern void abort (void);
 extern void exit (int);

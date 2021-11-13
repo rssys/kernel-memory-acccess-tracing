@@ -1,5 +1,3 @@
-! { dg-do run }
-!
 MODULE reduction_test
 
 CONTAINS

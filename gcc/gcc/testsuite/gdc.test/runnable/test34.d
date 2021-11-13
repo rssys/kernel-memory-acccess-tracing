@@ -1,10 +1,3 @@
-// RUNNABLE_PHOBOS_TEST
-/*
-TEST_OUTPUT:
----
-Object
----
-*/
 
 module test34;
 

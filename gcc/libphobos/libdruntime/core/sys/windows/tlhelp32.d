@@ -8,12 +8,11 @@
  */
 module core.sys.windows.tlhelp32;
 version (Windows):
-@system:
 pragma(lib, "kernel32");
 
 version (ANSI) {} else version = Unicode;
 
-import core.sys.windows.windef;
+private import core.sys.windows.windef;
 
 enum : uint {
     HF32_DEFAULT = 1,

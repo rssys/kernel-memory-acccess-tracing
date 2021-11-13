@@ -1,6 +1,5 @@
 /* { dg-do run { target openacc_nvidia_accel_selected } } */
 /* { dg-additional-options "-lcuda" } */
-/* { dg-require-effective-target openacc_cuda } */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -121,13 +120,9 @@ main (int argc, char **argv)
 
   for (i = 0; i < N; i++)
     {
-      acc_memcpy_from_device (a[i], d_a[i], nbytes);
+      acc_copyout (a[i], nbytes);
       if (*a[i] != i)
 	abort ();
-
-      acc_unmap_data (a[i]);
-
-      acc_free (d_a[i]);
     }
 
   free (streams);

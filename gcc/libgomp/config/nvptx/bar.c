@@ -1,4 +1,4 @@
-/* Copyright (C) 2015-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2015-2019 Free Software Foundation, Inc.
    Contributed by Alexander Monakov <amonakov@ispras.ru>
 
    This file is part of the GNU Offloading and Multi Processing Library
@@ -41,8 +41,7 @@ gomp_barrier_wait_end (gomp_barrier_t *bar, gomp_barrier_state_t state)
       __atomic_store_n (&bar->generation, bar->generation + BAR_INCR,
 			MEMMODEL_RELEASE);
     }
-  if (bar->total > 1)
-    asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+  asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
 }
 
 void
@@ -70,8 +69,7 @@ gomp_barrier_wait_last (gomp_barrier_t *bar)
 void
 gomp_team_barrier_wake (gomp_barrier_t *bar, int count)
 {
-  if (bar->total > 1)
-    asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+  asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
 }
 
 void
@@ -97,8 +95,7 @@ gomp_team_barrier_wait_end (gomp_barrier_t *bar, gomp_barrier_state_t state)
 	  state &= ~BAR_CANCELLED;
 	  state += BAR_INCR - BAR_WAS_LAST;
 	  __atomic_store_n (&bar->generation, state, MEMMODEL_RELEASE);
-	  if (bar->total > 1)
-	    asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+	  asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
 	  return;
 	}
     }
@@ -107,8 +104,7 @@ gomp_team_barrier_wait_end (gomp_barrier_t *bar, gomp_barrier_state_t state)
   state &= ~BAR_CANCELLED;
   do
     {
-      if (bar->total > 1)
-	asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+      asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
       gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
       if (__builtin_expect (gen & BAR_TASK_PENDING, 0))
 	{
@@ -162,8 +158,7 @@ gomp_team_barrier_wait_cancel_end (gomp_barrier_t *bar,
 	{
 	  state += BAR_INCR - BAR_WAS_LAST;
 	  __atomic_store_n (&bar->generation, state, MEMMODEL_RELEASE);
-	  if (bar->total > 1)
-	    asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+	  asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
 	  return false;
 	}
     }
@@ -174,8 +169,7 @@ gomp_team_barrier_wait_cancel_end (gomp_barrier_t *bar,
   generation = state;
   do
     {
-      if (bar->total > 1)
-	asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
+      asm ("bar.sync 1, %0;" : : "r" (32 * bar->total));
       gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
       if (__builtin_expect (gen & BAR_CANCELLED, 0))
 	return true;

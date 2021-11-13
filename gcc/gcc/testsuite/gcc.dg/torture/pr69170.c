@@ -6,7 +6,7 @@ typedef struct {
     char buf[];
 } hash_state;
 int a;
-extern hash_state b;
+hash_state b;
 void fn1()
 {
   a = 0;

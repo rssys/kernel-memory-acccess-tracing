@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // Build this command explicitly: go build gotype.go
@@ -49,9 +48,9 @@ The flags are:
 
 Flags controlling additional output:
 	-ast
-		print AST
+		print AST (forces -seq)
 	-trace
-		print parse trace
+		print parse trace (forces -seq)
 	-comments
 		parse comments (ignored unless -ast or -trace is provided)
 	-panic
@@ -89,7 +88,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -105,8 +104,8 @@ var (
 	compiler   = flag.String("c", "source", "compiler used for installed packages (gc, gccgo, or source)")
 
 	// additional output control
-	printAST      = flag.Bool("ast", false, "print AST")
-	printTrace    = flag.Bool("trace", false, "print parse trace")
+	printAST      = flag.Bool("ast", false, "print AST (forces -seq)")
+	printTrace    = flag.Bool("trace", false, "print parse trace (forces -seq)")
 	parseComments = flag.Bool("comments", false, "parse comments (ignored unless -ast or -trace is provided)")
 	panicOnError  = flag.Bool("panic", false, "panic on first error")
 )
@@ -192,7 +191,7 @@ func parse(filename string, src interface{}) (*ast.File, error) {
 }
 
 func parseStdin() (*ast.File, error) {
-	src, err := io.ReadAll(os.Stdin)
+	src, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err
 	}

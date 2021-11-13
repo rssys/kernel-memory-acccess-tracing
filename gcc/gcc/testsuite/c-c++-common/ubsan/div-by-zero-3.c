@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-fsanitize=signed-integer-overflow -Wno-overflow" } */
+/* { dg-options "-fsanitize=integer-divide-by-zero -Wno-overflow" } */
 
 #include <limits.h>
 

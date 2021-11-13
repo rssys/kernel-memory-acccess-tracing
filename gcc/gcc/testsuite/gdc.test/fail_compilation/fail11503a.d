@@ -1,9 +1,3 @@
-/*
-TEST_OUTPUT:
----
-fail_compilation/fail11503a.d(24): Error: cannot implicitly convert expression `makes()` of type `immutable(S)*` to `S*`
----
-*/
 struct S
 {
     immutable(S)* s;

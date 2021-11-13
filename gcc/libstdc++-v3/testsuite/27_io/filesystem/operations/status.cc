@@ -1,4 +1,4 @@
-// Copyright (C) 2015-2021 Free Software Foundation, Inc.
+// Copyright (C) 2015-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,6 +15,7 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
+// { dg-options "-std=gnu++17" }
 // { dg-do run { target c++17 } }
 // { dg-require-filesystem-ts "" }
 
@@ -55,8 +56,10 @@ test02()
 void
 test03()
 {
-  if (!__gnu_test::permissions_are_testable())
-    return;
+#if defined(__MINGW32__) || defined(__MINGW64__)
+  // No permissions support
+  return;
+#endif
 
   fs::path dir = __gnu_test::nonexistent_path();
   fs::create_directory(dir);

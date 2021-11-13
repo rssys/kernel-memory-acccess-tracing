@@ -6,7 +6,7 @@
 --                                                                          --
 --                               B o d y                                    --
 --                                                                          --
---          Copyright (C) 1998-2021, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -43,6 +43,7 @@
 
 with System.Task_Primitives.Operations;
 with System.Restrictions;
+with System.Parameters;
 
 with System.Tasking.Initialization;
 pragma Elaborate_All (System.Tasking.Initialization);
@@ -52,13 +53,14 @@ package body System.Tasking.Protected_Objects.Entries is
 
    package STPO renames System.Task_Primitives.Operations;
 
+   use Parameters;
    use Task_Primitives.Operations;
 
    ----------------
    -- Local Data --
    ----------------
 
-   Locking_Policy : constant Character;
+   Locking_Policy : Character;
    pragma Import (C, Locking_Policy, "__gl_locking_policy");
 
    --------------
@@ -79,6 +81,10 @@ package body System.Tasking.Protected_Objects.Entries is
 
       STPO.Write_Lock (Object.L'Unrestricted_Access, Ceiling_Violation);
 
+      if Single_Lock then
+         Lock_RTS;
+      end if;
+
       if Ceiling_Violation then
 
          --  Dip our own priority down to ceiling of lock. See similar code in
@@ -89,10 +95,19 @@ package body System.Tasking.Protected_Objects.Entries is
          Self_ID.New_Base_Priority := Object.Ceiling;
          Initialization.Change_Base_Priority (Self_ID);
          STPO.Unlock (Self_ID);
+
+         if Single_Lock then
+            Unlock_RTS;
+         end if;
+
          STPO.Write_Lock (Object.L'Unrestricted_Access, Ceiling_Violation);
 
          if Ceiling_Violation then
             raise Program_Error with "ceiling violation";
+         end if;
+
+         if Single_Lock then
+            Lock_RTS;
          end if;
 
          Object.Old_Base_Priority := Old_Base_Priority;
@@ -118,7 +133,13 @@ package body System.Tasking.Protected_Objects.Entries is
       end loop;
 
       Object.Finalized := True;
+
+      if Single_Lock then
+         Unlock_RTS;
+      end if;
+
       STPO.Unlock (Object.L'Unrestricted_Access);
+
       STPO.Finalize_Lock (Object.L'Unrestricted_Access);
    end Finalize;
 

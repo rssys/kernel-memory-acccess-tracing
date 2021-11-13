@@ -1,4 +1,4 @@
-<book xmlns="http://docbook.org/ns/docbook" version="5.0"
+<book xmlns="http://docbook.org/ns/docbook" version="5.0" 
  xml:id="manual" xreflabel="Manual">
 <?dbhtml dir="manual"?>
 <?dbhtml filename="index.html"?>
@@ -124,6 +124,12 @@
   <author><personname><firstname>Stefan</firstname><surname>Olsson</surname></personname><personblurb>
       <para>
 	mt_allocator
+      </para>
+    </personblurb></author>
+
+  <author><personname><firstname>Silvius</firstname><surname>Rus</surname></personname><personblurb>
+      <para>
+	Profile mode
       </para>
     </personblurb></author>
 

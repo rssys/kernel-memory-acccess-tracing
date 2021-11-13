@@ -2,7 +2,6 @@
 // { dg-options "-O2 -std=gnu++11 -fdump-tree-optimized" } */
 
 #include <array>
-#include <cstdint>
 
 // Return a copy of the underlying memory of an arbitrary value.
 template <

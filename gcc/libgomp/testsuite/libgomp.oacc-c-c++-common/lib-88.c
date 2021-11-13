@@ -1,4 +1,4 @@
-/* { dg-skip-if "" { *-*-* } { "*" } { "-DACC_MEM_SHARED=0" } } */
+/* { dg-do run } */
 
 #include <stdio.h>
 #include <pthread.h>
@@ -47,7 +47,10 @@ main (int argc, char **argv)
   pthread_attr_t attr;
   pthread_t *tid;
 
-  acc_init (acc_device_default);
+  if (acc_get_num_devices (acc_device_nvidia) == 0)
+    return 0;
+
+  acc_init (acc_device_nvidia);
 
   x = (unsigned char *) malloc (N);
 
@@ -99,6 +102,8 @@ main (int argc, char **argv)
 
   if (acc_is_present (x, N) != 0)
     abort ();
+
+  acc_shutdown (acc_device_nvidia);
 
   return 0;
 }
