@@ -1266,6 +1266,7 @@ merge_stmts_p (gimple *stmt1, gimple *stmt2)
       case IFN_UBSAN_OBJECT_SIZE:
       case IFN_UBSAN_PTR:
       case IFN_ASAN_CHECK:
+      case IFN_ASAN_MEMTRACE:
 	/* For these internal functions, gimple_location is an implicit
 	   parameter, which will be used explicitly after expansion.
 	   Merging these statements may cause confusing line numbers in
