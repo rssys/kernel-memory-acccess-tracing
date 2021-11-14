@@ -2193,8 +2193,10 @@ build_check_stmt (location_t loc, tree base, tree len,
   if (is_scalar_access)
     flags |= ASAN_CHECK_SCALAR_ACCESS;
   if (memtrace) {
-    gcc_assert(!before_p);
     flags |= ASAN_CHECK_MEMTRACE;
+    if (is_store && before_p) {
+      flags |= ASAN_CHECK_MEMTRACE_SAVEIP;
+    }
   }
 
   enum internal_fn fn = memtrace ? IFN_ASAN_MEMTRACE : IFN_ASAN_CHECK;
@@ -2317,8 +2319,13 @@ instrument_derefs (gimple_stmt_iterator *iter, tree t,
 			/*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/true,
  			is_store, /*is_scalar_access*/true, align, /*memtrace=*/false);
       build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
-			/*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/false,
-			is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
+      /*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/true,
+      is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
+      if (is_store) {
+        build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
+        /*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/false,
+        is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
+      }
       update_mem_ref_hash_table (base, size_in_bytes);
       update_mem_ref_hash_table (t, size_in_bytes);
     }
@@ -2368,8 +2375,13 @@ instrument_mem_region_access (tree base, tree len,
 			/*is_non_zero_len*/size_in_bytes > 0, /*before_p*/true,
 			is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/false);
       build_check_stmt (location, base, len, size_in_bytes, iter,
-			/*is_non_zero_len*/size_in_bytes > 0, /*before_p*/false,
+			/*is_non_zero_len*/size_in_bytes > 0, /*before_p*/true,
 			is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/true);
+      if (is_store) {
+        build_check_stmt (location, base, len, size_in_bytes, iter,
+        /*is_non_zero_len*/size_in_bytes > 0, /*before_p*/false,
+        is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/true);
+      }
     }
 
   maybe_update_mem_ref_hash_table (base, len);
@@ -3326,6 +3338,7 @@ asan_expand_check_ifn (gimple_stmt_iterator *iter, bool use_calls)
   bool is_store = (flags & ASAN_CHECK_STORE) != 0;
   bool is_non_zero_len = (flags & ASAN_CHECK_NON_ZERO_LEN) != 0;
   bool is_memtrace = (flags & ASAN_CHECK_MEMTRACE);
+  bool is_memtrace_saveip = is_memtrace && (flags & ASAN_CHECK_MEMTRACE_SAVEIP);
   gcc_assert(!(is_memtrace && !use_calls)); // this is not supported
 
   tree base = gimple_call_arg (g, 1);
@@ -3346,22 +3359,28 @@ asan_expand_check_ifn (gimple_stmt_iterator *iter, bool use_calls)
 
       int nargs;
       tree fun;
-      if (is_memtrace)
+      if (is_memtrace_saveip) {
+        fun = builtin_decl_implicit (BUILT_IN_ASAN_MEMTRACE_SAVEIP);
+        nargs = 1;
+      } 
+      else if (is_memtrace) {
         fun = memtrace_func (is_store, size_in_bytes, &nargs);
-      else
+      }
+      else {
         fun = check_func (is_store, recover_p, size_in_bytes, &nargs);
+      }
       if (nargs == 1)
-	g = gimple_build_call (fun, 1, base_addr);
+        g = gimple_build_call (fun, 1, base_addr);
       else
-	{
-	  gcc_assert (nargs == 2);
-	  g = gimple_build_assign (make_ssa_name (pointer_sized_int_node),
-				   NOP_EXPR, len);
-	  gimple_set_location (g, loc);
-	  gsi_insert_before (iter, g, GSI_SAME_STMT);
-	  tree sz_arg = gimple_assign_lhs (g);
-	  g = gimple_build_call (fun, nargs, base_addr, sz_arg);
-	}
+        {
+          gcc_assert (nargs == 2);
+          g = gimple_build_assign (make_ssa_name (pointer_sized_int_node),
+                NOP_EXPR, len);
+          gimple_set_location (g, loc);
+          gsi_insert_before (iter, g, GSI_SAME_STMT);
+          tree sz_arg = gimple_assign_lhs (g);
+          g = gimple_build_call (fun, nargs, base_addr, sz_arg);
+        }
       gimple_set_location (g, loc);
       gsi_replace (iter, g, false);
       return false;
