@@ -67,7 +67,7 @@ static int stop_memtrace(void __user *buf) {
 	}
 	h->cr3[i] = 0;
 	p = &h->proxy[i];
-	trace_len = MEMTRACE_BUF_SIZE-p->buf_unused;
+	trace_len = ((p->mem_access_cnt+15)/16)*sizeof(struct memtrace_packet);
 	trace_cnt = p->mem_access_cnt;
 	if (copy_to_user(buf, (const void *)p->buf, trace_len)) {
 		ret = -EFAULT;
@@ -76,7 +76,6 @@ static int stop_memtrace(void __user *buf) {
 	}
 	// Release proxy.
 	spin_lock_irqsave(&h->proxy_lock, irq_state);
-	p->buf_unused = MEMTRACE_BUF_SIZE;
 	p->cur = (struct memtrace_packet *)p->buf;
 	p->mem_access_cnt = 0;
 	p->free = true;
