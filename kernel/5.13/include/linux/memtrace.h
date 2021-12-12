@@ -67,7 +67,8 @@ static __always_inline unsigned long read_rsp(void) {
 		int pkt_field_idx = p->mem_access_cnt&0xf;                  \
 		uint8_t addr_low = addr & 0xf; \
 		uint8_t aligned = (addr_low & (addr_low-1)) ^ addr_low; \
-		aligned = (aligned == 0 ? 16 : aligned) > len ? len : aligned; \
+		aligned = (aligned == 0 ? 16 : aligned); \
+		while (aligned > len) {aligned >>= 1;} \
 		switch (aligned) {  \
 			case 16:\
 				LOAD_VALUE_16(p->cur->val[pkt_field_idx], addr); \
