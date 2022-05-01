@@ -82,8 +82,8 @@ enum asan_check_flags
   ASAN_CHECK_SCALAR_ACCESS = 1 << 1,
   ASAN_CHECK_NON_ZERO_LEN = 1 << 2,
   ASAN_CHECK_MEMTRACE = 1 << 3,
-  ASAN_CHECK_MEMTRACE_SAVEIP = 1 << 4,
-  ASAN_CHECK_LAST = 1 << 5
+  // ASAN_CHECK_MEMTRACE_SAVEIP = 1 << 4,
+  ASAN_CHECK_LAST = 1 << 4
 };
 
 /* Flags for Asan check builtins.  */

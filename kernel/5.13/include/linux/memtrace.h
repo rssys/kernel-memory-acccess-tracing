@@ -28,6 +28,7 @@ static __always_inline unsigned long read_rsp(void) {
 #define LOAD_VALUE_1(dst, addr) LOAD_VALUE_TYPE(dst, addr, uint8_t)
 #define LOAD_VALUE(dst, addr, len) LOAD_VALUE_##len(dst, addr)
 
+/*
 #define __memtrace_saveip    \         
 	if (p->saved_ip_len < MEMTRACE_SAVEDIP_LEN) { \
 		p->saved_ip[p->saved_ip_len] = _RET_IP_; \
@@ -45,10 +46,14 @@ static __always_inline unsigned long read_rsp(void) {
 	ip = _RET_IP_;
 
 #define __memtrace_loadip(load) __memtrace_loadip_read_##load
+*/
+
+#define __memtrace_loadip      \
+	ip = _RET_IP_;
 
 #define __memtrace(len, load) \
 	unsigned long ip;\
-	__memtrace_loadip(load) \
+	__memtrace_loadip \
 	int pkt_field_idx = p->mem_access_cnt&0xf;                  \
 	LOAD_VALUE(p->cur->val[pkt_field_idx], addr, len);          \
 	p->cur->pc[pkt_field_idx] = ip; \
@@ -62,7 +67,7 @@ static __always_inline unsigned long read_rsp(void) {
 
 #define __memtraceN(len, load)                                      \
 	unsigned long n, ip;\
-	__memtrace_loadip(load) \
+	__memtrace_loadip \
 	while ((p->mem_access_cnt < MEMTRACE_NUM_MAX) && (len != 0)) {       \
 		int pkt_field_idx = p->mem_access_cnt&0xf;                  \
 		uint8_t addr_low = addr & 0xf; \
@@ -142,7 +147,7 @@ static __always_inline unsigned long read_rsp(void) {
 		}                                                                           \
 	} while(0)
 
-#define memtrace_saveip __memtrace_wrapper(__memtrace_saveip)
+// #define memtrace_saveip __memtrace_wrapper(__memtrace_saveip)
 #define memtraceN(len, load) __memtrace_wrapper(__memtraceN(len, load))
 #define memtrace(len, load) __memtrace_wrapper(__memtrace(len, load))
 

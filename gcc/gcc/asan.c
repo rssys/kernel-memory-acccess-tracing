@@ -441,7 +441,7 @@ asan_mem_ref_hasher::equal (const asan_mem_ref *m1,
   return operand_equal_p (m1->start, m2->start, 0);
 }
 
-static hash_table<asan_mem_ref_hasher> *asan_mem_ref_ht;
+static hash_table<asan_mem_ref_hasher> *asan_mem_ref_ht_store, *asan_mem_ref_ht_load;
 
 /* Returns a reference to the hash table containing memory references.
    This function ensures that the hash table is created.  Note that
@@ -449,12 +449,19 @@ static hash_table<asan_mem_ref_hasher> *asan_mem_ref_ht;
    update_mem_ref_hash_table.  */
 
 static hash_table<asan_mem_ref_hasher> *
-get_mem_ref_hash_table ()
+get_mem_ref_hash_table (bool is_store)
 {
-  if (!asan_mem_ref_ht)
-    asan_mem_ref_ht = new hash_table<asan_mem_ref_hasher> (10);
+  if (is_store) {
+  if (!asan_mem_ref_ht_store)
+    asan_mem_ref_ht_store = new hash_table<asan_mem_ref_hasher> (10);
 
-  return asan_mem_ref_ht;
+  return asan_mem_ref_ht_store;
+  } else {
+  if (!asan_mem_ref_ht_load)
+    asan_mem_ref_ht_load = new hash_table<asan_mem_ref_hasher> (10);
+
+  return asan_mem_ref_ht_load;
+  }
 }
 
 /* Clear all entries from the memory references hash table.  */
@@ -462,8 +469,10 @@ get_mem_ref_hash_table ()
 static void
 empty_mem_ref_hash_table ()
 {
-  if (asan_mem_ref_ht)
-    asan_mem_ref_ht->empty ();
+  if (asan_mem_ref_ht_store)
+    asan_mem_ref_ht_store->empty ();
+  if (asan_mem_ref_ht_load)
+    asan_mem_ref_ht_load->empty ();
 }
 
 /* Free the memory references hash table.  */
@@ -471,8 +480,10 @@ empty_mem_ref_hash_table ()
 static void
 free_mem_ref_resources ()
 {
-  delete asan_mem_ref_ht;
-  asan_mem_ref_ht = NULL;
+  delete asan_mem_ref_ht_store;
+  asan_mem_ref_ht_store = NULL;
+  delete asan_mem_ref_ht_load;
+  asan_mem_ref_ht_load = NULL;
 
   asan_mem_ref_pool.release ();
 }
@@ -480,34 +491,34 @@ free_mem_ref_resources ()
 /* Return true iff the memory reference REF has been instrumented.  */
 
 static bool
-has_mem_ref_been_instrumented (tree ref, HOST_WIDE_INT access_size)
+has_mem_ref_been_instrumented (tree ref, HOST_WIDE_INT access_size, bool is_store)
 {
   asan_mem_ref r;
   asan_mem_ref_init (&r, ref, access_size);
 
-  asan_mem_ref *saved_ref = get_mem_ref_hash_table ()->find (&r);
+  asan_mem_ref *saved_ref = get_mem_ref_hash_table (is_store)->find (&r);
   return saved_ref && saved_ref->access_size >= access_size;
 }
 
 /* Return true iff the memory reference REF has been instrumented.  */
 
 static bool
-has_mem_ref_been_instrumented (const asan_mem_ref *ref)
+has_mem_ref_been_instrumented (const asan_mem_ref *ref, bool is_store)
 {
-  return has_mem_ref_been_instrumented (ref->start, ref->access_size);
+  return has_mem_ref_been_instrumented (ref->start, ref->access_size, is_store);
 }
 
 /* Return true iff access to memory region starting at REF and of
    length LEN has been instrumented.  */
 
 static bool
-has_mem_ref_been_instrumented (const asan_mem_ref *ref, tree len)
+has_mem_ref_been_instrumented (const asan_mem_ref *ref, tree len, bool is_store)
 {
   HOST_WIDE_INT size_in_bytes
     = tree_fits_shwi_p (len) ? tree_to_shwi (len) : -1;
 
   return size_in_bytes != -1
-    && has_mem_ref_been_instrumented (ref->start, size_in_bytes);
+    && has_mem_ref_been_instrumented (ref->start, size_in_bytes, is_store);
 }
 
 /* Set REF to the memory reference present in a gimple assignment
@@ -1059,7 +1070,7 @@ has_stmt_been_instrumented_p (gimple *stmt)
 
       if (get_mem_ref_of_assignment (as_a <gassign *> (stmt), &r,
 				     &r_is_store))
-	return has_mem_ref_been_instrumented (&r);
+	return has_mem_ref_been_instrumented (&r, r_is_store);
     }
   else if (gimple_call_builtin_p (stmt, BUILT_IN_NORMAL))
     {
@@ -1078,15 +1089,15 @@ has_stmt_been_instrumented_p (gimple *stmt)
 					&dest_is_deref, &intercepted_p))
 	{
 	  if (src0.start != NULL_TREE
-	      && !has_mem_ref_been_instrumented (&src0, src0_len))
+	      && !has_mem_ref_been_instrumented (&src0, src0_len, src0_is_store))
 	    return false;
 
 	  if (src1.start != NULL_TREE
-	      && !has_mem_ref_been_instrumented (&src1, src1_len))
+	      && !has_mem_ref_been_instrumented (&src1, src1_len, src1_is_store))
 	    return false;
 
 	  if (dest.start != NULL_TREE
-	      && !has_mem_ref_been_instrumented (&dest, dest_len))
+	      && !has_mem_ref_been_instrumented (&dest, dest_len, dest_is_store))
 	    return false;
 
 	  return true;
@@ -1099,7 +1110,7 @@ has_stmt_been_instrumented_p (gimple *stmt)
 
       r.start = gimple_call_lhs (stmt);
       r.access_size = int_size_in_bytes (TREE_TYPE (r.start));
-      return has_mem_ref_been_instrumented (&r);
+      return has_mem_ref_been_instrumented (&r, true);
     }
 
   return false;
@@ -1108,9 +1119,9 @@ has_stmt_been_instrumented_p (gimple *stmt)
 /*  Insert a memory reference into the hash table.  */
 
 static void
-update_mem_ref_hash_table (tree ref, HOST_WIDE_INT access_size)
+update_mem_ref_hash_table (tree ref, HOST_WIDE_INT access_size, bool is_store)
 {
-  hash_table<asan_mem_ref_hasher> *ht = get_mem_ref_hash_table ();
+  hash_table<asan_mem_ref_hasher> *ht = get_mem_ref_hash_table (is_store);
 
   asan_mem_ref r;
   asan_mem_ref_init (&r, ref, access_size);
@@ -2194,9 +2205,9 @@ build_check_stmt (location_t loc, tree base, tree len,
     flags |= ASAN_CHECK_SCALAR_ACCESS;
   if (memtrace) {
     flags |= ASAN_CHECK_MEMTRACE;
-    if (is_store && before_p) {
-      flags |= ASAN_CHECK_MEMTRACE_SAVEIP;
-    }
+    // if (is_store && before_p) {
+    //   flags |= ASAN_CHECK_MEMTRACE_SAVEIP;
+    // }
   }
 
   enum internal_fn fn = memtrace ? IFN_ASAN_MEMTRACE : IFN_ASAN_CHECK;
@@ -2212,7 +2223,7 @@ build_check_stmt (location_t loc, tree base, tree len,
   else
     {
       gsi_insert_after (&gsi, g, GSI_NEW_STMT);
-      // gsi_next (&gsi);
+      gsi_next (&gsi);
       *iter = gsi;
     }
 }
@@ -2312,7 +2323,7 @@ instrument_derefs (gimple_stmt_iterator *iter, tree t,
     }
 
   base = build_fold_addr_expr (t);
-  if (!has_mem_ref_been_instrumented (base, size_in_bytes))
+  if (!has_mem_ref_been_instrumented (base, size_in_bytes, is_store))
     {
       unsigned int align = get_object_alignment (t);
       build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
@@ -2321,13 +2332,13 @@ instrument_derefs (gimple_stmt_iterator *iter, tree t,
       build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
       /*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/true,
       is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
-      if (is_store) {
-        build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
-        /*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/false,
-        is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
-      }
-      update_mem_ref_hash_table (base, size_in_bytes);
-      update_mem_ref_hash_table (t, size_in_bytes);
+      // if (is_store) {
+      //   build_check_stmt (location, base, NULL_TREE, size_in_bytes, iter,
+      //   /*is_non_zero_len*/size_in_bytes > 0, /*before_p=*/false,
+      //   is_store, /*is_scalar_access*/true, align, /*memtrace=*/true);
+      // }
+      update_mem_ref_hash_table (base, size_in_bytes, is_store);
+      update_mem_ref_hash_table (t, size_in_bytes, is_store);
     }
 
 }
@@ -2336,7 +2347,7 @@ instrument_derefs (gimple_stmt_iterator *iter, tree t,
     can be determined in compile time.  */
 
 static void
-maybe_update_mem_ref_hash_table (tree base, tree len)
+maybe_update_mem_ref_hash_table (tree base, tree len, bool is_store)
 {
   if (!POINTER_TYPE_P (TREE_TYPE (base))
       || !INTEGRAL_TYPE_P (TREE_TYPE (len)))
@@ -2345,7 +2356,7 @@ maybe_update_mem_ref_hash_table (tree base, tree len)
   HOST_WIDE_INT size_in_bytes = tree_fits_shwi_p (len) ? tree_to_shwi (len) : -1;
 
   if (size_in_bytes != -1)
-    update_mem_ref_hash_table (base, size_in_bytes);
+    update_mem_ref_hash_table (base, size_in_bytes, is_store);
 }
 
 /* Instrument an access to a contiguous memory region that starts at
@@ -2369,7 +2380,7 @@ instrument_mem_region_access (tree base, tree len,
   HOST_WIDE_INT size_in_bytes = tree_fits_shwi_p (len) ? tree_to_shwi (len) : -1;
 
   if ((size_in_bytes == -1)
-      || !has_mem_ref_been_instrumented (base, size_in_bytes))
+      || !has_mem_ref_been_instrumented (base, size_in_bytes, is_store))
     {
       build_check_stmt (location, base, len, size_in_bytes, iter,
 			/*is_non_zero_len*/size_in_bytes > 0, /*before_p*/true,
@@ -2377,14 +2388,14 @@ instrument_mem_region_access (tree base, tree len,
       build_check_stmt (location, base, len, size_in_bytes, iter,
 			/*is_non_zero_len*/size_in_bytes > 0, /*before_p*/true,
 			is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/true);
-      if (is_store) {
-        build_check_stmt (location, base, len, size_in_bytes, iter,
-        /*is_non_zero_len*/size_in_bytes > 0, /*before_p*/false,
-        is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/true);
-      }
+      // if (is_store) {
+      //   build_check_stmt (location, base, len, size_in_bytes, iter,
+      //   /*is_non_zero_len*/size_in_bytes > 0, /*before_p*/false,
+      //   is_store, /*is_scalar_access*/false, /*align*/0, /*memtrace=*/true);
+      // }
     }
 
-  maybe_update_mem_ref_hash_table (base, len);
+  maybe_update_mem_ref_hash_table (base, len, is_store);
   *iter = gsi_for_stmt (gsi_stmt (*iter));
 }
 
@@ -2448,11 +2459,11 @@ instrument_builtin_call (gimple_stmt_iterator *iter)
       else
 	{
 	  if (src0.start != NULL_TREE)
-	    maybe_update_mem_ref_hash_table (src0.start, src0_len);
+	    maybe_update_mem_ref_hash_table (src0.start, src0_len, src0_is_store);
 	  if (src1.start != NULL_TREE)
-	    maybe_update_mem_ref_hash_table (src1.start, src1_len);
+	    maybe_update_mem_ref_hash_table (src1.start, src1_len, src1_is_store);
 	  if (dest.start != NULL_TREE)
-	    maybe_update_mem_ref_hash_table (dest.start, dest_len);
+	    maybe_update_mem_ref_hash_table (dest.start, dest_len, dest_is_store);
 	}
     }
   return iter_advanced_p;
@@ -3338,7 +3349,7 @@ asan_expand_check_ifn (gimple_stmt_iterator *iter, bool use_calls)
   bool is_store = (flags & ASAN_CHECK_STORE) != 0;
   bool is_non_zero_len = (flags & ASAN_CHECK_NON_ZERO_LEN) != 0;
   bool is_memtrace = (flags & ASAN_CHECK_MEMTRACE);
-  bool is_memtrace_saveip = is_memtrace && (flags & ASAN_CHECK_MEMTRACE_SAVEIP);
+  // bool is_memtrace_saveip = is_memtrace && (flags & ASAN_CHECK_MEMTRACE_SAVEIP);
   gcc_assert(!(is_memtrace && !use_calls)); // this is not supported
 
   tree base = gimple_call_arg (g, 1);
@@ -3359,11 +3370,11 @@ asan_expand_check_ifn (gimple_stmt_iterator *iter, bool use_calls)
 
       int nargs;
       tree fun;
-      if (is_memtrace_saveip) {
-        fun = builtin_decl_implicit (BUILT_IN_ASAN_MEMTRACE_SAVEIP);
-        nargs = 1;
-      } 
-      else if (is_memtrace) {
+      // if (is_memtrace_saveip) {
+      //   fun = builtin_decl_implicit (BUILT_IN_ASAN_MEMTRACE_SAVEIP);
+      //   nargs = 1;
+      // } 
+      if (is_memtrace) {
         fun = memtrace_func (is_store, size_in_bytes, &nargs);
       }
       else {

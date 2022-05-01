@@ -324,15 +324,15 @@ __alias(__asan_memtrace_storeN)
 void __asan_memtrace_storeN_noabort(unsigned long, size_t);
 EXPORT_SYMBOL(__asan_memtrace_storeN_noabort);
 
-void __asan_memtrace_saveip(unsigned long addr)
-{
-	memtrace_saveip;
-}
+// void __asan_memtrace_saveip(unsigned long addr)
+// {
+// 	memtrace_saveip;
+// }
 
-EXPORT_SYMBOL(__asan_memtrace_saveip);
-__alias(__asan_memtrace_saveip)
-void __asan_memtrace_saveip_noabort(unsigned long);
-EXPORT_SYMBOL(__asan_memtrace_saveip_noabort);
+// EXPORT_SYMBOL(__asan_memtrace_saveip);
+// __alias(__asan_memtrace_saveip)
+// void __asan_memtrace_saveip_noabort(unsigned long);
+// EXPORT_SYMBOL(__asan_memtrace_saveip_noabort);
 
 /* Emitted by compiler to poison alloca()ed objects. */
 void __asan_alloca_poison(unsigned long addr, size_t size)
