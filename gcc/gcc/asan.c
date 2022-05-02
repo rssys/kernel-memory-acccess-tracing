@@ -493,11 +493,14 @@ free_mem_ref_resources ()
 static bool
 has_mem_ref_been_instrumented (tree ref, HOST_WIDE_INT access_size, bool is_store)
 {
+  return false;
+  /*
   asan_mem_ref r;
   asan_mem_ref_init (&r, ref, access_size);
 
   asan_mem_ref *saved_ref = get_mem_ref_hash_table (is_store)->find (&r);
   return saved_ref && saved_ref->access_size >= access_size;
+  */
 }
 
 /* Return true iff the memory reference REF has been instrumented.  */
@@ -505,7 +508,8 @@ has_mem_ref_been_instrumented (tree ref, HOST_WIDE_INT access_size, bool is_stor
 static bool
 has_mem_ref_been_instrumented (const asan_mem_ref *ref, bool is_store)
 {
-  return has_mem_ref_been_instrumented (ref->start, ref->access_size, is_store);
+  return false;
+  //return has_mem_ref_been_instrumented (ref->start, ref->access_size, is_store);
 }
 
 /* Return true iff access to memory region starting at REF and of
@@ -514,11 +518,14 @@ has_mem_ref_been_instrumented (const asan_mem_ref *ref, bool is_store)
 static bool
 has_mem_ref_been_instrumented (const asan_mem_ref *ref, tree len, bool is_store)
 {
+  return false;
+  /*
   HOST_WIDE_INT size_in_bytes
     = tree_fits_shwi_p (len) ? tree_to_shwi (len) : -1;
 
   return size_in_bytes != -1
     && has_mem_ref_been_instrumented (ref->start, size_in_bytes, is_store);
+  */
 }
 
 /* Set REF to the memory reference present in a gimple assignment
