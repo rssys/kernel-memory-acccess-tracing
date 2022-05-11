@@ -15,9 +15,9 @@
 
 struct memtrace_packet {
 	uint64_t pc[16];
-	__uint128_t val[16];
+	// __uint128_t val[16];
 	uint64_t addr[16];
-	uint8_t info[16];
+	uint32_t info[16];
 };
 
 struct memtrace_proxy {

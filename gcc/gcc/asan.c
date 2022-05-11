@@ -2228,6 +2228,34 @@ build_check_stmt (location_t loc, tree base, tree len,
     }
 }
 
+static void instrument_return(gimple_stmt_iterator *iter)
+{
+  gimple *stmt = gsi_stmt (*iter);
+  location_t loc = gimple_location(stmt);
+  tree fun = builtin_decl_implicit(BUILT_IN_ASAN_MEMTRACE_RET);
+  gimple *ret_inst = gimple_build_call(fun, 0);
+  gimple_set_location(ret_inst, loc);
+  gsi_insert_before (iter, ret_inst, GSI_SAME_STMT);
+}
+
+static void instrument_call(gimple_stmt_iterator *iter)
+{
+
+  gimple *stmt = gsi_stmt (*iter);
+  location_t loc = gimple_location(stmt);
+  bool is_builtin = gimple_call_builtin_p (stmt, BUILT_IN_NORMAL);
+
+  // skip built-in functions since ASAN instruments them outside
+  if (is_builtin) {
+    return;
+  }
+
+  tree fun = builtin_decl_implicit(BUILT_IN_ASAN_MEMTRACE_CALL);
+  gimple *call_inst = gimple_build_call(fun, 0);
+  gimple_set_location(call_inst, loc);
+  gsi_insert_before (iter, call_inst, GSI_SAME_STMT);
+}
+
 /* If T represents a memory access, add instrumentation code before ITER.
    LOCATION is source code location.
    IS_STORE is either TRUE (for a store) or FALSE (for a load).  */
@@ -2620,6 +2648,14 @@ transform_statements (void)
       for (i = gsi_start_bb (bb); !gsi_end_p (i);)
 	{
 	  gimple *s = gsi_stmt (i);
+
+    // instrument call & ret
+    // DON'T advance iterator!
+    if (is_gimple_call(s)) {
+      instrument_call(&i);
+    } else if (gimple_code (s) == GIMPLE_RETURN) {
+      instrument_return(&i);
+    }
 
 	  if (has_stmt_been_instrumented_p (s))
 	    gsi_next (&i);

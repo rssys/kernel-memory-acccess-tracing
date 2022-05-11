@@ -9,9 +9,8 @@
 #define BUF_SIZE (32 << 20)
 struct memtrace_packet {
 	uint64_t pc[16];
-	__uint128_t val[16];
 	uint64_t addr[16];
-	uint8_t info[16];
+	uint32_t info[16];
 };
 #define handle_error(msg) \
            do { perror(msg); exit(EXIT_FAILURE); } while (0)
@@ -22,16 +21,17 @@ void parse_memtrace_packet(struct memtrace_packet* cur, int idx) {
 	if (idx >= 16) {
 		return;
 	}
-	len = cur->info[idx]>>1;
-	read = (cur->info[idx] & 1) == 1;
-	if (len == 16) {
-		printf("pc = %p, addr = %p, %c, len = 16, val (high) = %llx, val (low) = %llx\n",
-		cur->pc[idx], cur->addr[idx], read?'r':'w', (uint64_t)(cur->val[idx]>>64), (uint64_t)((cur->val[idx]<<64)>>64)); 
-	} else {
-		printf("pc = %p, addr = %p, %c, len = %d, val = %llx\n",
-		cur->pc[idx], cur->addr[idx], read?'r':'w', len, (uint64_t)((cur->val[idx]<<64)>>64)); 
+	int type = cur->info[idx] & 0x7;
+	if (type < 2) {
+		len = cur->info[idx]>>3;
+		read = (type == 1);
+		printf("pc = %p, addr = %p, %c, len = %d\n",
+		cur->pc[idx], cur->addr[idx], read?'r':'w', len); 
+	} else if (type == 2) {
+		printf("pc = %p, ret\n", cur->pc[idx]);
+	} else if (type == 3) {
+		printf("pc = %p, call\n", cur->pc[idx]);
 	}
-
 
 }
 int main(int argc, char *argv[]) {

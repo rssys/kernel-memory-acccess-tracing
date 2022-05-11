@@ -20,102 +20,36 @@ static __always_inline unsigned long read_rsp(void) {
 	return rsp;
 }
 
-#define LOAD_VALUE_TYPE(dst, addr, type) (dst) = *(type*)(addr)
-#define LOAD_VALUE_16(dst, addr) LOAD_VALUE_TYPE(dst, addr, __uint128_t)
-#define LOAD_VALUE_8(dst, addr) LOAD_VALUE_TYPE(dst, addr, uint64_t)
-#define LOAD_VALUE_4(dst, addr) LOAD_VALUE_TYPE(dst, addr, uint32_t)
-#define LOAD_VALUE_2(dst, addr) LOAD_VALUE_TYPE(dst, addr, uint16_t)
-#define LOAD_VALUE_1(dst, addr) LOAD_VALUE_TYPE(dst, addr, uint8_t)
-#define LOAD_VALUE(dst, addr, len) LOAD_VALUE_##len(dst, addr)
+#define __memtrace_stack_filter \
+	do { 									\
+		unsigned long rsp;						\
+		rsp = read_rsp();                                               \
+		if ((rsp&(-1l<<(PAGE_SHIFT+THREAD_SIZE_ORDER))) ==              \
+			(addr&(-1l<<(PAGE_SHIFT+THREAD_SIZE_ORDER)))) {         \
+			return;                                                 \
+		} 								\
+	} while (0);							
 
-/*
-#define __memtrace_saveip    \         
-	if (p->saved_ip_len < MEMTRACE_SAVEDIP_LEN) { \
-		p->saved_ip[p->saved_ip_len] = _RET_IP_; \
-	} \
-	(p->saved_ip_len)++;
+#define __memtrace(p, i, ip, ad, len, load) 		\
+	p->cur->pc[i] = ip; 				\
+	p->cur->addr[i] = ad;                        	\
+	p->cur->info[i] = (((load)&0x1)|((len)<<3));
 
-#define __memtrace_loadip_read_false                     \
-	if (p->saved_ip_len <= MEMTRACE_SAVEDIP_LEN) \
-		ip = p->saved_ip[p->saved_ip_len-1]; \
-	else \
-		ip = 0xffffffffffffffff; \
-	p->saved_ip_len--;	
+#define __memtrace_ret(p, i, ip)  	\
+	p->cur->pc[i] = ip; 		\
+	p->cur->info[i] = 0x2;
 
-#define __memtrace_loadip_read_true      \
-	ip = _RET_IP_;
+#define __memtrace_call(p, i, ip)  	\
+	p->cur->pc[i] = ip; 		\
+	p->cur->info[i] = 0x3;
 
-#define __memtrace_loadip(load) __memtrace_loadip_read_##load
-*/
-
-#define __memtrace_loadip      \
-	ip = _RET_IP_;
-
-#define __memtrace(len, load) \
-	unsigned long ip;\
-	__memtrace_loadip \
-	int pkt_field_idx = p->mem_access_cnt&0xf;                  \
-	LOAD_VALUE(p->cur->val[pkt_field_idx], addr, len);          \
-	p->cur->pc[pkt_field_idx] = ip; \
-	p->cur->addr[pkt_field_idx] = addr;                         \
-	p->cur->info[pkt_field_idx] = load;                         \
-	p->cur->info[pkt_field_idx] |= len<<1;                      \
-	if (pkt_field_idx == 0xf) {                                 \
-		p->cur++;                                           \
-	}                                                           \
-	p->mem_access_cnt++;
-
-#define __memtraceN(len, load)                                      \
-	unsigned long n, ip;\
-	__memtrace_loadip \
-	while ((p->mem_access_cnt < MEMTRACE_NUM_MAX) && (len != 0)) {       \
-		int pkt_field_idx = p->mem_access_cnt&0xf;                  \
-		uint8_t addr_low = addr & 0xf; \
-		uint8_t aligned = (addr_low & (addr_low-1)) ^ addr_low; \
-		aligned = (aligned == 0 ? 16 : aligned); \
-		while (aligned > len) {aligned >>= 1;} \
-		switch (aligned) {  \
-			case 16:\
-				LOAD_VALUE_16(p->cur->val[pkt_field_idx], addr); \
-				n = 16; \
-				break; \
-			case 8:\
-				LOAD_VALUE_8(p->cur->val[pkt_field_idx], addr); \
-				n = 8; \
-				break; \
-			case 4:\
-				LOAD_VALUE_4(p->cur->val[pkt_field_idx], addr); \
-				n = 4; \
-				break; \
-			case 2:\
-				LOAD_VALUE_2(p->cur->val[pkt_field_idx], addr); \
-				n = 2; \
-				break; \
-			default:\
-				LOAD_VALUE_1(p->cur->val[pkt_field_idx], addr);\
-				n = 1;\
-				break;\
-		}\
-		p->cur->pc[pkt_field_idx] = ip; \
-		p->cur->addr[pkt_field_idx] = addr;                         \
-		p->cur->info[pkt_field_idx] = load;                         \
-		p->cur->info[pkt_field_idx] |= n<<1;                      \
-		if (pkt_field_idx == 0xf) {                                 \
-			p->cur++;                                           \
-		}                                                           \
-		p->mem_access_cnt++;                                        \
-		addr += n;\
-		len -= n;\
-	}
-
-
-#define __memtrace_wrapper(code) \
+#define __memtrace_wrapper(filter, code) \
 	do {                                                                                \
 		if (memtrace_init_done) {                                                   \
 			int i;                                                              \
 			struct memtrace_hub *h;                                             \
 			struct memtrace_proxy *p;                                           \
-			unsigned long rsp, cr3, fl;                                         \
+			unsigned long cr3, fl;                                         \
 			cr3 = read_cr3();                                                   \
 			h = mt_hub;                                                         \
 			for (i = 0; i < MEMTRACE_NUM_PROXY; i++) {                          \
@@ -126,11 +60,7 @@ static __always_inline unsigned long read_rsp(void) {
 			if (i == MEMTRACE_NUM_PROXY) {                                      \
 				return;                                                     \
 			}                                                                   \
-			rsp = read_rsp();                                                   \
-			if ((rsp&(-1l<<(PAGE_SHIFT+THREAD_SIZE_ORDER))) ==                  \
-				(addr&(-1l<<(PAGE_SHIFT+THREAD_SIZE_ORDER)))) {             \
-				return;                                                     \
-			}                                                                   \
+			filter	 							\
 			asm volatile("# __raw_save_flags\n\t"                               \
 					"pushf ; pop %0"                                    \
 					: "=rm" (fl)                                        \
@@ -139,7 +69,15 @@ static __always_inline unsigned long read_rsp(void) {
 			asm volatile("cli": : :"memory");                                   \
 			p = &h->proxy[i];                                                   \
 			if (p->mem_access_cnt < MEMTRACE_NUM_MAX) {                         \
-				code \
+				unsigned long ip;\
+				int pkt_field_idx; \
+				ip = _RET_IP_; \
+				pkt_field_idx = p->mem_access_cnt&0xf;                  \
+				code 						            \
+				if (pkt_field_idx == 0xf) {                                 \
+					p->cur++;                                           \
+				}                                                           \
+				p->mem_access_cnt++; \
 			} \
 			if (fl & X86_EFLAGS_IF) {                                        \
 				asm volatile("sti": : :"memory");                           \
@@ -147,8 +85,11 @@ static __always_inline unsigned long read_rsp(void) {
 		}                                                                           \
 	} while(0)
 
-// #define memtrace_saveip __memtrace_wrapper(__memtrace_saveip)
-#define memtraceN(len, load) __memtrace_wrapper(__memtraceN(len, load))
-#define memtrace(len, load) __memtrace_wrapper(__memtrace(len, load))
+#define memtrace(len, load) __memtrace_wrapper(__memtrace_stack_filter, __memtrace(p, pkt_field_idx, ip, addr, len, load))
+#define memtraceN(len, load) memtrace(len, load)
+
+#define memtrace_ret __memtrace_wrapper(, __memtrace_ret(p, pkt_field_idx, ip))
+#define memtrace_call __memtrace_wrapper(, __memtrace_call(p, pkt_field_idx, ip))
+
 
 #endif
