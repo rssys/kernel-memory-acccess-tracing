@@ -11,7 +11,7 @@ bool memtrace_init_done;
 void __init memtrace_init(void) {
 	int ret, i;
 	char *buf;
-	ret = vmemmap_populate(MEMTRACE_START, MEMTRACE_END+1, NUMA_NO_NODE, NULL);
+	ret = vmemmap_populate(MEMTRACE_START, MEMTRACE_END, NUMA_NO_NODE, NULL);
 	if (ret < 0) {
 		panic("memtrace: cannot allocate memory!");
 	}
