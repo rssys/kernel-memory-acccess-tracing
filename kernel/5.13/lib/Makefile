@@ -14,6 +14,12 @@ KCOV_INSTRUMENT_list_debug.o := n
 KCOV_INSTRUMENT_debugobjects.o := n
 KCOV_INSTRUMENT_dynamic_debug.o := n
 KCOV_INSTRUMENT_fault-inject.o := n
+KASAN_SANITIZE_string.o := n
+KASAN_SANITIZE_rbtree.o := n
+KASAN_SANITIZE_list_debug.o := n
+KASAN_SANITIZE_debugobjects.o := n
+KASAN_SANITIZE_dynamic_debug.o := n
+KASAN_SANITIZE_fault-inject.o := n
 
 # string.o implements standard library functions like memset/memcpy etc.
 # Use -ffreestanding to ensure that the compiler does not try to "optimize"

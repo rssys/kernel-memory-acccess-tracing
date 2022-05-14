@@ -5,6 +5,7 @@
 
 # Produces uninteresting flaky coverage.
 KCOV_INSTRUMENT_delay.o	:= n
+KASAN_SANITIZE_delay.o := n
 
 # KCSAN uses udelay for introducing watchpoint delay; avoid recursion.
 KCSAN_SANITIZE_delay.o := n
