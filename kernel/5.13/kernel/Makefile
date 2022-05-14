@@ -24,6 +24,7 @@ endif
 # Prevents flicker of uninteresting __do_softirq()/__local_bh_disable_ip()
 # in coverage traces.
 KCOV_INSTRUMENT_softirq.o := n
+KASAN_SANITIZE_softirq.o := n
 # Avoid KCSAN instrumentation in softirq ("No shared variables, all the data
 # are CPU local" => assume no data races), to reduce overhead in interrupts.
 KCSAN_SANITIZE_softirq.o = n
@@ -32,6 +33,9 @@ KCSAN_SANITIZE_softirq.o = n
 KCOV_INSTRUMENT_module.o := n
 KCOV_INSTRUMENT_extable.o := n
 KCOV_INSTRUMENT_stacktrace.o := n
+KASAN_SANITIZE_module.o := n
+KASAN_SANITIZE_extable.o := n
+KASAN_SANITIZE_stacktrace.o := n
 # Don't self-instrument.
 KCOV_INSTRUMENT_kcov.o := n
 # If sanitizers detect any issues in kcov, it may lead to recursion

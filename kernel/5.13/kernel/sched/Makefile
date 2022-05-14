@@ -6,6 +6,7 @@ endif
 # These files are disabled because they produce non-interesting flaky coverage
 # that is not a function of syscall inputs. E.g. involuntary context switches.
 KCOV_INSTRUMENT := n
+KASAN_SANITIZE := n
 
 # There are numerous data races here, however, most of them are due to plain accesses.
 # This would make it even harder for syzbot to find reproducers, because these
