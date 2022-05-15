@@ -23,12 +23,7 @@ CFLAGS_REMOVE_head64.o = -pg
 CFLAGS_REMOVE_sev.o = -pg
 endif
 
-KASAN_SANITIZE_head$(BITS).o				:= n
-KASAN_SANITIZE_dumpstack.o				:= n
-KASAN_SANITIZE_dumpstack_$(BITS).o			:= n
-KASAN_SANITIZE_stacktrace.o				:= n
-KASAN_SANITIZE_paravirt.o				:= n
-KASAN_SANITIZE_sev.o					:= n
+KASAN_SANITIZE := n
 
 # With some compiler versions the generated code results in boot hangs, caused
 # by several compilation units. To be safe, disable all instrumentation.

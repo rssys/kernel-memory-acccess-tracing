@@ -3,10 +3,8 @@
 # Makefile for the linux memory manager.
 #
 
-KASAN_SANITIZE_slab_common.o := n
-KASAN_SANITIZE_slab.o := n
-KASAN_SANITIZE_slub.o := n
-KCSAN_SANITIZE_kmemleak.o := n
+# mm is not interesting
+KASAN_SANITIZE := n
 
 # These produce frequent data race reports: most of them are due to races on
 # the same word but accesses to different bits of that word. Re-enable KCSAN
@@ -31,14 +29,6 @@ KCOV_INSTRUMENT_mmzone.o := n
 KCOV_INSTRUMENT_vmstat.o := n
 KCOV_INSTRUMENT_failslab.o := n
 
-KASAN_SANITIZE_slob.o := n
-KASAN_SANITIZE_page_alloc.o := n
-KASAN_SANITIZE_debug-pagealloc.o := n
-KASAN_SANITIZE_kmemleak.o := n
-KASAN_SANITIZE_memcontrol.o := n
-KASAN_SANITIZE_mmzone.o := n
-KASAN_SANITIZE_vmstat.o := n
-KASAN_SANITIZE_failslab.o := n
 
 CFLAGS_init-mm.o += $(call cc-disable-warning, override-init)
 CFLAGS_init-mm.o += $(call cc-disable-warning, initializer-overrides)
