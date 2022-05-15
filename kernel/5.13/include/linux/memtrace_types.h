@@ -7,7 +7,7 @@
 #include <linux/spinlock.h>
 
 #define MEMTRACE_NUM_PROXY 1
-#define MEMTRACE_PKT_NUM_MAX (0x100000)
+#define MEMTRACE_PKT_NUM_MAX (0x40000)
 #define MEMTRACE_NUM_MAX (MEMTRACE_PKT_NUM_MAX*16)
 #define MEMTRACE_START 0xfffffc0000000000ul
 
