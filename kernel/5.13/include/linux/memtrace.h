@@ -56,7 +56,7 @@ static __always_inline unsigned long read_rsp(void) {
 			if (i == MEMTRACE_NUM_PROXY) {                                      \
 				return;                                                     \
 			} 								\
-		        if (!in_task() && in_serving_softirq()) { 			\
+		        if (!in_task()) { 			\
 				return; 						\
 			} 								\
 			filter	 							\
