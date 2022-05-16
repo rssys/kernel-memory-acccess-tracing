@@ -8,12 +8,6 @@
 
 extern bool memtrace_init_done;
 
-static __always_inline unsigned long read_cr3(void) {
-	unsigned long cr3;
-	asm volatile("mov %%cr3,%0\n\t" : "=r" (cr3));
-	return cr3;
-}
-
 static __always_inline unsigned long read_rsp(void) {
 	unsigned long rsp;
 	asm volatile("mov %%rsp,%0\n\t" : "=r" (rsp));
@@ -37,36 +31,35 @@ static __always_inline unsigned long read_rsp(void) {
 
 #define __memtrace_ret(p, i, ip)  	\
 	p->cur->pc[i] = ip; 		\
+	p->cur->addr[i] = id; 		\
 	p->cur->info[i] = 0x2;
 
 #define __memtrace_call(p, i, ip)  	\
 	p->cur->pc[i] = ip; 		\
+	p->cur->addr[i] = id; 		\
 	p->cur->info[i] = 0x3;
 
 #define __memtrace_wrapper(filter, code) \
-	do {                                                                                \
-		if (memtrace_init_done) {                                                   \
-			int i;                                                              \
-			struct memtrace_hub *h;                                             \
-			struct memtrace_proxy *p;                                           \
-			unsigned long cr3, fl;                                         \
-			cr3 = read_cr3();                                                   \
-			h = mt_hub;                                                         \
+	do {                                                                  		\
+		if (memtrace_init_done) {                                         	\
+			int i;                                         			\
+			struct memtrace_hub *h;                           		\
+			struct memtrace_proxy *p;      	                                \
+			struct task_struct *cur_t; 					\
+			h = mt_hub;							\
+			cur_t = current; 						\
 			for (i = 0; i < MEMTRACE_NUM_PROXY; i++) {                          \
-				if (cr3 == h->cr3[i]) {                                     \
+				if (cur_t == h->t[i]) {                                     \
 					break;                                              \
 				}                                                           \
 			}                                                                   \
 			if (i == MEMTRACE_NUM_PROXY) {                                      \
 				return;                                                     \
-			}                                                                   \
+			} 								\
+		        if (!in_task() && in_serving_softirq()) { 			\
+				return; 						\
+			} 								\
 			filter	 							\
-			asm volatile("# __raw_save_flags\n\t"                               \
-					"pushf ; pop %0"                                    \
-					: "=rm" (fl)                                        \
-					: /* no input */                                    \
-					: "memory");                                        \
-			asm volatile("cli": : :"memory");                                   \
 			p = &h->proxy[i];                                                   \
 			if (p->mem_access_cnt < MEMTRACE_NUM_MAX) {                         \
 				unsigned long ip;\
@@ -79,9 +72,6 @@ static __always_inline unsigned long read_rsp(void) {
 				}                                                           \
 				p->mem_access_cnt++; \
 			} \
-			if (fl & X86_EFLAGS_IF) {                                        \
-				asm volatile("sti": : :"memory");                           \
-			}                                                                   \
 		}                                                                           \
 	} while(0)
 

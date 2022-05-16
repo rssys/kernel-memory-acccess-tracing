@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/mm_types.h>
 #include <linux/spinlock.h>
+#include <linux/sched.h>
 
 #define MEMTRACE_NUM_PROXY 1
 #define MEMTRACE_PKT_NUM_MAX (0x40000)
@@ -31,7 +32,7 @@ struct memtrace_proxy {
 
 struct memtrace_hub {
 	// TODO: switch to atomic value
-	unsigned long cr3[MEMTRACE_NUM_PROXY];
+	struct task_struct *t[MEMTRACE_NUM_PROXY];
 	struct memtrace_proxy proxy[MEMTRACE_NUM_PROXY];
 	spinlock_t proxy_lock;
 };

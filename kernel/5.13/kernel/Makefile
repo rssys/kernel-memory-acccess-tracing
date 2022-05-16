@@ -36,6 +36,7 @@ KCOV_INSTRUMENT_stacktrace.o := n
 KASAN_SANITIZE_module.o := n
 KASAN_SANITIZE_extable.o := n
 KASAN_SANITIZE_stacktrace.o := n
+KASAN_SANITIZE_workqueue.o := n
 # Don't self-instrument.
 KCOV_INSTRUMENT_kcov.o := n
 # If sanitizers detect any issues in kcov, it may lead to recursion

@@ -15,15 +15,15 @@ static inline unsigned long read_cr3(void) {
 }
 
 static int start_memtrace(void) {
-	// TODO: mlock all
+	struct task_struct *cur_t;
 	struct memtrace_hub *h = mt_hub;
-	unsigned long cr3, irq_state;
+	unsigned long irq_state;
 	int i, ret;
 
 	ret = 0;
-	cr3 = read_cr3();
+	cur_t = current;
 	for (i = 0; i < MEMTRACE_NUM_PROXY; i++) {
-		if (h->cr3[i] == cr3) {
+		if (h->t[i] == cur_t) {
 			ret = -EPERM;
 			goto out;
 		}
@@ -41,23 +41,23 @@ static int start_memtrace(void) {
 	}
 	h->proxy[i].free = false;
 	spin_unlock_irqrestore(&h->proxy_lock, irq_state);
-	printk(KERN_DEBUG "memtrace: process cr3 = 0x%lx start memory tracing in proxy %d.", cr3, i);
-	h->cr3[i] = cr3;
+	printk(KERN_DEBUG "memtrace: process task_struct = 0x%lx start memory tracing in proxy %d.", (unsigned long)cur_t, i);
+	h->t[i] = current;
 out:
 	return ret;
 }
 
 
 static int stop_memtrace(void __user *buf) {
+	struct task_struct *cur_t;
 	struct memtrace_hub *h = mt_hub;
 	struct memtrace_proxy *p;
 	int i, ret, trace_cnt;
-	unsigned long cr3, irq_state, trace_len;
+	unsigned long irq_state, trace_len;
 	
-	// Reset cr3 first so we can use kernel functions without creating trace noise.
-	cr3 = read_cr3();
+	cur_t = current;
 	for (i = 0; i < MEMTRACE_NUM_PROXY; i++) {
-		if (h->cr3[i] == cr3) {
+		if (h->t[i] == cur_t) {
 			break;
 		}
 	}
@@ -65,7 +65,7 @@ static int stop_memtrace(void __user *buf) {
 		ret = -EPERM;
 		goto out;
 	}
-	h->cr3[i] = 0;
+	h->t[i] = NULL;
 	p = &h->proxy[i];
 	trace_len = ((p->mem_access_cnt+15)/16)*sizeof(struct memtrace_packet);
 	trace_cnt = p->mem_access_cnt;
@@ -80,7 +80,7 @@ static int stop_memtrace(void __user *buf) {
 	p->mem_access_cnt = 0;
 	p->free = true;
 	spin_unlock_irqrestore(&h->proxy_lock, irq_state);
-	printk(KERN_DEBUG "memtrace: process cr3 = 0x%lx in proxy %d stops memory tracing, count = %d", cr3, i, trace_cnt);
+	printk(KERN_DEBUG "memtrace: process task_struct = 0x%lx in proxy %d stops memory tracing, count = %d", (unsigned long)cur_t, i, trace_cnt);
 out:
 	return ret;
 }

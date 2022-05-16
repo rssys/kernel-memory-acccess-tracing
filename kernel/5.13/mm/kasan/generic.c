@@ -324,22 +324,22 @@ __alias(__asan_memtrace_storeN)
 void __asan_memtrace_storeN_noabort(unsigned long, size_t);
 EXPORT_SYMBOL(__asan_memtrace_storeN_noabort);
 
-void __asan_memtrace_ret(void) {
+void __asan_memtrace_ret(uint64_t id) {
 	memtrace_ret;
 }
 
 EXPORT_SYMBOL(__asan_memtrace_ret);
 __alias(__asan_memtrace_ret)
-void __asan_memtrace_ret_noabort(void);
+void __asan_memtrace_ret_noabort(uint64_t);
 EXPORT_SYMBOL(__asan_memtrace_ret_noabort);
 
-void __asan_memtrace_call(void) {
+void __asan_memtrace_call(uint64_t id) {
 	memtrace_call;
 }
 
 EXPORT_SYMBOL(__asan_memtrace_call);
 __alias(__asan_memtrace_call)
-void __asan_memtrace_call_noabort(void);
+void __asan_memtrace_call_noabort(uint64_t);
 EXPORT_SYMBOL(__asan_memtrace_call_noabort);
 
 // void __asan_memtrace_saveip(unsigned long addr)
