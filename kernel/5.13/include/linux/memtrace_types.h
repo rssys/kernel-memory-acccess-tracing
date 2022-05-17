@@ -25,9 +25,9 @@ struct memtrace_packet {
 struct memtrace_proxy {
 	// buffer
 	char *buf;
-	struct memtrace_packet *cur;
 	int mem_access_cnt;
 	bool free;
+	char writing;
 };
 
 struct memtrace_hub {

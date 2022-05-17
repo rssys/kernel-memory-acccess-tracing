@@ -21,8 +21,8 @@ void __init memtrace_init(void) {
 	buf = (char *)MEMTRACE_BUF_START;
 	for (i = 0; i < MEMTRACE_NUM_PROXY; i++) {
 		mt_hub->proxy[i].buf = buf;
-		mt_hub->proxy[i].cur = (struct memtrace_packet*)buf;
 		mt_hub->proxy[i].free = true;
+		mt_hub->proxy[i].writing = 0;
 		buf += MEMTRACE_BUF_SIZE;
 	}
 	memtrace_init_done = true;

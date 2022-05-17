@@ -76,7 +76,6 @@ static int stop_memtrace(void __user *buf) {
 	}
 	// Release proxy.
 	spin_lock_irqsave(&h->proxy_lock, irq_state);
-	p->cur = (struct memtrace_packet *)p->buf;
 	p->mem_access_cnt = 0;
 	p->free = true;
 	spin_unlock_irqrestore(&h->proxy_lock, irq_state);
