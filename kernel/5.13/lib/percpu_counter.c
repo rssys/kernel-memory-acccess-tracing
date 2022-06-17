@@ -9,6 +9,7 @@
 #include <linux/cpu.h>
 #include <linux/module.h>
 #include <linux/debugobjects.h>
+#include <linux/memtrace.h>
 
 #ifdef CONFIG_HOTPLUG_CPU
 static LIST_HEAD(percpu_counters);
@@ -84,6 +85,8 @@ void percpu_counter_add_batch(struct percpu_counter *fbc, s64 amount, s32 batch)
 	s64 count;
 
 	preempt_disable();
+	instrument_memtrace_load4((unsigned long)(this_cpu_ptr(fbc->counters)));
+	instrument_memtrace_store4((unsigned long)(this_cpu_ptr(fbc->counters)));
 	count = __this_cpu_read(*fbc->counters) + amount;
 	if (abs(count) >= batch) {
 		unsigned long flags;
@@ -110,6 +113,8 @@ void percpu_counter_sync(struct percpu_counter *fbc)
 	s64 count;
 
 	raw_spin_lock_irqsave(&fbc->lock, flags);
+	instrument_memtrace_load4((unsigned long)(this_cpu_ptr(fbc->counters)));
+	instrument_memtrace_store4((unsigned long)(this_cpu_ptr(fbc->counters)));
 	count = __this_cpu_read(*fbc->counters);
 	fbc->count += count;
 	__this_cpu_sub(*fbc->counters, count);

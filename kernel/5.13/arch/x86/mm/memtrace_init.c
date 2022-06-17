@@ -26,5 +26,5 @@ void __init memtrace_init(void) {
 		buf += MEMTRACE_BUF_SIZE;
 	}
 	memtrace_init_done = true;
-	printk(KERN_INFO "memtrace init!");
+	pr_info("memtrace init!");
 }
